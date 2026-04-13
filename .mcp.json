@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "docrag": {
+      "type": "sse",
+      "url": "https://localhost:6001/sse",
+      "timeout": 60
+    }
+  }
+}
