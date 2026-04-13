@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CodeStructure.Analyzers" Version="1.0.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.1.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocRAG.Core\DocRAG.Core.csproj" />
+    <ProjectReference Include="..\DocRAG.Database\DocRAG.Database.csproj" />
+    <ProjectReference Include="..\DocRAG.Ingestion\DocRAG.Ingestion.csproj" />
+  </ItemGroup>
+
+</Project>
