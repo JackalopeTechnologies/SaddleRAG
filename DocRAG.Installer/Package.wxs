@@ -11,10 +11,12 @@
         <MajorUpgrade DowngradeErrorMessage="A newer version of DocRAG is already installed." />
         <MediaTemplate EmbedCab="yes" />
 
-        <!-- Properties for user-configurable connection strings -->
+        <!-- User-configurable properties -->
         <Property Id="MONGOCONNECTION" Value="mongodb://localhost:27017" />
         <Property Id="MONGODATABASE" Value="DocRAG" />
         <Property Id="OLLAMAENDPOINT" Value="http://localhost:11434" />
+        <Property Id="MONGOSTATUS" Secure="yes" />
+        <Property Id="OLLAMASTATUS" Secure="yes" />
 
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
@@ -52,7 +54,21 @@
             <ComponentRef Id="ServiceComponent" />
         </Feature>
 
-        <!-- Custom action: patch appsettings.json with user-provided values -->
+        <!-- Test MongoDB connection (immediate CA, runs during UI) -->
+        <CustomAction Id="TestMongoConnection"
+                      Directory="MCPFOLDER"
+                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;try { $c = New-Object System.Net.Sockets.TcpClient; $uri = [Uri]'[MONGOCONNECTION]'; $c.Connect($uri.Host, $uri.Port); $c.Close(); '[MONGOCONNECTION]' } catch { 'FAILED: ' + $_.Exception.Message }&quot;&quot;"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <!-- Test Ollama connection (immediate CA, runs during UI) -->
+        <CustomAction Id="TestOllamaConnection"
+                      Directory="MCPFOLDER"
+                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;try { $r = Invoke-WebRequest -Uri '[OLLAMAENDPOINT]' -UseBasicParsing -TimeoutSec 5; 'Connected - Ollama is running' } catch { 'FAILED: ' + $_.Exception.Message }&quot;&quot;"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <!-- Patch appsettings.json with user-provided values (deferred, after file install) -->
         <SetProperty Id="PatchAppSettings"
                      Before="PatchAppSettings"
                      Sequence="execute"
@@ -69,7 +85,7 @@
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
         </InstallExecuteSequence>
 
-        <!-- UI: use the standard InstallDir set and inject custom dialogs -->
+        <!-- UI -->
         <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="MCPFOLDER" />
 
         <UI>
@@ -96,11 +112,20 @@
                 <Control Id="DbEdit" Type="Edit" X="25" Y="154" Width="200" Height="18"
                          Property="MONGODATABASE" />
 
-                <Control Id="ResetBtn" Type="PushButton" X="25" Y="184" Width="130" Height="17"
-                         Text="Reset to Local Defaults">
+                <Control Id="ResetBtn" Type="PushButton" X="25" Y="182" Width="100" Height="17"
+                         Text="Reset to Local">
                     <Publish Property="MONGOCONNECTION" Value="mongodb://localhost:27017" />
                     <Publish Property="MONGODATABASE" Value="DocRAG" />
+                    <Publish Property="MONGOSTATUS" Value=" " />
                 </Control>
+
+                <Control Id="TestBtn" Type="PushButton" X="135" Y="182" Width="100" Height="17"
+                         Text="Test Connection">
+                    <Publish Event="DoAction" Value="TestMongoConnection" />
+                </Control>
+
+                <Control Id="StatusText" Type="Text" X="25" Y="204" Width="320" Height="14"
+                         NoPrefix="yes" Property="MONGOSTATUS" />
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
@@ -132,14 +157,23 @@
                 <Control Id="EndpointEdit" Type="Edit" X="25" Y="112" Width="320" Height="18"
                          Property="OLLAMAENDPOINT" />
 
-                <Control Id="ResetBtn" Type="PushButton" X="25" Y="142" Width="130" Height="17"
-                         Text="Reset to Local Default">
+                <Control Id="ResetBtn" Type="PushButton" X="25" Y="142" Width="100" Height="17"
+                         Text="Reset to Local">
                     <Publish Property="OLLAMAENDPOINT" Value="http://localhost:11434" />
+                    <Publish Property="OLLAMASTATUS" Value=" " />
                 </Control>
 
-                <Control Id="InfoText" Type="Text" X="25" Y="172" Width="320" Height="40"
+                <Control Id="TestBtn" Type="PushButton" X="135" Y="142" Width="100" Height="17"
+                         Text="Test Connection">
+                    <Publish Event="DoAction" Value="TestOllamaConnection" />
+                </Control>
+
+                <Control Id="StatusText" Type="Text" X="25" Y="164" Width="320" Height="14"
+                         NoPrefix="yes" Property="OLLAMASTATUS" />
+
+                <Control Id="InfoText" Type="Text" X="25" Y="184" Width="320" Height="30"
                          Transparent="yes" NoPrefix="yes"
-                         Text="If Ollama is not yet installed, the service will start but AI features will be unavailable. Install Ollama from https://ollama.com — it's free and runs locally." />
+                         Text="Not installed? Download Ollama for free from https://ollama.com. Install it, then click Test Connection to verify." />
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
