@@ -20,84 +20,78 @@ AI coding assistants are limited by their training cutoff and context window. Wh
 Documentation Sites          DocRAG Pipeline                    AI Assistants
 ==================          ===============                    ==============
 
-docs.example.com  ──┐
-                    │      ┌─────────────┐
-github.com/repo   ──┼──►   │  Playwright  │  (headless browser)
-                    │      │   Crawler    │
-learn.microsoft   ──┘      └──────┬──────┘
-                                  │
-                           ┌──────▼──────┐
-                           │   Ollama    │  (local LLM)
-                           │  Classifier │  qwen3:1.7b
-                           └──────┬──────┘
-                                  │
-                           ┌──────▼──────┐
-                           │  Category-  │
-                           │   Aware     │
-                           │  Chunker    │
-                           └──────┬──────┘
-                                  │
-                           ┌──────▼──────┐
-                           │   Ollama    │  nomic-embed-text
-                           │  Embedder   │  (768 dimensions)
-                           └──────┬──────┘
-                                  │
-                           ┌──────▼──────┐     ┌──────────────┐
-                           │   MongoDB   │◄───►│  MCP Server  │──► Claude Code
-                           │  (storage)  │     │  (SSE/HTTP)  │──► Copilot
-                           └─────────────┘     └──────────────┘──► Any MCP client
+docs.example.com  --+
+                    |      +-------------+
+github.com/repo   --+-->   |  Playwright  |  (headless browser)
+                    |      |   Crawler    |
+learn.microsoft   --+      +------+------+
+                                  |
+                           +------v------+
+                           |   Ollama    |  (local LLM)
+                           |  Classifier |  qwen3:1.7b
+                           +------+------+
+                                  |
+                           +------v------+
+                           |  Category-  |
+                           |   Aware     |
+                           |  Chunker    |
+                           +------+------+
+                                  |
+                           +------v------+
+                           |   Ollama    |  nomic-embed-text
+                           |  Embedder   |  (768 dimensions)
+                           +------+------+
+                                  |
+                           +------v------+     +--------------+
+                           |   MongoDB   |<--->|  MCP Server  |--> Claude Code
+                           |  (storage)  |     |   (HTTP)     |--> Copilot
+                           +-------------+     +--------------+--> Any MCP client
 ```
 
-## Prerequisites
+## Quick Start (Windows Installer)
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| [.NET SDK](https://dotnet.microsoft.com/download) | 10.0+ | Build and run |
-| [MongoDB](https://www.mongodb.com/try/download/community) | 6.0+ | Document storage and indexing |
-| [Ollama](https://ollama.ai) | Latest | Local LLM for embeddings and classification |
+The fastest way to get DocRAG running is the MSI installer from [GitHub Releases](https://github.com/WyoDoug/DocRAG/releases). It installs DocRAG as a Windows service, configures connections to MongoDB and Ollama, and starts automatically.
 
-Ollama models are pulled automatically on first run:
-- `nomic-embed-text` (embedding generation, 768 dimensions)
-- `qwen3:1.7b` (page classification and optional re-ranking)
+DocRAG requires two free, open-source tools as prerequisites. Both are available as community editions at no cost.
 
-## Quick Start
+### Step 1: Install MongoDB Community Edition (free)
 
-### 1. Clone and Build
+MongoDB stores all scraped documentation, chunks, and vector embeddings.
 
-```bash
-git clone https://github.com/JackalopeTechnologies/DocRAG.git
-cd DocRAG
-dotnet build DocRAG.slnx
-```
+1. Download the **Community Edition** from [mongodb.com/try/download/community](https://www.mongodb.com/try/download/community)
+2. Run the installer, choose **Complete** setup type
+3. Keep the default settings: **port 27017**, **Run as a Service** checked
+4. After install, verify it's running: open a terminal and run `mongosh` -- you should see a connection prompt
 
-### 2. Start MongoDB
+> **Using Docker or a remote server?** No problem. The DocRAG installer lets you enter any MongoDB connection string (e.g. `mongodb://your-server:27017`). You can also run MongoDB in Docker: `docker run -d -p 27017:27017 --name docrag-mongo mongo:latest`
 
-```bash
-# Docker (easiest)
-docker run -d -p 27017:27017 --name docrag-mongo mongo:latest
+### Step 2: Install Ollama (free)
 
-# Or install locally: https://www.mongodb.com/docs/manual/installation/
-```
+Ollama runs AI models locally for document classification and embedding generation. No API keys or cloud accounts needed.
 
-### 3. Start Ollama
+1. Download from [ollama.com](https://ollama.com)
+2. Run the installer -- Ollama runs as a background service on **port 11434**
+3. After install, verify it's running: open a terminal and run `ollama list`
 
-```bash
-# Install from https://ollama.ai, then:
-ollama serve
-# Models are pulled automatically on first use
-```
+DocRAG automatically pulls the required models on first use:
+- `nomic-embed-text` -- generates vector embeddings (768 dimensions)
+- `qwen3:1.7b` -- classifies documentation pages and optional re-ranking
 
-### 4. Start the MCP Server
+> **Running Ollama elsewhere?** The DocRAG installer lets you point to any Ollama endpoint (e.g. `http://your-gpu-server:11434`).
 
-```bash
-dotnet run --project DocRAG.Mcp
-```
+### Step 3: Install DocRAG
 
-The server starts on `http://localhost:6100` by default.
+1. Download `DocRAG.Mcp.msi` from the [latest release](https://github.com/WyoDoug/DocRAG/releases/latest)
+2. Run the installer
+3. **MongoDB Configuration** -- the installer defaults to `mongodb://localhost:27017` with database `DocRAG`. Use the **Test Connection** button to verify MongoDB is reachable. If your MongoDB is on a different host, enter the connection string. **Reset to Local Defaults** reverts to the standard local settings.
+4. **Ollama Configuration** -- defaults to `http://localhost:11434`. Use **Test Connection** to verify. Change only if Ollama is running on another machine.
+5. Click **Install** -- files are copied to `Program Files\DocRAG\DocRAG.Mcp`, your connection settings are written to `appsettings.json`, and the **DocRAGMcp** Windows service starts automatically.
 
-### 5. Connect Your AI Assistant
+> **Don't have the prerequisites yet?** The installer includes **Download** buttons on each configuration page that open your browser to the MongoDB and Ollama download pages. Install them, then click **Test Connection** to verify before proceeding.
 
-Add to your MCP client configuration (e.g., `.mcp.json` in your project root):
+### Step 4: Connect Your AI Assistant
+
+Add this to your MCP client configuration. For **Claude Code**, create a `.mcp.json` file in your project root or home directory:
 
 ```json
 {
@@ -111,50 +105,61 @@ Add to your MCP client configuration (e.g., `.mcp.json` in your project root):
 }
 ```
 
-For **Claude Code**, place this file in your project root or home directory. For other MCP clients, consult their documentation for server configuration.
+### Step 5: Verify
 
-### 6. Publish for Windows Service (`Release|x64`)
+Open your AI assistant and ask it to list libraries:
+
+> "Use the list_libraries tool to show what documentation is indexed."
+
+If DocRAG is running, you'll get an empty list (nothing indexed yet). Then try:
+
+> "Scrape the documentation at https://docs.example.com for me."
+
+The assistant will use the `scrape_docs` tool to index the site.
+
+### Verify the Service
+
+- **Health check**: visit `http://localhost:6100/health` in a browser
+- **Service status**: run `Get-Service DocRAGMcp` in PowerShell
+- **Logs**: check `%ProgramData%\DocRAG\logs\` or use the `get_server_logs` MCP tool
+
+## Quick Start (Developer / Build from Source)
+
+If you want to build and run from source instead of the MSI:
+
+### Prerequisites
+
+| Dependency | Version | Purpose |
+|---|---|---|
+| [.NET SDK](https://dotnet.microsoft.com/download) | 10.0+ | Build and run |
+| [MongoDB](https://www.mongodb.com/try/download/community) | 6.0+ | Document storage (port 27017) |
+| [Ollama](https://ollama.com) | Latest | Local LLM for embeddings (port 11434) |
+
+### Build and Run
 
 ```bash
-dotnet publish DocRAG.Mcp/DocRAG.Mcp.csproj -c Release -p:Platform=x64
+git clone https://github.com/WyoDoug/DocRAG.git
+cd DocRAG
+dotnet build DocRAG.slnx
+dotnet run --project DocRAG.Mcp
 ```
 
-The published output is configured for `win-x64`, includes Windows service hosting support, and uses the single MCP HTTP endpoint at `http://localhost:6100/mcp` by default. Register the published executable as the Windows service target rather than using `dotnet run` or `dotnet build` output.
+The server starts on `http://localhost:6100` by default. Configuration is in `DocRAG.Mcp/appsettings.Development.json`.
 
-### 7. Install as a Windows Service
+### Connect Your AI Assistant
 
-For the simplest one-command flow, publish directly into the install directory and recreate the service automatically:
+Add to `.mcp.json` in your project root:
 
-```powershell
-.\DocRAG.Mcp\publish-and-install-service.ps1 -InstallDirectory 'E:\Service\DocRAG.Mcp'
-```
-
-This script publishes `DocRAG.Mcp.csproj` in `Release|x64`, installs or refreshes the `DocRAGMcp` service, and starts it unless you pass `-SkipStart`.
-
-From an elevated PowerShell session, run either of these:
-
-```powershell
-.\DocRAG.Mcp\install-service.ps1
-```
-
-This copies the published output to `%ProgramFiles%\DocRAG\DocRAG.Mcp` and installs the `DocRAGMcp` service.
-
-```powershell
-.\DocRAG.Mcp\install-service.ps1 -InPlace
-```
-
-This installs the service directly from `DocRAG.Mcp\bin\x64\Release\net10.0\win-x64\publish`. If you use `-InPlace`, point the service at the `publish` directory under `bin`, not the generic `bin` folder.
-
-To deploy an updated publish later:
-
-```powershell
-.\DocRAG.Mcp\update-service.ps1
-```
-
-To remove the service:
-
-```powershell
-.\DocRAG.Mcp\uninstall-service.ps1
+```json
+{
+  "mcpServers": {
+    "docrag": {
+      "type": "http",
+      "url": "http://localhost:6100/mcp",
+      "timeout": 60
+    }
+  }
+}
 ```
 
 ## MCP Tools Reference
@@ -167,7 +172,7 @@ DocRAG exposes 16 tools through the MCP protocol. Your AI assistant discovers th
 |---|---|
 | `search_docs` | Natural language search across all libraries or filtered by library, version, and category (Overview, HowTo, Sample, ApiReference, ChangeLog) |
 | `get_class_reference` | Look up API reference for a class or type by name. Searches across all libraries if none specified. Tries exact match, then fuzzy. |
-| `get_library_overview` | Get Overview-category chunks for a library — concepts, architecture, getting started guides |
+| `get_library_overview` | Get Overview-category chunks for a library - concepts, architecture, getting started guides |
 
 ### Library Management
 
@@ -180,7 +185,7 @@ DocRAG exposes 16 tools through the MCP protocol. Your AI assistant discovers th
 
 | Tool | Description |
 |---|---|
-| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware — skips already-indexed libraries unless `force=true` |
+| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware - skips already-indexed libraries unless `force=true` |
 | `scrape_library` | Queue a scrape job with full control over URL patterns, depth, and delay. Returns a job ID for polling. |
 | `dryrun_scrape` | Test a scrape configuration without writing to the database. Reports page counts, depth distribution, and GitHub repos that would be cloned. |
 | `continue_scrape` | Resume an interrupted or MaxPages-limited scrape from where it left off |
@@ -192,7 +197,7 @@ DocRAG exposes 16 tools through the MCP protocol. Your AI assistant discovers th
 
 | Tool | Description |
 |---|---|
-| `get_version_changes` | Diff two versions of a library — added, removed, and changed pages with summaries |
+| `get_version_changes` | Diff two versions of a library - added, removed, and changed pages with summaries |
 
 ### Configuration
 
@@ -212,7 +217,6 @@ DocRAG exposes 16 tools through the MCP protocol. Your AI assistant discovers th
 The CLI provides direct access to ingestion and management without the MCP server.
 
 ```bash
-# Build the CLI
 dotnet build DocRAG.Cli/DocRAG.Cli.csproj
 ```
 
@@ -325,6 +329,17 @@ DOCRAG_MONGODB_PROFILE=company          # Override active profile
 ASPNETCORE_ENVIRONMENT=Development      # Enable dev settings (disables re-ranking)
 ```
 
+## Releasing
+
+To create a new release with an MSI installer:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The CI pipeline builds the solution, runs tests, packages the MSI, and attaches it to a GitHub Release automatically.
+
 ## Project Structure
 
 ```
@@ -338,71 +353,9 @@ DocRAG.Ingestion/              # Scraping, classification, chunking, embedding p
   Embedding/                   #   Ollama embedding provider
   Scanning/                    #   Project dependency scanner
   Ecosystems/                  #   NuGet, npm, pip registry clients
-DocRAG.Mcp/                    # ASP.NET Core MCP server (SSE transport)
+DocRAG.Mcp/                    # ASP.NET Core MCP server (HTTP transport)
   Tools/                       #   MCP tool definitions (16 tools)
 DocRAG.Cli/                    # Command-line interface
+DocRAG.Installer/              # WiX MSI installer definition
 DocRAG.Tests/                  # Integration and unit tests
 ```
-
-## How It Works
-
-### Ingestion Pipeline
-
-Pages flow through a streaming pipeline using `System.Threading.Channels`:
-
-1. **Crawl** — Playwright fetches pages within configured URL patterns and depth limits. GitHub repository links are cloned and their markdown/docs scraped separately.
-2. **Classify** — Each page is sent to the local LLM with the library hint. The classifier assigns one of: `Overview`, `HowTo`, `Sample`, `ApiReference`, `ChangeLog`, or `Unclassified`.
-3. **Chunk** — Content is split at semantic boundaries (headings, code blocks) with section hierarchy preserved. API reference pages extract qualified names (e.g., `System.String.Format`).
-4. **Embed** — Each chunk is embedded into a 768-dimensional vector using `nomic-embed-text`.
-5. **Store** — Chunks are upserted into MongoDB. The in-memory vector index is refreshed automatically.
-
-### Search
-
-When your AI assistant calls `search_docs`:
-
-1. The query is embedded using the same model
-2. In-memory cosine similarity search finds the top candidates
-3. Optional re-ranking via Ollama cross-encoder improves relevance
-4. Results are returned with content, source URL, section path, and relevance score
-
-### Dependency Scanning
-
-`index_project_dependencies` parses your project files to discover packages:
-
-| Ecosystem | Files Parsed | Registry |
-|---|---|---|
-| NuGet | `.csproj`, `.fsproj`, `packages.config` | api.nuget.org |
-| npm | `package.json` | registry.npmjs.org |
-| pip | `requirements.txt`, `setup.py`, `pyproject.toml` | pypi.org |
-
-For each package, DocRAG resolves the documentation URL from the package registry metadata, checks whether it's already cached, and queues a scrape job for anything new.
-
-## Supported Package Ecosystems
-
-| Ecosystem | Project Files | Documentation Sources |
-|---|---|---|
-| **NuGet** (.NET) | `.csproj`, `.fsproj`, `packages.config` | learn.microsoft.com, GitHub README, project website |
-| **npm** (JavaScript) | `package.json` | npmjs.com, GitHub README, project website |
-| **pip** (Python) | `requirements.txt`, `setup.py`, `pyproject.toml` | readthedocs.io, sphinx docs, GitHub |
-
-## Development
-
-### Running Tests
-
-```bash
-dotnet test DocRAG.Tests/DocRAG.Tests.csproj
-```
-
-### VS Code
-
-Launch configurations are included in `.vscode/launch.json`. Use the "Launch DocRAG.Mcp" configuration to start the MCP server with debugging.
-
-### Development Settings
-
-In `Development` mode (set via `ASPNETCORE_ENVIRONMENT=Development`):
-- Only the default profile is bootstrapped at startup (faster startup)
-- Re-ranking is disabled (saves Ollama resources during development)
-
-## License
-
-[MIT](LICENSE.txt) - Copyright 2012-Present [Jackalope Technologies, Inc.](https://github.com/JackalopeTechnologies) and Doug Gerard.
