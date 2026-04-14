@@ -62,17 +62,17 @@ public sealed class PyPiRegistryClient : IPackageRegistryClient
 
     private PackageMetadata BuildMetadata(string packageId, JsonElement root)
     {
-        var info = root.GetProperty("info");
+        var info = root.GetProperty(InfoKey);
 
-        string resolvedVersion = info.TryGetProperty("version", out var versionEl)
+        string resolvedVersion = info.TryGetProperty(VersionKey, out var versionEl)
                                      ? versionEl.GetString() ?? string.Empty
                                      : string.Empty;
 
-        string summary = info.TryGetProperty("summary", out var summaryEl)
+        string summary = info.TryGetProperty(SummaryKey, out var summaryEl)
                              ? summaryEl.GetString() ?? string.Empty
                              : string.Empty;
 
-        string homePage = info.TryGetProperty("home_page", out var homePageEl)
+        string homePage = info.TryGetProperty(HomePageKey, out var homePageEl)
                               ? homePageEl.GetString() ?? string.Empty
                               : string.Empty;
 
@@ -80,7 +80,7 @@ public sealed class PyPiRegistryClient : IPackageRegistryClient
         var repoUrl = string.Empty;
         string projectUrl = homePage;
 
-        if (info.TryGetProperty("project_urls", out var projectUrls) && projectUrls.ValueKind == JsonValueKind.Object)
+        if (info.TryGetProperty(ProjectUrlsKey, out var projectUrls) && projectUrls.ValueKind == JsonValueKind.Object)
         {
             docUrl = ExtractProjectUrl(projectUrls, DocUrlKeyDocumentation, DocUrlKeyDocs);
             repoUrl = ExtractProjectUrl(projectUrls, DocUrlKeySource, DocUrlKeyRepository, DocUrlKeySourceCode);
@@ -116,6 +116,11 @@ public sealed class PyPiRegistryClient : IPackageRegistryClient
     }
 
     private const string PipEcosystemId = "pip";
+    private const string InfoKey = "info";
+    private const string VersionKey = "version";
+    private const string SummaryKey = "summary";
+    private const string HomePageKey = "home_page";
+    private const string ProjectUrlsKey = "project_urls";
     private const string HttpClientName = "PyPI";
     private const string PyPiBaseUrl = "https://pypi.org/pypi";
     private const int TimeoutSeconds = 5;

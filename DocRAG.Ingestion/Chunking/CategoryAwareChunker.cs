@@ -230,7 +230,7 @@ public class CategoryAwareChunker
     private static IReadOnlyList<string> SplitLargeContent(string content)
     {
         // Split at double newlines, recombine until under token limit
-        var paragraphs = content.Split(["\n\n", "\r\n\r\n"], StringSplitOptions.RemoveEmptyEntries);
+        var paragraphs = content.Split([DoubleNewline, DoubleCrLf], StringSplitOptions.RemoveEmptyEntries);
         var chunks = new List<string>();
         var current = new StringBuilder();
 
@@ -281,4 +281,7 @@ public class CategoryAwareChunker
     private const int MaxChunkTokenEstimate = 800;
     private const int CharsPerToken = 3;
     private const int MaxChunkChars = MaxChunkTokenEstimate * CharsPerToken;
+
+    private const string DoubleNewline = "\n\n";
+    private const string DoubleCrLf = "\r\n\r\n";
 }
