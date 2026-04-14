@@ -1,169 +1,361 @@
-// // Program.cs
+// // Program.cs
+
 // // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
-// // Use subject to the MIT License.
-
-#region Usings
-
-using System.Diagnostics;
-using System.Net;
-using DocRAG.Core.Interfaces;
-using DocRAG.Database;
-using DocRAG.Ingestion;
-using DocRAG.Ingestion.Chunking;
-using DocRAG.Ingestion.Classification;
-using DocRAG.Ingestion.Crawling;
-using DocRAG.Ingestion.Ecosystems.Common;
-using DocRAG.Ingestion.Ecosystems.Npm;
-using DocRAG.Ingestion.Ecosystems.NuGet;
-using DocRAG.Ingestion.Ecosystems.Pip;
-using DocRAG.Ingestion.Embedding;
-using DocRAG.Ingestion.Scanning;
-using DocRAG.Mcp;
-using DocRAG.Mcp.Tools;
-using ModelContextProtocol.Protocol;
-using Serilog;
-using Serilog.Events;
-
-#endregion
-
-var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                "DocRAG",
-                                "logs"
-                               );
-Directory.CreateDirectory(logDirectory);
-
-Log.Logger = new LoggerConfiguration()
-             .MinimumLevel.Information()
-             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-             .WriteTo.Console()
-             .WriteTo.File(Path.Combine(logDirectory, "docrag-.log"),
-                           rollingInterval: RollingInterval.Day,
-                           retainedFileCountLimit: 7,
-                           shared: true
-                          )
-             .CreateLogger();
-
-var builder = WebApplication.CreateBuilder(args);
-builder.Host.UseSerilog();
-builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
-builder.Services.AddSingleton<McpWarmupState>();
-builder.Services.AddHostedService<McpWarmupService>();
-
-// MongoDB
-builder.Services.AddDocRagDatabase(builder.Configuration);
-
-// Ollama configuration
-builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(OllamaSettings.SectionName));
-
-// Ollama services
-builder.Services.AddSingleton<OllamaBootstrapper>();
-builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
-builder.Services.AddSingleton<IVectorSearchProvider, InMemoryBruteForceVectorSearch>();
-// Re-ranker (Ollama cross-encoder or no-op fallback)
-var ollamaSettings = builder.Configuration.GetSection(OllamaSettings.SectionName).Get<OllamaSettings>();
-if (ollamaSettings?.ReRankingEnabled == true)
-    builder.Services.AddSingleton<IReRanker, OllamaReRanker>();
-else
-    builder.Services.AddSingleton<IReRanker, NoOpReRanker>();
-
-// Classification
-builder.Services.AddSingleton<LlmClassifier>();
-
-// Ingestion pipeline (so MCP can scrape on demand)
-builder.Services.AddSingleton<GitHubRepoScraper>();
-builder.Services.AddSingleton<PageCrawler>();
-builder.Services.AddSingleton<CategoryAwareChunker>();
-builder.Services.AddSingleton<IngestionOrchestrator>();
-builder.Services.AddSingleton<ScrapeJobRunner>();
-builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
-                                                   sp.GetRequiredService<ScrapeJobRunner>()
-                                              );
-
-// HTTP clients for package registry APIs
-builder.Services.AddHttpClient("NuGet")
-       .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-                                                     {
-                                                         AutomaticDecompression = DecompressionMethods.All
-                                                     }
-                                          );
-builder.Services.AddHttpClient("npm");
-builder.Services.AddHttpClient("PyPI");
-builder.Services.AddHttpClient("DocUrlProbe");
-
-// Shared utilities
-builder.Services.AddSingleton<CommonDocUrlPatterns>();
-builder.Services.AddSingleton<PackageFilter>();
-
-// NuGet ecosystem
-builder.Services.AddSingleton<IProjectFileParser, NuGetProjectFileParser>();
-builder.Services.AddSingleton<IPackageRegistryClient, NuGetRegistryClient>();
-builder.Services.AddSingleton<IDocUrlResolver, NuGetDocUrlResolver>();
-
-// npm ecosystem
-builder.Services.AddSingleton<IProjectFileParser, NpmProjectFileParser>();
-builder.Services.AddSingleton<IPackageRegistryClient, NpmRegistryClient>();
-builder.Services.AddSingleton<IDocUrlResolver, NpmDocUrlResolver>();
-
-// pip ecosystem
-builder.Services.AddSingleton<IProjectFileParser, PipProjectFileParser>();
-builder.Services.AddSingleton<IPackageRegistryClient, PyPiRegistryClient>();
-builder.Services.AddSingleton<IDocUrlResolver, PipDocUrlResolver>();
-
-// Dependency indexing orchestrator
-builder.Services.AddSingleton<DependencyIndexer>();
-
-// MCP server with SSE HTTP transport
-builder.Services
-       .AddMcpServer(options =>
-                     {
-                         options.ServerInfo = new Implementation
-                                                  {
-                                                      Name = "DocRAG â€” Documentation RAG MCP Server",
-                                                      Version = "0.3.0"
-                                                  };
-                     }
-                    )
-       .WithHttpTransport()
-       .WithToolsFromAssembly();
-
-var app = builder.Build();
-var startupSw = Stopwatch.StartNew();
-app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” HTTP server starting", startupSw.Elapsed.TotalSeconds);
-
-// Log first real request
-var firstRequestLogged = false;
-app.Use(async (context, next) =>
-        {
-            if (!firstRequestLogged)
-            {
-                firstRequestLogged = true;
-                app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” First request: {Method} {Path}",
-                                          startupSw.Elapsed.TotalSeconds,
-                                          context.Request.Method,
-                                          context.Request.Path
-                                         );
-            }
-
-            await next();
-        }
-       );
-
-// HTTPS redirection â€” force MCP traffic onto TLS
-app.UseHttpsRedirection();
-
-// Health check
-app.MapGet("/health",
-           (McpWarmupState warmupState) => Results.Ok(new
-                                                          {
-                                                              Status = "Healthy",
-                                                              WarmupStatus = warmupState.Status,
-                                                              WarmupPhase = warmupState.CurrentPhase,
-                                                              WarmupError = warmupState.LastError
-                                                          }
-                                                     )
-          );
-
-// MCP endpoint
-app.MapMcp();
-
-app.Run();
+// // Use subject to the MIT License.
+
+
+
+#region Usings
+
+
+
+using System.Diagnostics;
+
+using System.Net;
+
+using DocRAG.Core.Interfaces;
+
+using DocRAG.Database;
+
+using DocRAG.Ingestion;
+
+using DocRAG.Ingestion.Chunking;
+
+using DocRAG.Ingestion.Classification;
+
+using DocRAG.Ingestion.Crawling;
+
+using DocRAG.Ingestion.Ecosystems.Common;
+
+using DocRAG.Ingestion.Ecosystems.Npm;
+
+using DocRAG.Ingestion.Ecosystems.NuGet;
+
+using DocRAG.Ingestion.Ecosystems.Pip;
+
+using DocRAG.Ingestion.Embedding;
+
+using DocRAG.Ingestion.Scanning;
+
+using DocRAG.Mcp;
+
+using DocRAG.Mcp.Tools;
+
+using ModelContextProtocol.Protocol;
+
+using Serilog;
+
+using Serilog.Events;
+
+
+
+#endregion
+
+
+
+var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+
+                                "DocRAG",
+
+                                "logs"
+
+                               );
+
+Directory.CreateDirectory(logDirectory);
+
+
+
+Log.Logger = new LoggerConfiguration()
+
+             .MinimumLevel.Information()
+
+             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+
+             .WriteTo.Console()
+
+             .WriteTo.File(Path.Combine(logDirectory, "docrag-.log"),
+
+                           rollingInterval: RollingInterval.Day,
+
+                           retainedFileCountLimit: 7,
+
+                           shared: true
+
+                          )
+
+             .CreateLogger();
+
+
+
+const string McpEndpointPattern = "/mcp";
+
+const string ServiceName = "DocRAG MCP";
+
+
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog();
+
+builder.Services.AddWindowsService(options =>
+
+                                   {
+
+                                       options.ServiceName = ServiceName;
+
+                                   }
+
+                                  );
+
+builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
+
+builder.Services.AddSingleton<McpWarmupState>();
+
+builder.Services.AddHostedService<McpWarmupService>();
+
+
+
+// MongoDB
+
+builder.Services.AddDocRagDatabase(builder.Configuration);
+
+
+
+// Ollama configuration
+
+builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(OllamaSettings.SectionName));
+
+
+
+// Ollama services
+
+builder.Services.AddSingleton<OllamaBootstrapper>();
+
+builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
+
+builder.Services.AddSingleton<IVectorSearchProvider, InMemoryBruteForceVectorSearch>();
+
+// Re-ranker (Ollama cross-encoder or no-op fallback)
+
+var ollamaSettings = builder.Configuration.GetSection(OllamaSettings.SectionName).Get<OllamaSettings>();
+
+if (ollamaSettings?.ReRankingEnabled == true)
+
+    builder.Services.AddSingleton<IReRanker, OllamaReRanker>();
+
+else
+
+    builder.Services.AddSingleton<IReRanker, NoOpReRanker>();
+
+
+
+// Classification
+
+builder.Services.AddSingleton<LlmClassifier>();
+
+
+
+// Ingestion pipeline (so MCP can scrape on demand)
+
+builder.Services.AddSingleton<GitHubRepoScraper>();
+
+builder.Services.AddSingleton<PageCrawler>();
+
+builder.Services.AddSingleton<CategoryAwareChunker>();
+
+builder.Services.AddSingleton<IngestionOrchestrator>();
+
+builder.Services.AddSingleton<ScrapeJobRunner>();
+
+builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
+
+                                                   sp.GetRequiredService<ScrapeJobRunner>()
+
+                                              );
+
+
+
+// HTTP clients for package registry APIs
+
+builder.Services.AddHttpClient("NuGet")
+
+       .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+
+                                                     {
+
+                                                         AutomaticDecompression = DecompressionMethods.All
+
+                                                     }
+
+                                          );
+
+builder.Services.AddHttpClient("npm");
+
+builder.Services.AddHttpClient("PyPI");
+
+builder.Services.AddHttpClient("DocUrlProbe");
+
+
+
+// Shared utilities
+
+builder.Services.AddSingleton<CommonDocUrlPatterns>();
+
+builder.Services.AddSingleton<PackageFilter>();
+
+
+
+// NuGet ecosystem
+
+builder.Services.AddSingleton<IProjectFileParser, NuGetProjectFileParser>();
+
+builder.Services.AddSingleton<IPackageRegistryClient, NuGetRegistryClient>();
+
+builder.Services.AddSingleton<IDocUrlResolver, NuGetDocUrlResolver>();
+
+
+
+// npm ecosystem
+
+builder.Services.AddSingleton<IProjectFileParser, NpmProjectFileParser>();
+
+builder.Services.AddSingleton<IPackageRegistryClient, NpmRegistryClient>();
+
+builder.Services.AddSingleton<IDocUrlResolver, NpmDocUrlResolver>();
+
+
+
+// pip ecosystem
+
+builder.Services.AddSingleton<IProjectFileParser, PipProjectFileParser>();
+
+builder.Services.AddSingleton<IPackageRegistryClient, PyPiRegistryClient>();
+
+builder.Services.AddSingleton<IDocUrlResolver, PipDocUrlResolver>();
+
+
+
+// Dependency indexing orchestrator
+
+builder.Services.AddSingleton<DependencyIndexer>();
+
+
+
+// MCP server with Streamable HTTP transport
+
+builder.Services
+
+       .AddMcpServer(options =>
+
+                     {
+
+                         options.ServerInfo = new Implementation
+
+                                                  {
+
+                                                      Name = "DocRAG â€” Documentation RAG MCP Server",
+
+                                                      Version = "0.3.0"
+
+                                                  };
+
+                     }
+
+                    )
+
+       .WithHttpTransport()
+
+       .WithToolsFromAssembly();
+
+
+
+var app = builder.Build();
+
+var startupSw = Stopwatch.StartNew();
+
+app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” HTTP server starting", startupSw.Elapsed.TotalSeconds);
+
+
+
+// Log first real request
+
+var firstRequestLogged = false;
+
+app.Use(async (context, next) =>
+
+        {
+
+            if (!firstRequestLogged)
+
+            {
+
+                firstRequestLogged = true;
+
+                app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” First request: {Method} {Path}",
+
+                                          startupSw.Elapsed.TotalSeconds,
+
+                                          context.Request.Method,
+
+                                          context.Request.Path
+
+                                         );
+
+            }
+
+
+
+            await next();
+
+        }
+
+       );
+
+
+
+// HTTPS redirection â€” enabled only when an HTTPS endpoint is configured
+
+var httpsEndpointUrl = app.Configuration["Kestrel:Endpoints:Https:Url"];
+
+if (!string.IsNullOrWhiteSpace(httpsEndpointUrl))
+
+{
+
+    app.UseHttpsRedirection();
+
+}
+
+
+
+// Health check
+
+app.MapGet("/health",
+
+           (McpWarmupState warmupState) => Results.Ok(new
+
+                                                          {
+
+                                                              Status = "Healthy",
+
+                                                              WarmupStatus = warmupState.Status,
+
+                                                              WarmupPhase = warmupState.CurrentPhase,
+
+                                                              WarmupError = warmupState.LastError
+
+                                                          }
+
+                                                     )
+
+          );
+
+
+
+// MCP endpoint
+
+app.MapMcp(McpEndpointPattern);
+
+
+
+app.Run();
+

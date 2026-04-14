@@ -93,7 +93,7 @@ ollama serve
 dotnet run --project DocRAG.Mcp
 ```
 
-The server starts on `https://localhost:6001` (HTTP on port 6000).
+The server starts on `http://localhost:6000` by default. In the `Development` environment, it also exposes `https://localhost:6001`.
 
 ### 5. Connect Your AI Assistant
 
@@ -103,8 +103,8 @@ Add to your MCP client configuration (e.g., `.mcp.json` in your project root):
 {
   "mcpServers": {
     "docrag": {
-      "type": "sse",
-      "url": "https://localhost:6001/sse",
+      "type": "http",
+      "url": "http://localhost:6000/mcp",
       "timeout": 60
     }
   }
@@ -112,6 +112,50 @@ Add to your MCP client configuration (e.g., `.mcp.json` in your project root):
 ```
 
 For **Claude Code**, place this file in your project root or home directory. For other MCP clients, consult their documentation for server configuration.
+
+### 6. Publish for Windows Service (`Release|x64`)
+
+```bash
+dotnet publish DocRAG.Mcp/DocRAG.Mcp.csproj -c Release -p:Platform=x64
+```
+
+The published output is configured for `win-x64`, includes Windows service hosting support, and uses the single MCP HTTP endpoint at `http://localhost:6000/mcp` by default. Register the published executable as the Windows service target rather than using `dotnet run` or `dotnet build` output.
+
+### 7. Install as a Windows Service
+
+For the simplest one-command flow, publish directly into the install directory and recreate the service automatically:
+
+```powershell
+.\DocRAG.Mcp\publish-and-install-service.ps1 -InstallDirectory 'E:\Service\DocRAG.Mcp'
+```
+
+This script publishes `DocRAG.Mcp.csproj` in `Release|x64`, installs or refreshes the `DocRAGMcp` service, and starts it unless you pass `-SkipStart`.
+
+From an elevated PowerShell session, run either of these:
+
+```powershell
+.\DocRAG.Mcp\install-service.ps1
+```
+
+This copies the published output to `%ProgramFiles%\DocRAG\DocRAG.Mcp` and installs the `DocRAGMcp` service.
+
+```powershell
+.\DocRAG.Mcp\install-service.ps1 -InPlace
+```
+
+This installs the service directly from `DocRAG.Mcp\bin\x64\Release\net10.0\win-x64\publish`. If you use `-InPlace`, point the service at the `publish` directory under `bin`, not the generic `bin` folder.
+
+To deploy an updated publish later:
+
+```powershell
+.\DocRAG.Mcp\update-service.ps1
+```
+
+To remove the service:
+
+```powershell
+.\DocRAG.Mcp\uninstall-service.ps1
+```
 
 ## MCP Tools Reference
 
