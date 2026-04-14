@@ -1,102 +1,102 @@
-// // ScrapeJobRecord.cs
+// // ScrapeJobRecord.cs
 // // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
-// // Use subject to the MIT License.
-
-#region Usings
-
-using DocRAG.Core.Enums;
-
-#endregion
-
-namespace DocRAG.Core.Models;
-
-/// <summary>
-///     Tracks the lifecycle of a single scrape job for status polling.
-/// </summary>
-public class ScrapeJobRecord
-{
-    /// <summary>
-    ///     Unique job identifier (GUID string).
-    /// </summary>
-    public required string Id { get; init; }
-
-    /// <summary>
-    ///     The original scrape job configuration that was submitted.
-    /// </summary>
-    public required ScrapeJob Job { get; init; }
-
-    /// <summary>
-    ///     Database profile this job is writing to.
-    /// </summary>
-    public string? Profile { get; init; }
-
-    /// <summary>
-    ///     Current status.
-    /// </summary>
-    public ScrapeJobStatus Status { get; set; } = ScrapeJobStatus.Queued;
-
-    /// <summary>
-    ///     Pipeline state: Running, Completed, Failed, Cancelled.
-    /// </summary>
-    public string PipelineState { get; set; } = "Queued";
-
-    /// <summary>
-    ///     URLs discovered and waiting in crawl BFS queue.
-    /// </summary>
-    public int PagesQueued { get; set; }
-
-    /// <summary>
-    ///     Pages downloaded from web.
-    /// </summary>
-    public int PagesFetched { get; set; }
-
-    /// <summary>
-    ///     Pages through LLM classification.
-    /// </summary>
-    public int PagesClassified { get; set; }
-
-    /// <summary>
-    ///     Chunks produced by chunking.
-    /// </summary>
-    public int ChunksGenerated { get; set; }
-
-    /// <summary>
-    ///     Chunks with embeddings attached.
-    /// </summary>
-    public int ChunksEmbedded { get; set; }
-
-    /// <summary>
-    ///     Chunks indexed and searchable.
-    /// </summary>
-    public int ChunksCompleted { get; set; }
-
-    /// <summary>
-    ///     Pages fully indexed (all their chunks searchable).
-    /// </summary>
-    public int PagesCompleted { get; set; }
-
-    /// <summary>
-    ///     Non-fatal error count across all stages.
-    /// </summary>
-    public int ErrorCount { get; set; }
-
-    /// <summary>
-    ///     Error message if Status is Failed.
-    /// </summary>
-    public string? ErrorMessage { get; set; }
-
-    /// <summary>
-    ///     When the job was created.
-    /// </summary>
-    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
-
-    /// <summary>
-    ///     When the job started running.
-    /// </summary>
-    public DateTime? StartedAt { get; set; }
-
-    /// <summary>
-    ///     When the job finished (success, failure, or cancellation).
-    /// </summary>
-    public DateTime? CompletedAt { get; set; }
-}
+// // Use subject to the MIT License.
+
+#region Usings
+
+using DocRAG.Core.Enums;
+
+#endregion
+
+namespace DocRAG.Core.Models;
+
+/// <summary>
+///     Tracks the lifecycle of a single scrape job for status polling.
+/// </summary>
+public class ScrapeJobRecord
+{
+    /// <summary>
+    ///     Unique job identifier (GUID string).
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    ///     The original scrape job configuration that was submitted.
+    /// </summary>
+    public required ScrapeJob Job { get; init; }
+
+    /// <summary>
+    ///     Database profile this job is writing to.
+    /// </summary>
+    public string? Profile { get; init; }
+
+    /// <summary>
+    ///     Current status.
+    /// </summary>
+    public ScrapeJobStatus Status { get; set; } = ScrapeJobStatus.Queued;
+
+    /// <summary>
+    ///     Pipeline state: Running, Completed, Failed, Cancelled.
+    /// </summary>
+    public string PipelineState { get; set; } = nameof(ScrapeJobStatus.Queued);
+
+    /// <summary>
+    ///     URLs discovered and waiting in crawl BFS queue.
+    /// </summary>
+    public int PagesQueued { get; set; }
+
+    /// <summary>
+    ///     Pages downloaded from web.
+    /// </summary>
+    public int PagesFetched { get; set; }
+
+    /// <summary>
+    ///     Pages through LLM classification.
+    /// </summary>
+    public int PagesClassified { get; set; }
+
+    /// <summary>
+    ///     Chunks produced by chunking.
+    /// </summary>
+    public int ChunksGenerated { get; set; }
+
+    /// <summary>
+    ///     Chunks with embeddings attached.
+    /// </summary>
+    public int ChunksEmbedded { get; set; }
+
+    /// <summary>
+    ///     Chunks indexed and searchable.
+    /// </summary>
+    public int ChunksCompleted { get; set; }
+
+    /// <summary>
+    ///     Pages fully indexed (all their chunks searchable).
+    /// </summary>
+    public int PagesCompleted { get; set; }
+
+    /// <summary>
+    ///     Non-fatal error count across all stages.
+    /// </summary>
+    public int ErrorCount { get; set; }
+
+    /// <summary>
+    ///     Error message if Status is Failed.
+    /// </summary>
+    public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    ///     When the job was created.
+    /// </summary>
+    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
+
+    /// <summary>
+    ///     When the job started running.
+    /// </summary>
+    public DateTime? StartedAt { get; set; }
+
+    /// <summary>
+    ///     When the job finished (success, failure, or cancellation).
+    /// </summary>
+    public DateTime? CompletedAt { get; set; }
+}
