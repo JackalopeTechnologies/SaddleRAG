@@ -29,10 +29,74 @@ using Microsoft.Playwright;
 
 #endregion
 
+
+#region String constants
+
+const string AppSettingsFile = "appsettings.json";
+const string EnvironmentVariablePrefix = "DOCRAG_";
+const string NuGetClientName = "NuGet";
+const string NpmClientName = "npm";
+const string PyPiClientName = "PyPI";
+const string DocUrlProbeClientName = "DocUrlProbe";
+const string RootCommandDescription = "DocRAG — Documentation Ingestion CLI";
+const string IngestCommandName = "ingest";
+const string IngestCommandDescription = "Ingest a documentation library";
+const string RootUrlOptionName = "--root-url";
+const string RootUrlOptionDescription = "Root URL to crawl";
+const string LibraryIdOptionName = "--library-id";
+const string UniqueLibraryIdDescription = "Unique library identifier";
+const string VersionOptionName = "--version";
+const string VersionStringDescription = "Version string";
+const string HintOptionName = "--hint";
+const string HintOptionDescription = "Library description hint";
+const string AllowedOptionName = "--allowed";
+const string AllowedOptionDescription = "Allowed URL patterns (regex)";
+const string ExcludedOptionName = "--excluded";
+const string ExcludedOptionDescription = "Excluded URL patterns (regex)";
+const string MaxPagesOptionName = "--max-pages";
+const string DelayOptionName = "--delay";
+const string DelayOptionDescription = "Delay between fetches in ms";
+const string ListCommandName = "list";
+const string ListAllLibrariesDescription = "List all ingested libraries";
+const string StatusCommandName = "status";
+const string StatusCommandDescription = "Show ingestion status for a library";
+const string LibraryIdDescription = "Library identifier";
+const string DryrunCommandName = "dryrun";
+const string DryrunCommandDescription = "Dry-run a scrape — fetch pages but store nothing";
+const string ReclassifyCommandName = "reclassify";
+const string ReclassifyCommandDescription = "Run the LLM classifier over existing pages still marked Unclassified, without re-scraping. Updates page records and chunk categories in MongoDB.";
+const string ReclassifyLibraryIdDescription = "Library to reclassify (omit for all libraries)";
+const string AllOptionName = "--all";
+const string ReclassifyAllDescription = "Reclassify ALL pages, even ones already classified";
+const string InspectCommandName = "inspect";
+const string InspectCommandDescription = "Load a single page and report its link/sidebar structure";
+const string UrlOptionName = "--url";
+const string UrlOptionDescription = "URL to inspect";
+const string CollapsedPropertyName = "collapsed";
+const string SidebarsPropertyName = "sidebars";
+const string IdPropertyName = "id";
+const string ClassNamePropertyName = "className";
+const string SamplesPropertyName = "samples";
+const string LinksByHostPropertyName = "linksByHost";
+const string ProfileCommandName = "profile";
+const string ProfileCommandDescription = "Show or switch MongoDB connection profiles";
+const string ListAvailableProfilesDescription = "List available profiles";
+const string MongoDbProfileEnvVar = "DOCRAG_MONGODB_PROFILE";
+const string ActiveMarker = " ←";
+const string ScanCommandName = "scan";
+const string ScanCommandDescription = "Scan project dependencies and index documentation";
+const string PathOptionName = "--path";
+const string PathOptionDescription = "Path to project root, .sln, .csproj, package.json, or requirements.txt";
+const string ProfileOptionName = "--profile";
+const string ProfileOptionDescription = "Database profile name";
+const string QueuedStatus = "queued";
+const string FailedStatus = "failed";
+
+#endregion
 // Build configuration
 var configuration = new ConfigurationBuilder()
-                    .AddJsonFile("appsettings.json", optional: true)
-                    .AddEnvironmentVariables("DOCRAG_")
+                    .AddJsonFile(AppSettingsFile, optional: true)
+                    .AddEnvironmentVariables(EnvironmentVariablePrefix)
                     .Build();
 
 // Build DI container
@@ -56,15 +120,15 @@ services.AddSingleton<IScrapeJobQueue>(sp =>
                                       );
 
 // HTTP clients for package registry APIs
-services.AddHttpClient("NuGet")
+services.AddHttpClient(NuGetClientName)
         .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                                                       {
                                                           AutomaticDecompression = DecompressionMethods.All
                                                       }
                                            );
-services.AddHttpClient("npm");
-services.AddHttpClient("PyPI");
-services.AddHttpClient("DocUrlProbe");
+services.AddHttpClient(NpmClientName);
+services.AddHttpClient(PyPiClientName);
+services.AddHttpClient(DocUrlProbeClientName);
 
 // Shared utilities
 services.AddSingleton<CommonDocUrlPatterns>();
@@ -91,21 +155,21 @@ services.AddSingleton<DependencyIndexer>();
 var provider = services.BuildServiceProvider();
 
 // Root command
-var rootCommand = new RootCommand("DocRAG — Documentation Ingestion CLI");
+var rootCommand = new RootCommand(RootCommandDescription);
 
 // ingest command
-var ingestCommand = new Command("ingest", "Ingest a documentation library");
-var rootUrlOption = new Option<string>("--root-url", "Root URL to crawl") { IsRequired = true };
-var libraryIdOption = new Option<string>("--library-id", "Unique library identifier") { IsRequired = true };
-var versionOption = new Option<string>("--version", "Version string") { IsRequired = true };
-var hintOption = new Option<string>("--hint", "Library description hint") { IsRequired = true };
-var allowedOption = new Option<string[]>("--allowed", "Allowed URL patterns (regex)")
+var ingestCommand = new Command(IngestCommandName, IngestCommandDescription);
+var rootUrlOption = new Option<string>(RootUrlOptionName, RootUrlOptionDescription) { IsRequired = true };
+var libraryIdOption = new Option<string>(LibraryIdOptionName, UniqueLibraryIdDescription) { IsRequired = true };
+var versionOption = new Option<string>(VersionOptionName, VersionStringDescription) { IsRequired = true };
+var hintOption = new Option<string>(HintOptionName, HintOptionDescription) { IsRequired = true };
+var allowedOption = new Option<string[]>(AllowedOptionName, AllowedOptionDescription)
                         { IsRequired = true, AllowMultipleArgumentsPerToken = true };
-var excludedOption = new Option<string[]>("--excluded", "Excluded URL patterns (regex)")
+var excludedOption = new Option<string[]>(ExcludedOptionName, ExcludedOptionDescription)
                          { AllowMultipleArgumentsPerToken = true };
-var maxPagesOption = new Option<int>("--max-pages", () => 0, "Max pages to crawl (0 = unlimited)");
+var maxPagesOption = new Option<int>(MaxPagesOptionName, () => 0, "Max pages to crawl (0 = unlimited)");
 const int DefaultFetchDelayMs = 1000;
-var delayOption = new Option<int>("--delay", () => DefaultFetchDelayMs, "Delay between fetches in ms");
+var delayOption = new Option<int>(DelayOptionName, () => DefaultFetchDelayMs, DelayOptionDescription);
 
 ingestCommand.AddOption(rootUrlOption);
 ingestCommand.AddOption(libraryIdOption);
@@ -165,7 +229,7 @@ ingestCommand.SetHandler(async (rootUrl,
                         );
 
 // list command
-var listCommand = new Command("list", "List all ingested libraries");
+var listCommand = new Command(ListCommandName, ListAllLibrariesDescription);
 listCommand.SetHandler(async () =>
                        {
                            var repo = provider.GetRequiredService<ILibraryRepository>();
@@ -184,8 +248,8 @@ listCommand.SetHandler(async () =>
                       );
 
 // status command
-var statusCommand = new Command("status", "Show ingestion status for a library");
-var statusLibOption = new Option<string>("--library-id", "Library identifier") { IsRequired = true };
+var statusCommand = new Command(StatusCommandName, StatusCommandDescription);
+var statusLibOption = new Option<string>(LibraryIdOptionName, LibraryIdDescription) { IsRequired = true };
 statusCommand.AddOption(statusLibOption);
 statusCommand.SetHandler(async libraryId =>
                          {
@@ -214,7 +278,7 @@ statusCommand.SetHandler(async libraryId =>
                         );
 
 // dryrun command
-var dryrunCommand = new Command("dryrun", "Dry-run a scrape — fetch pages but store nothing");
+var dryrunCommand = new Command(DryrunCommandName, DryrunCommandDescription);
 dryrunCommand.AddOption(rootUrlOption);
 dryrunCommand.AddOption(allowedOption);
 dryrunCommand.AddOption(excludedOption);
@@ -310,12 +374,11 @@ dryrunCommand.SetHandler(async (rootUrl,
                         );
 
 // reclassify command — re-run LLM classifier over already-ingested pages
-var reclassifyCommand = new Command("reclassify",
-                                    "Run the LLM classifier over existing pages still marked Unclassified, " +
-                                    "without re-scraping. Updates page records and chunk categories in MongoDB."
+var reclassifyCommand = new Command(ReclassifyCommandName,
+                                    ReclassifyCommandDescription
                                    );
-var reclassifyLibOption = new Option<string?>("--library-id", "Library to reclassify (omit for all libraries)");
-var reclassifyAllOption = new Option<bool>("--all", () => false, "Reclassify ALL pages, even ones already classified");
+var reclassifyLibOption = new Option<string?>(LibraryIdOptionName, ReclassifyLibraryIdDescription);
+var reclassifyAllOption = new Option<bool>(AllOptionName, () => false, ReclassifyAllDescription);
 reclassifyCommand.AddOption(reclassifyLibOption);
 reclassifyCommand.AddOption(reclassifyAllOption);
 
@@ -395,8 +458,8 @@ reclassifyCommand.SetHandler(async (libraryId, allPages) =>
                             );
 
 // inspect command — load a single page, dump TOC/sidebar info
-var inspectCommand = new Command("inspect", "Load a single page and report its link/sidebar structure");
-var inspectUrlOption = new Option<string>("--url", "URL to inspect") { IsRequired = true };
+var inspectCommand = new Command(InspectCommandName, InspectCommandDescription);
+var inspectUrlOption = new Option<string>(UrlOptionName, UrlOptionDescription) { IsRequired = true };
 inspectCommand.AddOption(inspectUrlOption);
 inspectCommand.SetHandler(async url =>
                           {
@@ -484,34 +547,34 @@ inspectCommand.SetHandler(async url =>
                               Console.WriteLine();
 
                               Console.WriteLine("Collapsible markers:");
-                              var collapsed = root.GetProperty("collapsed");
+                              var collapsed = root.GetProperty(CollapsedPropertyName);
                               foreach(var prop in collapsed.EnumerateObject())
                                   Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
                               Console.WriteLine();
 
                               Console.WriteLine("Sidebar candidates with >5 links:");
-                              foreach(var sb in root.GetProperty("sidebars").EnumerateArray())
+                              foreach(var sb in root.GetProperty(SidebarsPropertyName).EnumerateArray())
                               {
                                   Console
                                       .WriteLine($"  [{sb.GetProperty("linkCount").GetInt32()} links] {sb.GetProperty("tag").GetString()}" +
-                                                 (sb.GetProperty("id").GetString() is var id &&
+                                                 (sb.GetProperty(IdPropertyName).GetString() is var id &&
                                                   !string.IsNullOrEmpty(id)
                                                       ? $"#{id}"
                                                       : string.Empty) +
-                                                 (sb.GetProperty("className").GetString() is var cls &&
+                                                 (sb.GetProperty(ClassNamePropertyName).GetString() is var cls &&
                                                   !string.IsNullOrEmpty(cls)
                                                       ? $" .{cls.Replace(" ", ".")}"
                                                       : string.Empty)
                                                 );
                                   Console.WriteLine($"    selector hint: {sb.GetProperty("sel").GetString()}");
-                                  foreach(var sample in sb.GetProperty("samples").EnumerateArray())
+                                  foreach(var sample in sb.GetProperty(SamplesPropertyName).EnumerateArray())
                                       Console.WriteLine($"    sample: {sample.GetString()}");
                               }
 
                               Console.WriteLine();
 
                               Console.WriteLine("Links by host:");
-                              foreach(var prop in root.GetProperty("linksByHost").EnumerateObject())
+                              foreach(var prop in root.GetProperty(LinksByHostPropertyName).EnumerateObject())
                                   Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
 
                               await page.CloseAsync();
@@ -520,13 +583,13 @@ inspectCommand.SetHandler(async url =>
                          );
 
 // profile command
-var profileCommand = new Command("profile", "Show or switch MongoDB connection profiles");
+var profileCommand = new Command(ProfileCommandName, ProfileCommandDescription);
 
-var profileListCommand = new Command("list", "List available profiles");
+var profileListCommand = new Command(ListCommandName, ListAvailableProfilesDescription);
 profileListCommand.SetHandler(() =>
                               {
                                   var settings = provider.GetRequiredService<IOptions<DocRagDbSettings>>().Value;
-                                  var activeOverride = Environment.GetEnvironmentVariable("DOCRAG_MONGODB_PROFILE");
+                                  var activeOverride = Environment.GetEnvironmentVariable(MongoDbProfileEnvVar);
                                   (var activeConn, var activeDb) = settings.Resolve();
 
                                   Console.WriteLine($"Active: {activeOverride ?? settings.ActiveProfile ?? "(direct)"}"
@@ -545,7 +608,7 @@ profileListCommand.SetHandler(() =>
                                           var isActive = name.Equals(activeOverride ?? settings.ActiveProfile,
                                                                      StringComparison.OrdinalIgnoreCase
                                                                     );
-                                          var marker = isActive ? " ←" : string.Empty;
+                                          var marker = isActive ? ActiveMarker : string.Empty;
                                           Console
                                               .WriteLine($"  {name}: {profile.ConnectionString} / {profile.DatabaseName}{marker}"
                                                         );
@@ -564,11 +627,11 @@ profileListCommand.SetHandler(() =>
 profileCommand.AddCommand(profileListCommand);
 
 // scan command — scan project dependencies and index documentation
-var scanCommand = new Command("scan", "Scan project dependencies and index documentation");
+var scanCommand = new Command(ScanCommandName, ScanCommandDescription);
 var scanPathOption =
-    new Option<string>("--path", "Path to project root, .sln, .csproj, package.json, or requirements.txt")
+    new Option<string>(PathOptionName, PathOptionDescription)
         { IsRequired = true };
-var scanProfileOption = new Option<string?>("--profile", "Database profile name");
+var scanProfileOption = new Option<string?>(ProfileOptionName, ProfileOptionDescription);
 scanCommand.AddOption(scanPathOption);
 scanCommand.AddOption(scanProfileOption);
 
@@ -588,7 +651,7 @@ scanCommand.SetHandler(async (path, profile) =>
                            Console.WriteLine($"Resolution failed:         {report.ResolutionFailed}");
 
                            var queuedPackages = report.Packages
-                                                      .Where(p => p.Status == "queued")
+                                                      .Where(p => p.Status == QueuedStatus)
                                                       .ToList();
 
                            if (queuedPackages.Count > 0)
@@ -601,7 +664,7 @@ scanCommand.SetHandler(async (path, profile) =>
                            }
 
                            var failedPackages = report.Packages
-                                                      .Where(p => p.Status == "failed")
+                                                      .Where(p => p.Status == FailedStatus)
                                                       .ToList();
 
                            if (failedPackages.Count > 0)

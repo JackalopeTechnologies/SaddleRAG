@@ -6,6 +6,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using DocRAG.Core.Enums;
 using DocRAG.Database.Repositories;
 using DocRAG.Ingestion;
 using DocRAG.Ingestion.Scanning;
@@ -68,7 +69,7 @@ public static class ScrapeDocsTools
         {
             var cached = new
                              {
-                                 Status = "AlreadyCached",
+                                 Status = StatusAlreadyCached,
                                  LibraryId = libraryId,
                                  Version = version,
                                  Message = $"Documentation for {libraryId} v{version} is already indexed " +
@@ -90,7 +91,7 @@ public static class ScrapeDocsTools
             var response = new
                                {
                                    JobId = jobId,
-                                   Status = "Queued",
+                                   Status = nameof(ScrapeJobStatus.Queued),
                                    LibraryId = libraryId,
                                    Version = version,
                                    Message =
@@ -139,9 +140,9 @@ public static class ScrapeDocsTools
         {
             var notFound = new
                                {
-                                   Status = "NotFound",
+                                   Status = StatusNotFound,
                                    Message = $"No previous scrape job found for {libraryId} v{version}. " +
-                                             "Use scrape_docs or scrape_library to start a new scrape."
+                                             StartNewScrapeMessage
                                };
             json = JsonSerializer.Serialize(notFound, new JsonSerializerOptions { WriteIndented = true });
         }
@@ -152,7 +153,7 @@ public static class ScrapeDocsTools
             var response = new
                                {
                                    JobId = jobId,
-                                   Status = "Queued",
+                                   Status = nameof(ScrapeJobStatus.Queued),
                                    LibraryId = libraryId,
                                    Version = version,
                                    PreviousJobId = previousJob.Id,
@@ -191,5 +192,8 @@ public static class ScrapeDocsTools
         return json;
     }
 
+    private const string StatusAlreadyCached = "AlreadyCached";
+    private const string StatusNotFound = "NotFound";
+    private const string StartNewScrapeMessage = "Use scrape_docs or scrape_library to start a new scrape.";
     private const int DefaultMaxPages = 0;
 }
