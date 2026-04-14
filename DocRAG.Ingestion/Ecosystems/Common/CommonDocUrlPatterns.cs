@@ -120,6 +120,8 @@ public class CommonDocUrlPatterns
     private const string PatternSource = "pattern";
     private const string NoneSource = "none";
 
+    private const string GitHubDomainPattern = @"github\.com";
+
     private static readonly Regex smGitHubPattern =
-        new Regex(@"github\.com", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        new Regex(GitHubDomainPattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
 }

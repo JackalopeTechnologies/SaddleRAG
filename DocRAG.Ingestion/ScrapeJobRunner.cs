@@ -84,7 +84,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
         {
             jobRecord.Status = ScrapeJobStatus.Running;
             jobRecord.StartedAt = DateTime.UtcNow;
-            jobRecord.PipelineState = "Starting";
+            jobRecord.PipelineState = PipelineStateStarting;
             await mJobRepository.UpsertAsync(jobRecord);
 
             mLogger.LogInformation("Running scrape job {JobId} for {LibraryId} v{Version}",
@@ -117,7 +117,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
             await ReloadIndexForLibraryAsync(jobRecord.Profile, jobRecord.Job.LibraryId, jobRecord.Job.Version);
 
             jobRecord.Status = ScrapeJobStatus.Completed;
-            jobRecord.PipelineState = "Completed";
+            jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
             jobRecord.CompletedAt = DateTime.UtcNow;
             await mJobRepository.UpsertAsync(jobRecord);
 
@@ -129,7 +129,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
             jobRecord.Status = ScrapeJobStatus.Failed;
             jobRecord.ErrorMessage = ex.Message;
-            jobRecord.PipelineState = "Failed";
+            jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
             jobRecord.CompletedAt = DateTime.UtcNow;
             await mJobRepository.UpsertAsync(jobRecord);
         }
@@ -186,6 +186,8 @@ public class ScrapeJobRunner : IScrapeJobQueue
                                libraries.Count
                               );
     }
+
+    private const string PipelineStateStarting = "Starting";
 
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> smJobLocks =
         new ConcurrentDictionary<string, SemaphoreSlim>();

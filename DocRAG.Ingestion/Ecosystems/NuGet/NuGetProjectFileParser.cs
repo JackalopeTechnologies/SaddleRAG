@@ -78,9 +78,9 @@ public class NuGetProjectFileParser : IProjectFileParser
         var doc = XDocument.Parse(content);
 
         var csprojPaths = doc.Descendants()
-                             .Where(e => string.Equals(e.Name.LocalName, "Project", StringComparison.OrdinalIgnoreCase))
-                             .Select(e => e.Attribute("Path")?.Value ?? string.Empty)
-                             .Where(p => p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                             .Where(e => string.Equals(e.Name.LocalName, ProjectElement, StringComparison.OrdinalIgnoreCase))
+                             .Select(e => e.Attribute(PathAttribute)?.Value ?? string.Empty)
+                             .Where(p => p.EndsWith(CsprojExtension, StringComparison.OrdinalIgnoreCase))
                              .Select(p => Path.GetFullPath(Path.Combine(baseDir,
                                                                         p.Replace(oldChar: '\\',
                                                                                  Path.DirectorySeparatorChar
@@ -140,4 +140,8 @@ public class NuGetProjectFileParser : IProjectFileParser
         new Regex(@"Project\(""\{[^}]+\}""\)\s*=\s*""[^""]*"",\s*""([^""]*\.csproj)""",
                   RegexOptions.IgnoreCase | RegexOptions.Compiled
                  );
+
+    private const string ProjectElement = "Project";
+    private const string PathAttribute = "Path";
+    private const string CsprojExtension = ".csproj";
 }

@@ -55,9 +55,17 @@ public static class ScrapeJobFactory
     private const int DefaultSameHostDepth = 5;
     private const int DefaultOffSiteDepth = 1;
 
+    private const string ExcludeBlog = @"/blog/";
+    private const string ExcludePricing = @"/pricing/";
+    private const string ExcludeLogin = @"/login/";
+    private const string ExcludeSearch = @"/search";
+    private const string ExcludeAccount = @"/account/";
+    private const string ExcludeCart = @"/cart/";
+    private const string ExcludeMailto = @"mailto:";
+
     private static readonly string[] smDefaultExcludedPatterns =
         [
-            @"/blog/", @"/pricing/", @"/login/", @"/search",
-            @"/account/", @"/cart/", @"mailto:", @"#"
+            ExcludeBlog, ExcludePricing, ExcludeLogin, ExcludeSearch,
+            ExcludeAccount, ExcludeCart, ExcludeMailto, @"#"
         ];
 }
