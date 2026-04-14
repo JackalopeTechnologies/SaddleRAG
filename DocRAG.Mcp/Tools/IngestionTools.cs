@@ -6,6 +6,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using DocRAG.Core.Enums;
 using DocRAG.Core.Models;
 using DocRAG.Database.Repositories;
 using DocRAG.Ingestion;
@@ -127,7 +128,7 @@ public static class IngestionTools
         var response = new
                            {
                                JobId = jobId,
-                               Status = "Queued",
+                               Status = nameof(ScrapeJobStatus.Queued),
                                Message = $"Scrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
                            };
 

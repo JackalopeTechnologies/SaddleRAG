@@ -111,7 +111,7 @@ public class IngestionOrchestrator
                                Job = job,
                                Profile = profile
                            };
-        progress.PipelineState = "Running";
+        progress.PipelineState = nameof(ScrapeJobStatus.Running);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
@@ -148,7 +148,7 @@ public class IngestionOrchestrator
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
             mLogger.LogError(ex, "Pipeline failed for {LibraryId} v{Version}", job.LibraryId, job.Version);
-            progress.PipelineState = "Failed";
+            progress.PipelineState = nameof(ScrapeJobStatus.Failed);
             progress.ErrorMessage = ex.Message;
             onProgress?.Invoke(progress);
             throw;
@@ -157,7 +157,7 @@ public class IngestionOrchestrator
         // Update library metadata
         await UpdateLibraryMetadataAsync(job, progress, ct);
 
-        progress.PipelineState = "Completed";
+        progress.PipelineState = nameof(ScrapeJobStatus.Completed);
         onProgress?.Invoke(progress);
 
         mLogger.LogInformation("Streaming ingestion complete for {LibraryId} v{Version}: {Pages} pages, {Chunks} chunks searchable",

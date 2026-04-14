@@ -5,6 +5,7 @@
 #region Usings
 
 using System.Diagnostics;
+using DocRAG.Core.Enums;
 using DocRAG.Core.Interfaces;
 using DocRAG.Core.Models;
 using DocRAG.Database;
@@ -36,7 +37,7 @@ public sealed class McpWarmupService : BackgroundService
         var startupSw = Stopwatch.StartNew();
         var stepSw = Stopwatch.StartNew();
 
-        mWarmupState.MarkStarted("Starting");
+        mWarmupState.MarkStarted(PhaseStarting);
         mLogger.LogInformation("[Warmup] T+{Sec:F1}s - Starting", startupSw.Elapsed.TotalSeconds);
 
         try
@@ -63,7 +64,7 @@ public sealed class McpWarmupService : BackgroundService
                                                     stoppingToken
                                                    );
 
-            mWarmupState.MarkPhase("MongoDB profiles discovered");
+            mWarmupState.MarkPhase(PhaseMongoDbProfilesDiscovered);
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - MongoDB profiles discovered",
                                    startupSw.Elapsed.TotalSeconds,
                                    stepSw.ElapsedMilliseconds
@@ -71,7 +72,7 @@ public sealed class McpWarmupService : BackgroundService
 
             stepSw.Restart();
             await bootstrapper.BootstrapAsync(requiredModels.ToList(), stoppingToken);
-            mWarmupState.MarkPhase("Ollama bootstrap finished");
+            mWarmupState.MarkPhase(PhaseOllamaBootstrapFinished);
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - Ollama bootstrap finished",
                                    startupSw.Elapsed.TotalSeconds,
                                    stepSw.ElapsedMilliseconds
@@ -81,7 +82,7 @@ public sealed class McpWarmupService : BackgroundService
             foreach(var profile in profileNames)
                 await LoadChunksForProfileAsync(profile, repositoryFactory, vectorSearch, stoppingToken);
 
-            mWarmupState.MarkPhase("Vector indices loaded");
+            mWarmupState.MarkPhase(PhaseVectorIndicesLoaded);
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - Vector indices loaded",
                                    startupSw.Elapsed.TotalSeconds,
                                    stepSw.ElapsedMilliseconds
@@ -90,21 +91,21 @@ public sealed class McpWarmupService : BackgroundService
             try
             {
                 stepSw.Restart();
-                await embeddingProvider.EmbedAsync(["warmup"], stoppingToken);
+                await embeddingProvider.EmbedAsync([WarmupProbeText], stoppingToken);
                 mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - nomic-embed-text warm",
                                        startupSw.Elapsed.TotalSeconds,
                                        stepSw.ElapsedMilliseconds
                                       );
 
                 stepSw.Restart();
-                await reRanker.ReRankAsync("warmup", [], maxResults: 1, stoppingToken);
+                await reRanker.ReRankAsync(WarmupProbeText, [], maxResults: 1, stoppingToken);
                 mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - qwen3:1.7b warm",
                                        startupSw.Elapsed.TotalSeconds,
                                        stepSw.ElapsedMilliseconds
                                       );
 
                 stepSw.Restart();
-                var warmupEmbedding = (await embeddingProvider.EmbedAsync(["warmup search"], stoppingToken))[0];
+                var warmupEmbedding = (await embeddingProvider.EmbedAsync([WarmupSearchProbeText], stoppingToken))[0];
                 var warmupFilter = new VectorSearchFilter { Profile = null };
                 await vectorSearch.SearchAsync(warmupEmbedding, warmupFilter, maxResults: 1, stoppingToken);
                 mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - Full pipeline warm",
@@ -117,17 +118,17 @@ public sealed class McpWarmupService : BackgroundService
                 mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Warmup probe failed", startupSw.Elapsed.TotalSeconds);
             }
 
-            mWarmupState.MarkCompleted("Completed");
+            mWarmupState.MarkCompleted(nameof(ScrapeJobStatus.Completed));
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s - Completed", startupSw.Elapsed.TotalSeconds);
         }
         catch(OperationCanceledException) when(stoppingToken.IsCancellationRequested)
         {
-            mWarmupState.MarkFailed("Canceled", "Warmup canceled during shutdown.");
+            mWarmupState.MarkFailed(PhaseCanceled, WarmupCanceledMessage);
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s - Canceled", startupSw.Elapsed.TotalSeconds);
         }
         catch(Exception ex)
         {
-            mWarmupState.MarkFailed("Failed", ex.Message);
+            mWarmupState.MarkFailed(nameof(ScrapeJobStatus.Failed), ex.Message);
             mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Failed", startupSw.Elapsed.TotalSeconds);
         }
     }
@@ -218,4 +219,13 @@ public sealed class McpWarmupService : BackgroundService
 
         return distinctProfiles;
     }
+
+    private const string PhaseStarting = "Starting";
+    private const string PhaseMongoDbProfilesDiscovered = "MongoDB profiles discovered";
+    private const string PhaseOllamaBootstrapFinished = "Ollama bootstrap finished";
+    private const string PhaseVectorIndicesLoaded = "Vector indices loaded";
+    private const string PhaseCanceled = "Canceled";
+    private const string WarmupProbeText = "warmup";
+    private const string WarmupSearchProbeText = "warmup search";
+    private const string WarmupCanceledMessage = "Warmup canceled during shutdown.";
 }

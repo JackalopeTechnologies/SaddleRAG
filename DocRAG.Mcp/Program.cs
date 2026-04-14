@@ -53,11 +53,23 @@ using Serilog.Events;
 
 
 
+const string AppName = "DocRAG";
+const string LogSubdirectory = "logs";
+const string MicrosoftAspNetCoreNamespace = "Microsoft.AspNetCore";
+const string LogFileNamePattern = "docrag-.log";
+const string HttpClientNuGet = "NuGet";
+const string HttpClientNpm = "npm";
+const string HttpClientPyPi = "PyPI";
+const string HttpClientDocUrlProbe = "DocUrlProbe";
+const string KestrelHttpsEndpointKey = "Kestrel:Endpoints:Https:Url";
+const string HealthEndpointPath = "/health";
+const string HealthyStatus = "Healthy";
+
 var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
 
-                                "DocRAG",
+                                AppName,
 
-                                "logs"
+                                LogSubdirectory
 
                                );
 
@@ -69,11 +81,11 @@ Log.Logger = new LoggerConfiguration()
 
              .MinimumLevel.Information()
 
-             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+             .MinimumLevel.Override(MicrosoftAspNetCoreNamespace, LogEventLevel.Warning)
 
              .WriteTo.Console()
 
-             .WriteTo.File(Path.Combine(logDirectory, "docrag-.log"),
+             .WriteTo.File(Path.Combine(logDirectory, LogFileNamePattern),
 
                            rollingInterval: RollingInterval.Day,
 
@@ -84,8 +96,6 @@ Log.Logger = new LoggerConfiguration()
                           )
 
              .CreateLogger();
-
-
 
 const string McpEndpointPattern = "/mcp";
 
@@ -177,7 +187,7 @@ builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
 
 // HTTP clients for package registry APIs
 
-builder.Services.AddHttpClient("NuGet")
+builder.Services.AddHttpClient(HttpClientNuGet)
 
        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 
@@ -189,11 +199,11 @@ builder.Services.AddHttpClient("NuGet")
 
                                           );
 
-builder.Services.AddHttpClient("npm");
+builder.Services.AddHttpClient(HttpClientNpm);
 
-builder.Services.AddHttpClient("PyPI");
+builder.Services.AddHttpClient(HttpClientPyPi);
 
-builder.Services.AddHttpClient("DocUrlProbe");
+builder.Services.AddHttpClient(HttpClientDocUrlProbe);
 
 
 
@@ -263,7 +273,7 @@ builder.Services
 
                     )
 
-       .WithHttpTransport()
+       .WithHttpTransport(t => t.Stateless = true)
 
        .WithToolsFromAssembly();
 
@@ -315,7 +325,7 @@ app.Use(async (context, next) =>
 
 // HTTPS redirection â€” enabled only when an HTTPS endpoint is configured
 
-var httpsEndpointUrl = app.Configuration["Kestrel:Endpoints:Https:Url"];
+var httpsEndpointUrl = app.Configuration[KestrelHttpsEndpointKey];
 
 if (!string.IsNullOrWhiteSpace(httpsEndpointUrl))
 
@@ -329,13 +339,13 @@ if (!string.IsNullOrWhiteSpace(httpsEndpointUrl))
 
 // Health check
 
-app.MapGet("/health",
+app.MapGet(HealthEndpointPath,
 
            (McpWarmupState warmupState) => Results.Ok(new
 
                                                           {
 
-                                                              Status = "Healthy",
+                                                              Status = HealthyStatus,
 
                                                               WarmupStatus = warmupState.Status,
 
