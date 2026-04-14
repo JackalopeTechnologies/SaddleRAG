@@ -41,7 +41,7 @@ public static class DiagnosticTools
         string json;
 
         if (logFile == null)
-            json = JsonSerializer.Serialize(new { Error = "No log files found." }, smJsonOptions);
+            json = JsonSerializer.Serialize(new { Error = NoLogFilesFoundMessage }, smJsonOptions);
         else
         {
             // Read with FileShare.ReadWrite so we don't conflict with Serilog's writer
@@ -77,7 +77,7 @@ public static class DiagnosticTools
         if (Directory.Exists(logDirectory))
         {
             result = Directory
-                     .GetFiles(logDirectory, "docrag-*.log")
+                     .GetFiles(logDirectory, LogFileSearchPattern)
                      .OrderByDescending(f => f)
                      .FirstOrDefault();
         }
@@ -101,6 +101,8 @@ public static class DiagnosticTools
         return lines;
     }
 
+    private const string NoLogFilesFoundMessage = "No log files found.";
+    private const string LogFileSearchPattern = "docrag-*.log";
     private const int DefaultLineCount = 50;
     private const int MaxLineCount = 500;
 

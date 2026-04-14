@@ -324,12 +324,13 @@ public static class SearchTools
         var error = new
                         {
                             Error = $"Library '{library}' not found. Use list_libraries to see available libraries, " +
-                                    "or scrape_docs/index_project_dependencies to index new ones."
+                                    IndexNewLibrariesHint
                         };
         var result = JsonSerializer.Serialize(error, smJsonOptions);
         return result;
     }
 
+    private const string IndexNewLibrariesHint = "or scrape_docs/index_project_dependencies to index new ones.";
     private const int CandidateMultiplier = 2;
     private const int ReRankMinCandidates = 6;
     private const int MaxOverviewResults = 5;

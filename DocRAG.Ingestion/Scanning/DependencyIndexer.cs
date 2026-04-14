@@ -446,8 +446,15 @@ public class DependencyIndexer
     private const string StatusFailed = "failed";
     private const string StatusFiltered = "filtered";
 
+    private const string SkipNodeModules = "node_modules";
+    private const string SkipBin = "bin";
+    private const string SkipObj = "obj";
+    private const string SkipGit = ".git";
+    private const string SkipVs = ".vs";
+    private const string SkipPackages = "packages";
+
     private static readonly string[] smSkippedDirectories =
         [
-            "node_modules", "bin", "obj", ".git", ".vs", "packages"
+            SkipNodeModules, SkipBin, SkipObj, SkipGit, SkipVs, SkipPackages
         ];
 }

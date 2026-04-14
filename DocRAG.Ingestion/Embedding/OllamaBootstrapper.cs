@@ -52,6 +52,17 @@ public class OllamaBootstrapper
     private const int ServicePollDelayMs = 1000;
     private const int ProgressLogInterval = 10;
 
+    private const string InstallOnlyWindowsMessage = "Automatic Ollama installation is only supported on Windows. ";
+    private const string InstallManuallyMessage = "Install Ollama manually from https://ollama.com";
+    private const string InstallCompletedNotFoundMessage = "Ollama installation completed but executable not found. ";
+    private const string TryInstallingManuallyMessage = "Try installing manually from https://ollama.com";
+    private const string PathEnvironmentVariable = "PATH";
+    private const string ProgramsFolderName = "Programs";
+    private const string OllamaFolderName = "Ollama";
+    private const string TempInstallFolderName = "DocRAG_OllamaInstall";
+    private const string InstallerFileName = "OllamaSetup.exe";
+    private const string OllamaCommandName = "ollama";
+
     #region Installation
 
     private async Task EnsureInstalledAsync(CancellationToken ct)
@@ -66,8 +77,8 @@ public class OllamaBootstrapper
 
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                throw new PlatformNotSupportedException("Automatic Ollama installation is only supported on Windows. " +
-                                                        "Install Ollama manually from https://ollama.com"
+                throw new PlatformNotSupportedException(InstallOnlyWindowsMessage +
+                                                        InstallManuallyMessage
                                                        );
             }
 
@@ -76,8 +87,8 @@ public class OllamaBootstrapper
             ollamaPath = FindOllamaExecutable();
             if (ollamaPath == null)
             {
-                throw new InvalidOperationException("Ollama installation completed but executable not found. " +
-                                                    "Try installing manually from https://ollama.com"
+                throw new InvalidOperationException(InstallCompletedNotFoundMessage +
+                                                    TryInstallingManuallyMessage
                                                    );
             }
 
@@ -89,7 +100,7 @@ public class OllamaBootstrapper
     {
         string? result = null;
 
-        string[] pathDirs = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
+        string[] pathDirs = Environment.GetEnvironmentVariable(PathEnvironmentVariable)?.Split(Path.PathSeparator) ?? [];
         foreach(string dir in pathDirs)
         {
             if (result == null)
@@ -105,12 +116,12 @@ public class OllamaBootstrapper
             string[] commonPaths =
                 [
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                 "Programs",
-                                 "Ollama",
+                                 ProgramsFolderName,
+                                 OllamaFolderName,
                                  OllamaExeName
                                 ),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                                 "Ollama",
+                                 OllamaFolderName,
                                  OllamaExeName
                                 ),
                     @"C:\Program Files\Ollama\ollama.exe"
@@ -128,9 +139,9 @@ public class OllamaBootstrapper
 
     private async Task DownloadAndInstallWindowsAsync(CancellationToken ct)
     {
-        string tempDir = Path.Combine(Path.GetTempPath(), "DocRAG_OllamaInstall");
+        string tempDir = Path.Combine(Path.GetTempPath(), TempInstallFolderName);
         Directory.CreateDirectory(tempDir);
-        string installerPath = Path.Combine(tempDir, "OllamaSetup.exe");
+        string installerPath = Path.Combine(tempDir, InstallerFileName);
 
         try
         {
@@ -185,10 +196,10 @@ public class OllamaBootstrapper
 
     private static void RefreshPathEnvironment()
     {
-        string machinePath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine) ??
+        string machinePath = Environment.GetEnvironmentVariable(PathEnvironmentVariable, EnvironmentVariableTarget.Machine) ??
                              string.Empty;
-        string userPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? string.Empty;
-        Environment.SetEnvironmentVariable("PATH", $"{machinePath};{userPath}");
+        string userPath = Environment.GetEnvironmentVariable(PathEnvironmentVariable, EnvironmentVariableTarget.User) ?? string.Empty;
+        Environment.SetEnvironmentVariable(PathEnvironmentVariable, $"{machinePath};{userPath}");
     }
 
     #endregion
@@ -209,7 +220,7 @@ public class OllamaBootstrapper
     {
         mLogger.LogInformation("Ollama not reachable, attempting to start...");
 
-        string ollamaPath = FindOllamaExecutable() ?? "ollama";
+        string ollamaPath = FindOllamaExecutable() ?? OllamaCommandName;
 
         try
         {

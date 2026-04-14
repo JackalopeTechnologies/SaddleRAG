@@ -1,4 +1,4 @@
-// // NpmRegistryClient.cs
+﻿// // NpmRegistryClient.cs
 // // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // // Use subject to the MIT License.
 
@@ -30,7 +30,7 @@ public sealed class NpmRegistryClient : IPackageRegistryClient
     /// <summary>
     ///     The package ecosystem identifier for npm.
     /// </summary>
-    public string EcosystemId => "npm";
+    public string EcosystemId => EcosystemIdValue;
 
     /// <summary>
     ///     Fetches metadata for the specified npm package and version.
@@ -67,11 +67,11 @@ public sealed class NpmRegistryClient : IPackageRegistryClient
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        string homepage = root.TryGetProperty("homepage", out var homepageProp)
+        string homepage = root.TryGetProperty(JsonFieldHomepage, out var homepageProp)
                               ? homepageProp.GetString() ?? string.Empty
                               : string.Empty;
 
-        string description = root.TryGetProperty("description", out var descProp)
+        string description = root.TryGetProperty(JsonFieldDescription, out var descProp)
                                  ? descProp.GetString() ?? string.Empty
                                  : string.Empty;
 
@@ -81,7 +81,7 @@ public sealed class NpmRegistryClient : IPackageRegistryClient
                    {
                        PackageId = packageId,
                        Version = version,
-                       EcosystemId = "npm",
+                       EcosystemId = EcosystemIdValue,
                        ProjectUrl = homepage,
                        RepositoryUrl = repoUrl,
                        Description = description
@@ -92,12 +92,12 @@ public sealed class NpmRegistryClient : IPackageRegistryClient
     {
         var raw = string.Empty;
 
-        if (root.TryGetProperty("repository", out var repoProp))
+        if (root.TryGetProperty(JsonFieldRepository, out var repoProp))
         {
             raw = repoProp.ValueKind switch
                 {
                     JsonValueKind.String => repoProp.GetString() ?? string.Empty,
-                    JsonValueKind.Object => repoProp.TryGetProperty("url", out var urlProp)
+                    JsonValueKind.Object => repoProp.TryGetProperty(JsonFieldUrl, out var urlProp)
                                                 ? urlProp.GetString() ?? string.Empty
                                                 : string.Empty,
                     var _ => string.Empty
@@ -110,10 +110,10 @@ public sealed class NpmRegistryClient : IPackageRegistryClient
     private static string NormalizeGitUrl(string url)
     {
         string result = url;
-        result = result.Replace("git+https://", "https://");
-        result = result.Replace("git://", "https://");
+        result = result.Replace(GitPlusHttpsPrefix, HttpsPrefix);
+        result = result.Replace(GitProtocolPrefix, HttpsPrefix);
 
-        if (result.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        if (result.EndsWith(GitSuffix, StringComparison.OrdinalIgnoreCase))
             result = result[..^4];
 
         return result;
@@ -122,5 +122,14 @@ public sealed class NpmRegistryClient : IPackageRegistryClient
     private const string RegistryBase = "https://registry.npmjs.org";
     private const string HttpClientName = "npm";
     private const int TimeoutSeconds = 5;
-    private static readonly char[] smVersionRangePrefixes = ['^', '~', '>', '=', '<'];
+    private static readonly char[] smVersionRangePrefixes = ['^', '~', '>', '=', '<'];
+    private const string EcosystemIdValue = "npm";
+    private const string JsonFieldHomepage = "homepage";
+    private const string JsonFieldDescription = "description";
+    private const string JsonFieldRepository = "repository";
+    private const string JsonFieldUrl = "url";
+    private const string GitPlusHttpsPrefix = "git+https://";
+    private const string HttpsPrefix = "https://";
+    private const string GitProtocolPrefix = "git://";
+    private const string GitSuffix = ".git";
 }
