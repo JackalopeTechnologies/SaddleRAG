@@ -160,6 +160,9 @@ builder.Services.AddDocRagDatabase(builder.Configuration);
 
 builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(OllamaSettings.SectionName));
 
+// Ranking configuration (BM25 weight, ReRank blend weight, ProseMentionThreshold, ReRankerStrategy)
+builder.Services.Configure<DocRAG.Core.Models.RankingSettings>(builder.Configuration.GetSection(DocRAG.Core.Models.RankingSettings.SectionName));
+
 
 
 // Ollama services
@@ -179,6 +182,16 @@ builder.Services.AddSingleton<IReRanker>(sp => sp.GetRequiredService<ToggleableR
 // Classification
 
 builder.Services.AddSingleton<LlmClassifier>();
+
+// Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
+builder.Services.AddSingleton<DocRAG.Ingestion.Recon.LibraryProfileService>();
+builder.Services.AddSingleton<DocRAG.Ingestion.Recon.CliReconFallback>();
+
+// Identifier-aware extractor (consumed by CategoryAwareChunker and rescrub_library)
+builder.Services.AddSingleton<DocRAG.Ingestion.Symbols.SymbolExtractor>();
+
+// Rescrub service (consumed by rescrub_library MCP tool)
+builder.Services.AddSingleton<DocRAG.Ingestion.Recon.RescrubService>();
 
 
 
