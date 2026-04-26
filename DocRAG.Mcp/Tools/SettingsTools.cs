@@ -1,5 +1,5 @@
 // // SettingsTools.cs
-// // Copyright (c) 2012-Present Jackalope Technologies, Inc. and Doug Gerard.
+// // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // // Use subject to the MIT License.
 
 #region Usings
@@ -25,9 +25,12 @@ public static class SettingsTools
 {
     [McpServerTool(Name = "toggle_reranking")]
     [Description("Enable or disable LLM-based re-ranking of search results. " +
-                 "When enabled, search results are re-scored by the local Ollama model " +
-                 "for better relevance (slower). When disabled, results use vector " +
-                 "similarity scores only (faster). Returns the current state.")]
+                 "When enabled, search results are re-scored by the configured strategy " +
+                 "(Off / Llm / CrossEncoder — see RankingSettings.ReRankerStrategy). " +
+                 "Identifier-shaped queries (CamelCase, dotted, callable) skip re-ranking " +
+                 "even when enabled — hybrid scoring already wins on them. " +
+                 "Returns the current state plus the strategy that will actually dispatch."
+                )]
     public static string ToggleReRanking(ToggleableReRanker reRanker,
                                          [Description("true to enable, false to disable, omit to just check current state")]
                                          bool? enabled = null)
@@ -37,7 +40,11 @@ public static class SettingsTools
         if (enabled.HasValue)
             reRanker.Enabled = enabled.Value;
 
-        var response = new { ReRankingEnabled = reRanker.Enabled };
+        var response = new
+                           {
+                               ReRankingEnabled = reRanker.Enabled,
+                               ActiveStrategy = reRanker.ActiveStrategy.ToString()
+                           };
         var result = JsonSerializer.Serialize(response, smJsonOptions);
         return result;
     }
