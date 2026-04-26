@@ -210,7 +210,7 @@
         "run",
         "-p:Platform=x64",
         "--launch-profile",
-        "Dev (Side-by-Side)"
+        "DevSideBySide"
       ],
       "options": {
         "cwd": "${workspaceFolder}"

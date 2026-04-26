@@ -10,17 +10,17 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
-    "Dev (Side-by-Side)": {
+    "DevSideBySide": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
       "applicationUrl": "http://localhost:6101",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "ASPNETCORE_URLS": "http://localhost:6101"
+        "Kestrel__Endpoints__Http__Url": "http://localhost:6101"
       }
     },
-    "Dev (Cross-Encoder)": {
+    "DevCrossEncoder": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
@@ -30,7 +30,7 @@
         "Ranking__ReRankerStrategy": "CrossEncoder"
       }
     },
-    "Dev (Llm Rerank)": {
+    "DevLlmRerank": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
