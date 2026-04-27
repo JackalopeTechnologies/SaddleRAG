@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-27
 **Status:** Draft
-**Scope:** Make the DocRAG MCP tool surface usable by a fresh LLM consumer — fix cold-start dead ends, add visibility into library health, expose rename/delete/cancel, consolidate the two scrape tools, and surface "this URL probably isn't docs" via the existing recon delegation pattern.
+**Scope:** Make the DocRAG MCP tool surface usable by a fresh LLM consumer — fix cold-start dead ends, add visibility into library health, expose rename/delete/cancel, consolidate the two scrape tools, surface "this URL probably isn't docs" via the existing recon delegation pattern, and collapse redundant listing/resume tools.
 
 ---
 
@@ -23,7 +23,7 @@ The goal of this branch is to fix all six in one focused tool-surface pass witho
 
 ## Solution
 
-Six new tools, six modified tools, one ingestion-side detector, two new `LibraryVersion` fields, two new `ScrapeJob` fields. The work splits into six tracks that share data model touch-points but are otherwise independent and can be implemented in parallel.
+Eight new tools, six removed tools (one replaces four; two collapse via flag/removal), four tools with modified behavior, one ingestion-side detector, two new `LibraryVersion` fields, two new `ScrapeJob` fields. Net change to the MCP surface is **+2 tools**. The work splits into seven tracks that share data model touch-points but are otherwise independent and can be implemented in parallel.
 
 ### Track A — Cold-start entry points
 
@@ -147,7 +147,7 @@ Recon-style callback. Drops the suspect chunks, pages, profile, indexes, and bm2
 
 State precedence (most-specific first): `IN_PROGRESS` > `URL_SUSPECT` > existing states (`RECON_NEEDED` / `READY_TO_SCRAPE` / `STALE` / `READY`).
 
-**Modified: `continue_scrape`** refuses on `Suspect=true` libraries. Returns `Status: Refused` with a hint pointing at `submit_url_correction`. The LLM can override by calling `submit_url_correction` first (which clears the flag) or by passing a future `force=true` (out of scope here).
+**Resume refusal on suspect libraries** — `scrape_docs(resume=true)` (the consolidated successor to `continue_scrape`, see Track G) refuses when the target library is `Suspect=true`. Returns `Status: Refused` with a hint pointing at `submit_url_correction`. The LLM can override by calling `submit_url_correction` first (which clears the flag and re-queues with a corrected URL).
 
 **Modified: `rescrub_library`** output includes a `BoundaryHint` field:
 
@@ -188,6 +188,51 @@ CancelledAt: DateTime?         (set when transitioning to Cancelled)
 ```
 
 Plus a new enum value: `ScrapeJobStatus.Cancelled = 4` and matching `PipelineState = "Cancelled"`.
+
+### Track G — Surface consolidation
+
+Two redundant tool clusters are folded down. No data-model changes.
+
+**G.1 — Fold `continue_scrape` into `scrape_docs(resume=true)`**
+
+`scrape_docs` gains:
+
+```
+resume: bool = false
+```
+
+When `resume=true`:
+- `url` becomes optional. If omitted, the system finds the most recent `ScrapeJob` for `(libraryId, version)` and reuses its `RootUrl`, `AllowedUrlPatterns`, and `ExcludedUrlPatterns`.
+- If the caller supplies any of those four args, the supplied value overrides the previous job's value. Useful for "resume but with a wider crawl."
+- The cache check still runs — fully indexed, no `force` → returns `AlreadyCached` (resume becomes a no-op).
+- If no prior job exists for `(libraryId, version)`, returns `Status: NoPriorJob` with a hint pointing at fresh `scrape_docs(url=…)`.
+- If the library is `Suspect=true`, returns `Status: Refused` with a hint pointing at `submit_url_correction`. (Same refusal that Track E originally specified for `continue_scrape`.)
+
+When `resume=false` (default): behavior is current `scrape_docs` behavior.
+
+**Removed: `continue_scrape`.** Track E's `continue_scrape` modifications (refuse on suspect) move to `scrape_docs(resume=true)` instead.
+
+**G.2 — Collapse `list_classes` / `list_enums` / `list_functions` / `list_parameters` into `list_symbols`**
+
+**New tool: `list_symbols(library, kind?, filter?, version?, profile?)`**
+
+```
+library:  string                                         (required)
+kind:     "class" | "enum" | "function" | "parameter"?   (optional; null = all kinds)
+filter:   string?                                        (optional partial-name filter)
+version:  string?                                        (defaults to current)
+profile:  string?
+```
+
+Return shape: `[{ name: string, kind: "class"|"enum"|"function"|"parameter" }]`. Always structured (even when `kind` is specified) so the LLM doesn't need different parsing paths for the two cases.
+
+The four removed tools shared an internal helper (`ListSymbolsByKindAsync`); `list_symbols` becomes that helper's only public entry point.
+
+**Removed: `list_classes`, `list_enums`, `list_functions`, `list_parameters`.** Updates needed in:
+- `LibraryTools.cs` — replace four `[McpServerTool]` methods with one
+- Any internal callers (search/dashboard/health response builders) — switch to direct repository calls instead of the public tool
+
+**Net effect of Track G:** removes five tools, adds one. Combined with the rest of the spec: surface goes from ~30 → ~32 instead of ~36, and the symbol-listing surface gets a single, parameter-discriminated entry instead of four-near-duplicates.
 
 ---
 
@@ -267,14 +312,15 @@ Server: { ChunksProcessed: 800, BoundaryIssueCount: 41, BoundaryIssuePct: 5.1, B
 
 ## Implementation Order
 
-The six tracks share data-model surface but are otherwise independent. Suggested order for the plan:
+The seven tracks share data-model surface but are otherwise independent. Suggested order for the plan:
 
 1. **Track C — Mutations.** Smallest, most isolated. Repository cascade methods + three tools. Lays the groundwork for `submit_url_correction` and `cancel_scrape`'s partial-result cleanup paths to reuse the cascade plumbing.
 2. **Track F — Cancellation.** `ScrapeJobRunner` CTS registry + `cancel_scrape` tool + `LastProgressAt` tracking + `Cancelled` enum value. Independent of Tracks B/E, but its `IN_PROGRESS`-state addition to `start_ingest` will be picked up by Track E. Lands early so the runaway `mongodb.driver` job can be killed before further integration testing.
-3. **Track D — Scrape consolidation.** Touches one tool, one description, one `start_ingest` arg. Fast win, no data-model change.
-4. **Track B — `get_library_health`.** New repo aggregation methods + one tool. Independent of suspect detection (returns `Suspect: false` for everything until Track E lands).
-5. **Track E — URL sanity.** Detector hook in the ingestion pipeline + new state + new tool + `LibraryVersion.Suspect` field. Largest surface but builds on Track C's cascade methods.
-6. **Track A — Cold start.** `get_dashboard_index` aggregates Tracks B, E, and F (stale-running detection), so it lands last. `list_libraries` empty hint is a one-line change anywhere in the order.
+3. **Track G — Surface consolidation.** Pure tool-merge work, no data-model touch. Lands before D so Track D can include `resume=true` plumbing in `scrape_docs` from the start. Splits in two: G.1 (`continue_scrape` → `scrape_docs(resume=true)`) and G.2 (`list_*` → `list_symbols`). Either half can land independently.
+4. **Track D — Scrape consolidation.** Touches one tool, one description, one `start_ingest` arg. Fast win, no data-model change.
+5. **Track B — `get_library_health`.** New repo aggregation methods + one tool. Independent of suspect detection (returns `Suspect: false` for everything until Track E lands).
+6. **Track E — URL sanity.** Detector hook in the ingestion pipeline + new state + new tool + `LibraryVersion.Suspect` field. Largest surface but builds on Track C's cascade methods.
+7. **Track A — Cold start.** `get_dashboard_index` aggregates Tracks B, E, and F (stale-running detection), so it lands last. `list_libraries` empty hint is a one-line change anywhere in the order.
 
 Each track ends with at least one integration test covering the canonical session flow above.
 
