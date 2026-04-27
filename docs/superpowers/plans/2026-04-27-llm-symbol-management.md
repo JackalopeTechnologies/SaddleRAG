@@ -49,9 +49,9 @@
 - Field prefixes: `m` (private instance), `sm` (private static readonly), `ps` (private static), `pm` (public instance).
 - Comments on their own line. XML docs on every public member. File header on every new file:
   ```csharp
-  // // <FileName>.cs
-  // // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
-  // // Use subject to the MIT License.
+  // <FileName>.cs
+  // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+  // Use subject to the MIT License.
   ```
 - File order: enums → delegates → nested types → constructors → properties → fields (readonly first) → interface impls → other members → static fields/constants.
 - Logging: `private static IPenskeLogger Log { get; } = LoggingManager.GetLog<ClassName>();` — but DocRAG uses `ILogger<T>` from `Microsoft.Extensions.Logging` per existing patterns. Match what's already in the file.
