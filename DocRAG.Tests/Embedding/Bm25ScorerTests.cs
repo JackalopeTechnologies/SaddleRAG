@@ -20,7 +20,7 @@ public sealed class Bm25ScorerTests
         var build = Bm25IndexBuilder.Build("lib", "1.0", []);
         var lookup = new InMemoryBm25TermLookup(build);
 
-        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "anything");
+        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "anything", TestContext.Current.CancellationToken);
 
         Assert.Empty(scores);
     }
@@ -37,7 +37,7 @@ public sealed class Bm25ScorerTests
 
         var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
         var lookup = new InMemoryBm25TermLookup(build);
-        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "MoveLinear");
+        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "MoveLinear", TestContext.Current.CancellationToken);
 
         Assert.Equal(2, scores.Count);
         Assert.True(scores.ContainsKey("a"));
@@ -56,7 +56,7 @@ public sealed class Bm25ScorerTests
 
         var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
         var lookup = new InMemoryBm25TermLookup(build);
-        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "homing configuration");
+        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "homing configuration", TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(scores);
         Assert.True(scores["a"] > scores.GetValueOrDefault("b", 0.0));
@@ -74,7 +74,7 @@ public sealed class Bm25ScorerTests
 
         var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
         var lookup = new InMemoryBm25TermLookup(build);
-        var topTwo = await Bm25Scorer.TopNAsync(lookup, build.Stats, "MoveLinear", n: 2);
+        var topTwo = await Bm25Scorer.TopNAsync(lookup, build.Stats, "MoveLinear", n: 2, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(2, topTwo.Count);
         Assert.Contains(topTwo, t => t.ChunkId == "c");
@@ -91,7 +91,7 @@ public sealed class Bm25ScorerTests
 
         var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
         var lookup = new InMemoryBm25TermLookup(build);
-        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "AxisFault.Disabled");
+        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "AxisFault.Disabled", TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(scores);
         Assert.True(scores.ContainsKey("a"));
