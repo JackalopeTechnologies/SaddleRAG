@@ -22,7 +22,7 @@ public sealed class ShardedBm25TermLookupTests
         var lookup = new ShardedBm25TermLookup(fake, "lib", "1.0", ShardCount);
 
         var hotTerm = allShards[2].InlineTerms.Keys.First();
-        await lookup.PreloadAsync([hotTerm]);
+        await lookup.PreloadAsync([hotTerm], TestContext.Current.CancellationToken);
 
         Assert.Single(fake.LoadedShardIndexes);
         Assert.Contains(Bm25IndexBuilder.ShardIndexFor(hotTerm, ShardCount), fake.LoadedShardIndexes);
@@ -36,8 +36,8 @@ public sealed class ShardedBm25TermLookupTests
         var lookup = new ShardedBm25TermLookup(fake, "lib", "1.0", ShardCount);
 
         var term = allShards[1].InlineTerms.Keys.First();
-        await lookup.PreloadAsync([term]);
-        await lookup.PreloadAsync([term]);
+        await lookup.PreloadAsync([term], TestContext.Current.CancellationToken);
+        await lookup.PreloadAsync([term], TestContext.Current.CancellationToken);
 
         Assert.Single(fake.LoadedShardIndexes);
     }
@@ -50,7 +50,7 @@ public sealed class ShardedBm25TermLookupTests
         var lookup = new ShardedBm25TermLookup(fake, "lib", "1.0", ShardCount);
 
         var (term, expectedPostings) = allShards[3].InlineTerms.First();
-        await lookup.PreloadAsync([term]);
+        await lookup.PreloadAsync([term], TestContext.Current.CancellationToken);
 
         var actualPostings = lookup.GetPostings(term);
         Assert.Equal(expectedPostings.Count, actualPostings.Count);
@@ -63,7 +63,7 @@ public sealed class ShardedBm25TermLookupTests
         const int ShardCount = 5;
         var lookup = new ShardedBm25TermLookup(fake, "lib", "1.0", ShardCount);
 
-        await lookup.PreloadAsync(["nonexistent_xyz_term"]);
+        await lookup.PreloadAsync(["nonexistent_xyz_term"], TestContext.Current.CancellationToken);
         var postings = lookup.GetPostings("nonexistent_xyz_term");
 
         Assert.Empty(postings);

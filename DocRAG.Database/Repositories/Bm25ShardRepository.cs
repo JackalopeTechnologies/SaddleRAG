@@ -131,12 +131,12 @@ public class Bm25ShardRepository : IBm25ShardRepository
                                                                                      string term,
                                                                                      CancellationToken ct)
     {
-        IReadOnlyList<Bm25Posting> result = [];
+        IReadOnlyList<Bm25Posting>? result = null;
         if (shard.InlineTerms.TryGetValue(term, out var inline))
             result = inline;
-        else if (shard.ExternalTerms.TryGetValue(term, out var fileId))
+        if (result == null && shard.ExternalTerms.TryGetValue(term, out var fileId))
             result = await DownloadTermPayloadAsync(fileId, ct);
-        return result;
+        return result ?? Array.Empty<Bm25Posting>();
     }
 
     /// <inheritdoc />
