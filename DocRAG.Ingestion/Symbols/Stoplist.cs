@@ -11,21 +11,6 @@ using DocRAG.Core.Models;
 namespace DocRAG.Ingestion.Symbols;
 
 /// <summary>
-///     Result of a profile-aware stoplist check.
-/// </summary>
-public enum StoplistMatch
-{
-    /// <summary>Token was not in any stoplist.</summary>
-    None,
-
-    /// <summary>Token matched the universal Stoplist.</summary>
-    Global,
-
-    /// <summary>Token matched LibraryProfile.Stoplist.</summary>
-    Library
-}
-
-/// <summary>
 ///     Backup filter for the symbol extractor. Words matching the stoplist
 ///     can never be classified as symbols, even if they happen to look
 ///     identifier-shaped. This catches the residue of cases the
