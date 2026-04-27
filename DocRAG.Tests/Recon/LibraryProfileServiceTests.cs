@@ -41,6 +41,31 @@ public sealed class LibraryProfileServiceTests
     }
 
     [Fact]
+    public void BuildDefaultsStoplistToEmpty()
+    {
+        var profile = LibraryProfileService.Build("aerotech-aeroscript",
+                                                  "2025.3",
+                                                  ["AeroScript"],
+                                                  new CasingConventions { Types = "PascalCase" },
+                                                  ["."],
+                                                  ["Foo()"],
+                                                  ["MoveLinear"],
+                                                  canonicalInventoryUrl: null,
+                                                  confidence: 0.85f,
+                                                  source: "calling-llm"
+                                                 );
+
+        Assert.NotNull(profile.Stoplist);
+        Assert.Empty(profile.Stoplist);
+    }
+
+    [Fact]
+    public void CurrentSchemaVersionIsTwoAfterStoplistAddition()
+    {
+        Assert.Equal(2, LibraryProfile.CurrentSchemaVersion);
+    }
+
+    [Fact]
     public void BuildThrowsOnEmptyLibraryId()
     {
         Assert.Throws<ArgumentException>(() =>
