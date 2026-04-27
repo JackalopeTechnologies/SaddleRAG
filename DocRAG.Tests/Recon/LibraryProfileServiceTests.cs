@@ -145,6 +145,52 @@ public sealed class LibraryProfileServiceTests
         Assert.Equal("aerotech-aeroscript/2025.3", saved.Id);
     }
 
+    [Fact]
+    public async Task SaveCarriesForwardStoplistFromPriorVersionWhenEmpty()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        var priorProfile = MakeProfileWithStoplist(version: "1.0", stoplist: ["along", "data"]);
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { priorProfile });
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithStoplist(version: "1.1", stoplist: []);
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "along", "data" }, saved.Stoplist);
+        await repo.Received(1).UpsertAsync(Arg.Is<LibraryProfile>(p => p.Stoplist.SequenceEqual(new[] { "along", "data" })),
+                                           Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveDoesNotOverrideNonEmptyStoplist()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        var priorProfile = MakeProfileWithStoplist(version: "1.0", stoplist: ["along", "data"]);
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { priorProfile });
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithStoplist(version: "1.1", stoplist: ["enumerator"]);
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "enumerator" }, saved.Stoplist);
+    }
+
+    [Fact]
+    public async Task SaveLeavesStoplistEmptyWhenNoPriorVersionExists()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryProfile>());
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithStoplist(version: "1.0", stoplist: []);
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Empty(saved.Stoplist);
+    }
+
     private static LibraryProfile MakeProfile(IReadOnlyList<string> languages,
                                               IReadOnlyList<string> likely,
                                               float confidence,
@@ -163,4 +209,14 @@ public sealed class LibraryProfileServiceTests
                                                 );
         return result;
     }
+
+    private static LibraryProfile MakeProfileWithStoplist(string version, IReadOnlyList<string> stoplist) =>
+        new()
+            {
+                Id = $"aerotech-aeroscript/{version}",
+                LibraryId = "aerotech-aeroscript",
+                Version = version,
+                Source = "test",
+                Stoplist = stoplist
+            };
 }
