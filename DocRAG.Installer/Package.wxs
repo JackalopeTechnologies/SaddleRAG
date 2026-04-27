@@ -168,7 +168,7 @@
             <!-- our package, so the dialog always read literally "File: [1], Directory: -->
             <!-- [9], Size: [6]". Override with a static message; the progress bar still -->
             <!-- advances normally. -->
-            <ProgressText Action="InstallFiles">Copying new files...</ProgressText>
+            <ProgressText Action="InstallFiles" Message="Copying new files..." />
 
             <!-- MongoDB configuration dialog -->
             <Dialog Id="MongoDbDlg" Width="370" Height="270" Title="MongoDB Configuration">
