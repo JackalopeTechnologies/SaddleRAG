@@ -164,6 +164,12 @@
         <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="MCPFOLDER" />
 
         <UI>
+            <!-- Standard InstallFiles ProgressText never substituted Field 1/9/6 in -->
+            <!-- our package, so the dialog always read literally "File: [1], Directory: -->
+            <!-- [9], Size: [6]". Override with a static message; the progress bar still -->
+            <!-- advances normally. -->
+            <ProgressText Action="InstallFiles">Copying new files...</ProgressText>
+
             <!-- MongoDB configuration dialog -->
             <Dialog Id="MongoDbDlg" Width="370" Height="270" Title="MongoDB Configuration">
                 <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
