@@ -29,7 +29,7 @@ public static class IngestTools
     [McpServerTool(Name = "start_ingest")]
     [Description("Single ingestion entrypoint. Inspects what we already know about " +
                  "(library, version) at the given URL and returns one of: " +
-                 "RECON_NEEDED, READY_TO_SCRAPE, PARTIAL, STALE, VERSION_DRIFT, READY. " +
+                 "RECON_NEEDED, READY_TO_SCRAPE, PARTIAL, STALE, VERSION_DRIFT, IN_PROGRESS, READY. " +
                  "The response includes the next tool to call and the parameters to pass " +
                  "so the calling LLM can follow the breadcrumb without remembering the " +
                  "full ingestion workflow."
@@ -56,6 +56,7 @@ public static class IngestTools
 
         var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
         var chunkRepo = repositoryFactory.GetChunkRepository(profile);
+        var scrapeJobRepo = repositoryFactory.GetScrapeJobRepository(profile);
 
         var libraryProfile = await profileRepo.GetAsync(library, version, ct);
         var chunkCount = await chunkRepo.GetChunkCountAsync(library, version, ct);
@@ -64,7 +65,18 @@ public static class IngestTools
         if (chunkCount > 0)
             stale = await chunkRepo.HasStaleChunksAsync(library, version, ParserVersionInfo.Current, ct);
 
-        var response = ResolveStatus(libraryProfile, chunkCount, stale, library, version, url, force);
+        var activeJob = await scrapeJobRepo.GetActiveJobAsync(library, version, ct);
+
+        IngestStatusResponse response;
+        if (activeJob != null)
+        {
+            response = MakeInProgress(library, version, url, activeJob.Id);
+        }
+        else
+        {
+            response = ResolveStatus(libraryProfile, chunkCount, stale, library, version, url, force);
+        }
+
         var json = JsonSerializer.Serialize(response, smJsonOptions);
         return json;
     }
@@ -91,6 +103,21 @@ public static class IngestTools
 
         return response;
     }
+
+    private static IngestStatusResponse MakeInProgress(string library, string version, string url, string jobId) =>
+        new()
+            {
+                Status = IngestStatus.InProgress,
+                LibraryId = library,
+                Version = version,
+                Url = url,
+                NextTool = "get_scrape_status",
+                Message = $"Scrape job {jobId} is already running. Poll get_scrape_status, or call cancel_scrape to abort.",
+                NextToolArgs = new Dictionary<string, string>
+                                   {
+                                       ["jobId"] = jobId
+                                   }
+            };
 
     private static IngestStatusResponse MakeReconNeeded(string library, string version, string url) =>
         new()
