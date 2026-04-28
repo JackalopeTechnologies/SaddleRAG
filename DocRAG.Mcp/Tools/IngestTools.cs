@@ -144,11 +144,11 @@ public static class IngestTools
                 LibraryId = library,
                 Version = version,
                 Url = url,
-                NextTool = "scrape_library",
+                NextTool = "scrape_docs",
                 Message = message,
                 NextToolArgs = new Dictionary<string, string>
                                    {
-                                       ["rootUrl"] = url,
+                                       ["url"] = url,
                                        ["libraryId"] = library,
                                        ["version"] = version
                                    }
