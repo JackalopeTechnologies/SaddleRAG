@@ -55,4 +55,11 @@ public interface ILibraryRepository
     ///     then ensures the Library row is deleted.
     /// </summary>
     Task<long> DeleteAsync(string libraryId, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Rename a library by renaming its LibraryId across all collections.
+    ///     Returns per-collection update counts for cascade-style reporting.
+    ///     Pre-checks for collision (new name already exists) and missing source.
+    /// </summary>
+    Task<RenameLibraryResponse> RenameAsync(string oldId, string newId, CancellationToken ct = default);
 }

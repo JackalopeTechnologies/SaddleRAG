@@ -24,6 +24,8 @@ public class LibraryRepository : ILibraryRepository
 
     private readonly DocRagDbContext mContext;
 
+    private const string ScrapeJobLibraryIdPath = "Job.LibraryId";
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<LibraryRecord>> GetAllLibrariesAsync(CancellationToken ct = default)
     {
@@ -147,5 +149,81 @@ public class LibraryRepository : ILibraryRepository
         await mContext.Libraries.DeleteOneAsync(libFilter, ct);
 
         return total;
+    }
+
+    /// <inheritdoc />
+    public async Task<RenameLibraryResponse> RenameAsync(string oldId, string newId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(oldId);
+        ArgumentException.ThrowIfNullOrEmpty(newId);
+
+        RenameLibraryResponse result;
+
+        var existing = await GetLibraryAsync(oldId, ct);
+        if (existing == null)
+            result = new RenameLibraryResponse(RenameLibraryOutcome.NotFound, null);
+        else
+        {
+            var collision = await GetLibraryAsync(newId, ct);
+            if (collision != null)
+                result = new RenameLibraryResponse(RenameLibraryOutcome.Collision, null);
+            else
+            {
+                var counts = await ApplyRenameAsync(oldId, newId, ct);
+                result = new RenameLibraryResponse(RenameLibraryOutcome.Renamed, counts);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<RenameLibraryResult> ApplyRenameAsync(string oldId, string newId, CancellationToken ct)
+    {
+        var libFilter = Builders<LibraryRecord>.Filter.Eq(l => l.Id, oldId);
+        var libUpdate = Builders<LibraryRecord>.Update.Set(l => l.Id, newId);
+        var libRes = await mContext.Libraries.UpdateOneAsync(libFilter, libUpdate, cancellationToken: ct);
+
+        var verFilter = Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, oldId);
+        var verUpdate = Builders<LibraryVersionRecord>.Update.Set(v => v.LibraryId, newId);
+        var verRes = await mContext.LibraryVersions.UpdateManyAsync(verFilter, verUpdate, cancellationToken: ct);
+
+        var chunkFilter = Builders<DocChunk>.Filter.Eq(c => c.LibraryId, oldId);
+        var chunkUpdate = Builders<DocChunk>.Update.Set(c => c.LibraryId, newId);
+        var chunkRes = await mContext.Chunks.UpdateManyAsync(chunkFilter, chunkUpdate, cancellationToken: ct);
+
+        var pageFilter = Builders<PageRecord>.Filter.Eq(p => p.LibraryId, oldId);
+        var pageUpdate = Builders<PageRecord>.Update.Set(p => p.LibraryId, newId);
+        var pageRes = await mContext.Pages.UpdateManyAsync(pageFilter, pageUpdate, cancellationToken: ct);
+
+        var profileFilter = Builders<LibraryProfile>.Filter.Eq(p => p.LibraryId, oldId);
+        var profileUpdate = Builders<LibraryProfile>.Update.Set(p => p.LibraryId, newId);
+        var profileRes = await mContext.LibraryProfiles.UpdateManyAsync(profileFilter, profileUpdate, cancellationToken: ct);
+
+        var indexFilter = Builders<LibraryIndex>.Filter.Eq(i => i.LibraryId, oldId);
+        var indexUpdate = Builders<LibraryIndex>.Update.Set(i => i.LibraryId, newId);
+        var indexRes = await mContext.LibraryIndexes.UpdateManyAsync(indexFilter, indexUpdate, cancellationToken: ct);
+
+        var shardFilter = Builders<Bm25Shard>.Filter.Eq(s => s.LibraryId, oldId);
+        var shardUpdate = Builders<Bm25Shard>.Update.Set(s => s.LibraryId, newId);
+        var shardRes = await mContext.Bm25Shards.UpdateManyAsync(shardFilter, shardUpdate, cancellationToken: ct);
+
+        var exFilter = Builders<ExcludedSymbol>.Filter.Eq(e => e.LibraryId, oldId);
+        var exUpdate = Builders<ExcludedSymbol>.Update.Set(e => e.LibraryId, newId);
+        var exRes = await mContext.ExcludedSymbols.UpdateManyAsync(exFilter, exUpdate, cancellationToken: ct);
+
+        var jobFilter = Builders<ScrapeJobRecord>.Filter.Eq(ScrapeJobLibraryIdPath, oldId);
+        var jobUpdate = Builders<ScrapeJobRecord>.Update.Set(ScrapeJobLibraryIdPath, newId);
+        var jobRes = await mContext.ScrapeJobs.UpdateManyAsync(jobFilter, jobUpdate, cancellationToken: ct);
+
+        var result = new RenameLibraryResult(libRes.ModifiedCount,
+                                             verRes.ModifiedCount,
+                                             chunkRes.ModifiedCount,
+                                             pageRes.ModifiedCount,
+                                             profileRes.ModifiedCount,
+                                             indexRes.ModifiedCount,
+                                             shardRes.ModifiedCount,
+                                             exRes.ModifiedCount,
+                                             jobRes.ModifiedCount);
+        return result;
     }
 }
