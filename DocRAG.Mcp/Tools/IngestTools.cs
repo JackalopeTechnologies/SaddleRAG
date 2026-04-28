@@ -27,12 +27,15 @@ namespace DocRAG.Mcp.Tools;
 public static class IngestTools
 {
     [McpServerTool(Name = "start_ingest")]
-    [Description("Single ingestion entrypoint. Inspects what we already know about " +
-                 "(library, version) at the given URL and returns one of: " +
-                 "RECON_NEEDED, READY_TO_SCRAPE, PARTIAL, STALE, VERSION_DRIFT, IN_PROGRESS, READY. " +
-                 "The response includes the next tool to call and the parameters to pass " +
-                 "so the calling LLM can follow the breadcrumb without remembering the " +
-                 "full ingestion workflow."
+    [Description("Single ingestion entrypoint — call this first when you want to ingest or refresh a library. " +
+                 "Inspects (library, version) state and returns one of six states: " +
+                 "IN_PROGRESS (scrape already running — poll get_scrape_status or call cancel_scrape), " +
+                 "URL_SUSPECT (indexed content looks wrong — browse URL and call submit_url_correction), " +
+                 "RECON_NEEDED (no profile — call recon_library then submit_library_profile), " +
+                 "READY_TO_SCRAPE (profile cached, no chunks — call scrape_docs), " +
+                 "STALE (chunks exist but parser is outdated — call rescrub_library), " +
+                 "READY (fully indexed and current — call search_docs or get_class_reference). " +
+                 "Each response includes NextTool and NextToolArgs so you can follow the breadcrumb without remembering the workflow."
                 )]
     public static async Task<string> StartIngest(RepositoryFactory repositoryFactory,
                                                  [Description("Root URL of the docs site to ingest")]
@@ -134,8 +137,8 @@ public static class IngestTools
                 Version = version,
                 Url = url,
                 NextTool = "recon_library",
-                Message = "No library profile cached. Have the calling LLM browse the docs site, "
-                        + "identify languages/casing/likely symbols, and call submit_library_profile.",
+                Message = "No library profile cached. Call recon_library (args in NextToolArgs) to get the schema and instructions, "
+                        + "then browse the docs site and call submit_library_profile with the resulting JSON.",
                 NextToolArgs = new Dictionary<string, string>
                                    {
                                        ["url"] = url,
@@ -185,7 +188,7 @@ public static class IngestTools
                 LibraryId = library,
                 Version = version,
                 Url = url,
-                Message = "Profile cached, index built, current parser version. Caller can query."
+                Message = "Profile cached, index built, current parser version. Ready to query — call search_docs for natural-language search, get_class_reference for a specific type, or get_library_overview for an introduction."
             };
 
     private static async Task<IngestStatusResponse> MakeUrlSuspectAsync(string library,
@@ -212,12 +215,12 @@ public static class IngestTools
                              Message = $"Indexed content looks wrong: {reasonsJoined}. "
                                      + $"Sample titles: {sampleTitlesJoined}. "
                                      + $"Hostnames: {hostnamesJoined}. "
-                                     + "Browse the URL and call submit_url_correction with a better one if needed.",
+                                     + "Browse the URL and call submit_url_correction with a better one if needed. "
+                                     + "The library and version are pre-filled in NextToolArgs; you must supply newUrl yourself after browsing.",
                              NextToolArgs = new Dictionary<string, string>
                                                {
                                                    ["library"] = library,
-                                                   ["version"] = version,
-                                                   ["newUrl"] = "(your corrected URL here)"
+                                                   ["version"] = version
                                                }
                          };
         return result;
@@ -226,10 +229,10 @@ public static class IngestTools
     private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
 
     private const string MessageReadyToScrapeFresh =
-        "Profile cached, no chunks indexed. Call scrape_library to begin ingestion.";
+        "Profile cached, no chunks indexed. Call scrape_docs (args in NextToolArgs) to begin ingestion.";
 
     private const string MessageReadyToScrapeForce =
-        "force=true: index exists but caller requested re-ingest. Call scrape_library to refresh.";
+        "force=true: index exists but caller requested re-ingest. Call scrape_docs (args in NextToolArgs) to refresh.";
 
     private const int UrlSuspectSampleTitleLimit = 5;
     private const int UrlSuspectSampleTitlesShown = 3;
