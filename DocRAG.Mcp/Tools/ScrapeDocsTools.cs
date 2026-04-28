@@ -178,68 +178,6 @@ public static class ScrapeDocsTools
         return job;
     }
 
-    /// <summary>
-    ///     Continue a previously interrupted or MaxPages-limited scrape.
-    ///     Retrieves the original job config and resumes from where it left off.
-    /// </summary>
-    [McpServerTool(Name = "continue_scrape")]
-    [Description("Continue a previously interrupted or MaxPages-limited scrape. " +
-                 "Retrieves the original job configuration from the most recent scrape " +
-                 "for this library+version and resumes crawling from where it left off — " +
-                 "already-indexed pages are skipped automatically."
-                )]
-    public static async Task<string> ContinueScrape(ScrapeJobRunner runner,
-                                                    RepositoryFactory repositoryFactory,
-                                                    [Description("Library identifier to continue scraping")]
-                                                    string libraryId,
-                                                    [Description("Version string to continue scraping")]
-                                                    string version,
-                                                    [Description("Optional database profile name")]
-                                                    string? profile = null,
-                                                    CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(runner);
-        ArgumentNullException.ThrowIfNull(repositoryFactory);
-        ArgumentException.ThrowIfNullOrEmpty(libraryId);
-        ArgumentException.ThrowIfNullOrEmpty(version);
-
-        var jobRepo = repositoryFactory.GetScrapeJobRepository(profile);
-        var recentJobs = await jobRepo.ListRecentAsync(limit: 100, ct);
-        var previousJob = recentJobs
-                          .Where(j => j.Job.LibraryId == libraryId && j.Job.Version == version)
-                          .OrderByDescending(j => j.CreatedAt)
-                          .FirstOrDefault();
-
-        string json;
-        if (previousJob == null)
-        {
-            var notFound = new
-                               {
-                                   Status = StatusNotFound,
-                                   Message = $"No previous scrape job found for {libraryId} v{version}. " +
-                                             StartNewScrapeMessage
-                               };
-            json = JsonSerializer.Serialize(notFound, new JsonSerializerOptions { WriteIndented = true });
-        }
-        else
-        {
-            var jobId = await runner.QueueAsync(previousJob.Job, profile, ct);
-
-            var response = new
-                               {
-                                   JobId = jobId,
-                                   Status = nameof(ScrapeJobStatus.Queued),
-                                   LibraryId = libraryId,
-                                   Version = version,
-                                   PreviousJobId = previousJob.Id,
-                                   Message = $"Resume scrape job queued. Already-indexed pages will be skipped. " +
-                                             $"Poll get_scrape_status with jobId='{jobId}' for progress."
-                               };
-            json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
-        }
-
-        return json;
-    }
 
     /// <summary>
     ///     Scan a project to discover all package dependencies and scrape their docs.
@@ -268,8 +206,6 @@ public static class ScrapeDocsTools
     }
 
     private const string StatusAlreadyCached = "AlreadyCached";
-    private const string StatusNotFound = "NotFound";
     private const string StatusNoPriorJob = "NoPriorJob";
-    private const string StartNewScrapeMessage = "Use scrape_docs to start a new scrape.";
     private const int DefaultMaxPages = 0;
 }
