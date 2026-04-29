@@ -313,6 +313,39 @@
                     <Publish Event="NewDialog" Value="MongoDbDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                    <Publish Event="NewDialog" Value="ClaudePluginDlg" />
+                </Control>
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+            </Dialog>
+
+            <!-- Claude Code plugin registration dialog -->
+            <Dialog Id="ClaudePluginDlg" Width="370" Height="270" Title="Claude Code Integration">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+                <Control Id="Title" Type="Text" X="20" Y="10" Width="290" Height="14"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="{\WixUI_Font_Title}Claude Code Integration" />
+
+                <Control Id="Description" Type="Text" X="25" Y="55" Width="320" Height="50"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="SaddleRAG can register itself as a Claude Code plugin so its documentation tools are available in every Claude Code session automatically." />
+
+                <Control Id="ClaudePluginCheck" Type="CheckBox" X="25" Y="115" Width="320" Height="17"
+                         Property="REGISTER_CLAUDE_PLUGIN" CheckBoxValue="1"
+                         Text="Register as a Claude Code plugin (recommended)" />
+
+                <Control Id="InfoText" Type="Text" X="25" Y="140" Width="320" Height="55"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="This adds a plugin entry to %USERPROFILE%\.claude\settings.json and copies the plugin files to %USERPROFILE%\.claude\plugins\saddlerag\. It works whether or not Claude Code is currently installed. Uninstalling SaddleRAG will remove the registration." />
+
+                <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+                    <Publish Event="NewDialog" Value="OllamaDlg" />
+                </Control>
+                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="VerifyReadyDlg" />
                 </Control>
                 <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
@@ -322,7 +355,7 @@
 
             <!-- Wire custom dialogs into the install flow -->
             <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="MongoDbDlg" Order="4" />
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="OllamaDlg" Order="4" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ClaudePluginDlg" Order="4" />
         </UI>
 
     </Package>
