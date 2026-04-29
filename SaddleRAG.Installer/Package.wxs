@@ -22,6 +22,8 @@
         <Property Id="OLLAMAENDPOINT" Value="http://localhost:11434" />
         <Property Id="MONGOSTATUS" Secure="yes" />
         <Property Id="OLLAMASTATUS" Secure="yes" />
+        <Property Id="REGISTER_CLAUDE_PLUGIN" Value="1" />
+        <Property Id="CLAUDEPLUGINSTATUS" Secure="yes" />
 
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
@@ -127,6 +129,34 @@
                       Return="ignore"
                       Impersonate="no" />
 
+        <!-- Register Claude Code plugin: copy files + patch ~/.claude/settings.json -->
+        <!-- Impersonate="yes": runs as the installing user so $env:USERPROFILE resolves correctly. -->
+        <!-- [MCPFOLDER] is expanded at SetProperty time (elevated context) before impersonation. -->
+        <SetProperty Id="RegisterClaudePlugin"
+                     Before="RegisterClaudePlugin"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$src = Join-Path '[MCPFOLDER]' 'plugin'; $dst = Join-Path $env:USERPROFILE '.claude\plugins\saddlerag'; if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }; New-Item -ItemType Directory -Path $dst -Force | Out-Null; Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force; $sf = Join-Path $env:USERPROFILE '.claude\settings.json'; $sd = Split-Path $sf; if (-not (Test-Path $sd)) { New-Item -ItemType Directory -Path $sd -Force | Out-Null }; if (Test-Path $sf) { $s = Get-Content $sf -Raw | ConvertFrom-Json } else { $s = [PSCustomObject]@{} }; if (-not $s.PSObject.Properties['mcpServers']) { $s | Add-Member -MemberType NoteProperty -Name 'mcpServers' -Value ([PSCustomObject]@{}) }; $e = [PSCustomObject]@{ type = 'http'; url = 'http://localhost:6100/mcp'; timeout = 60 }; $s.mcpServers | Add-Member -MemberType NoteProperty -Name 'saddlerag' -Value $e -Force; $s | ConvertTo-Json -Depth 10 | Set-Content $sf -Encoding UTF8&quot;" />
+
+        <CustomAction Id="RegisterClaudePlugin"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="yes" />
+
+        <!-- Unregister Claude Code plugin on uninstall: remove files + remove mcpServers entry -->
+        <SetProperty Id="UnregisterClaudePlugin"
+                     Before="UnregisterClaudePlugin"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$dst = Join-Path $env:USERPROFILE '.claude\plugins\saddlerag'; if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }; $sf = Join-Path $env:USERPROFILE '.claude\settings.json'; if (Test-Path $sf) { $s = Get-Content $sf -Raw | ConvertFrom-Json; if ($s.PSObject.Properties['mcpServers'] -and $s.mcpServers.PSObject.Properties['saddlerag']) { $s.mcpServers.PSObject.Properties.Remove('saddlerag'); $s | ConvertTo-Json -Depth 10 | Set-Content $sf -Encoding UTF8 } }&quot;" />
+
+        <CustomAction Id="UnregisterClaudePlugin"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="yes" />
+
         <!-- Prewarm OS file cache + validate the binary by running it once with the prewarm flag. -->
         <!-- This forces all 215 MB of self-contained runtime into the page cache so SCM's 30s start -->
         <!-- timeout doesn't kill the service on first cold-disk launch. Return is "check" so a real -->
@@ -164,6 +194,8 @@
 
         <InstallExecuteSequence>
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="RegisterClaudePlugin" After="PatchAppSettings" Condition="(NOT Installed OR REINSTALL) AND REGISTER_CLAUDE_PLUGIN = &quot;1&quot;" />
+            <Custom Action="UnregisterClaudePlugin" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="PrewarmService" Before="StartAndMonitorService" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="StartAndMonitorService" Before="StartServices" Condition="NOT Installed OR REINSTALL" />
         </InstallExecuteSequence>
