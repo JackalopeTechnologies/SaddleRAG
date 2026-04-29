@@ -194,7 +194,7 @@
 
         <InstallExecuteSequence>
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
-            <Custom Action="RegisterClaudePlugin" After="PatchAppSettings" Condition="(NOT Installed OR REINSTALL) AND REGISTER_CLAUDE_PLUGIN = &quot;1&quot;" />
+            <Custom Action="RegisterClaudePlugin" After="PatchAppSettings" Condition="NOT Installed AND REGISTER_CLAUDE_PLUGIN = &quot;1&quot;" />
             <Custom Action="UnregisterClaudePlugin" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="PrewarmService" Before="StartAndMonitorService" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="StartAndMonitorService" Before="StartServices" Condition="NOT Installed OR REINSTALL" />
