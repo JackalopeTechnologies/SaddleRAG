@@ -76,7 +76,7 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
 
       - name: Build MSI
-        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ env.PackageVersion }}/publish -d Version=${{ env.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -o ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp.msi
+        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ env.PackageVersion }}/publish -d Version=${{ env.MsiVersion }} -d PluginSourceDir=${{ github.workspace }}/plugin -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -o ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp.msi
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
