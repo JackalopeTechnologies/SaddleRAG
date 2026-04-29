@@ -7,6 +7,7 @@
 Scratch/
 .claude/
 playwright-tmp/
+.worktrees/
 
 # .vscode is partially tracked — see allow-list further down for which files we keep
 
