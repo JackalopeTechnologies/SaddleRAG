@@ -26,13 +26,20 @@
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
             <Directory Id="INSTALLFOLDER" Name="SaddleRAG">
-                <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp" />
+                <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp">
+                    <Directory Id="PLUGINFOLDER" Name="plugin" />
+                </Directory>
             </Directory>
         </StandardDirectory>
 
         <!-- Published files -->
         <ComponentGroup Id="PublishOutput" Directory="MCPFOLDER">
             <Files Include="$(var.PublishDir)\**" />
+        </ComponentGroup>
+
+        <!-- Plugin files (always installed; registration is opt-in via dialog) -->
+        <ComponentGroup Id="PluginFiles" Directory="PLUGINFOLDER">
+            <Files Include="$(var.PluginSourceDir)\**" />
         </ComponentGroup>
 
         <!-- Windows service -->
@@ -61,6 +68,7 @@
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
             <ComponentGroupRef Id="PublishOutput" />
+            <ComponentGroupRef Id="PluginFiles" />
             <ComponentRef Id="ServiceComponent" />
         </Feature>
 
