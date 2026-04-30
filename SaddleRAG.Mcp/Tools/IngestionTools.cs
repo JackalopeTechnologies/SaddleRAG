@@ -9,6 +9,7 @@ using System.Text.Json;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Crawling;
 using ModelContextProtocol.Server;
@@ -27,12 +28,13 @@ public static class IngestionTools
     [McpServerTool(Name = "dryrun_scrape")]
     [Description("Dry-run a documentation scrape — fetches every page with Playwright " +
                  "but does NOT store anything to the database or clone any GitHub repos. " +
-                 "Returns a report showing how many pages would be ingested, how deep " +
-                 "the crawl goes, and which GitHub repos would be cloned. " +
+                 "Returns { JobId, Status: 'Queued' } immediately; poll get_job_status for the " +
+                 "full DryRunReport including page counts, crawl depth, and GitHub repos found. " +
                  "Use this BEFORE running scrape_library on a new library to verify " +
                  "the URL patterns are correct and the crawl scope is reasonable."
                 )]
     public static async Task<string> DryRunScrape(PageCrawler crawler,
+                                                  IBackgroundJobRunner runner,
                                                   [Description("Root URL to begin crawling from")]
                                                   string rootUrl,
                                                   [Description("Allowed URL patterns (regex). Defaults to the rootUrl host."
@@ -52,6 +54,7 @@ public static class IngestionTools
                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(crawler);
+        ArgumentNullException.ThrowIfNull(runner);
         ArgumentException.ThrowIfNullOrEmpty(rootUrl);
 
         var allowed = allowedUrlPatterns ?? [new Uri(rootUrl).Host];
@@ -59,9 +62,9 @@ public static class IngestionTools
         var job = new ScrapeJob
                       {
                           RootUrl = rootUrl,
-                          LibraryId = "dryrun",
-                          Version = "dryrun",
-                          LibraryHint = "Dry run",
+                          LibraryId = DryRunLibraryId,
+                          Version = DryRunVersion,
+                          LibraryHint = DryRunHint,
                           AllowedUrlPatterns = allowed,
                           ExcludedUrlPatterns = excludedUrlPatterns ?? [],
                           MaxPages = maxPages,
@@ -70,9 +73,25 @@ public static class IngestionTools
                           OffSiteDepth = offSiteDepth
                       };
 
-        var report = await crawler.DryRunAsync(job, ct);
-        var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
-        return json;
+        var inputJson = JsonSerializer.Serialize(new { rootUrl, maxPages, fetchDelayMs, sameHostDepth, offSiteDepth });
+        var jobRecord = new BackgroundJobRecord
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                JobType = BackgroundJobTypes.DryRunScrape,
+                                InputJson = inputJson,
+                                ItemsLabel = ItemsLabelPages
+                            };
+
+        var jobId = await runner.QueueAsync(jobRecord,
+                                            async (record, onProgress, jobCt) =>
+                                            {
+                                                var report = await crawler.DryRunAsync(job, onProgress, jobCt);
+                                                record.ResultJson = JsonSerializer.Serialize(report, smJsonOptions);
+                                            },
+                                            ct);
+
+        var response = new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) };
+        return JsonSerializer.Serialize(response, smJsonOptions);
     }
 
 
@@ -285,5 +304,11 @@ public static class IngestionTools
         return $"Reloaded vector index for profile '{profile ?? "(default)"}'.";
     }
 
+    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
+
     private const int DefaultDryRunMaxPages = 200;
+    private const string DryRunLibraryId = "dryrun";
+    private const string DryRunVersion = "dryrun";
+    private const string DryRunHint = "Dry run";
+    private const string ItemsLabelPages = "pages";
 }

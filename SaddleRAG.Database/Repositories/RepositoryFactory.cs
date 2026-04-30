@@ -129,4 +129,14 @@ public class RepositoryFactory
         var result = new RescrubJobRepository(context);
         return result;
     }
+
+    /// <summary>
+    ///     Get a background job repository for the specified profile.
+    /// </summary>
+    public virtual IBackgroundJobRepository GetBackgroundJobRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new BackgroundJobRepository(context);
+        return result;
+    }
 }

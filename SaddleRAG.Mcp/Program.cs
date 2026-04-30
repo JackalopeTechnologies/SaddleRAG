@@ -194,6 +194,7 @@ builder.Services.AddSingleton<SaddleRAG.Ingestion.Symbols.SymbolExtractor>();
 // Rescrub service and background job runner (consumed by rescrub_library MCP tool)
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.RescrubService>();
 builder.Services.AddSingleton<SaddleRAG.Ingestion.RescrubJobRunner>();
+builder.Services.AddSingleton<SaddleRAG.Ingestion.BackgroundJobRunner>();
 
 // Rechunk service (consumed by rechunk_library MCP tool)
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.RechunkService>();

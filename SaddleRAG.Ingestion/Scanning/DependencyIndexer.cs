@@ -1,4 +1,4 @@
-// DependencyIndexer.cs
+﻿// DependencyIndexer.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // Use subject to the MIT License.
 
@@ -53,7 +53,8 @@ public class DependencyIndexer
     /// </summary>
     public async Task<DependencyIndexReport> IndexProjectAsync(string projectPath,
                                                                string? profile,
-                                                               CancellationToken ct)
+                                                               Action<int, int>? onProgress = null,
+                                                               CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(projectPath);
 
@@ -92,10 +93,13 @@ public class DependencyIndexer
         var libraryLookup = allLibraries.ToDictionary(l => l.Id, l => l);
 
         var statusList = new List<PackageIndexStatus>();
+        var processedCount = 0;
         foreach(var dep in filtered)
         {
             var status = await ProcessPackageAsync(dep, libraryLookup, profile, ct);
             statusList.Add(status);
+            processedCount++;
+            onProgress?.Invoke(processedCount, filtered.Count);
         }
 
         var filteredStatuses = deduplicated

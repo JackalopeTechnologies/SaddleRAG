@@ -1,4 +1,4 @@
-// DependencyIndexerTests.cs
+﻿// DependencyIndexerTests.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // Use subject to the MIT License.
 
@@ -95,7 +95,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 3, report.TotalDependencies);
@@ -122,7 +122,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 1, report.FilteredOut);
@@ -158,7 +158,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 1, report.AlreadyCached);
@@ -194,7 +194,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 1, report.CachedDifferentVersion);
@@ -224,7 +224,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 1, report.NewlyQueued);
@@ -254,7 +254,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 1, report.ResolutionFailed);
@@ -296,7 +296,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 1, report.ResolutionFailed);
@@ -316,7 +316,7 @@ public sealed class DependencyIndexerTests
         var indexer = BuildIndexer();
 
         // Act
-        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, CancellationToken.None);
+        var report = await indexer.IndexProjectAsync(smTestCsprojPath, profile: null, ct: CancellationToken.None);
 
         // Assert
         Assert.Equal(expected: 0, report.TotalDependencies);
@@ -398,7 +398,7 @@ public sealed class DependencyIndexerTests
                                       );
 
             // Act
-            var report = await indexer.IndexProjectAsync(testDir, profile: null, CancellationToken.None);
+            var report = await indexer.IndexProjectAsync(testDir, profile: null, ct: CancellationToken.None);
 
             // Assert
             Assert.Equal(expected: 2, report.TotalDependencies);

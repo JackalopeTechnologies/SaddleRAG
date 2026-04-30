@@ -6,8 +6,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Scanning;
 using ModelContextProtocol.Server;
@@ -21,7 +23,8 @@ namespace SaddleRAG.Mcp.Tools;
 ///     Recon-style callback after start_ingest reports URL_SUSPECT:
 ///     drops the existing chunks/pages/profile/indexes/shards, clears
 ///     LibraryVersion.Suspect, then queues a fresh scrape_docs at the
-///     corrected URL.
+///     corrected URL. The apply path (dryRun=false) runs in a background
+///     job so the MCP transport is not blocked.
 /// </summary>
 [McpServerToolType]
 public static class UrlCorrectionTools
@@ -33,10 +36,13 @@ public static class UrlCorrectionTools
                  "Use when start_ingest returned URL_SUSPECT or when scrape_docs(resume=true) " +
                  "returned Status=Refused with Reason=URL_SUSPECT — both indicate the indexed " +
                  "content is probably wrong. Browse the URL yourself first to confirm a better one. " +
-                 "dryRun=false is the default — the tool applies immediately. Pass dryRun=true to preview."
+                 "dryRun=false (default) queues a background job and returns { JobId, Status: 'Queued' } " +
+                 "immediately; poll get_job_status for the scrape JobId to chain to get_scrape_status. " +
+                 "Pass dryRun=true to preview."
                 )]
     public static async Task<string> SubmitUrlCorrection(RepositoryFactory repositoryFactory,
-                                                         ScrapeJobRunner runner,
+                                                         ScrapeJobRunner scrapeRunner,
+                                                         IBackgroundJobRunner backgroundRunner,
                                                          [Description("Library identifier")]
                                                          string library,
                                                          [Description("Version")]
@@ -50,22 +56,19 @@ public static class UrlCorrectionTools
                                                          CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
-        ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(scrapeRunner);
+        ArgumentNullException.ThrowIfNull(backgroundRunner);
         ArgumentException.ThrowIfNullOrEmpty(library);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(newUrl);
 
-        var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
-        var chunkRepo = repositoryFactory.GetChunkRepository(profile);
-        var pageRepo = repositoryFactory.GetPageRepository(profile);
-        var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
-        var indexRepo = repositoryFactory.GetLibraryIndexRepository(profile);
-        var bm25Repo = repositoryFactory.GetBm25ShardRepository(profile);
-        var scrapeJobRepo = repositoryFactory.GetScrapeJobRepository(profile);
-
         string result;
         if (dryRun)
         {
+            var chunkRepo = repositoryFactory.GetChunkRepository(profile);
+            var pageRepo = repositoryFactory.GetPageRepository(profile);
+            var scrapeJobRepo = repositoryFactory.GetScrapeJobRepository(profile);
+
             var chunks = await chunkRepo.GetChunkCountAsync(library, version, ct);
             var pages = await pageRepo.GetPageCountAsync(library, version, ct);
             var activeJobs = await scrapeJobRepo.ListActiveJobsAsync(library, version, ct);
@@ -80,40 +83,65 @@ public static class UrlCorrectionTools
         }
         else
         {
-            var activeJobs = await scrapeJobRepo.ListActiveJobsAsync(library, version, ct);
-            var cancelledIds = new List<string>();
-            foreach (var existing in activeJobs)
-            {
-                await runner.CancelAsync(existing.Id, ct);
-                cancelledIds.Add(existing.Id);
-            }
+            var inputJson = JsonSerializer.Serialize(new { library, version, newUrl, profile });
+            var jobRecord = new BackgroundJobRecord
+                                {
+                                    Id = Guid.NewGuid().ToString(),
+                                    JobType = BackgroundJobTypes.SubmitUrlCorrection,
+                                    Profile = profile,
+                                    LibraryId = library,
+                                    Version = version,
+                                    InputJson = inputJson
+                                };
 
-            var chunks = await chunkRepo.DeleteChunksAsync(library, version, ct);
-            var pages = await pageRepo.DeleteAsync(library, version, ct);
-            await profileRepo.DeleteAsync(library, version, ct);
-            await indexRepo.DeleteAsync(library, version, ct);
-            await bm25Repo.DeleteAsync(library, version, ct);
-            await libraryRepo.ClearSuspectAsync(library, version, ct);
+            var jobId = await backgroundRunner.QueueAsync(jobRecord,
+                                                          async (record, _, jobCt) =>
+                                                          {
+                                                              var scrapeJobRepo = repositoryFactory.GetScrapeJobRepository(profile);
+                                                              var activeJobs = await scrapeJobRepo.ListActiveJobsAsync(library, version, jobCt);
+                                                              var cancelledIds = new List<string>();
+                                                              foreach (var existing in activeJobs)
+                                                              {
+                                                                  await scrapeRunner.CancelAsync(existing.Id, jobCt);
+                                                                  cancelledIds.Add(existing.Id);
+                                                              }
 
-            var job = ScrapeJobFactory.CreateFromUrl(newUrl,
-                                                     library,
-                                                     version,
-                                                     hint: CorrectedHint,
-                                                     maxPages: DefaultMaxPages,
-                                                     fetchDelayMs: ScrapeJob.DefaultFetchDelayMs,
-                                                     forceClean: true);
-            var jobId = await runner.QueueAsync(job, profile, ct);
+                                                              var chunkRepo = repositoryFactory.GetChunkRepository(profile);
+                                                              var pageRepo = repositoryFactory.GetPageRepository(profile);
+                                                              var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
+                                                              var indexRepo = repositoryFactory.GetLibraryIndexRepository(profile);
+                                                              var bm25Repo = repositoryFactory.GetBm25ShardRepository(profile);
+                                                              var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
 
-            var response = new
-                               {
-                                   DryRun = false,
-                                   Cleared = new { Chunks = chunks, Pages = pages },
-                                   CancelledJobs = cancelledIds,
-                                   JobId = jobId,
-                                   Status = StatusQueued,
-                                   Message = $"Suspect chunks dropped, scrape re-queued at {newUrl}. Poll get_scrape_status with jobId='{jobId}'."
-                               };
-            result = JsonSerializer.Serialize(response, smJsonOptions);
+                                                              var chunks = await chunkRepo.DeleteChunksAsync(library, version, jobCt);
+                                                              var pages = await pageRepo.DeleteAsync(library, version, jobCt);
+                                                              await profileRepo.DeleteAsync(library, version, jobCt);
+                                                              await indexRepo.DeleteAsync(library, version, jobCt);
+                                                              await bm25Repo.DeleteAsync(library, version, jobCt);
+                                                              await libraryRepo.ClearSuspectAsync(library, version, jobCt);
+
+                                                              var scrapeJob = ScrapeJobFactory.CreateFromUrl(newUrl,
+                                                                                                             library,
+                                                                                                             version,
+                                                                                                             hint: CorrectedHint,
+                                                                                                             maxPages: DefaultMaxPages,
+                                                                                                             fetchDelayMs: ScrapeJob.DefaultFetchDelayMs,
+                                                                                                             forceClean: true);
+                                                              var scrapeJobId = await scrapeRunner.QueueAsync(scrapeJob, profile, jobCt);
+
+                                                              record.ResultJson = JsonSerializer.Serialize(
+                                                                  new
+                                                                  {
+                                                                      Cleared = new { Chunks = chunks, Pages = pages },
+                                                                      CancelledJobs = cancelledIds,
+                                                                      ScrapeJobId = scrapeJobId,
+                                                                      Message = $"Suspect chunks dropped, scrape re-queued at {newUrl}. Poll get_scrape_status with jobId='{scrapeJobId}'."
+                                                                  },
+                                                                  smJsonOptions);
+                                                          },
+                                                          ct);
+
+            result = JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) }, smJsonOptions);
         }
 
         return result;
@@ -122,6 +150,5 @@ public static class UrlCorrectionTools
     private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
 
     private const string CorrectedHint = "(corrected URL)";
-    private const string StatusQueued = "Queued";
     private const int DefaultMaxPages = 0;
 }
