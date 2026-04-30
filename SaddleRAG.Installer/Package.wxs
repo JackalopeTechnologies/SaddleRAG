@@ -240,26 +240,28 @@
                          Text="Reset to Local">
                     <Publish Property="MONGOCONNECTION" Value="mongodb://localhost:27017" />
                     <Publish Property="MONGODATABASE" Value="SaddleRAG" />
-                    <Publish Property="MONGOSTATUS" Value=" " />
+                    <Publish Event="MongoStatusEvent" Value=" " />
                 </Control>
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="182" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Property="MONGOSTATUS" Value="Testing..." Order="1" />
+                    <Publish Event="MongoStatusEvent" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestMongoConnection" Order="2" />
-                    <Publish Property="MONGOSTATUS" Value="Connected!" Order="3" Condition="MONGOTEST_PASS = &quot;1&quot;" />
-                    <Publish Property="MONGOSTATUS" Value="Failed: cannot connect" Order="4" Condition="MONGOTEST_PASS = &quot;0&quot;" />
+                    <Publish Event="MongoStatusEvent" Value="Connected!" Order="3" Condition="MONGOTEST_PASS = &quot;1&quot;" />
+                    <Publish Event="MongoStatusEvent" Value="Failed: cannot connect" Order="4" Condition="MONGOTEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="182" Width="100" Height="17"
                          Text="Download MongoDB">
-                    <Publish Property="MONGOSTATUS" Value="Opening browser..." Order="1" />
+                    <Publish Event="MongoStatusEvent" Value="Opening browser..." Order="1" />
                     <Publish Event="DoAction" Value="LaunchMongoDownload" Order="2" />
-                    <Publish Property="MONGOSTATUS" Value=" " Order="3" />
+                    <Publish Event="MongoStatusEvent" Value=" " Order="3" />
                 </Control>
 
                 <Control Id="StatusText" Type="Text" X="25" Y="204" Width="320" Height="14"
-                         NoPrefix="yes" Property="MONGOSTATUS" />
+                         NoPrefix="yes" Text=" ">
+                    <Subscribe Event="MongoStatusEvent" Attribute="Text" />
+                </Control>
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
@@ -294,26 +296,28 @@
                 <Control Id="ResetBtn" Type="PushButton" X="25" Y="142" Width="100" Height="17"
                          Text="Reset to Local">
                     <Publish Property="OLLAMAENDPOINT" Value="http://localhost:11434" />
-                    <Publish Property="OLLAMASTATUS" Value=" " />
+                    <Publish Event="OllamaStatusEvent" Value=" " />
                 </Control>
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="142" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Property="OLLAMASTATUS" Value="Testing..." Order="1" />
+                    <Publish Event="OllamaStatusEvent" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestOllamaConnection" Order="2" />
-                    <Publish Property="OLLAMASTATUS" Value="Connected - Ollama is running" Order="3" Condition="OLLAMATEST_PASS = &quot;1&quot;" />
-                    <Publish Property="OLLAMASTATUS" Value="Failed: cannot reach endpoint" Order="4" Condition="OLLAMATEST_PASS = &quot;0&quot;" />
+                    <Publish Event="OllamaStatusEvent" Value="Connected - Ollama is running" Order="3" Condition="OLLAMATEST_PASS = &quot;1&quot;" />
+                    <Publish Event="OllamaStatusEvent" Value="Failed: cannot reach endpoint" Order="4" Condition="OLLAMATEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="142" Width="100" Height="17"
                          Text="Download Ollama">
-                    <Publish Property="OLLAMASTATUS" Value="Opening browser..." Order="1" />
+                    <Publish Event="OllamaStatusEvent" Value="Opening browser..." Order="1" />
                     <Publish Event="DoAction" Value="LaunchOllamaDownload" Order="2" />
-                    <Publish Property="OLLAMASTATUS" Value=" " Order="3" />
+                    <Publish Event="OllamaStatusEvent" Value=" " Order="3" />
                 </Control>
 
                 <Control Id="StatusText" Type="Text" X="25" Y="164" Width="320" Height="14"
-                         NoPrefix="yes" Property="OLLAMASTATUS" />
+                         NoPrefix="yes" Text=" ">
+                    <Subscribe Event="OllamaStatusEvent" Attribute="Text" />
+                </Control>
 
                 <Control Id="InfoText" Type="Text" X="25" Y="184" Width="320" Height="30"
                          Transparent="yes" NoPrefix="yes"
