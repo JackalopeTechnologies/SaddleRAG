@@ -69,10 +69,19 @@
                             Wait="yes" />
         </Component>
 
+        <!-- Helper scripts installed to MCPFOLDER so SetProperty can reference them  -->
+        <!-- via -File "[MCPFOLDER]Script.ps1" without any inline PowerShell that    -->
+        <!-- would be mangled by MSI's property formatter eating [...] expressions.  -->
+        <Component Id="HelperScripts" Directory="MCPFOLDER" Guid="B3A1F2E4-9C7D-4E8B-A5F1-2D3E4F5A6B7C">
+            <File Source="RegisterClaudePlugin.ps1" />
+            <File Source="UnregisterClaudePlugin.ps1" />
+        </Component>
+
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
             <ComponentGroupRef Id="PublishOutput" />
             <ComponentGroupRef Id="PluginFiles" />
             <ComponentRef Id="ServiceComponent" />
+            <ComponentRef Id="HelperScripts" />
         </Feature>
 
         <!-- Test MongoDB connection (JScript CA, runs during UI).                      -->
@@ -127,7 +136,7 @@
         <SetProperty Id="RegisterClaudePlugin"
                      Before="RegisterClaudePlugin"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$src = Join-Path '[MCPFOLDER]' 'plugin'; $dst = Join-Path $env:USERPROFILE '.claude\plugins\saddlerag'; if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }; New-Item -ItemType Directory -Path $dst -Force | Out-Null; Copy-Item -Path (Join-Path $src '*') -Destination $dst -Recurse -Force; $sf = Join-Path $env:USERPROFILE '.claude\settings.json'; $sd = Split-Path $sf; if (-not (Test-Path $sd)) { New-Item -ItemType Directory -Path $sd -Force | Out-Null }; if (Test-Path $sf) { $s = Get-Content $sf -Raw | ConvertFrom-Json } else { $s = [PSCustomObject]@{} }; if (-not $s.PSObject.Properties['mcpServers']) { $s | Add-Member -MemberType NoteProperty -Name 'mcpServers' -Value ([PSCustomObject]@{}) }; $e = [PSCustomObject]@{ type = 'http'; url = 'http://localhost:6100/mcp'; timeout = 60 }; $s.mcpServers | Add-Member -MemberType NoteProperty -Name 'saddlerag' -Value $e -Force; $s | ConvertTo-Json -Depth 10 | Set-Content $sf -Encoding UTF8&quot;" />
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]RegisterClaudePlugin.ps1&quot;" />
 
         <CustomAction Id="RegisterClaudePlugin"
                       BinaryRef="Wix4UtilCA_X86"
@@ -140,7 +149,7 @@
         <SetProperty Id="UnregisterClaudePlugin"
                      Before="UnregisterClaudePlugin"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$dst = Join-Path $env:USERPROFILE '.claude\plugins\saddlerag'; if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }; $sf = Join-Path $env:USERPROFILE '.claude\settings.json'; if (Test-Path $sf) { $s = Get-Content $sf -Raw | ConvertFrom-Json; if ($s.PSObject.Properties['mcpServers'] -and $s.mcpServers.PSObject.Properties['saddlerag']) { $s.mcpServers.PSObject.Properties.Remove('saddlerag'); $s | ConvertTo-Json -Depth 10 | Set-Content $sf -Encoding UTF8 } }&quot;" />
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]UnregisterClaudePlugin.ps1&quot;" />
 
         <CustomAction Id="UnregisterClaudePlugin"
                       BinaryRef="Wix4UtilCA_X86"
@@ -240,37 +249,35 @@
                          Text="Reset to Local">
                     <Publish Property="MONGOCONNECTION" Value="mongodb://localhost:27017" />
                     <Publish Property="MONGODATABASE" Value="SaddleRAG" />
-                    <Publish Event="MongoStatusEvent" Value=" " />
+                    <Publish Property="MONGOSTATUS" Value=" " />
                 </Control>
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="182" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Event="MongoStatusEvent" Value="Testing..." Order="1" />
+                    <Publish Property="MONGOSTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestMongoConnection" Order="2" />
-                    <Publish Event="MongoStatusEvent" Value="Connected!" Order="3" Condition="MONGOTEST_PASS = &quot;1&quot;" />
-                    <Publish Event="MongoStatusEvent" Value="Failed: cannot connect" Order="4" Condition="MONGOTEST_PASS = &quot;0&quot;" />
+                    <Publish Property="MONGOSTATUS" Value="Connected!" Order="3" Condition="MONGOTEST_PASS = &quot;1&quot;" />
+                    <Publish Property="MONGOSTATUS" Value="Failed: cannot connect" Order="4" Condition="MONGOTEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="182" Width="100" Height="17"
                          Text="Download MongoDB">
-                    <Publish Event="MongoStatusEvent" Value="Opening browser..." Order="1" />
+                    <Publish Property="MONGOSTATUS" Value="Opening browser..." Order="1" />
                     <Publish Event="DoAction" Value="LaunchMongoDownload" Order="2" />
-                    <Publish Event="MongoStatusEvent" Value=" " Order="3" />
+                    <Publish Property="MONGOSTATUS" Value=" " Order="3" />
                 </Control>
 
-                <Control Id="StatusText" Type="Text" X="25" Y="204" Width="320" Height="14"
-                         NoPrefix="yes" Text=" ">
-                    <Subscribe Event="MongoStatusEvent" Attribute="Text" />
-                </Control>
+                <Control Id="StatusText" Type="Edit" X="25" Y="204" Width="320" Height="18"
+                         Disabled="yes" Property="MONGOSTATUS" />
 
-                <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
-                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+                <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
                     <Publish Event="NewDialog" Value="InstallDirDlg" />
                 </Control>
-                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="OllamaDlg" />
                 </Control>
-                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
                     <Publish Event="SpawnDialog" Value="CancelDlg" />
                 </Control>
             </Dialog>
@@ -296,41 +303,39 @@
                 <Control Id="ResetBtn" Type="PushButton" X="25" Y="142" Width="100" Height="17"
                          Text="Reset to Local">
                     <Publish Property="OLLAMAENDPOINT" Value="http://localhost:11434" />
-                    <Publish Event="OllamaStatusEvent" Value=" " />
+                    <Publish Property="OLLAMASTATUS" Value=" " />
                 </Control>
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="142" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Event="OllamaStatusEvent" Value="Testing..." Order="1" />
+                    <Publish Property="OLLAMASTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestOllamaConnection" Order="2" />
-                    <Publish Event="OllamaStatusEvent" Value="Connected - Ollama is running" Order="3" Condition="OLLAMATEST_PASS = &quot;1&quot;" />
-                    <Publish Event="OllamaStatusEvent" Value="Failed: cannot reach endpoint" Order="4" Condition="OLLAMATEST_PASS = &quot;0&quot;" />
+                    <Publish Property="OLLAMASTATUS" Value="Connected - Ollama is running" Order="3" Condition="OLLAMATEST_PASS = &quot;1&quot;" />
+                    <Publish Property="OLLAMASTATUS" Value="Failed: cannot reach endpoint" Order="4" Condition="OLLAMATEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="142" Width="100" Height="17"
                          Text="Download Ollama">
-                    <Publish Event="OllamaStatusEvent" Value="Opening browser..." Order="1" />
+                    <Publish Property="OLLAMASTATUS" Value="Opening browser..." Order="1" />
                     <Publish Event="DoAction" Value="LaunchOllamaDownload" Order="2" />
-                    <Publish Event="OllamaStatusEvent" Value=" " Order="3" />
+                    <Publish Property="OLLAMASTATUS" Value=" " Order="3" />
                 </Control>
 
-                <Control Id="StatusText" Type="Text" X="25" Y="164" Width="320" Height="14"
-                         NoPrefix="yes" Text=" ">
-                    <Subscribe Event="OllamaStatusEvent" Attribute="Text" />
-                </Control>
+                <Control Id="StatusText" Type="Edit" X="25" Y="164" Width="320" Height="18"
+                         Disabled="yes" Property="OLLAMASTATUS" />
 
-                <Control Id="InfoText" Type="Text" X="25" Y="184" Width="320" Height="30"
+                <Control Id="InfoText" Type="Text" X="25" Y="188" Width="320" Height="30"
                          Transparent="yes" NoPrefix="yes"
                          Text="Not installed? Download Ollama for free from https://ollama.com. Install it, then click Test Connection to verify." />
 
-                <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
-                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+                <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
                     <Publish Event="NewDialog" Value="MongoDbDlg" />
                 </Control>
-                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="ClaudePluginDlg" />
                 </Control>
-                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
                     <Publish Event="SpawnDialog" Value="CancelDlg" />
                 </Control>
             </Dialog>
