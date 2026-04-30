@@ -8,7 +8,8 @@
              UpgradeCode="CA600210-74B0-4CDC-90AC-A2798F2136F6"
              Scope="perMachine">
 
-        <MajorUpgrade DowngradeErrorMessage="A newer version of SaddleRAG is already installed." />
+        <MajorUpgrade DowngradeErrorMessage="A newer version of SaddleRAG is already installed."
+                      AllowSameVersionUpgrades="yes" />
         <MediaTemplate EmbedCab="yes" />
 
         <!-- Always emit a verbose Windows Installer log so install/repair/upgrade -->
@@ -27,10 +28,8 @@
 
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
-            <Directory Id="INSTALLFOLDER" Name="SaddleRAG">
-                <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp">
-                    <Directory Id="PLUGINFOLDER" Name="plugin" />
-                </Directory>
+            <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp">
+                <Directory Id="PLUGINFOLDER" Name="plugin" />
             </Directory>
         </StandardDirectory>
 
@@ -74,19 +73,22 @@
             <ComponentRef Id="ServiceComponent" />
         </Feature>
 
-        <!-- Test MongoDB connection (immediate CA, runs during UI) -->
+        <!-- Test MongoDB connection (immediate CA, runs during UI).            -->
+        <!-- Directory=TempFolder so the working dir exists during UI phase.  -->
+        <!-- Return=check: exits non-zero on failure, MSI surfaces an error   -->
+        <!-- dialog so the user knows the test failed.                        -->
         <CustomAction Id="TestMongoConnection"
-                      Directory="MCPFOLDER"
-                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;try { $c = New-Object System.Net.Sockets.TcpClient; $uri = [Uri]'[MONGOCONNECTION]'; $c.Connect($uri.Host, $uri.Port); $c.Close(); '[MONGOCONNECTION]' } catch { 'FAILED: ' + $_.Exception.Message }&quot;&quot;"
+                      Directory="TempFolder"
+                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$uri = [Uri]'[MONGOCONNECTION]'; $c = New-Object System.Net.Sockets.TcpClient; $c.Connect($uri.Host, $uri.Port); $c.Close()&quot;&quot;"
                       Execute="immediate"
-                      Return="ignore" />
+                      Return="check" />
 
         <!-- Test Ollama connection (immediate CA, runs during UI) -->
         <CustomAction Id="TestOllamaConnection"
-                      Directory="MCPFOLDER"
-                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;try { $r = Invoke-WebRequest -Uri '[OLLAMAENDPOINT]' -UseBasicParsing -TimeoutSec 5; 'Connected - Ollama is running' } catch { 'FAILED: ' + $_.Exception.Message }&quot;&quot;"
+                      Directory="TempFolder"
+                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$r = Invoke-WebRequest -Uri '[OLLAMAENDPOINT]' -UseBasicParsing -TimeoutSec 5&quot;&quot;"
                       Execute="immediate"
-                      Return="ignore" />
+                      Return="check" />
 
 
         <!-- Open download pages in default browser -->
@@ -253,13 +255,17 @@
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="182" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Event="DoAction" Value="TestMongoConnection" />
+                    <Publish Property="MONGOSTATUS" Value="Testing..." Order="1" />
+                    <Publish Event="DoAction" Value="TestMongoConnection" Order="2" />
+                    <Publish Property="MONGOSTATUS" Value="Connected!" Order="3" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="182" Width="100" Height="17"
                          Text="Download MongoDB">
-                    <Publish Event="DoAction" Value="OpenMongoDownload" Order="1" />
-                    <Publish Event="DoAction" Value="LaunchMongoDownload" Order="2" />
+                    <Publish Property="MONGOSTATUS" Value="Opening browser..." Order="1" />
+                    <Publish Event="DoAction" Value="OpenMongoDownload" Order="2" />
+                    <Publish Event="DoAction" Value="LaunchMongoDownload" Order="3" />
+                    <Publish Property="MONGOSTATUS" Value=" " Order="4" />
                 </Control>
 
                 <Control Id="StatusText" Type="Text" X="25" Y="204" Width="320" Height="14"
@@ -303,13 +309,17 @@
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="142" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Event="DoAction" Value="TestOllamaConnection" />
+                    <Publish Property="OLLAMASTATUS" Value="Testing..." Order="1" />
+                    <Publish Event="DoAction" Value="TestOllamaConnection" Order="2" />
+                    <Publish Property="OLLAMASTATUS" Value="Connected!" Order="3" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="142" Width="100" Height="17"
                          Text="Download Ollama">
-                    <Publish Event="DoAction" Value="OpenOllamaDownload" Order="1" />
-                    <Publish Event="DoAction" Value="LaunchOllamaDownload" Order="2" />
+                    <Publish Property="OLLAMASTATUS" Value="Opening browser..." Order="1" />
+                    <Publish Event="DoAction" Value="OpenOllamaDownload" Order="2" />
+                    <Publish Event="DoAction" Value="LaunchOllamaDownload" Order="3" />
+                    <Publish Property="OLLAMASTATUS" Value=" " Order="4" />
                 </Control>
 
                 <Control Id="StatusText" Type="Text" X="25" Y="164" Width="320" Height="14"
