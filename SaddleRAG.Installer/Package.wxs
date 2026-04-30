@@ -365,7 +365,7 @@
             </Dialog>
 
             <!-- Wire custom dialogs into the install flow -->
-            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="MongoDbDlg" Order="4" />
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="MongoDbDlg" Order="5" />
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ClaudePluginDlg" Order="4" />
         </UI>
 
