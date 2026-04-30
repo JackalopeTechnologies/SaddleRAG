@@ -78,6 +78,11 @@ public static class RescrubTools
         var excludedRepo = repositoryFactory.GetExcludedSymbolsRepository(profile);
         var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
 
+        // Rescrub can take minutes for large libraries when reclassification is enabled
+        // (one Ollama call per chunk). Using a standalone timeout decouples the operation
+        // from the MCP transport lifetime so an HTTP connection drop doesn't abort it
+        // mid-stream. The client can verify completion via get_library_health.
+        using var rescrubCts = new CancellationTokenSource(TimeSpan.FromMinutes(30));
         var result = await service.RescrubAsync(chunkRepo,
                                                 profileRepo,
                                                 indexRepo,
@@ -87,7 +92,7 @@ public static class RescrubTools
                                                 library,
                                                 version,
                                                 options,
-                                                ct
+                                                rescrubCts.Token
                                                );
         double pct = result.Processed > 0 ? 100.0 * result.BoundaryIssues / result.Processed : 0.0;
         string? hint = ResolveBoundaryHint(pct);
