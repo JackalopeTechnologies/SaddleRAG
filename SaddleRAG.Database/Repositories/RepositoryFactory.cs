@@ -119,4 +119,14 @@ public class RepositoryFactory
         var result = new ExcludedSymbolsRepository(context);
         return result;
     }
+
+    /// <summary>
+    ///     Get a rescrub job repository for the specified profile.
+    /// </summary>
+    public virtual IRescrubJobRepository GetRescrubJobRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new RescrubJobRepository(context);
+        return result;
+    }
 }

@@ -55,6 +55,7 @@ public class RescrubService
                                                   string libraryId,
                                                   string version,
                                                   RescrubOptions options,
+                                                  Action<int, int>? onProgress = null,
                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(chunkRepo);
@@ -73,7 +74,7 @@ public class RescrubService
         if (profile == null)
             result = new RescrubResult { LibraryId = libraryId, Version = version, ReconNeeded = true };
         else
-            result = await RunRescrubAsync(chunkRepo, indexRepo, bm25ShardRepo, excludedRepo, libraryRepo, libraryId, version, profile, options, ct);
+            result = await RunRescrubAsync(chunkRepo, indexRepo, bm25ShardRepo, excludedRepo, libraryRepo, libraryId, version, profile, options, onProgress, ct);
 
         return result;
     }
@@ -87,6 +88,7 @@ public class RescrubService
                                                       string version,
                                                       LibraryProfile profile,
                                                       RescrubOptions options,
+                                                      Action<int, int>? onProgress,
                                                       CancellationToken ct)
     {
         var existingIndex = await indexRepo.GetAsync(libraryId, version, ct);
@@ -108,6 +110,7 @@ public class RescrubService
                                                       options.DryRun,
                                                       accumulator,
                                                       count => keptCount += count,
+                                                      onProgress,
                                                       ct
                                                      );
 
@@ -187,6 +190,7 @@ public class RescrubService
                                                              bool dryRun,
                                                              RejectionAccumulator accumulator,
                                                              Action<int> keptObserved,
+                                                             Action<int, int>? onProgress,
                                                              CancellationToken ct)
     {
         var diffs = new List<RescrubDiff>();
@@ -206,6 +210,8 @@ public class RescrubService
                 if (!dryRun)
                     updated.Add(oneResult.Chunk);
             }
+
+            onProgress?.Invoke(i + 1, chunks.Count);
         }
 
         if (!dryRun && updated.Count > 0)
