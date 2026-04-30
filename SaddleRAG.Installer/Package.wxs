@@ -202,6 +202,7 @@
 
         <!-- UI -->
         <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="MCPFOLDER" />
+        <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
 
         <UI>
             <!-- Standard InstallFiles ProgressText never substituted Field 1/9/6 in -->
@@ -209,6 +210,8 @@
             <!-- [9], Size: [6]". Override with a static message; the progress bar still -->
             <!-- advances normally. -->
             <ProgressText Action="InstallFiles" Message="Copying new files..." />
+            <ProgressText Action="PrewarmService" Message="Warming up runtime, please wait (this takes 15-30 seconds)..." />
+            <ProgressText Action="StartAndMonitorService" Message="Starting SaddleRAG service..." />
 
             <!-- MongoDB configuration dialog -->
             <Dialog Id="MongoDbDlg" Width="370" Height="270" Title="MongoDB Configuration">
