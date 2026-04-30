@@ -210,6 +210,14 @@
             <!-- [9], Size: [6]". Override with a static message; the progress bar still -->
             <!-- advances normally. -->
             <ProgressText Action="InstallFiles" Message="Copying new files..." />
+            <ProgressText Action="RemoveFiles" Message="Removing files..." />
+            <ProgressText Action="InstallServices" Message="Registering Windows service..." />
+            <ProgressText Action="StartServices" Message="Starting Windows service..." />
+            <ProgressText Action="StopServices" Message="Stopping Windows service..." />
+            <ProgressText Action="DeleteServices" Message="Removing Windows service..." />
+            <ProgressText Action="PatchAppSettings" Message="Writing configuration..." />
+            <ProgressText Action="RegisterClaudePlugin" Message="Registering Claude Code plugin..." />
+            <ProgressText Action="UnregisterClaudePlugin" Message="Removing Claude Code plugin registration..." />
             <ProgressText Action="PrewarmService" Message="Warming up runtime, please wait (this takes 15-30 seconds)..." />
             <ProgressText Action="StartAndMonitorService" Message="Starting SaddleRAG service..." />
 
