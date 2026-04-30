@@ -191,8 +191,9 @@ builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.CliReconFallback>();
 // Identifier-aware extractor (consumed by CategoryAwareChunker and rescrub_library)
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Symbols.SymbolExtractor>();
 
-// Rescrub service (consumed by rescrub_library MCP tool)
+// Rescrub service and background job runner (consumed by rescrub_library MCP tool)
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.RescrubService>();
+builder.Services.AddSingleton<SaddleRAG.Ingestion.RescrubJobRunner>();
 
 // Rechunk service (consumed by rechunk_library MCP tool)
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.RechunkService>();

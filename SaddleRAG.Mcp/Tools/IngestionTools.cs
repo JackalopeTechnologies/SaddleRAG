@@ -163,6 +163,112 @@ public static class IngestionTools
         return json;
     }
 
+    [McpServerTool(Name = "get_rescrub_status")]
+    [Description("Check the status of a rescrub job by its id. " +
+                 "Status values: Queued (waiting), Running (in progress — ChunksProcessed updates as chunks are examined), " +
+                 "Completed (done — Result contains counts, diffs, and BoundaryHint), " +
+                 "Failed (error — check ErrorMessage, then get_server_logs), " +
+                 "Cancelled (stopped mid-run — partial index changes may have been applied). " +
+                 "Poll at reasonable intervals (10–30s); the job id comes from rescrub_library."
+                )]
+    public static async Task<string> GetRescrubStatus(RepositoryFactory repositoryFactory,
+                                                       [Description("Job id returned from rescrub_library")]
+                                                       string jobId,
+                                                       [Description("Optional database profile name")]
+                                                       string? profile = null,
+                                                       CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+
+        var jobRepo = repositoryFactory.GetRescrubJobRepository(profile);
+        var job = await jobRepo.GetAsync(jobId, ct);
+
+        string result;
+        if (job == null)
+            result = $"No rescrub job found with id '{jobId}'.";
+        else
+        {
+            var boundaryHint = job.Result != null ? ResolveBoundaryHint(job.Result) : null;
+            var response = new
+                               {
+                                   job.Id,
+                                   job.Status,
+                                   job.PipelineState,
+                                   job.LibraryId,
+                                   job.Version,
+                                   job.ChunksTotal,
+                                   job.ChunksProcessed,
+                                   job.ChunksChanged,
+                                   job.ErrorMessage,
+                                   job.CreatedAt,
+                                   job.StartedAt,
+                                   job.CompletedAt,
+                                   job.LastProgressAt,
+                                   BoundaryHint = boundaryHint,
+                                   Result = job.Result
+                               };
+
+            result = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        return result;
+    }
+
+    [McpServerTool(Name = "list_rescrub_jobs")]
+    [Description("List recent rescrub jobs, most recent first. " +
+                 "Use job ids from this list with get_rescrub_status to poll progress. " +
+                 "Running jobs show ChunksProcessed / ChunksTotal for in-flight progress. " +
+                 "Completed jobs include a BoundaryHint to act on before calling search_docs."
+                )]
+    public static async Task<string> ListRescrubJobs(RepositoryFactory repositoryFactory,
+                                                      [Description("Maximum jobs to return (default 20)")]
+                                                      int limit = 20,
+                                                      [Description("Optional database profile name")]
+                                                      string? profile = null,
+                                                      CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+
+        var jobRepo = repositoryFactory.GetRescrubJobRepository(profile);
+        var jobs = await jobRepo.ListRecentAsync(limit, ct);
+
+        var response = jobs.Select(j => new
+                                            {
+                                                j.Id,
+                                                j.Status,
+                                                j.PipelineState,
+                                                j.LibraryId,
+                                                j.Version,
+                                                j.ChunksTotal,
+                                                j.ChunksProcessed,
+                                                j.ChunksChanged,
+                                                j.CreatedAt,
+                                                j.CompletedAt
+                                            }
+                                  );
+
+        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        return json;
+    }
+
+    private static object? ResolveBoundaryHint(SaddleRAG.Core.Models.RescrubResult result)
+    {
+        var pct = result.Processed > 0 ? 100.0 * result.BoundaryIssues / result.Processed : 0.0;
+        string? hint = pct switch
+        {
+            >= BoundaryHintRecommendThreshold => BoundaryHintRecommend,
+            >= BoundaryHintMayHelpThreshold => BoundaryHintMayHelp,
+            _ => null
+        };
+        return new { pct, hint };
+    }
+
+    private const double BoundaryHintMayHelpThreshold = 5.0;
+    private const double BoundaryHintRecommendThreshold = 10.0;
+    private const string BoundaryHintMayHelp = "rechunk_library may help";
+    private const string BoundaryHintRecommend = "rechunk_library recommended";
+
     [McpServerTool(Name = "reload_profile")]
     [Description("Reload the in-memory vector index from MongoDB for a profile. " +
                  "Useful after manual data changes or to recover from index drift. " +
