@@ -73,50 +73,38 @@
             <ComponentRef Id="ServiceComponent" />
         </Feature>
 
-        <!-- Test MongoDB connection (immediate CA, runs during UI).            -->
-        <!-- Directory=TempFolder so the working dir exists during UI phase.  -->
-        <!-- Return=check: exits non-zero on failure, MSI surfaces an error   -->
-        <!-- dialog so the user knows the test failed.                        -->
+        <!-- Test MongoDB connection (JScript CA, runs during UI).                      -->
+        <!-- Parses MONGOCONNECTION to extract host/port, writes a temp PowerShell    -->
+        <!-- script, runs it synchronously, reads the result, and sets MONGOSTATUS.   -->
+        <!-- Return=ignore so no MSI error dialog ever fires on failure.              -->
         <CustomAction Id="TestMongoConnection"
-                      Directory="TempFolder"
-                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$uri = [Uri]'[MONGOCONNECTION]'; $c = New-Object System.Net.Sockets.TcpClient; $c.Connect($uri.Host, $uri.Port); $c.Close()&quot;&quot;"
+                      Script="jscript"
+                      ScriptSourceFile="TestMongoConnection.js"
                       Execute="immediate"
-                      Return="check" />
+                      Return="ignore" />
 
-        <!-- Test Ollama connection (immediate CA, runs during UI) -->
+        <!-- Test Ollama connection (JScript CA, runs during UI).                     -->
+        <!-- Uses MSXML2.ServerXMLHTTP for a direct HTTP GET against the endpoint.   -->
+        <!-- Return=ignore so no MSI error dialog ever fires on failure.             -->
         <CustomAction Id="TestOllamaConnection"
-                      Directory="TempFolder"
-                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;$r = Invoke-WebRequest -Uri '[OLLAMAENDPOINT]' -UseBasicParsing -TimeoutSec 5&quot;&quot;"
+                      Script="jscript"
+                      ScriptSourceFile="TestOllamaConnection.js"
                       Execute="immediate"
-                      Return="check" />
+                      Return="ignore" />
 
-
-        <!-- Open download pages in default browser -->
-        <Property Id="WIXSHELLEXECTARGET" Secure="yes" />
-
-        <CustomAction Id="OpenMongoDownload"
-                      Property="WIXSHELLEXECTARGET"
-                      Value="https://www.mongodb.com/try/download/community"
-                      Execute="immediate"
-                      Return="check" />
+        <!-- Open download pages in the default browser via WScript.Shell.Run.        -->
+        <!-- Uses the URL directly so no WIXSHELLEXECTARGET property is needed.      -->
         <CustomAction Id="LaunchMongoDownload"
-                      BinaryRef="Wix4UtilCA_X86"
-                      DllEntry="WixShellExec"
+                      Script="jscript"
+                      ScriptSourceFile="LaunchMongoDownload.js"
                       Execute="immediate"
-                      Return="ignore"
-                      Impersonate="yes" />
+                      Return="ignore" />
 
-        <CustomAction Id="OpenOllamaDownload"
-                      Property="WIXSHELLEXECTARGET"
-                      Value="https://ollama.com"
-                      Execute="immediate"
-                      Return="check" />
         <CustomAction Id="LaunchOllamaDownload"
-                      BinaryRef="Wix4UtilCA_X86"
-                      DllEntry="WixShellExec"
+                      Script="jscript"
+                      ScriptSourceFile="LaunchOllamaDownload.js"
                       Execute="immediate"
-                      Return="ignore"
-                      Impersonate="yes" />
+                      Return="ignore" />
 
         <!-- Patch appsettings.json with user-provided values (deferred, after file install) -->
         <SetProperty Id="PatchAppSettings"
@@ -257,15 +245,13 @@
                          Text="Test Connection">
                     <Publish Property="MONGOSTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestMongoConnection" Order="2" />
-                    <Publish Property="MONGOSTATUS" Value="Connected!" Order="3" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="182" Width="100" Height="17"
                          Text="Download MongoDB">
                     <Publish Property="MONGOSTATUS" Value="Opening browser..." Order="1" />
-                    <Publish Event="DoAction" Value="OpenMongoDownload" Order="2" />
-                    <Publish Event="DoAction" Value="LaunchMongoDownload" Order="3" />
-                    <Publish Property="MONGOSTATUS" Value=" " Order="4" />
+                    <Publish Event="DoAction" Value="LaunchMongoDownload" Order="2" />
+                    <Publish Property="MONGOSTATUS" Value=" " Order="3" />
                 </Control>
 
                 <Control Id="StatusText" Type="Text" X="25" Y="204" Width="320" Height="14"
@@ -311,15 +297,13 @@
                          Text="Test Connection">
                     <Publish Property="OLLAMASTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestOllamaConnection" Order="2" />
-                    <Publish Property="OLLAMASTATUS" Value="Connected!" Order="3" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="142" Width="100" Height="17"
                          Text="Download Ollama">
                     <Publish Property="OLLAMASTATUS" Value="Opening browser..." Order="1" />
-                    <Publish Event="DoAction" Value="OpenOllamaDownload" Order="2" />
-                    <Publish Event="DoAction" Value="LaunchOllamaDownload" Order="3" />
-                    <Publish Property="OLLAMASTATUS" Value=" " Order="4" />
+                    <Publish Event="DoAction" Value="LaunchOllamaDownload" Order="2" />
+                    <Publish Property="OLLAMASTATUS" Value=" " Order="3" />
                 </Control>
 
                 <Control Id="StatusText" Type="Text" X="25" Y="164" Width="320" Height="14"
