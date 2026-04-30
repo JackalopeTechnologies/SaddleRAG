@@ -245,6 +245,7 @@
                          Text="Test Connection">
                     <Publish Property="MONGOSTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestMongoConnection" Order="2" />
+                    <Publish Property="MONGOSTATUS" Value="[MONGOSTATUS]" Order="3" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="182" Width="100" Height="17"
@@ -297,6 +298,7 @@
                          Text="Test Connection">
                     <Publish Property="OLLAMASTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestOllamaConnection" Order="2" />
+                    <Publish Property="OLLAMASTATUS" Value="[OLLAMASTATUS]" Order="3" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="142" Width="100" Height="17"
