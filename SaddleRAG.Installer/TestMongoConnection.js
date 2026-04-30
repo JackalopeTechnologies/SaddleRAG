@@ -1,4 +1,5 @@
 var _status;
+var _pass = "0";
 try {
     var _conn = Session.Property("MONGOCONNECTION");
     var _match = _conn.match(/\/\/([^:\/\?]+)(?::(\d+))?/);
@@ -16,9 +17,9 @@ try {
         "  $c = New-Object System.Net.Sockets.TcpClient",
         "  $c.Connect($h, $p)",
         "  $c.Close()",
-        "  'OK' | Out-File -FilePath '" + _out + "' -Encoding UTF8",
+        "  [System.IO.File]::WriteAllText('" + _out + "', 'OK', [System.Text.Encoding]::ASCII)",
         "} catch {",
-        "  $_.Exception.Message | Out-File -FilePath '" + _out + "' -Encoding UTF8",
+        "  [System.IO.File]::WriteAllText('" + _out + "', $_.Exception.Message, [System.Text.Encoding]::ASCII)",
         "}"
     ].join("\r\n");
     var _f = _fs.CreateTextFile(_ps1, true);
@@ -32,10 +33,16 @@ try {
         _tf.Close();
         _result = _result.replace(/[\r\n]+$/, "");
     }
-    _status = (_result === "OK") ? ("Connected to " + _host + ":" + _port) : ("Failed: " + _result);
+    if (_result === "OK") {
+        _status = "Connected to " + _host + ":" + _port;
+        _pass = "1";
+    } else {
+        _status = "Failed: " + _result;
+    }
     try { _fs.DeleteFile(_ps1); } catch(ex) {}
     try { _fs.DeleteFile(_out); } catch(ex) {}
 } catch(e) {
     _status = "Error: " + e.message;
 }
 Session.Property("MONGOSTATUS") = _status;
+Session.Property("MONGOTEST_PASS") = _pass;
