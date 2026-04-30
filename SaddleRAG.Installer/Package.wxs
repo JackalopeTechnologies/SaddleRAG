@@ -22,7 +22,9 @@
         <Property Id="MONGODATABASE" Value="SaddleRAG" />
         <Property Id="OLLAMAENDPOINT" Value="http://localhost:11434" />
         <Property Id="MONGOSTATUS" Secure="yes" />
+        <Property Id="MONGOTEST_PASS" Value="0" Secure="yes" />
         <Property Id="OLLAMASTATUS" Secure="yes" />
+        <Property Id="OLLAMATEST_PASS" Value="0" Secure="yes" />
         <Property Id="REGISTER_CLAUDE_PLUGIN" Value="1" />
         <Property Id="CLAUDEPLUGINSTATUS" Secure="yes" />
 
@@ -245,7 +247,8 @@
                          Text="Test Connection">
                     <Publish Property="MONGOSTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestMongoConnection" Order="2" />
-                    <Publish Property="MONGOSTATUS" Value="[MONGOSTATUS]" Order="3" />
+                    <Publish Property="MONGOSTATUS" Value="Connected!" Order="3" Condition="MONGOTEST_PASS = &quot;1&quot;" />
+                    <Publish Property="MONGOSTATUS" Value="Failed: cannot connect" Order="4" Condition="MONGOTEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="182" Width="100" Height="17"
@@ -298,7 +301,8 @@
                          Text="Test Connection">
                     <Publish Property="OLLAMASTATUS" Value="Testing..." Order="1" />
                     <Publish Event="DoAction" Value="TestOllamaConnection" Order="2" />
-                    <Publish Property="OLLAMASTATUS" Value="[OLLAMASTATUS]" Order="3" />
+                    <Publish Property="OLLAMASTATUS" Value="Connected - Ollama is running" Order="3" Condition="OLLAMATEST_PASS = &quot;1&quot;" />
+                    <Publish Property="OLLAMASTATUS" Value="Failed: cannot reach endpoint" Order="4" Condition="OLLAMATEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="142" Width="100" Height="17"
