@@ -9,6 +9,7 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Mcp.Tools;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 #endregion
 
@@ -37,6 +38,7 @@ public sealed class MutationToolsTests
         factory.GetLibraryRepository(null).Returns(libraryRepo);
 
         var json = await MutationTools.RenameLibrary(factory,
+                                                     MakeNoopRunner(),
                                                      library: "old",
                                                      newId: "new",
                                                      dryRun: true,
@@ -60,6 +62,7 @@ public sealed class MutationToolsTests
         factory.GetLibraryRepository(null).Returns(libraryRepo);
 
         var json = await MutationTools.RenameLibrary(factory,
+                                                     MakeNoopRunner(),
                                                      library: "missing",
                                                      newId: "new",
                                                      dryRun: true,
@@ -71,7 +74,7 @@ public sealed class MutationToolsTests
     }
 
     [Fact]
-    public async Task RenameLibraryApplyCallsRepoOnce()
+    public async Task RenameLibraryApplyQueuesJobAndCallsRenameAsync()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
@@ -83,18 +86,20 @@ public sealed class MutationToolsTests
         factory.GetLibraryRepository(null).Returns(libraryRepo);
 
         var json = await MutationTools.RenameLibrary(factory,
+                                                     MakeInlineRunner(),
                                                      library: "old",
                                                      newId: "new",
                                                      dryRun: false,
                                                      profile: null,
                                                      ct: TestContext.Current.CancellationToken);
 
-        Assert.Contains("\"Outcome\": \"Renamed\"", json);
+        Assert.Contains("\"JobId\":", json);
+        Assert.Contains("\"Status\": \"Queued\"", json);
         await libraryRepo.Received(1).RenameAsync("old", "new", Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task RenameLibraryCollisionReportsAndDoesNotApply()
+    public async Task RenameLibraryApplyQueuesJobEvenOnCollision()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
@@ -105,13 +110,15 @@ public sealed class MutationToolsTests
         factory.GetLibraryRepository(null).Returns(libraryRepo);
 
         var json = await MutationTools.RenameLibrary(factory,
+                                                     MakeInlineRunner(),
                                                      library: "old",
                                                      newId: "new",
                                                      dryRun: false,
                                                      profile: null,
                                                      ct: TestContext.Current.CancellationToken);
 
-        Assert.Contains("\"Outcome\": \"Collision\"", json);
+        Assert.Contains("\"JobId\":", json);
+        Assert.Contains("\"Status\": \"Queued\"", json);
     }
 
     [Fact]
@@ -120,18 +127,10 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
-        var profileRepo = Substitute.For<ILibraryProfileRepository>();
-        var indexRepo = Substitute.For<ILibraryIndexRepository>();
-        var bm25Repo = Substitute.For<IBm25ShardRepository>();
-        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
-        factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(profileRepo);
-        factory.GetLibraryIndexRepository(Arg.Any<string?>()).Returns(indexRepo);
-        factory.GetBm25ShardRepository(Arg.Any<string?>()).Returns(bm25Repo);
-        factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excludedRepo);
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
 
         libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
@@ -147,6 +146,7 @@ public sealed class MutationToolsTests
         pageRepo.GetPageCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(45);
 
         var json = await MutationTools.DeleteVersion(factory,
+                                                     MakeNoopRunner(),
                                                      library: "foo",
                                                      version: "1.0",
                                                      dryRun: true,
@@ -160,7 +160,7 @@ public sealed class MutationToolsTests
     }
 
     [Fact]
-    public async Task DeleteVersionApplyCallsAllCollectionsThenLibraryDelete()
+    public async Task DeleteVersionApplyQueuesJobAndCallsAllCollections()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
@@ -183,14 +183,15 @@ public sealed class MutationToolsTests
                    .Returns(new DeleteVersionResult(VersionsDeleted: 1, LibraryRowDeleted: false, CurrentVersionRepointedTo: "0.9"));
 
         var json = await MutationTools.DeleteVersion(factory,
+                                                     MakeInlineRunner(),
                                                      library: "foo",
                                                      version: "1.0",
                                                      dryRun: false,
                                                      profile: null,
                                                      ct: TestContext.Current.CancellationToken);
 
-        Assert.Contains("\"DryRun\": false", json);
-        Assert.Contains("\"CurrentVersionRepointedTo\": \"0.9\"", json);
+        Assert.Contains("\"JobId\":", json);
+        Assert.Contains("\"Status\": \"Queued\"", json);
         await chunkRepo.Received(1).DeleteChunksAsync("foo", "1.0", Arg.Any<CancellationToken>());
         await pageRepo.Received(1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
         await profileRepo.Received(1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
@@ -227,6 +228,7 @@ public sealed class MutationToolsTests
         pageRepo.GetPageCountAsync("foo", "2.0", Arg.Any<CancellationToken>()).Returns(20);
 
         var json = await MutationTools.DeleteLibrary(factory,
+                                                     MakeNoopRunner(),
                                                      library: "foo",
                                                      dryRun: true,
                                                      profile: null,
@@ -238,7 +240,7 @@ public sealed class MutationToolsTests
     }
 
     [Fact]
-    public async Task DeleteLibraryApplyDeletesEachVersionThenLibraryRow()
+    public async Task DeleteLibraryApplyQueuesJobAndDeletesEachVersionThenLibraryRow()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
@@ -269,21 +271,41 @@ public sealed class MutationToolsTests
         libraryRepo.DeleteAsync("foo", Arg.Any<CancellationToken>()).Returns(2);
 
         var json = await MutationTools.DeleteLibrary(factory,
+                                                     MakeInlineRunner(),
                                                      library: "foo",
                                                      dryRun: false,
                                                      profile: null,
                                                      ct: TestContext.Current.CancellationToken);
 
-        Assert.Contains("\"DryRun\": false", json);
+        Assert.Contains("\"JobId\":", json);
+        Assert.Contains("\"Status\": \"Queued\"", json);
         await chunkRepo.Received().DeleteChunksAsync("foo", Arg.Any<string>(), Arg.Any<CancellationToken>());
         await libraryRepo.Received(1).DeleteAsync("foo", Arg.Any<CancellationToken>());
     }
 
-    private static (RepositoryFactory factory, ILibraryRepository libraryRepo) MakeFactory()
+    private static IBackgroundJobRunner MakeNoopRunner()
     {
-        var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
-        factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
-        return (factory, libraryRepo);
+        var runner = Substitute.For<IBackgroundJobRunner>();
+        runner.QueueAsync(Arg.Any<BackgroundJobRecord>(),
+                          Arg.Any<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>(),
+                          Arg.Any<CancellationToken>())
+              .Returns(Guid.NewGuid().ToString());
+        return runner;
+    }
+
+    private static IBackgroundJobRunner MakeInlineRunner()
+    {
+        var runner = Substitute.For<IBackgroundJobRunner>();
+        runner.QueueAsync(Arg.Any<BackgroundJobRecord>(),
+                          Arg.Any<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>(),
+                          Arg.Any<CancellationToken>())
+              .Returns(async callInfo =>
+                       {
+                           var record = callInfo.Arg<BackgroundJobRecord>();
+                           var execute = callInfo.Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>();
+                           await execute(record, null, CancellationToken.None);
+                           return record.Id;
+                       });
+        return runner;
     }
 }

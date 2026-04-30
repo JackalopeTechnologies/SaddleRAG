@@ -6,8 +6,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion.Recon;
 using ModelContextProtocol.Server;
 
@@ -29,16 +31,17 @@ public static class RechunkTools
                  "Replaces all chunks and re-embeds, then requires rescrub_library as a mandatory follow-up " +
                  "to populate corpus-aware Symbols[] and rebuild library_indexes — do not skip this. " +
                  "NO re-crawl, NO re-classify. Use after a chunker code change when existing chunks should " +
-                 "be re-cut without re-fetching the docs site. Returns counts plus before/after BoundaryIssues " +
-                 "so you can confirm the chunker change actually helped."
+                 "be re-cut without re-fetching the docs site. Returns { JobId, Status: 'Queued' } immediately; " +
+                 "poll get_job_status for progress and results including BoundaryHint."
                 )]
     public static async Task<string> RechunkLibrary(RepositoryFactory repositoryFactory,
-                                                    RechunkService service,
+                                                    RechunkService rechunkService,
+                                                    IBackgroundJobRunner runner,
                                                     [Description("Library identifier (e.g. 'aerotech-aeroscript')")]
                                                     string library,
                                                     [Description("Library version (e.g. '1.0')")]
                                                     string version,
-                                                    [Description("If true, reports what would change (chunk counts, before/after BoundaryIssues) without writing to MongoDB or touching the vector index.")]
+                                                    [Description("If true, reports what would change without writing to MongoDB or touching the vector index.")]
                                                     bool dryRun = false,
                                                     [Description("Skip the chunk-boundary audit. Default false; the audit is the primary signal that the new chunker code did its job.")]
                                                     bool skipBoundaryAudit = false,
@@ -49,7 +52,8 @@ public static class RechunkTools
                                                     CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
-        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(rechunkService);
+        ArgumentNullException.ThrowIfNull(runner);
         ArgumentException.ThrowIfNullOrEmpty(library);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
@@ -60,14 +64,42 @@ public static class RechunkTools
                               MaxPages = maxPages
                           };
 
-        var pageRepo = repositoryFactory.GetPageRepository(profile);
-        var chunkRepo = repositoryFactory.GetChunkRepository(profile);
-        var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
+        var inputJson = JsonSerializer.Serialize(new { library, version, dryRun, skipBoundaryAudit, maxPages, profile });
+        var jobRecord = new BackgroundJobRecord
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                JobType = BackgroundJobTypes.Rechunk,
+                                Profile = profile,
+                                LibraryId = library,
+                                Version = version,
+                                InputJson = inputJson,
+                                ItemsLabel = ItemsLabelChunks
+                            };
 
-        var result = await service.RechunkAsync(profile, pageRepo, chunkRepo, profileRepo, library, version, options, ct);
-        var json = JsonSerializer.Serialize(result, smJsonOptions);
-        return json;
+        var jobId = await runner.QueueAsync(jobRecord,
+                                            async (record, onProgress, jobCt) =>
+                                            {
+                                                var pageRepo = repositoryFactory.GetPageRepository(profile);
+                                                var chunkRepo = repositoryFactory.GetChunkRepository(profile);
+                                                var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
+                                                var result = await rechunkService.RechunkAsync(profile,
+                                                                                               pageRepo,
+                                                                                               chunkRepo,
+                                                                                               profileRepo,
+                                                                                               library,
+                                                                                               version,
+                                                                                               options,
+                                                                                               onProgress,
+                                                                                               jobCt);
+                                                record.ResultJson = JsonSerializer.Serialize(result, smJsonOptions);
+                                            },
+                                            ct);
+
+        var response = new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) };
+        return JsonSerializer.Serialize(response, smJsonOptions);
     }
 
     private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
+
+    private const string ItemsLabelChunks = "chunks";
 }

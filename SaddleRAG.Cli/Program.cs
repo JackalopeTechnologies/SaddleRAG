@@ -643,7 +643,7 @@ scanCommand.AddOption(scanProfileOption);
 scanCommand.SetHandler(async (path, profile) =>
                        {
                            var indexer = provider.GetRequiredService<DependencyIndexer>();
-                           var report = await indexer.IndexProjectAsync(path, profile, CancellationToken.None);
+                           var report = await indexer.IndexProjectAsync(path, profile, ct: CancellationToken.None);
 
                            Console.WriteLine();
                            Console.WriteLine("=== Dependency Scan Report ===");

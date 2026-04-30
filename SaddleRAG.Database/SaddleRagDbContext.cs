@@ -49,6 +49,9 @@ public class SaddleRagDbContext
     public IMongoCollection<RescrubJobRecord> RescrubJobs =>
         mDatabase.GetCollection<RescrubJobRecord>(CollectionRescrubJobs);
 
+    public IMongoCollection<BackgroundJobRecord> BackgroundJobs =>
+        mDatabase.GetCollection<BackgroundJobRecord>(CollectionBackgroundJobs);
+
     public IMongoCollection<LibraryProfile> LibraryProfiles =>
         mDatabase.GetCollection<LibraryProfile>(CollectionLibraryProfiles);
 
@@ -171,6 +174,7 @@ public class SaddleRagDbContext
     private const string CollectionProjectProfiles = "projectProfiles";
     private const string CollectionScrapeJobs = "scrapeJobs";
     private const string CollectionRescrubJobs = "rescrubJobs";
+    private const string CollectionBackgroundJobs = "backgroundJobs";
     private const string CollectionLibraryProfiles = "libraryProfiles";
     private const string CollectionLibraryIndexes = "libraryIndexes";
     private const string CollectionBm25Shards = "bm25Shards";

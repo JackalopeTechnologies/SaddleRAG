@@ -9,6 +9,7 @@ using System.Text.Json;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Scanning;
 using ModelContextProtocol.Server;
@@ -205,9 +206,11 @@ public static class ScrapeDocsTools
                  "resolve their documentation URLs, and scrape everything not already cached. " +
                  "Pass a directory path to auto-detect project files, or a specific " +
                  ".sln/.csproj/package.json/requirements.txt/pyproject.toml file. " +
-                 "Returns a report showing what was found, cached, queued, and unresolved."
+                 "Returns { JobId, Status: 'Queued' } immediately; poll get_job_status for the " +
+                 "full report showing what was found, cached, queued, and unresolved."
                 )]
     public static async Task<string> IndexProjectDependencies(DependencyIndexer indexer,
+                                                              IBackgroundJobRunner runner,
                                                               [Description("Project root directory or specific project file path"
                                                                           )]
                                                               string path,
@@ -216,16 +219,37 @@ public static class ScrapeDocsTools
                                                               CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(indexer);
+        ArgumentNullException.ThrowIfNull(runner);
         ArgumentException.ThrowIfNullOrEmpty(path);
 
-        var report = await indexer.IndexProjectAsync(path, profile, ct);
-        var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
-        return json;
+        var inputJson = JsonSerializer.Serialize(new { path, profile });
+        var jobRecord = new BackgroundJobRecord
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                JobType = BackgroundJobTypes.IndexProjectDependencies,
+                                Profile = profile,
+                                InputJson = inputJson,
+                                ItemsLabel = ItemsLabelPackages
+                            };
+
+        var jobId = await runner.QueueAsync(jobRecord,
+                                            async (record, onProgress, jobCt) =>
+                                            {
+                                                var report = await indexer.IndexProjectAsync(path, profile, onProgress, jobCt);
+                                                record.ResultJson = JsonSerializer.Serialize(report, smIndexOptions);
+                                            },
+                                            ct);
+
+        var response = new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) };
+        return JsonSerializer.Serialize(response, smIndexOptions);
     }
+
+    private static readonly JsonSerializerOptions smIndexOptions = new() { WriteIndented = true };
 
     private const string StatusAlreadyCached = "AlreadyCached";
     private const string StatusNoPriorJob = "NoPriorJob";
     private const string StatusRefused = "Refused";
     private const string ReasonUrlSuspect = "URL_SUSPECT";
+    private const string ItemsLabelPackages = "packages";
     private const int DefaultMaxPages = 0;
 }
