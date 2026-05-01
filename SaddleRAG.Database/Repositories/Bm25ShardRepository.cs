@@ -1,6 +1,8 @@
 // Bm25ShardRepository.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
-// Use subject to the MIT License.
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-SaddleRAG-Commercial
+// Available under AGPLv3 (see LICENSE) or a commercial license
+// (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
 
@@ -9,7 +11,6 @@ using System.Text.Json;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using MongoDB.Bson;
-using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
 
