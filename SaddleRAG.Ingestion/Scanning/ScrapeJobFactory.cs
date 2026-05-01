@@ -1,6 +1,8 @@
 // ScrapeJobFactory.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
-// Use subject to the MIT License.
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-SaddleRAG-Commercial
+// Available under AGPLv3 (see LICENSE) or a commercial license
+// (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
 
@@ -56,17 +58,17 @@ public static class ScrapeJobFactory
     private const int DefaultSameHostDepth = 2;
     private const int DefaultOffSiteDepth = 1;
 
-    private const string ExcludeBlog = @"/blog/";
-    private const string ExcludePricing = @"/pricing/";
-    private const string ExcludeLogin = @"/login/";
-    private const string ExcludeSearch = @"/search";
-    private const string ExcludeAccount = @"/account/";
-    private const string ExcludeCart = @"/cart/";
-    private const string ExcludeMailto = @"mailto:";
+    private const string ExcludeBlog = "/blog/";
+    private const string ExcludePricing = "/pricing/";
+    private const string ExcludeLogin = "/login/";
+    private const string ExcludeSearch = "/search";
+    private const string ExcludeAccount = "/account/";
+    private const string ExcludeCart = "/cart/";
+    private const string ExcludeMailto = "mailto:";
 
     private static readonly string[] smDefaultExcludedPatterns =
         [
             ExcludeBlog, ExcludePricing, ExcludeLogin, ExcludeSearch,
-            ExcludeAccount, ExcludeCart, ExcludeMailto, @"#"
+            ExcludeAccount, ExcludeCart, ExcludeMailto, "#"
         ];
 }
