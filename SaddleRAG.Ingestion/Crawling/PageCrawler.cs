@@ -34,7 +34,7 @@ public class PageCrawler
                               int OffSiteDepth,
                               int RetryAttemptIndex = 0);
 
-    private record RootScope(string Host, string PathPrefix);
+    private record RootScope(string Scheme, string Host, string PathPrefix);
 
     private record FrameStats(int TextLength, int LinkTextLength);
 
@@ -361,7 +361,7 @@ public class PageCrawler
         depthDist.TryGetValue(effectiveDepth, out int existing);
         depthDist[effectiveDepth] = existing + 1;
 
-        string host = new Uri(url).Host;
+        string host = CrawlBudget.BuildHostKey(new Uri(url));
         pagesByHost.TryGetValue(host, out int hostCount);
         pagesByHost[host] = hostCount + 1;
 
@@ -503,7 +503,7 @@ public class PageCrawler
             if (!IsInRootScope(url, RootScope))
             {
                 var uri = new Uri(url);
-                var filter = Budget.GetScopeFilter(uri.Host);
+                var filter = Budget.GetScopeFilter(uri);
                 result = filter.IsGated(uri);
             }
 
@@ -940,7 +940,7 @@ public class PageCrawler
                               );
 
         var hostUri = new Uri(url);
-        var limiter = ctx.Budget.GetLimiter(hostUri.Host);
+        var limiter = ctx.Budget.GetLimiter(hostUri);
 
         using var slot = await limiter.AcquireAsync(ctx.Token);
 
@@ -1135,7 +1135,7 @@ public class PageCrawler
     private void HandleGatedPath(CrawlContext ctx, string originalUrl)
     {
         var uri = new Uri(originalUrl);
-        var filter = ctx.Budget.GetScopeFilter(uri.Host);
+        var filter = ctx.Budget.GetScopeFilter(uri);
         filter.GatePrefixOf(uri);
         ctx.OnFetchError?.Invoke();
         mLogger.LogWarning("Gating path {Prefix} on {Host} (403 on {Url})",
@@ -1413,7 +1413,7 @@ public class PageCrawler
         int lastSlash = path.LastIndexOf(value: '/');
         string scopePath = lastSlash >= 0 ? path[..(lastSlash + 1)] : "/";
 
-        var result = new RootScope(rootUri.Host, scopePath);
+        var result = new RootScope(rootUri.Scheme, rootUri.Host, scopePath);
         return result;
     }
 
@@ -1423,7 +1423,8 @@ public class PageCrawler
         try
         {
             var uri = new Uri(url);
-            result = string.Equals(uri.Host, scope.Host, StringComparison.OrdinalIgnoreCase) &&
+            result = string.Equals(uri.Scheme, scope.Scheme, StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(uri.Host, scope.Host, StringComparison.OrdinalIgnoreCase) &&
                      uri.AbsolutePath.StartsWith(scope.PathPrefix, StringComparison.OrdinalIgnoreCase);
         }
         catch
@@ -1435,8 +1436,11 @@ public class PageCrawler
     }
 
     /// <summary>
-    ///     Returns true when the URL is on the same host as the root scope
-    ///     but does NOT fall within the root path prefix.
+    ///     Returns true when the URL is on the same scheme+host as the root scope
+    ///     but does NOT fall within the root path prefix. The name is historical;
+    ///     "same host" now means same scheme and host together so file:// URLs
+    ///     with empty hosts don't accidentally match http:// URLs (also empty in
+    ///     that field).
     /// </summary>
     private static bool IsSameHost(string url, RootScope scope)
     {
@@ -1444,7 +1448,8 @@ public class PageCrawler
         try
         {
             var uri = new Uri(url);
-            result = string.Equals(uri.Host, scope.Host, StringComparison.OrdinalIgnoreCase);
+            result = string.Equals(uri.Scheme, scope.Scheme, StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(uri.Host, scope.Host, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
@@ -1638,10 +1643,17 @@ public class PageCrawler
         try
         {
             string[] links = await frame.EvaluateAsync<string[]>(expression: """
-                                                                             Array.from(document.querySelectorAll('a[href]'))
-                                                                                 .map(a => a.href)
-                                                                                 .filter(h => h.startsWith('http'))
-                                                                             """
+                                                                             (schemes) => {
+                                                                                 const set = new Set(schemes);
+                                                                                 return Array.from(document.querySelectorAll('a[href]'))
+                                                                                     .map(a => a.href)
+                                                                                     .filter(h => {
+                                                                                         const i = h.indexOf(':');
+                                                                                         return i > 0 && set.has(h.substring(0, i).toLowerCase());
+                                                                                     });
+                                                                             }
+                                                                             """,
+                                                                 arg: smSupportedSchemesJs
                                                                 );
             result = links;
         }
@@ -1847,6 +1859,20 @@ public class PageCrawler
     private const float ContentFrameMaxTextScore = 5f;
     private const float ContentFrameMaxRatioScore = 5f;
     private const float ContentFrameNameBonus = 3f;
+
+    /// <summary>
+    ///     URL schemes the crawler will follow. Anything else is dropped at link-extraction
+    ///     time. http/https cover live web docs; file:// covers local docs trees served off disk.
+    /// </summary>
+    private static readonly HashSet<string> smSupportedSchemes =
+        new(StringComparer.OrdinalIgnoreCase) { "http", "https", "file" };
+
+    /// <summary>
+    ///     Lowercase scheme list precomputed for in-browser JS link filtering.
+    ///     The JS side compares with toLowerCase(), so we feed it lowercase strings.
+    /// </summary>
+    private static readonly string[] smSupportedSchemesJs =
+        smSupportedSchemes.Select(s => s.ToLowerInvariant()).ToArray();
 
     private static readonly string[] smContentFrameHints =
             [FrameHintContent, FrameHintMain, FrameHintTopic, FrameHintBody, FrameHintDetail, FrameHintArticle];
