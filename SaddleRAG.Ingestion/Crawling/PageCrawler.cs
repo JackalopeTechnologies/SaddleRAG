@@ -1,6 +1,8 @@
 // PageCrawler.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
-// Use subject to the MIT License.
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-SaddleRAG-Commercial
+// Available under AGPLv3 (see LICENSE) or a commercial license
+// (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
 
@@ -689,19 +691,7 @@ public class PageCrawler
         ctx.InScopeEntries.Writer.TryWrite(rootEntry);
 
         int workerCount = Math.Max(1, MaxParallelWorkers);
-        var workerTasks = new Task[workerCount + 1];
-        for(var i = 0; i < workerCount; i++)
-            workerTasks[i] = Task.Run(() => RunCrawlWorkerAsync(ctx, browser), ct);
-        workerTasks[workerCount] = Task.Run(() => RunRetryWorkerAsync(ctx, browser), ct);
-
-        try
-        {
-            await Task.WhenAll(workerTasks);
-        }
-        finally
-        {
-            ctx.CompleteAllEntries();
-        }
+        await RunWorkerPoolAsync(ctx, browser, workerCount, ct);
 
         if (ctx.DroppedInScopeUrls.Count > 0)
         {
@@ -719,6 +709,30 @@ public class PageCrawler
                                ctx.DroppedInScopeUrls.Count
                               );
         output.Complete();
+    }
+
+    /// <summary>
+    ///     Spin up <paramref name="workerCount" /> crawl workers plus one retry
+    ///     worker, all sharing the supplied <see cref="IBrowser" />, and wait
+    ///     for them to drain. Taking <paramref name="browser" /> as a parameter
+    ///     keeps its lifetime owned by the caller and avoids closure capture of
+    ///     a disposable from the outer scope.
+    /// </summary>
+    private async Task RunWorkerPoolAsync(CrawlContext ctx, IBrowser browser, int workerCount, CancellationToken ct)
+    {
+        var workerTasks = new Task[workerCount + 1];
+        for(var i = 0; i < workerCount; i++)
+            workerTasks[i] = Task.Run(() => RunCrawlWorkerAsync(ctx, browser), ct);
+        workerTasks[workerCount] = Task.Run(() => RunRetryWorkerAsync(ctx, browser), ct);
+
+        try
+        {
+            await Task.WhenAll(workerTasks);
+        }
+        finally
+        {
+            ctx.CompleteAllEntries();
+        }
     }
 
     private async Task RunCrawlWorkerAsync(CrawlContext ctx, IBrowser browser)
