@@ -73,7 +73,9 @@ public class PageCrawler
     ///     clone any GitHub repos. Returns a detailed report so you can
     ///     decide whether the real crawl will produce reasonable results.
     /// </summary>
-    public async Task<DryRunReport> DryRunAsync(ScrapeJob job, CancellationToken ct = default)
+    public async Task<DryRunReport> DryRunAsync(ScrapeJob job,
+                                                 Action<int, int>? onProgress = null,
+                                                 CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(job);
 
@@ -133,6 +135,8 @@ public class PageCrawler
                                               stats,
                                               ct
                                              );
+                int maxPages = job.MaxPages > 0 ? job.MaxPages : stats.TotalPages;
+                onProgress?.Invoke(stats.TotalPages, maxPages);
             }
         }
 

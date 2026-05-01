@@ -70,6 +70,7 @@ public class RechunkService
                                                   string libraryId,
                                                   string version,
                                                   RechunkOptions options,
+                                                  Action<int, int>? onProgress = null,
                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(pageRepo);
@@ -108,7 +109,7 @@ public class RechunkService
 
         if (!options.DryRun)
         {
-            var embeddedChunks = await EmbedAllAsync(newChunks, ct);
+            var embeddedChunks = await EmbedAllAsync(newChunks, onProgress, ct);
             await chunkRepo.DeleteChunksAsync(libraryId, version, ct);
             await chunkRepo.UpsertChunksAsync(embeddedChunks, ct);
             embeddedCount = embeddedChunks.Count;
@@ -146,7 +147,9 @@ public class RechunkService
         return result;
     }
 
-    private async Task<IReadOnlyList<DocChunk>> EmbedAllAsync(IReadOnlyList<DocChunk> chunks, CancellationToken ct)
+    private async Task<IReadOnlyList<DocChunk>> EmbedAllAsync(IReadOnlyList<DocChunk> chunks,
+                                                               Action<int, int>? onProgress,
+                                                               CancellationToken ct)
     {
         var output = new List<DocChunk>(chunks.Count);
         for(var i = 0; i < chunks.Count; i += EmbedBatchSize)
@@ -158,6 +161,7 @@ public class RechunkService
                 output.Add(batch[j] with { Embedding = embeddings[j] });
 
             mLogger.LogDebug("Rechunk embedded batch {Start}-{End} of {Total}", i, i + batch.Count, chunks.Count);
+            onProgress?.Invoke(i + batch.Count, chunks.Count);
         }
 
         return output;

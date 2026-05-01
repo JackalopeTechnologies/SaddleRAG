@@ -8,7 +8,8 @@
              UpgradeCode="CA600210-74B0-4CDC-90AC-A2798F2136F6"
              Scope="perMachine">
 
-        <MajorUpgrade DowngradeErrorMessage="A newer version of SaddleRAG is already installed." />
+        <MajorUpgrade DowngradeErrorMessage="A newer version of SaddleRAG is already installed."
+                      AllowSameVersionUpgrades="yes" />
         <MediaTemplate EmbedCab="yes" />
 
         <!-- Always emit a verbose Windows Installer log so install/repair/upgrade -->
@@ -21,18 +22,27 @@
         <Property Id="MONGODATABASE" Value="SaddleRAG" />
         <Property Id="OLLAMAENDPOINT" Value="http://localhost:11434" />
         <Property Id="MONGOSTATUS" Secure="yes" />
+        <Property Id="MONGOTEST_PASS" Value="0" Secure="yes" />
         <Property Id="OLLAMASTATUS" Secure="yes" />
+        <Property Id="OLLAMATEST_PASS" Value="0" Secure="yes" />
+        <Property Id="REGISTER_CLAUDE_PLUGIN" Value="1" />
+        <Property Id="CLAUDEPLUGINSTATUS" Secure="yes" />
 
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
-            <Directory Id="INSTALLFOLDER" Name="SaddleRAG">
-                <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp" />
+            <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp">
+                <Directory Id="PLUGINFOLDER" Name="plugin" />
             </Directory>
         </StandardDirectory>
 
         <!-- Published files -->
         <ComponentGroup Id="PublishOutput" Directory="MCPFOLDER">
             <Files Include="$(var.PublishDir)\**" />
+        </ComponentGroup>
+
+        <!-- Plugin files (always installed; registration is opt-in via dialog) -->
+        <ComponentGroup Id="PluginFiles" Directory="PLUGINFOLDER">
+            <Files Include="$(var.PluginSourceDir)\**" />
         </ComponentGroup>
 
         <!-- Windows service -->
@@ -59,52 +69,53 @@
                             Wait="yes" />
         </Component>
 
+        <!-- Helper scripts installed to MCPFOLDER so SetProperty can reference them  -->
+        <!-- via -File "[MCPFOLDER]Script.ps1" without any inline PowerShell that    -->
+        <!-- would be mangled by MSI's property formatter eating [...] expressions.  -->
+        <Component Id="HelperScripts" Directory="MCPFOLDER" Guid="B3A1F2E4-9C7D-4E8B-A5F1-2D3E4F5A6B7C">
+            <File Source="RegisterClaudePlugin.ps1" />
+            <File Source="UnregisterClaudePlugin.ps1" />
+        </Component>
+
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
             <ComponentGroupRef Id="PublishOutput" />
+            <ComponentGroupRef Id="PluginFiles" />
             <ComponentRef Id="ServiceComponent" />
+            <ComponentRef Id="HelperScripts" />
         </Feature>
 
-        <!-- Test MongoDB connection (immediate CA, runs during UI) -->
+        <!-- Test MongoDB connection (JScript CA, runs during UI).                      -->
+        <!-- Parses MONGOCONNECTION to extract host/port, writes a temp PowerShell    -->
+        <!-- script, runs it synchronously, reads the result, and sets MONGOSTATUS.   -->
+        <!-- Return=ignore so no MSI error dialog ever fires on failure.              -->
         <CustomAction Id="TestMongoConnection"
-                      Directory="MCPFOLDER"
-                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;try { $c = New-Object System.Net.Sockets.TcpClient; $uri = [Uri]'[MONGOCONNECTION]'; $c.Connect($uri.Host, $uri.Port); $c.Close(); '[MONGOCONNECTION]' } catch { 'FAILED: ' + $_.Exception.Message }&quot;&quot;"
+                      Script="jscript"
+                      ScriptSourceFile="TestMongoConnection.js"
                       Execute="immediate"
                       Return="ignore" />
 
-        <!-- Test Ollama connection (immediate CA, runs during UI) -->
+        <!-- Test Ollama connection (JScript CA, runs during UI).                     -->
+        <!-- Uses MSXML2.ServerXMLHTTP for a direct HTTP GET against the endpoint.   -->
+        <!-- Return=ignore so no MSI error dialog ever fires on failure.             -->
         <CustomAction Id="TestOllamaConnection"
-                      Directory="MCPFOLDER"
-                      ExeCommand="[SystemFolder]cmd.exe /c &quot;powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;try { $r = Invoke-WebRequest -Uri '[OLLAMAENDPOINT]' -UseBasicParsing -TimeoutSec 5; 'Connected - Ollama is running' } catch { 'FAILED: ' + $_.Exception.Message }&quot;&quot;"
+                      Script="jscript"
+                      ScriptSourceFile="TestOllamaConnection.js"
                       Execute="immediate"
                       Return="ignore" />
 
-
-        <!-- Open download pages in default browser -->
-        <Property Id="WIXSHELLEXECTARGET" Secure="yes" />
-
-        <CustomAction Id="OpenMongoDownload"
-                      Property="WIXSHELLEXECTARGET"
-                      Value="https://www.mongodb.com/try/download/community"
-                      Execute="immediate"
-                      Return="check" />
+        <!-- Open download pages in the default browser via WScript.Shell.Run.        -->
+        <!-- Uses the URL directly so no WIXSHELLEXECTARGET property is needed.      -->
         <CustomAction Id="LaunchMongoDownload"
-                      BinaryRef="Wix4UtilCA_X86"
-                      DllEntry="WixShellExec"
+                      Script="jscript"
+                      ScriptSourceFile="LaunchMongoDownload.js"
                       Execute="immediate"
-                      Return="ignore"
-                      Impersonate="yes" />
+                      Return="ignore" />
 
-        <CustomAction Id="OpenOllamaDownload"
-                      Property="WIXSHELLEXECTARGET"
-                      Value="https://ollama.com"
-                      Execute="immediate"
-                      Return="check" />
         <CustomAction Id="LaunchOllamaDownload"
-                      BinaryRef="Wix4UtilCA_X86"
-                      DllEntry="WixShellExec"
+                      Script="jscript"
+                      ScriptSourceFile="LaunchOllamaDownload.js"
                       Execute="immediate"
-                      Return="ignore"
-                      Impersonate="yes" />
+                      Return="ignore" />
 
         <!-- Patch appsettings.json with user-provided values (deferred, after file install) -->
         <SetProperty Id="PatchAppSettings"
@@ -118,6 +129,34 @@
                       Execute="deferred"
                       Return="ignore"
                       Impersonate="no" />
+
+        <!-- Register Claude Code plugin: copy files + patch ~/.claude/settings.json -->
+        <!-- Impersonate="yes": runs as the installing user so $env:USERPROFILE resolves correctly. -->
+        <!-- [MCPFOLDER] is expanded at SetProperty time (elevated context) before impersonation. -->
+        <SetProperty Id="RegisterClaudePlugin"
+                     Before="RegisterClaudePlugin"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]RegisterClaudePlugin.ps1&quot;" />
+
+        <CustomAction Id="RegisterClaudePlugin"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="yes" />
+
+        <!-- Unregister Claude Code plugin on uninstall: remove files + remove mcpServers entry -->
+        <SetProperty Id="UnregisterClaudePlugin"
+                     Before="UnregisterClaudePlugin"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]UnregisterClaudePlugin.ps1&quot;" />
+
+        <CustomAction Id="UnregisterClaudePlugin"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="yes" />
 
         <!-- Prewarm OS file cache + validate the binary by running it once with the prewarm flag. -->
         <!-- This forces all 215 MB of self-contained runtime into the page cache so SCM's 30s start -->
@@ -156,12 +195,15 @@
 
         <InstallExecuteSequence>
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="RegisterClaudePlugin" After="PatchAppSettings" Condition="NOT Installed AND REGISTER_CLAUDE_PLUGIN = &quot;1&quot;" />
+            <Custom Action="UnregisterClaudePlugin" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="PrewarmService" Before="StartAndMonitorService" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="StartAndMonitorService" Before="StartServices" Condition="NOT Installed OR REINSTALL" />
         </InstallExecuteSequence>
 
         <!-- UI -->
         <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="MCPFOLDER" />
+        <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
 
         <UI>
             <!-- Standard InstallFiles ProgressText never substituted Field 1/9/6 in -->
@@ -169,6 +211,16 @@
             <!-- [9], Size: [6]". Override with a static message; the progress bar still -->
             <!-- advances normally. -->
             <ProgressText Action="InstallFiles" Message="Copying new files..." />
+            <ProgressText Action="RemoveFiles" Message="Removing files..." />
+            <ProgressText Action="InstallServices" Message="Registering Windows service..." />
+            <ProgressText Action="StartServices" Message="Starting Windows service..." />
+            <ProgressText Action="StopServices" Message="Stopping Windows service..." />
+            <ProgressText Action="DeleteServices" Message="Removing Windows service..." />
+            <ProgressText Action="PatchAppSettings" Message="Writing configuration..." />
+            <ProgressText Action="RegisterClaudePlugin" Message="Registering Claude Code plugin..." />
+            <ProgressText Action="UnregisterClaudePlugin" Message="Removing Claude Code plugin registration..." />
+            <ProgressText Action="PrewarmService" Message="Warming up runtime, please wait (this takes 15-30 seconds)..." />
+            <ProgressText Action="StartAndMonitorService" Message="Starting SaddleRAG service..." />
 
             <!-- MongoDB configuration dialog -->
             <Dialog Id="MongoDbDlg" Width="370" Height="270" Title="MongoDB Configuration">
@@ -202,26 +254,30 @@
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="182" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Event="DoAction" Value="TestMongoConnection" />
+                    <Publish Property="MONGOSTATUS" Value="Testing..." Order="1" />
+                    <Publish Event="DoAction" Value="TestMongoConnection" Order="2" />
+                    <Publish Property="MONGOSTATUS" Value="Connected!" Order="3" Condition="MONGOTEST_PASS = &quot;1&quot;" />
+                    <Publish Property="MONGOSTATUS" Value="Failed: cannot connect" Order="4" Condition="MONGOTEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="182" Width="100" Height="17"
                          Text="Download MongoDB">
-                    <Publish Event="DoAction" Value="OpenMongoDownload" Order="1" />
+                    <Publish Property="MONGOSTATUS" Value="Opening browser..." Order="1" />
                     <Publish Event="DoAction" Value="LaunchMongoDownload" Order="2" />
+                    <Publish Property="MONGOSTATUS" Value=" " Order="3" />
                 </Control>
 
-                <Control Id="StatusText" Type="Text" X="25" Y="204" Width="320" Height="14"
-                         NoPrefix="yes" Property="MONGOSTATUS" />
+                <Control Id="StatusText" Type="Edit" X="25" Y="204" Width="320" Height="18"
+                         Disabled="yes" Property="MONGOSTATUS" />
 
-                <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
-                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+                <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
                     <Publish Event="NewDialog" Value="InstallDirDlg" />
                 </Control>
-                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="OllamaDlg" />
                 </Control>
-                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
                     <Publish Event="SpawnDialog" Value="CancelDlg" />
                 </Control>
             </Dialog>
@@ -252,25 +308,62 @@
 
                 <Control Id="TestBtn" Type="PushButton" X="135" Y="142" Width="100" Height="17"
                          Text="Test Connection">
-                    <Publish Event="DoAction" Value="TestOllamaConnection" />
+                    <Publish Property="OLLAMASTATUS" Value="Testing..." Order="1" />
+                    <Publish Event="DoAction" Value="TestOllamaConnection" Order="2" />
+                    <Publish Property="OLLAMASTATUS" Value="Connected - Ollama is running" Order="3" Condition="OLLAMATEST_PASS = &quot;1&quot;" />
+                    <Publish Property="OLLAMASTATUS" Value="Failed: cannot reach endpoint" Order="4" Condition="OLLAMATEST_PASS = &quot;0&quot;" />
                 </Control>
 
                 <Control Id="DownloadBtn" Type="PushButton" X="245" Y="142" Width="100" Height="17"
                          Text="Download Ollama">
-                    <Publish Event="DoAction" Value="OpenOllamaDownload" Order="1" />
+                    <Publish Property="OLLAMASTATUS" Value="Opening browser..." Order="1" />
                     <Publish Event="DoAction" Value="LaunchOllamaDownload" Order="2" />
+                    <Publish Property="OLLAMASTATUS" Value=" " Order="3" />
                 </Control>
 
-                <Control Id="StatusText" Type="Text" X="25" Y="164" Width="320" Height="14"
-                         NoPrefix="yes" Property="OLLAMASTATUS" />
+                <Control Id="StatusText" Type="Edit" X="25" Y="164" Width="320" Height="18"
+                         Disabled="yes" Property="OLLAMASTATUS" />
 
-                <Control Id="InfoText" Type="Text" X="25" Y="184" Width="320" Height="30"
+                <Control Id="InfoText" Type="Text" X="25" Y="188" Width="320" Height="30"
                          Transparent="yes" NoPrefix="yes"
                          Text="Not installed? Download Ollama for free from https://ollama.com. Install it, then click Test Connection to verify." />
 
+                <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
+                    <Publish Event="NewDialog" Value="MongoDbDlg" />
+                </Control>
+                <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                    <Publish Event="NewDialog" Value="ClaudePluginDlg" />
+                </Control>
+                <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+            </Dialog>
+
+            <!-- Claude Code plugin registration dialog -->
+            <Dialog Id="ClaudePluginDlg" Width="370" Height="270" Title="Claude Code Integration">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+                <Control Id="Title" Type="Text" X="20" Y="10" Width="290" Height="14"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="{\WixUI_Font_Title}Claude Code Integration" />
+
+                <Control Id="Description" Type="Text" X="25" Y="55" Width="320" Height="50"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="SaddleRAG can register itself as a Claude Code plugin so its documentation tools are available in every Claude Code session automatically." />
+
+                <Control Id="ClaudePluginCheck" Type="CheckBox" X="25" Y="115" Width="320" Height="17"
+                         Property="REGISTER_CLAUDE_PLUGIN" CheckBoxValue="1"
+                         Text="Register as a Claude Code plugin (recommended)" />
+
+                <Control Id="InfoText" Type="Text" X="25" Y="140" Width="320" Height="55"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="This adds a plugin entry to %USERPROFILE%\.claude\settings.json and copies the plugin files to %USERPROFILE%\.claude\plugins\saddlerag\. It works whether or not Claude Code is currently installed. Uninstalling SaddleRAG will remove the registration." />
+
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
-                    <Publish Event="NewDialog" Value="MongoDbDlg" />
+                    <Publish Event="NewDialog" Value="OllamaDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="VerifyReadyDlg" />
@@ -281,8 +374,8 @@
             </Dialog>
 
             <!-- Wire custom dialogs into the install flow -->
-            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="MongoDbDlg" Order="4" />
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="OllamaDlg" Order="4" />
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="MongoDbDlg" Order="5" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ClaudePluginDlg" Order="4" />
         </UI>
 
     </Package>
