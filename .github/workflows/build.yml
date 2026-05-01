@@ -90,7 +90,6 @@ jobs:
         with:
           files: ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp.msi
           prerelease: ${{ env.IsPrerelease }}
-          draft: true
 
       - name: Kill orphan processes
         if: always()
