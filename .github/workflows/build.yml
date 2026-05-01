@@ -79,17 +79,18 @@ jobs:
         run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ env.PackageVersion }}/publish -d Version=${{ env.MsiVersion }} -d PluginSourceDir=${{ github.workspace }}/plugin -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp.msi
 
       - name: Upload MSI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: SaddleRAG.Mcp-${{ env.PackageVersion }}
           path: ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp.msi
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.3.2
         with:
           files: ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp.msi
           prerelease: ${{ env.IsPrerelease }}
+          draft: true
 
       - name: Kill orphan processes
         if: always()
