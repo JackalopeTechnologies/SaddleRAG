@@ -104,6 +104,8 @@ Add this to your MCP client configuration. For **Claude Code**, create a `.mcp.j
 }
 ```
 
+Or install the [Claude Code plugin](#claude-code-plugin) for automatic wiring and the `saddlerag-first` skill.
+
 ### Step 5: Verify
 
 Open your AI assistant and ask it to list libraries:
@@ -161,49 +163,126 @@ Add to `.mcp.json` in your project root:
 }
 ```
 
+## Claude Code Plugin
+
+The `plugin/` directory is a Claude Code plugin that wires SaddleRAG into every session automatically — no manual `.mcp.json` needed. It:
+
+- Registers the SaddleRAG MCP server
+- Bundles a `saddlerag-first` skill that tells Claude to query SaddleRAG before answering from training data on any coding question
+
+### Install (local development)
+
+```bash
+claude --plugin-dir E:/GitHub/SaddleRAG/plugin
+```
+
+### Install (from git, once published)
+
+```bash
+claude plugin install https://github.com/JackalopeTechnologies/saddlerag --plugin-dir plugin
+```
+
+### Context efficiency
+
+The plugin uses per-tool `[McpMeta("anthropic/alwaysLoad", true)]` flags so only the 6 entry-point tools occupy session-start context (~1–2k tokens). The other 27 admin/maintenance tools stay deferred behind ToolSearch and are loaded on demand.
+
+Full plugin documentation: [plugin/README.md](plugin/README.md)
+
 ## MCP Tools Reference
 
-SaddleRAG exposes 16 tools through the MCP protocol. Your AI assistant discovers these automatically once connected.
+SaddleRAG exposes 33 tools through the MCP protocol. Six load eagerly into every session; the rest are deferred and pulled in by ToolSearch when needed.
 
-### Search
-
-| Tool | Description |
-|---|---|
-| `search_docs` | Natural language search across all libraries or filtered by library, version, and category (Overview, HowTo, Sample, ApiReference, ChangeLog) |
-| `get_class_reference` | Look up API reference for a class or type by name. Searches across all libraries if none specified. Tries exact match, then fuzzy. |
-| `get_library_overview` | Get Overview-category chunks for a library - concepts, architecture, getting started guides |
-
-### Library Management
+### Entry-point tools (eager — in every session)
 
 | Tool | Description |
 |---|---|
+| `get_dashboard_index` | Start here in any fresh session. Returns a single-call status overview: library/version counts, recent scrape jobs, server health |
 | `list_libraries` | List all indexed libraries with current version and all ingested versions |
-| `list_classes` | List all documented classes/types for a library, with optional name filter |
+| `search_docs` | Natural language search across all libraries or filtered by library, version, and category |
+| `get_class_reference` | Look up API reference for a class or type by name — exact match, then fuzzy |
+| `get_library_overview` | Get Overview-category chunks for a library: concepts, architecture, getting-started guides |
+| `list_symbols` | List documented symbols for a library, optionally filtered by kind (class, enum, function, parameter) |
 
 ### Ingestion
 
 | Tool | Description |
 |---|---|
-| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware - skips already-indexed libraries unless `force=true` |
-| `scrape_library` | Queue a scrape job with full control over URL patterns, depth, and delay. Returns a job ID for polling. |
-| `dryrun_scrape` | Test a scrape configuration without writing to the database. Reports page counts, depth distribution, and GitHub repos that would be cloned. |
-| `continue_scrape` | Resume an interrupted or MaxPages-limited scrape from where it left off |
-| `get_scrape_status` | Poll a scrape job's progress by job ID |
-| `list_scrape_jobs` | List recent scrape jobs with status |
+| `start_ingest` | Single ingestion entry point — inspects (library, version) state and returns the next recommended action |
+| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware: skips already-indexed libraries unless `force=true` |
+| `dryrun_scrape` | Test a scrape configuration without writing to the database. Reports page counts, depth distribution, and GitHub repos that would be cloned |
 | `index_project_dependencies` | Scan a project's NuGet/npm/pip dependencies and auto-index their documentation |
 
-### Version Management
+### Job management
 
 | Tool | Description |
 |---|---|
-| `get_version_changes` | Diff two versions of a library - added, removed, and changed pages with summaries |
+| `get_scrape_status` | Poll a scrape job's progress by job ID |
+| `list_scrape_jobs` | List recent scrape jobs with status, most recent first |
+| `cancel_scrape` | Cancel a running scrape job |
+
+### Library & pages
+
+| Tool | Description |
+|---|---|
+| `list_pages` | List the URLs of every page indexed for a (library, version) — useful for auditing scrape completeness |
+| `add_page` | Fetch a single URL and add it to an existing (library, version) index without re-crawling |
+
+### Version management
+
+| Tool | Description |
+|---|---|
+| `get_version_changes` | Diff two versions of a library — added, removed, and changed pages with summaries |
+
+### Health
+
+| Tool | Description |
+|---|---|
+| `get_library_health` | Per-version diagnostic snapshot: chunk count, hostname distribution, language mix, boundary-issue rate, suspect markers |
+
+### Library administration
+
+| Tool | Description |
+|---|---|
+| `rename_library` | Rename a library across every collection. Defaults to `dryRun=true` — preview before committing |
+| `delete_version` | Hard-delete one (library, version) with all its chunks, pages, indexes, and profile. Defaults to `dryRun=true` |
+| `delete_library` | Hard-delete an entire library across every collection. Defaults to `dryRun=true` |
+
+### Index maintenance
+
+| Tool | Description |
+|---|---|
+| `rechunk_library` | Re-run the chunker over stored pages, replace all chunks, and re-embed. Requires `rescrub_library` as a follow-up |
+| `rescrub_library` | Re-run the symbol extractor and classifier over existing chunks without re-crawling or re-embedding |
+| `recon_library` | Get the instructions and JSON schema needed to characterize a docs site before scraping (LLM-assisted reconnaissance) |
+| `submit_library_profile` | Submit the reconnaissance JSON produced by `recon_library` to persist it as the LibraryProfile |
+
+### Symbol management
+
+| Tool | Description |
+|---|---|
+| `list_excluded_symbols` | List symbols on the extraction stoplist for a library |
+| `add_to_likely_symbols` | Add a symbol to the high-confidence list (overrides heuristic rejection) |
+| `add_to_stoplist` | Add a symbol to the stoplist so it is excluded from future extraction passes |
+
+### URL correction
+
+| Tool | Description |
+|---|---|
+| `submit_url_correction` | Submit a corrected canonical URL for a page that was indexed under a redirect or wrong URL |
 
 ### Configuration
 
 | Tool | Description |
 |---|---|
-| `list_profiles` | List configured MongoDB database profiles |
+| `list_profiles` | List all configured MongoDB database profiles |
 | `reload_profile` | Reload the in-memory vector index from MongoDB (useful after manual data changes) |
+
+### Settings
+
+| Tool | Description |
+|---|---|
+| `toggle_reranking` | Enable or disable LLM re-ranking of search results at runtime |
+| `toggle_logging` | Toggle verbose request logging without restarting the server |
 
 ### Diagnostics
 
@@ -350,13 +429,18 @@ SaddleRAG.Ingestion/              # Scraping, classification, chunking, embeddin
   Classification/              #   Ollama LLM page classifier
   Chunking/                    #   Category-aware semantic chunker
   Embedding/                   #   Ollama embedding provider
+  Symbols/                     #   Symbol extraction and stoplist management
+  Recon/                       #   LLM-assisted library profiling (recon/rescrub)
   Scanning/                    #   Project dependency scanner
   Ecosystems/                  #   NuGet, npm, pip registry clients
 SaddleRAG.Mcp/                    # ASP.NET Core MCP server (HTTP transport)
-  Tools/                       #   MCP tool definitions (16 tools)
-SaddleRAG.Cli/                    # Command-line interface
+  Tools/                       #   33 MCP tool definitions across 18 files
+SaddleRAG.Cli/                    # Command-line interface (8 subcommands)
 SaddleRAG.Installer/              # WiX MSI installer definition
 SaddleRAG.Tests/                  # Integration and unit tests
+plugin/                           # Claude Code plugin
+  .mcp.json                    #   MCP server registration
+  skills/saddlerag-first/      #   Skill: query SaddleRAG before answering from training data
 ```
 
 ## License

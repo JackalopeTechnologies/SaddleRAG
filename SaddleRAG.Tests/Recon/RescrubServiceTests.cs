@@ -42,7 +42,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 new RescrubOptions(),
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         Assert.True(result.ReconNeeded);
@@ -77,7 +77,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 options,
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         Assert.True(result.DryRun);
@@ -115,7 +115,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 options,
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         Assert.False(result.DryRun);
@@ -182,7 +182,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 new RescrubOptions(),
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         Assert.Equal(1, result.Processed);
@@ -278,7 +278,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 new RescrubOptions(),
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         await excludedRepo.Received(1).DeleteAsync("lib", "1.0", Arg.Any<CancellationToken>());
@@ -310,7 +310,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 new RescrubOptions { DryRun = true },
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         await excludedRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -344,7 +344,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 new RescrubOptions(),
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         Assert.True(result.ExcludedCount >= 20);
@@ -376,7 +376,7 @@ public sealed class RescrubServiceTests
                                                 "lib",
                                                 "1.0",
                                                 new RescrubOptions(),
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         Assert.Empty(result.Hints);
