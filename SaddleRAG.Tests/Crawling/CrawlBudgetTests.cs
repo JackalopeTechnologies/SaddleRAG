@@ -15,13 +15,13 @@ namespace SaddleRAG.Tests.Crawling;
 public sealed class CrawlBudgetTests
 {
     [Fact]
-    public void GetLimiterReturnsSameInstancePerHost()
+    public void GetLimiterReturnsSameInstancePerBucket()
     {
         var budget = new CrawlBudget();
 
-        var first = budget.GetLimiter("docs.example.com");
-        var second = budget.GetLimiter("docs.example.com");
-        var other = budget.GetLimiter("api.example.com");
+        var first = budget.GetLimiter(new Uri("https://docs.example.com/"));
+        var second = budget.GetLimiter(new Uri("https://docs.example.com/other/path"));
+        var other = budget.GetLimiter(new Uri("https://api.example.com/"));
 
         Assert.Same(first, second);
         Assert.NotSame(first, other);
@@ -33,21 +33,45 @@ public sealed class CrawlBudgetTests
     {
         var budget = new CrawlBudget();
 
-        var lower = budget.GetLimiter("docs.example.com");
-        var upper = budget.GetLimiter("DOCS.EXAMPLE.COM");
+        var lower = budget.GetLimiter(new Uri("https://docs.example.com/"));
+        var upper = budget.GetLimiter(new Uri("https://DOCS.EXAMPLE.COM/"));
 
         Assert.Same(lower, upper);
         Assert.Equal(1, budget.HostCount);
     }
 
     [Fact]
-    public void GetScopeFilterReturnsSameInstancePerHost()
+    public void GetLimiterSeparatesBucketsByScheme()
     {
         var budget = new CrawlBudget();
 
-        var first = budget.GetScopeFilter("docs.example.com");
-        var second = budget.GetScopeFilter("docs.example.com");
-        var other = budget.GetScopeFilter("api.example.com");
+        var http = budget.GetLimiter(new Uri("http://docs.example.com/"));
+        var https = budget.GetLimiter(new Uri("https://docs.example.com/"));
+
+        Assert.NotSame(http, https);
+        Assert.Equal(2, budget.HostCount);
+    }
+
+    [Fact]
+    public void GetLimiterAcceptsFileUriWithEmptyHost()
+    {
+        var budget = new CrawlBudget();
+
+        var first = budget.GetLimiter(new Uri("file:///E:/docs/index.htm"));
+        var second = budget.GetLimiter(new Uri("file:///E:/docs/other.htm"));
+
+        Assert.Same(first, second);
+        Assert.Equal(1, budget.HostCount);
+    }
+
+    [Fact]
+    public void GetScopeFilterReturnsSameInstancePerBucket()
+    {
+        var budget = new CrawlBudget();
+
+        var first = budget.GetScopeFilter(new Uri("https://docs.example.com/"));
+        var second = budget.GetScopeFilter(new Uri("https://docs.example.com/page"));
+        var other = budget.GetScopeFilter(new Uri("https://api.example.com/"));
 
         Assert.Same(first, second);
         Assert.NotSame(first, other);
@@ -58,26 +82,48 @@ public sealed class CrawlBudgetTests
     {
         var budget = new CrawlBudget();
 
-        var lower = budget.GetScopeFilter("docs.example.com");
-        var upper = budget.GetScopeFilter("DOCS.EXAMPLE.COM");
+        var lower = budget.GetScopeFilter(new Uri("https://docs.example.com/"));
+        var upper = budget.GetScopeFilter(new Uri("https://DOCS.EXAMPLE.COM/"));
 
         Assert.Same(lower, upper);
     }
 
     [Fact]
-    public void GetSnapshotReturnsCurrentConcurrencyPerHost()
+    public void GetScopeFilterAcceptsFileUriWithEmptyHost()
+    {
+        var budget = new CrawlBudget();
+
+        var first = budget.GetScopeFilter(new Uri("file:///E:/docs/index.htm"));
+        var second = budget.GetScopeFilter(new Uri("file:///E:/docs/other.htm"));
+
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public void BuildHostKeyProducesSchemeAndHost()
+    {
+        Assert.Equal("https://docs.example.com",
+                     CrawlBudget.BuildHostKey(new Uri("https://docs.example.com/some/path")));
+        Assert.Equal("http://docs.example.com",
+                     CrawlBudget.BuildHostKey(new Uri("http://docs.example.com/")));
+        Assert.Equal("file://",
+                     CrawlBudget.BuildHostKey(new Uri("file:///E:/docs/index.htm")));
+    }
+
+    [Fact]
+    public void GetSnapshotReturnsCurrentConcurrencyPerBucket()
     {
         var budget = new CrawlBudget(initialConcurrency: 4, minConcurrency: 1, maxConcurrency: 8);
 
-        var docsLimiter = budget.GetLimiter("docs.example.com");
-        budget.GetLimiter("api.example.com");
+        var docsLimiter = budget.GetLimiter(new Uri("https://docs.example.com/"));
+        budget.GetLimiter(new Uri("https://api.example.com/"));
 
         docsLimiter.ReportRateLimited(retryAfter: TimeSpan.Zero);
 
         var snapshot = budget.GetSnapshot();
 
-        Assert.Equal(2, snapshot["docs.example.com"]);
-        Assert.Equal(4, snapshot["api.example.com"]);
+        Assert.Equal(2, snapshot["https://docs.example.com"]);
+        Assert.Equal(4, snapshot["https://api.example.com"]);
     }
 
     [Fact]
