@@ -14,9 +14,13 @@ using System.Globalization;
 namespace SaddleRAG.Ingestion.Crawling;
 
 /// <summary>
-///     Per-crawl budget that holds one <see cref="HostRateLimiter"/> per host
-///     encountered during a crawl. The first time a host is seen, a limiter
-///     is created lazily with the configured initial / min / max concurrency.
+///     Per-crawl budget that holds one <see cref="HostRateLimiter"/> per
+///     <c>(scheme, host)</c> bucket encountered during a crawl. The first
+///     time a bucket is seen, a limiter is created lazily with the
+///     configured initial / min / max concurrency. Bucketing on scheme +
+///     host (rather than host alone) keeps file:// URLs — which have an
+///     empty host — in their own bucket instead of colliding with empty
+///     hosts that might come from other schemes.
 /// </summary>
 public sealed class CrawlBudget
 {
@@ -41,19 +45,32 @@ public sealed class CrawlBudget
     private readonly int mMinConcurrency;
 
     /// <summary>
-    ///     Total number of distinct hosts that have been routed through
-    ///     this budget. Stable across the crawl lifetime.
+    ///     Total number of distinct buckets routed through this budget.
+    ///     Stable across the crawl lifetime.
     /// </summary>
     public int HostCount => mLimiters.Count;
 
     /// <summary>
-    ///     Get (or lazily create) the limiter for a given host.
+    ///     Build the dictionary key for a URL: <c>scheme://host</c>.
+    ///     Uniform between limiters, scope filters, and reporting.
     /// </summary>
-    public HostRateLimiter GetLimiter(string host)
+    public static string BuildHostKey(Uri uri)
     {
-        ArgumentException.ThrowIfNullOrEmpty(host);
+        ArgumentNullException.ThrowIfNull(uri);
 
-        var result = mLimiters.GetOrAdd(host,
+        string result = $"{uri.Scheme}://{uri.Host}";
+        return result;
+    }
+
+    /// <summary>
+    ///     Get (or lazily create) the limiter for a URL's <c>(scheme, host)</c>.
+    /// </summary>
+    public HostRateLimiter GetLimiter(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+
+        string key = BuildHostKey(uri);
+        var result = mLimiters.GetOrAdd(key,
                                         _ => new HostRateLimiter(mInitialConcurrency,
                                                                  mMinConcurrency,
                                                                  mMaxConcurrency
@@ -63,28 +80,30 @@ public sealed class CrawlBudget
     }
 
     /// <summary>
-    ///     Get (or lazily create) the scope filter for a given host.
+    ///     Get (or lazily create) the scope filter for a URL's <c>(scheme, host)</c>.
     ///     The filter accumulates gated path prefixes seen via 403 responses
     ///     on out-of-scope URLs and is consulted at dequeue time to drop
     ///     known-bad URLs without re-fetching them.
     /// </summary>
-    public HostScopeFilter GetScopeFilter(string host)
+    public HostScopeFilter GetScopeFilter(Uri uri)
     {
-        ArgumentException.ThrowIfNullOrEmpty(host);
+        ArgumentNullException.ThrowIfNull(uri);
 
-        var result = mScopeFilters.GetOrAdd(host, _ => new HostScopeFilter());
+        string key = BuildHostKey(uri);
+        var result = mScopeFilters.GetOrAdd(key, _ => new HostScopeFilter());
         return result;
     }
 
     /// <summary>
-    ///     Snapshot of all known hosts and their current concurrency.
-    ///     Useful for logging or status reporting mid-crawl.
+    ///     Snapshot of all known buckets and their current concurrency.
+    ///     Useful for logging or status reporting mid-crawl. Keys are
+    ///     <c>scheme://host</c> strings.
     /// </summary>
     public IReadOnlyDictionary<string, int> GetSnapshot()
     {
         var result = new Dictionary<string, int>(mLimiters.Count, StringComparer.OrdinalIgnoreCase);
-        foreach((string host, HostRateLimiter limiter) in mLimiters)
-            result[host] = limiter.CurrentConcurrency;
+        foreach((string key, HostRateLimiter limiter) in mLimiters)
+            result[key] = limiter.CurrentConcurrency;
         return result;
     }
 
