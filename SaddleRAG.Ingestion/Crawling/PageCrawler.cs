@@ -1801,7 +1801,11 @@ public class PageCrawler
             var uri = new Uri(url);
             string path = uri.AbsolutePath.TrimEnd(trimChar: '/');
 
-            if (!keepExtension)
+            bool isFilesystem = string.Equals(uri.Scheme,
+                                              Uri.UriSchemeFile,
+                                              StringComparison.OrdinalIgnoreCase);
+            bool stripExtension = !keepExtension && !isFilesystem;
+            if (stripExtension)
             {
                 string? strippedExtension = smExtensionsToStrip
                     .FirstOrDefault(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
