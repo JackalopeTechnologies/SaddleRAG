@@ -941,6 +941,16 @@ public class PageCrawler
             bool gated = !overLimit && ctx.IsGated(entry.Url);
             bool firstVisit = !overLimit && !gated && ctx.Visited.TryAdd(entry.Url, value: 0);
 
+            if (overLimit)
+            {
+                string host = SafeGetHost(entry.Url);
+                bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, depth, AuditSkipReason.QueueLimit, null);
+            }
+
             if (gated)
             {
                 string host = SafeGetHost(entry.Url);
@@ -949,6 +959,16 @@ public class PageCrawler
                 int depth = inScope  ? entry.InScopeDepth :
                             sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
                 mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, depth, AuditSkipReason.HostGated, null);
+            }
+
+            if (!overLimit && !gated && !firstVisit)
+            {
+                string host = SafeGetHost(entry.Url);
+                bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, depth, AuditSkipReason.AlreadyVisited, null);
             }
 
             if (firstVisit)
