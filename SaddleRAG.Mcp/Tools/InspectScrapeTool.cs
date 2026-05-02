@@ -55,7 +55,7 @@ public static class InspectScrapeTool
         var repo = factory.GetScrapeAuditRepository(profile);
 
         bool hasFilter = status != null || skipReason != null || host != null || url != null;
-        bool isUrlMode = hasFilter && !string.IsNullOrEmpty(url);
+        bool isUrlMode = !string.IsNullOrEmpty(url) && status == null && skipReason == null && host == null;
         string modeKey = (hasFilter, isUrlMode) switch
         {
             (false, _)    => ModeLabelSummary,
@@ -131,7 +131,7 @@ public static class InspectScrapeTool
         var statusEnum = ParseEnum<AuditStatus>(status);
         var reasonEnum = ParseEnum<AuditSkipReason>(skipReason);
         var entries = await repo.QueryAsync(jobId, statusEnum, reasonEnum, host,
-                                            urlSubstring: null, limit, ct);
+                                            urlSubstring: url, limit, ct);
         string result;
         if (entries.Count == 0)
         {
