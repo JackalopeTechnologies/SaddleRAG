@@ -7,6 +7,7 @@
 #region Usings
 
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
@@ -65,6 +66,9 @@ public class SaddleRagDbContext
 
     public IMongoCollection<ExcludedSymbol> ExcludedSymbols =>
         mDatabase.GetCollection<ExcludedSymbol>(CollectionExcludedSymbols);
+
+    public IMongoCollection<ScrapeAuditLogEntry> ScrapeAuditLog =>
+        mDatabase.GetCollection<ScrapeAuditLogEntry>(CollectionScrapeAuditLog);
 
     /// <summary>
     ///     GridFS bucket for spilled BM25 payloads (per-term postings or
@@ -166,6 +170,32 @@ public class SaddleRagDbContext
                                                                                           ),
                                                      cancellationToken: ct
                                                     );
+
+        // ScrapeAuditLog: bucketed query by status/skip-reason
+        var auditKeys = Builders<ScrapeAuditLogEntry>.IndexKeys;
+        await ScrapeAuditLog.Indexes.CreateOneAsync(
+            new CreateIndexModel<ScrapeAuditLogEntry>(auditKeys.Combine(
+                auditKeys.Ascending(a => a.JobId),
+                auditKeys.Ascending(a => a.Status),
+                auditKeys.Ascending(a => a.SkipReason)
+            )),
+            cancellationToken: ct);
+
+        // ScrapeAuditLog: by-host views
+        await ScrapeAuditLog.Indexes.CreateOneAsync(
+            new CreateIndexModel<ScrapeAuditLogEntry>(auditKeys.Combine(
+                auditKeys.Ascending(a => a.JobId),
+                auditKeys.Ascending(a => a.Host)
+            )),
+            cancellationToken: ct);
+
+        // ScrapeAuditLog: single-URL forensics
+        await ScrapeAuditLog.Indexes.CreateOneAsync(
+            new CreateIndexModel<ScrapeAuditLogEntry>(auditKeys.Combine(
+                auditKeys.Ascending(a => a.JobId),
+                auditKeys.Ascending(a => a.Url)
+            )),
+            cancellationToken: ct);
     }
 
     private const string CollectionLibraries = "libraries";
@@ -181,5 +211,6 @@ public class SaddleRagDbContext
     private const string CollectionLibraryIndexes = "libraryIndexes";
     private const string CollectionBm25Shards = "bm25Shards";
     private const string CollectionExcludedSymbols = "library_excluded_symbols";
+    private const string CollectionScrapeAuditLog = "scrape_audit_log";
     private const string Bm25BucketName = "bm25";
 }
