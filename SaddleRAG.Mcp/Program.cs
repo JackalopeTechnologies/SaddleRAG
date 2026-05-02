@@ -40,6 +40,7 @@ using SaddleRAG.Ingestion.Ecosystems.Pip;
 using SaddleRAG.Ingestion.Embedding;
 
 using SaddleRAG.Ingestion.Scanning;
+using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Suspect;
 
 using SaddleRAG.Mcp;
@@ -222,6 +223,9 @@ builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
                                                    sp.GetRequiredService<ScrapeJobRunner>()
 
                                               );
+
+builder.Services.AddSingleton<IScrapeAuditWriter>(sp =>
+    new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>()));
 
 
 

@@ -6,6 +6,7 @@
 
 #region Usings
 
+using Microsoft.Extensions.DependencyInjection;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Ingestion.Diagnostics;
@@ -70,6 +71,19 @@ public sealed class ScrapeAuditWriterTests
         var first = spy.Inserted[0];
         Assert.NotNull(first.PageOutcome);
         Assert.Equal(3, first.PageOutcome.ChunkCount);
+    }
+
+    [Fact]
+    public async Task DependencyInjectionResolvesAuditWriterAndRepository()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IScrapeAuditRepository>(_ => new SpyRepository());
+        services.AddSingleton<IScrapeAuditWriter>(sp =>
+            new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>()));
+
+        await using var sp = services.BuildServiceProvider();
+        var writer = sp.GetRequiredService<IScrapeAuditWriter>();
+        Assert.NotNull(writer);
     }
 
     private static AuditContext NewCtx(string jobId) => new()

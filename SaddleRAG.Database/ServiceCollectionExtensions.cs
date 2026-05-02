@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IChunkRepository, ChunkRepository>();
         services.AddSingleton<IDiffRepository, DiffRepository>();
         services.AddSingleton<IScrapeJobRepository, ScrapeJobRepository>();
+        services.AddSingleton<IScrapeAuditRepository, ScrapeAuditRepository>();
         services.AddSingleton<ILibraryProfileRepository, LibraryProfileRepository>();
         services.AddSingleton<ILibraryIndexRepository, LibraryIndexRepository>();
         services.AddSingleton<IBm25ShardRepository, Bm25ShardRepository>();
