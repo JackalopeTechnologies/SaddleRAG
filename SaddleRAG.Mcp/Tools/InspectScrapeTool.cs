@@ -8,7 +8,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
+using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Database.Repositories;
 
 #endregion
@@ -18,7 +21,9 @@ namespace SaddleRAG.Mcp.Tools;
 /// <summary>
 ///     MCP tool that exposes the scrape audit log to the LLM. Summary mode
 ///     returns bucketed counts, a skip-reason histogram, and a host breakdown
-///     for a given job. Filter and single-URL drill-down modes ship in Task 11.
+///     for a given job. Filter mode returns matching entries when status,
+///     skipReason, or host filters are applied. Url mode returns the single
+///     matching entry for a given URL.
 /// </summary>
 [McpServerToolType]
 public static class InspectScrapeTool
@@ -50,38 +55,135 @@ public static class InspectScrapeTool
         var repo = factory.GetScrapeAuditRepository(profile);
 
         bool hasFilter = status != null || skipReason != null || host != null || url != null;
-        string result;
-        if (hasFilter)
+        bool isUrlMode = hasFilter && !string.IsNullOrEmpty(url);
+        string modeKey = (hasFilter, isUrlMode) switch
         {
-            // Filter mode lands in Task 11 — placeholder for now.
-            result = JsonSerializer.Serialize(new
-            {
-                JobId = jobId,
-                Mode = ModeLabelFilter,
-                Note = FilterModePlaceholderNote
-            }, smJsonOptions);
-        }
-        else
+            (false, _)    => ModeLabelSummary,
+            (true, true)  => ModeLabelUrl,
+            (true, false) => ModeLabelFilter
+        };
+
+        string result = modeKey switch
         {
-            var summary = await repo.SummarizeAsync(jobId, ct);
-            result = JsonSerializer.Serialize(new
-            {
-                JobId = jobId,
-                Mode = ModeLabelSummary,
-                Summary = summary
-            }, smJsonOptions);
-        }
+            ModeLabelSummary => await BuildSummaryResultAsync(repo, jobId, ct),
+            ModeLabelUrl     => await BuildUrlResultAsync(repo, jobId, url, ct),
+            _                => await BuildFilterResultAsync(repo, jobId, status, skipReason, host, url, limit, ct)
+        };
 
         return result;
     }
 
+    private static async Task<string> BuildSummaryResultAsync(IScrapeAuditRepository repo,
+                                                               string jobId,
+                                                               CancellationToken ct)
+    {
+        var summary = await repo.SummarizeAsync(jobId, ct);
+        return JsonSerializer.Serialize(new
+        {
+            JobId = jobId,
+            Mode = ModeLabelSummary,
+            Summary = summary
+        }, smJsonOptions);
+    }
+
+    private static async Task<string> BuildUrlResultAsync(IScrapeAuditRepository repo,
+                                                           string jobId,
+                                                           string? url,
+                                                           CancellationToken ct)
+    {
+        string urlValue = url ?? string.Empty;
+        ScrapeAuditLogEntry? entry = string.IsNullOrEmpty(urlValue)
+            ? null
+            : await repo.GetByUrlAsync(jobId, urlValue, ct);
+        string result;
+        if (entry is null)
+        {
+            result = JsonSerializer.Serialize(new
+            {
+                JobId = jobId,
+                Mode = ModeLabelUrl,
+                Status = StatusLabelNotFound,
+                Url = urlValue
+            }, smJsonOptions);
+        }
+        else
+        {
+            result = JsonSerializer.Serialize(new
+            {
+                JobId = jobId,
+                Mode = ModeLabelUrl,
+                Status = StatusLabelFound,
+                Entry = entry
+            }, smJsonOptions);
+        }
+        return result;
+    }
+
+    private static async Task<string> BuildFilterResultAsync(IScrapeAuditRepository repo,
+                                                              string jobId,
+                                                              string? status,
+                                                              string? skipReason,
+                                                              string? host,
+                                                              string? url,
+                                                              int limit,
+                                                              CancellationToken ct)
+    {
+        var statusEnum = ParseEnum<AuditStatus>(status);
+        var reasonEnum = ParseEnum<AuditSkipReason>(skipReason);
+        var entries = await repo.QueryAsync(jobId, statusEnum, reasonEnum, host,
+                                            urlSubstring: null, limit, ct);
+        string result;
+        if (entries.Count == 0)
+        {
+            var summary = await repo.SummarizeAsync(jobId, ct);
+            if (summary.TotalConsidered == 0)
+            {
+                result = JsonSerializer.Serialize(new
+                {
+                    JobId = jobId,
+                    Mode = ModeLabelFilter,
+                    Status = StatusLabelNotFound
+                }, smJsonOptions);
+            }
+            else
+            {
+                result = JsonSerializer.Serialize(new
+                {
+                    JobId = jobId,
+                    Mode = ModeLabelFilter,
+                    AppliedFilters = new { Status = status, SkipReason = skipReason, Host = host, Url = url, Limit = limit },
+                    Count = 0,
+                    Entries = entries
+                }, smJsonOptions);
+            }
+        }
+        else
+        {
+            result = JsonSerializer.Serialize(new
+            {
+                JobId = jobId,
+                Mode = ModeLabelFilter,
+                AppliedFilters = new { Status = status, SkipReason = skipReason, Host = host, Url = url, Limit = limit },
+                Count = entries.Count,
+                Entries = entries
+            }, smJsonOptions);
+        }
+        return result;
+    }
+
+    private static T? ParseEnum<T>(string? raw) where T : struct, Enum
+        => string.IsNullOrEmpty(raw) ? null : Enum.TryParse<T>(raw, ignoreCase: true, out var v) ? v : null;
+
     private static readonly JsonSerializerOptions smJsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNamingPolicy = null
+        PropertyNamingPolicy = null,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     private const string ModeLabelSummary = "summary";
     private const string ModeLabelFilter = "filter";
-    private const string FilterModePlaceholderNote = "Filter mode lands in Task 11";
+    private const string ModeLabelUrl = "url";
+    private const string StatusLabelFound = "found";
+    private const string StatusLabelNotFound = "not_found";
 }
