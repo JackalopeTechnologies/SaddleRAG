@@ -314,7 +314,11 @@ dryrunCommand.SetHandler(async (rootUrl,
                                            };
 
                              var crawler = provider.GetRequiredService<PageCrawler>();
-                             var report = await crawler.DryRunAsync(job);
+                             var report = await crawler.DryRunAsync(job,
+                                                                    libraryId: DryrunCommandName,
+                                                                    version: DryrunCommandName,
+                                                                    jobId: Guid.NewGuid().ToString("N")
+                                                                   );
 
                              Console.WriteLine();
                              Console.WriteLine($"=== Dry Run Report ({report.ElapsedTime.TotalSeconds:F1}s) ===");

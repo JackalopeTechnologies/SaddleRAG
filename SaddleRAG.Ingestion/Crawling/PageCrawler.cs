@@ -80,10 +80,23 @@ public class PageCrawler
     ///     decide whether the real crawl will produce reasonable results.
     /// </summary>
     public async Task<DryRunReport> DryRunAsync(ScrapeJob job,
+                                                 string libraryId,
+                                                 string version,
+                                                 string jobId,
                                                  Action<int, int>? onProgress = null,
                                                  CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+
+        var auditCtx = new AuditContext
+                           {
+                               JobId = jobId,
+                               LibraryId = libraryId,
+                               Version = version
+                           };
 
         var startTime = DateTime.UtcNow;
 
@@ -130,6 +143,7 @@ public class PageCrawler
                                               entry,
                                               job,
                                               rootScope,
+                                              auditCtx,
                                               browser,
                                               visited,
                                               queue,
@@ -172,6 +186,7 @@ public class PageCrawler
                                                CrawlEntry entry,
                                                ScrapeJob job,
                                                RootScope rootScope,
+                                               AuditContext auditCtx,
                                                IBrowser browser,
                                                HashSet<string> visited,
                                                Queue<CrawlEntry> queue,
@@ -183,11 +198,21 @@ public class PageCrawler
                                                DryRunStats stats,
                                                CancellationToken ct)
     {
+        var filterSkip = IsAllowed(url, job);
         switch(true)
         {
-            case true when IsAllowed(url, job) != null:
+            case true when filterSkip != null:
+            {
                 stats.FilteredSkips++;
+                string host = SafeGetHost(url);
+                bool inScope = IsInRootScope(url, rootScope);
+                bool sameHost = !inScope && IsSameHost(url, rootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(auditCtx, url, null, host, depth,
+                                           filterSkip.Value.Reason, filterSkip.Value.Detail);
                 break;
+            }
             case true when GitHubRepoScraper.TryParseGitHubUrl(url, out string owner, out string repo):
                 githubRepos.Add($"{owner}/{repo}");
                 break;
@@ -196,6 +221,7 @@ public class PageCrawler
                                                entry,
                                                job,
                                                rootScope,
+                                               auditCtx,
                                                browser,
                                                visited,
                                                queue,
@@ -214,6 +240,7 @@ public class PageCrawler
                                                 CrawlEntry entry,
                                                 ScrapeJob job,
                                                 RootScope rootScope,
+                                                AuditContext auditCtx,
                                                 IBrowser browser,
                                                 HashSet<string> visited,
                                                 Queue<CrawlEntry> queue,
@@ -231,13 +258,24 @@ public class PageCrawler
                                         entry.OffSiteDepth >= job.OffSiteDepth;
 
         if (depthExceeded)
+        {
             stats.DepthLimitedSkips++;
+            string host = SafeGetHost(url);
+            int displayDepth = inScope  ? entry.InScopeDepth :
+                               sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+            var skipReason = sameHost ? AuditSkipReason.SameHostDepth : AuditSkipReason.OffSiteDepth;
+            string detail = sameHost
+                                ? $"depth={displayDepth} limit={job.SameHostDepth}"
+                                : $"depth={displayDepth} limit={job.OffSiteDepth}";
+            mAuditWriter.RecordSkipped(auditCtx, url, null, host, displayDepth, skipReason, detail);
+        }
         else
         {
             await FetchDryRunPageAsync(url,
                                        entry,
                                        job,
                                        rootScope,
+                                       auditCtx,
                                        browser,
                                        visited,
                                        queue,
@@ -256,6 +294,7 @@ public class PageCrawler
                                             CrawlEntry entry,
                                             ScrapeJob job,
                                             RootScope rootScope,
+                                            AuditContext auditCtx,
                                             IBrowser browser,
                                             HashSet<string> visited,
                                             Queue<CrawlEntry> queue,
@@ -304,6 +343,7 @@ public class PageCrawler
                                                                entry,
                                                                job,
                                                                rootScope,
+                                                               auditCtx,
                                                                inScope,
                                                                visited,
                                                                queue,
@@ -341,6 +381,7 @@ public class PageCrawler
                                                             CrawlEntry entry,
                                                             ScrapeJob job,
                                                             RootScope rootScope,
+                                                            AuditContext auditCtx,
                                                             bool inScope,
                                                             HashSet<string> visited,
                                                             Queue<CrawlEntry> queue,
@@ -371,6 +412,8 @@ public class PageCrawler
         pagesByHost.TryGetValue(host, out int hostCount);
         pagesByHost[host] = hostCount + 1;
 
+        mAuditWriter.RecordFetched(auditCtx, url, null, host, effectiveDepth);
+
         if (samplePages.Count < SamplePageLimit)
         {
             samplePages.Add(new DryRunPageEntry
@@ -389,7 +432,8 @@ public class PageCrawler
                                job,
                                rootScope,
                                entry,
-                               (child, _) => queue.Enqueue(child)
+                               (child, _) => queue.Enqueue(child),
+                               auditCtx: auditCtx
                               );
 
         if (job.FetchDelayMs > 0)

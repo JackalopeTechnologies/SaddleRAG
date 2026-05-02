@@ -37,8 +37,13 @@ public static class IngestionTools
                 )]
     public static async Task<string> DryRunScrape(PageCrawler crawler,
                                                   IBackgroundJobRunner runner,
+                                                  RepositoryFactory repositoryFactory,
                                                   [Description("Root URL to begin crawling from")]
                                                   string rootUrl,
+                                                  [Description("Library identifier — used to key the audit log for this dry run")]
+                                                  string library,
+                                                  [Description("Library version — used to key the audit log for this dry run")]
+                                                  string version,
                                                   [Description("Allowed URL patterns (regex). Defaults to the rootUrl host."
                                                               )]
                                                   string[]? allowedUrlPatterns = null,
@@ -53,19 +58,24 @@ public static class IngestionTools
                                                   [Description("Max depth for pages on a different host entirely; 0 disables off-site crawling"
                                                               )]
                                                   int offSiteDepth = 1,
+                                                  [Description("Optional database profile name")]
+                                                  string? profile = null,
                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(crawler);
         ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(rootUrl);
+        ArgumentException.ThrowIfNullOrEmpty(library);
+        ArgumentException.ThrowIfNullOrEmpty(version);
 
         var allowed = allowedUrlPatterns ?? [new Uri(rootUrl).Host];
 
         var job = new ScrapeJob
                       {
                           RootUrl = rootUrl,
-                          LibraryId = DryRunLibraryId,
-                          Version = DryRunVersion,
+                          LibraryId = library,
+                          Version = version,
                           LibraryHint = DryRunHint,
                           AllowedUrlPatterns = allowed,
                           ExcludedUrlPatterns = excludedUrlPatterns ?? [],
@@ -75,11 +85,23 @@ public static class IngestionTools
                           OffSiteDepth = offSiteDepth
                       };
 
-        var inputJson = JsonSerializer.Serialize(new { rootUrl, maxPages, fetchDelayMs, sameHostDepth, offSiteDepth });
+        var inputJson = JsonSerializer.Serialize(new
+                                                     {
+                                                         rootUrl,
+                                                         library,
+                                                         version,
+                                                         maxPages,
+                                                         fetchDelayMs,
+                                                         sameHostDepth,
+                                                         offSiteDepth
+                                                     }
+                                                );
         var jobRecord = new BackgroundJobRecord
                             {
                                 Id = Guid.NewGuid().ToString(),
                                 JobType = BackgroundJobTypes.DryRunScrape,
+                                LibraryId = library,
+                                Version = version,
                                 InputJson = inputJson,
                                 ItemsLabel = ItemsLabelPages
                             };
@@ -87,7 +109,15 @@ public static class IngestionTools
         var jobId = await runner.QueueAsync(jobRecord,
                                             async (record, onProgress, jobCt) =>
                                             {
-                                                var report = await crawler.DryRunAsync(job, onProgress, jobCt);
+                                                var auditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
+                                                await auditRepo.DeleteByLibraryVersionAsync(library, version, jobCt);
+                                                var report = await crawler.DryRunAsync(job,
+                                                                                       library,
+                                                                                       version,
+                                                                                       record.Id,
+                                                                                       onProgress,
+                                                                                       jobCt
+                                                                                      );
                                                 record.ResultJson = JsonSerializer.Serialize(report, smJsonOptions);
                                             },
                                             ct);
@@ -309,8 +339,6 @@ public static class IngestionTools
     private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
 
     private const int DefaultDryRunMaxPages = 200;
-    private const string DryRunLibraryId = "dryrun";
-    private const string DryRunVersion = "dryrun";
     private const string DryRunHint = "Dry run";
     private const string ItemsLabelPages = "pages";
 }
