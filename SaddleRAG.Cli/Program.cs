@@ -23,6 +23,7 @@ using SaddleRAG.Ingestion.Ecosystems.NuGet;
 using SaddleRAG.Ingestion.Ecosystems.Pip;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Scanning;
+using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Suspect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -110,6 +111,8 @@ services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.Secti
 services.AddSingleton<OllamaBootstrapper>();
 services.AddSingleton<GitHubRepoScraper>();
 services.AddSingleton<PageCrawler>();
+services.AddSingleton<IScrapeAuditWriter>(sp =>
+    new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>()));
 services.AddSingleton<LlmClassifier>();
 services.AddSingleton<SaddleRAG.Ingestion.Symbols.SymbolExtractor>();
 services.AddSingleton<SaddleRAG.Ingestion.Recon.LibraryProfileService>();
