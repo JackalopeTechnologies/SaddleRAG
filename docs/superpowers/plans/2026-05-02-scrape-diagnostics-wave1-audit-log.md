@@ -179,7 +179,7 @@ public enum AuditSkipReason
 // SaddleRAG.Core/Models/Audit/ScrapeAuditLogEntry.cs
 namespace SaddleRAG.Core.Models.Audit;
 
-public sealed class ScrapeAuditLogEntry
+public sealed record ScrapeAuditLogEntry
 {
     public required string Id { get; init; }
     public required string JobId { get; init; }
@@ -200,7 +200,7 @@ public sealed class ScrapeAuditLogEntry
     public AuditPageOutcome? PageOutcome { get; init; }
 }
 
-public sealed class AuditPageOutcome
+public sealed record AuditPageOutcome
 {
     public string? FetchStatus { get; init; }
     public string? Category { get; init; }
