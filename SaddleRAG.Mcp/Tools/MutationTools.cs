@@ -239,6 +239,7 @@ public static class MutationTools
                                                 var bm25Repo = repositoryFactory.GetBm25ShardRepository(profile);
                                                 var excludedRepo = repositoryFactory.GetExcludedSymbolsRepository(profile);
                                                 var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
+                                                var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
 
                                                 var chunks = await chunkRepo.DeleteChunksAsync(library, version, jobCt);
                                                 var pages = await pageRepo.DeleteAsync(library, version, jobCt);
@@ -247,6 +248,7 @@ public static class MutationTools
                                                 var shards = await bm25Repo.DeleteAsync(library, version, jobCt);
                                                 var excluded = await excludedRepo.DeleteAsync(library, version, jobCt);
                                                 var versionResult = await libraryRepo.DeleteVersionAsync(library, version, jobCt);
+                                                var audit = await scrapeAuditRepo.DeleteByLibraryVersionAsync(library, version, jobCt);
 
                                                 record.ResultJson = JsonSerializer.Serialize(
                                                     new
@@ -260,7 +262,8 @@ public static class MutationTools
                                                                           Profiles = profiles,
                                                                           Indexes = indexes,
                                                                           Bm25Shards = shards,
-                                                                          ExcludedSymbols = excluded
+                                                                          ExcludedSymbols = excluded,
+                                                                          AuditEntries = audit
                                                                       },
                                                         versionResult.LibraryRowDeleted,
                                                         versionResult.CurrentVersionRepointedTo
