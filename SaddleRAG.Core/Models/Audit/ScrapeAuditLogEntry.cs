@@ -11,7 +11,7 @@ namespace SaddleRAG.Core.Models.Audit;
 ///     inspect_scrape MCP tool can explain why any given URL was
 ///     skipped, failed, or indexed.
 /// </summary>
-public sealed class ScrapeAuditLogEntry
+public sealed record ScrapeAuditLogEntry
 {
     /// <summary>
     ///     Unique identifier for this audit entry.

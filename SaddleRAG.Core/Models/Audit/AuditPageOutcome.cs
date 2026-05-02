@@ -9,7 +9,7 @@ namespace SaddleRAG.Core.Models.Audit;
 /// <summary>
 ///     Outcome of fetching and indexing a page.
 /// </summary>
-public sealed class AuditPageOutcome
+public sealed record AuditPageOutcome
 {
     /// <summary>
     ///     HTTP status code or fetch error label (e.g. "200", "Timeout").
