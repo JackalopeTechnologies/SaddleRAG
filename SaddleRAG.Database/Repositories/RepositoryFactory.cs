@@ -123,6 +123,16 @@ public class RepositoryFactory
     }
 
     /// <summary>
+    ///     Get a scrape audit log repository for the specified profile.
+    /// </summary>
+    public virtual IScrapeAuditRepository GetScrapeAuditRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new ScrapeAuditRepository(context);
+        return result;
+    }
+
+    /// <summary>
     ///     Get a rescrub job repository for the specified profile.
     /// </summary>
     public virtual IRescrubJobRepository GetRescrubJobRepository(string? profile = null)
