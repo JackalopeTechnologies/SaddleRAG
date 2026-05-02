@@ -27,6 +27,16 @@ public interface IScrapeAuditRepository
     /// <summary>
     ///     Query entries for a job with optional filters.
     /// </summary>
+    /// <param name="jobId">The scrape job identifier.</param>
+    /// <param name="status">Optional filter by audit status.</param>
+    /// <param name="skipReason">Optional filter by skip reason.</param>
+    /// <param name="host">Optional filter by hostname.</param>
+    /// <param name="urlSubstring">Optional filter by URL substring.</param>
+    /// <param name="limit">
+    ///     Maximum entries to return. Pass <see cref="int.MaxValue"/> for unlimited.
+    ///     Values ≤ 0 fall back to a default cap of 50.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
     Task<IReadOnlyList<ScrapeAuditLogEntry>> QueryAsync(string jobId,
                                                         AuditStatus? status,
                                                         AuditSkipReason? skipReason,
