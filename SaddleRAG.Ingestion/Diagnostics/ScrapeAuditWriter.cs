@@ -33,7 +33,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         mFlushInterval = flushInterval ?? smDefaultFlushInterval;
         mChannel = Channel.CreateUnbounded<ScrapeAuditLogEntry>(new UnboundedChannelOptions
         {
-            SingleReader = true,
+            SingleReader = false,
             SingleWriter = false
         });
         mLoop = Task.Run(RunFlushLoopAsync);
@@ -48,6 +48,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     private readonly Channel<ScrapeAuditLogEntry> mChannel;
     private readonly Task mLoop;
     private readonly CancellationTokenSource mCts = new();
+    private bool mDisposed;
 
     #region RecordSkipped method
 
@@ -128,17 +129,21 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        mChannel.Writer.TryComplete();
-        await mCts.CancelAsync();
-        try
+        if (!mDisposed)
         {
-            await mLoop;
+            mDisposed = true;
+            mChannel.Writer.TryComplete();
+            await mCts.CancelAsync();
+            try
+            {
+                await mLoop;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            await FlushAsync();
+            mCts.Dispose();
         }
-        catch (OperationCanceledException)
-        {
-        }
-        await FlushAsync();
-        mCts.Dispose();
     }
 
     #endregion
