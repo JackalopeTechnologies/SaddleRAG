@@ -10,6 +10,7 @@ using System.Threading.Channels;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
@@ -41,6 +42,7 @@ public class IngestionOrchestrator
                                  ILibraryIndexRepository libraryIndexRepository,
                                  IBm25ShardRepository bm25ShardRepository,
                                  SuspectDetector suspectDetector,
+                                 IScrapeAuditWriter auditWriter,
                                  ILogger<IngestionOrchestrator> logger)
     {
         mCrawler = crawler;
@@ -55,6 +57,7 @@ public class IngestionOrchestrator
         mLibraryIndexRepository = libraryIndexRepository;
         mBm25ShardRepository = bm25ShardRepository;
         mSuspectDetector = suspectDetector;
+        mAuditWriter = auditWriter;
         mLogger = logger;
     }
 
@@ -64,6 +67,7 @@ public class IngestionOrchestrator
     private readonly ILibraryIndexRepository mLibraryIndexRepository;
     private readonly IBm25ShardRepository mBm25ShardRepository;
     private readonly SuspectDetector mSuspectDetector;
+    private readonly IScrapeAuditWriter mAuditWriter;
 
     private readonly PageCrawler mCrawler;
     private readonly IEmbeddingProvider mEmbeddingProvider;
@@ -130,6 +134,13 @@ public class IngestionOrchestrator
                            };
         progress.PipelineState = nameof(ScrapeJobStatus.Running);
 
+        var auditCtx = new AuditContext
+                           {
+                               JobId = progress.Id,
+                               LibraryId = job.LibraryId,
+                               Version = job.Version
+                           };
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // Launch all five stages
@@ -152,6 +163,7 @@ public class IngestionOrchestrator
         var embedTask = RunEmbedStageAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
         var indexTask = RunIndexStageAsync(profile,
                                            job,
+                                           auditCtx,
                                            embedToIndex.Reader,
                                            progress,
                                            onProgress,
@@ -750,6 +762,7 @@ public class IngestionOrchestrator
 
     private async Task RunIndexStageAsync(string? profile,
                                           ScrapeJob job,
+                                          AuditContext auditCtx,
                                           ChannelReader<DocChunk[]> input,
                                           ScrapeJobRecord progress,
                                           Action<ScrapeJobRecord>? onProgress,
@@ -757,6 +770,7 @@ public class IngestionOrchestrator
     {
         var pendingChunks = new List<DocChunk>();
         var indexedPageUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pageChunkCounts = new Dictionary<string, (int ChunkCount, DocCategory Category)>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
@@ -765,9 +779,8 @@ public class IngestionOrchestrator
                 pendingChunks.AddRange(embeddedChunks);
                 progress.ChunksCompleted += embeddedChunks.Length;
 
-                // Track unique page URLs that have been indexed
-                foreach(var chunk in embeddedChunks)
-                    indexedPageUrls.Add(chunk.PageUrl);
+                // Track unique page URLs and accumulate per-page chunk counts
+                AccumulatePageChunkCounts(embeddedChunks, indexedPageUrls, pageChunkCounts);
 
                 if (pendingChunks.Count >= IndexRebuildInterval)
                 {
@@ -785,6 +798,24 @@ public class IngestionOrchestrator
                 progress.PagesCompleted = indexedPageUrls.Count;
                 onProgress?.Invoke(progress);
             }
+
+            // Emit one audit record per page that completed the full pipeline
+            foreach(var (pageUrl, (chunkCount, category)) in pageChunkCounts)
+            {
+                var host = new Uri(pageUrl).Host;
+                mAuditWriter.RecordIndexed(auditCtx,
+                                           pageUrl,
+                                           parentUrl: null,
+                                           host,
+                                           depth: 0,
+                                           new AuditPageOutcome
+                                               {
+                                                   FetchStatus = null,
+                                                   Category = category.ToString(),
+                                                   ChunkCount = chunkCount
+                                               }
+                                          );
+            }
         }
         catch(OperationCanceledException)
         {
@@ -795,6 +826,20 @@ public class IngestionOrchestrator
             mLogger.LogError(ex, "Index stage fatal error");
             await cts.CancelAsync();
             throw;
+        }
+    }
+
+    private static void AccumulatePageChunkCounts(DocChunk[] chunks,
+                                                   HashSet<string> indexedPageUrls,
+                                                   Dictionary<string, (int ChunkCount, DocCategory Category)> pageChunkCounts)
+    {
+        foreach(var chunk in chunks)
+        {
+            indexedPageUrls.Add(chunk.PageUrl);
+            if (pageChunkCounts.TryGetValue(chunk.PageUrl, out var existing))
+                pageChunkCounts[chunk.PageUrl] = (existing.ChunkCount + 1, chunk.Category);
+            else
+                pageChunkCounts[chunk.PageUrl] = (1, chunk.Category);
         }
     }
 
