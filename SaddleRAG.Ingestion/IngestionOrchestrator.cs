@@ -400,6 +400,7 @@ public class IngestionOrchestrator
         {
             await mCrawler.CrawlAsync(job,
                                       output,
+                                      progress.Id,
                                       resumeUrls,
                                       pageCount =>
                                       {
