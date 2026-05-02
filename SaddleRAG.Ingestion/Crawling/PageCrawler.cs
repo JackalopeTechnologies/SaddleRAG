@@ -1016,6 +1016,11 @@ public class PageCrawler
             limiter.ReportTransientError();
             ctx.OnFetchError?.Invoke();
             mLogger.LogError(ex, "Error fetching {Url}", url);
+            bool exInScope = IsInRootScope(url, ctx.RootScope);
+            bool exSameHost = !exInScope && IsSameHost(url, ctx.RootScope);
+            int exDepth = exInScope  ? entry.InScopeDepth :
+                          exSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+            mAuditWriter.RecordFailed(ctx.AuditCtx, url, null, SafeGetHost(url), exDepth, ex.Message);
         }
         finally
         {
@@ -1036,6 +1041,11 @@ public class PageCrawler
             limiter.ReportTransientError();
             ctx.OnFetchError?.Invoke();
             mLogger.LogWarning("No response from {Url}", originalUrl);
+            bool nullInScope = IsInRootScope(originalUrl, ctx.RootScope);
+            bool nullSameHost = !nullInScope && IsSameHost(originalUrl, ctx.RootScope);
+            int nullDepth = nullInScope  ? entry.InScopeDepth :
+                            nullSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+            mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, null, SafeGetHost(originalUrl), nullDepth, NoResponseError);
         }
         else
             await DispatchKnownResponseAsync(response, page, fetchUrl, entry, ctx, limiter, originalUrl);
@@ -1050,6 +1060,10 @@ public class PageCrawler
                                                    string originalUrl)
     {
         bool inScope = IsInRootScope(originalUrl, ctx.RootScope);
+        bool sameHost = !inScope && IsSameHost(originalUrl, ctx.RootScope);
+        int dispatchDepth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+        string dispatchHost = SafeGetHost(originalUrl);
 
         switch(true)
         {
@@ -1058,19 +1072,31 @@ public class PageCrawler
                 await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx);
                 break;
             case true when HostRateLimiter.IsRateLimitStatus(response.Status):
+            {
                 await HandleRateLimitedAsync(response, limiter, ctx, originalUrl);
+                mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, null, dispatchHost, dispatchDepth,
+                                          $"HTTP {response.Status} rate limited");
                 break;
+            }
             case true when HostRateLimiter.IsForbiddenStatus(response.Status) && inScope:
                 await HandleInScopeForbiddenAsync(response, entry, ctx, limiter, originalUrl);
                 break;
             case true when HostRateLimiter.IsForbiddenStatus(response.Status):
+            {
                 HandleGatedPath(ctx, originalUrl);
+                mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, null, dispatchHost, dispatchDepth,
+                                          $"HTTP {response.Status} gated");
                 break;
+            }
             default:
+            {
                 limiter.ReportTransientError();
                 ctx.OnFetchError?.Invoke();
                 mLogger.LogWarning("Failed to fetch {Url}: {Status}", originalUrl, response.Status);
+                mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, null, dispatchHost, dispatchDepth,
+                                          $"HTTP {response.Status}");
                 break;
+            }
         }
     }
 
@@ -1107,6 +1133,8 @@ public class PageCrawler
             ctx.DroppedInScopeUrls.Add(originalUrl);
             ctx.OnFetchError?.Invoke();
             await LogForbiddenDiagnosticsAsync(response, originalUrl, entry.RetryAttemptIndex + 1);
+            mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, null, SafeGetHost(originalUrl),
+                                      entry.InScopeDepth, $"HTTP {response.Status} forbidden (max retries)");
         }
     }
 
@@ -1230,6 +1258,12 @@ public class PageCrawler
         await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
         int newCount = ctx.IncrementPageCount();
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);
+
+        bool successInScope = IsInRootScope(fetchUrl, ctx.RootScope);
+        bool successSameHost = !successInScope && IsSameHost(fetchUrl, ctx.RootScope);
+        int successDepth = successInScope  ? entry.InScopeDepth :
+                           successSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+        mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, null, SafeGetHost(fetchUrl), successDepth);
 
         EnqueueDiscoveredLinks(links,
                                ctx.IsVisited,
@@ -1954,6 +1988,7 @@ public class PageCrawler
     private const int HttpNotFound = 404;
     private const string RetryAfterHeader = "retry-after";
     private const string DroppedUrlSeparator = ", ";
+    private const string NoResponseError = "No response";
     private const int ForbiddenBodySnippetMaxChars = 400;
 
     private const string ServerHeader = "server";
