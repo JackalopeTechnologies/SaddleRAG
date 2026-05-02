@@ -114,12 +114,14 @@ public static class UrlCorrectionTools
                                                               var indexRepo = repositoryFactory.GetLibraryIndexRepository(profile);
                                                               var bm25Repo = repositoryFactory.GetBm25ShardRepository(profile);
                                                               var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
+                                                              var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
 
                                                               var chunks = await chunkRepo.DeleteChunksAsync(library, version, jobCt);
                                                               var pages = await pageRepo.DeleteAsync(library, version, jobCt);
                                                               await profileRepo.DeleteAsync(library, version, jobCt);
                                                               await indexRepo.DeleteAsync(library, version, jobCt);
                                                               await bm25Repo.DeleteAsync(library, version, jobCt);
+                                                              await scrapeAuditRepo.DeleteByLibraryVersionAsync(library, version, jobCt);
                                                               await libraryRepo.ClearSuspectAsync(library, version, jobCt);
 
                                                               var scrapeJob = ScrapeJobFactory.CreateFromUrl(newUrl,
