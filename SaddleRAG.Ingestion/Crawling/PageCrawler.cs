@@ -900,7 +900,11 @@ public class PageCrawler
             if (gated)
             {
                 string host = SafeGetHost(entry.Url);
-                mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, 0, AuditSkipReason.HostGated, null);
+                bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, depth, AuditSkipReason.HostGated, null);
             }
 
             if (firstVisit)
@@ -930,7 +934,11 @@ public class PageCrawler
             case true when skipReason != null:
             {
                 string host = SafeGetHost(url);
-                mAuditWriter.RecordSkipped(ctx.AuditCtx, url, null, host, 0, skipReason.Value.Reason,
+                bool inScope = IsInRootScope(url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx, url, null, host, depth, skipReason.Value.Reason,
                                            skipReason.Value.Detail);
                 break;
             }
@@ -1431,7 +1439,11 @@ public class PageCrawler
                 if (auditCtx != null)
                 {
                     string host = SafeGetHost(normalized);
-                    mAuditWriter.RecordSkipped(auditCtx, normalized, parentEntry.Url, host, 0,
+                    bool linkInScope = IsInRootScope(normalized, rootScope);
+                    bool linkSameHost = !linkInScope && IsSameHost(normalized, rootScope);
+                    int depth = linkInScope  ? parentEntry.InScopeDepth + 1 :
+                                linkSameHost ? parentEntry.SameHostDepth + 1 : parentEntry.OffSiteDepth + 1;
+                    mAuditWriter.RecordSkipped(auditCtx, normalized, parentEntry.Url, host, depth,
                                                skipReason.Value.Reason, skipReason.Value.Detail);
                 }
             }
