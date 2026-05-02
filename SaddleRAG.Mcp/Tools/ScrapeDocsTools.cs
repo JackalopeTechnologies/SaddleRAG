@@ -150,6 +150,8 @@ public static class ScrapeDocsTools
             {
                 string resolvedUrl = url ?? string.Empty;
                 jobToQueue ??= BuildJobForUrl(resolvedUrl, libraryId, version, hint, maxPages, fetchDelayMs, force, allowedUrlPatterns, excludedUrlPatterns);
+                var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
+                await scrapeAuditRepo.DeleteByLibraryVersionAsync(libraryId, version, ct);
                 var jobId = await runner.QueueAsync(jobToQueue, profile, ct);
                 var response = new
                                    {
