@@ -506,6 +506,7 @@ app.MapHub<SaddleRAG.Mcp.Hubs.MonitorHub>(MonitorHubEndpointPath);
 app.UseAuthentication();
 app.UseAuthorization();
 SaddleRAG.Mcp.Api.MonitorApiEndpoints.Map(app);
+SaddleRAG.Mcp.Api.MonitorSnapshotEndpoints.Map(app);
 
 
 

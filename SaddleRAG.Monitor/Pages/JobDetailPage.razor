@@ -6,6 +6,11 @@
 
 <MudText Typo="Typo.h5">Job: @JobId</MudText>
 
+@if (!HubConnected)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-2">Live connection lost — polling for updates.</MudAlert>
+}
+
 @if (CurrentTick is not null)
 {
     <PipelineStrip Counters="@CurrentTick.Counters" />
