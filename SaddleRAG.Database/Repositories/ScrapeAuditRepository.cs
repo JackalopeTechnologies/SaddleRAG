@@ -20,6 +20,10 @@ namespace SaddleRAG.Database.Repositories;
 /// </summary>
 public sealed class ScrapeAuditRepository : IScrapeAuditRepository
 {
+    private const string AggregateIdField   = "_id";
+    private const string AggregateCountField = "count";
+    private const string MongoStatusField   = "Status";
+
     public ScrapeAuditRepository(SaddleRagDbContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -82,25 +86,101 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
     public async Task<AuditSummary> SummarizeAsync(string jobId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
-        var entries = await QueryAsync(jobId, null, null, null, null, int.MaxValue, ct);
 
-        var skipReasonCounts = entries
-            .Select(e => e.SkipReason)
-            .OfType<AuditSkipReason>()
-            .GroupBy(r => r)
-            .ToDictionary(g => g.Key, g => g.Count());
+        // ── status bucket pipeline ───────────────────────────────────────────────
+        var statusPipeline = new[]
+        {
+            new BsonDocument("$match", new BsonDocument("JobId", jobId)),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { AggregateIdField,     new BsonDocument(MongoStatusField, "$Status") },
+                { AggregateCountField,  new BsonDocument("$sum", 1) }
+            })
+        };
 
-        var hostCounts = entries.GroupBy(e => e.Host)
-                                .ToDictionary(g => g.Key, g => g.Count());
+        // ── host bucket pipeline ─────────────────────────────────────────────────
+        var hostPipeline = new[]
+        {
+            new BsonDocument("$match", new BsonDocument("JobId", jobId)),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { AggregateIdField,    "$Host" },
+                { AggregateCountField, new BsonDocument("$sum", 1) }
+            })
+        };
+
+        // ── skip-reason bucket pipeline ──────────────────────────────────────────
+        var reasonPipeline = new[]
+        {
+            new BsonDocument("$match", new BsonDocument
+            {
+                { "JobId",      jobId },
+                { "SkipReason", new BsonDocument("$exists", true) }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { AggregateIdField,    "$SkipReason" },
+                { AggregateCountField, new BsonDocument("$sum", 1) }
+            })
+        };
+
+        var col        = mContext.ScrapeAuditLog;
+        var statusTask = col.Aggregate<BsonDocument>(statusPipeline, cancellationToken: ct).ToListAsync(ct);
+        var hostTask   = col.Aggregate<BsonDocument>(hostPipeline,   cancellationToken: ct).ToListAsync(ct);
+        var reasonTask = col.Aggregate<BsonDocument>(reasonPipeline, cancellationToken: ct).ToListAsync(ct);
+
+        await Task.WhenAll(statusTask, hostTask, reasonTask);
+
+        var statusBuckets = statusTask.Result;
+        var hostBuckets   = hostTask.Result;
+        var reasonBuckets = reasonTask.Result;
+
+        int total   = 0;
+        int indexed = 0;
+        int fetched = 0;
+        int failed  = 0;
+        int skipped = 0;
+
+        foreach (var doc in statusBuckets)
+        {
+            int cnt    = doc[AggregateCountField].AsInt32;
+            total     += cnt;
+            var status = (AuditStatus) doc[AggregateIdField][MongoStatusField].AsInt32;
+            switch (status)
+            {
+                case AuditStatus.Indexed:
+                    indexed = cnt;
+                    break;
+                case AuditStatus.Fetched:
+                    fetched = cnt;
+                    break;
+                case AuditStatus.Failed:
+                    failed = cnt;
+                    break;
+                case AuditStatus.Skipped:
+                    skipped = cnt;
+                    break;
+            }
+        }
+
+        var skipReasonCounts = reasonBuckets
+            .Where(d => !d[AggregateIdField].IsBsonNull)
+            .ToDictionary(
+                d => (AuditSkipReason) d[AggregateIdField].AsInt32,
+                d => d[AggregateCountField].AsInt32);
+
+        var hostCounts = hostBuckets.ToDictionary(
+            d => d[AggregateIdField].IsBsonNull ? string.Empty : d[AggregateIdField].AsString,
+            d => d[AggregateCountField].AsInt32);
 
         return new AuditSummary
         {
             JobId            = jobId,
-            TotalConsidered  = entries.Count,
-            IndexedCount     = entries.Count(e => e.Status == AuditStatus.Indexed),
-            FetchedCount     = entries.Count(e => e.Status == AuditStatus.Fetched),
-            FailedCount      = entries.Count(e => e.Status == AuditStatus.Failed),
-            SkippedCount     = entries.Count(e => e.Status == AuditStatus.Skipped),
+            TotalConsidered  = total,
+            IndexedCount     = indexed,
+            FetchedCount     = fetched,
+            FailedCount      = failed,
+            SkippedCount     = skipped,
             SkipReasonCounts = skipReasonCounts,
             HostCounts       = hostCounts
         };
