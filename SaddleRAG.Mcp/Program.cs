@@ -43,6 +43,9 @@ using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Suspect;
 
+using MudBlazor.Services;
+using SaddleRAG.Monitor.Theme;
+
 using SaddleRAG.Mcp;
 
 using SaddleRAG.Mcp.Tools;
@@ -73,6 +76,7 @@ const string HttpClientDocUrlProbe = "DocUrlProbe";
 const string KestrelHttpsEndpointKey = "Kestrel:Endpoints:Https:Url";
 const string HealthEndpointPath = "/health";
 const string HealthyStatus = "Healthy";
+const string MonitorHubEndpointPath = "/monitor/hub";
 
 var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
 
@@ -337,6 +341,13 @@ builder.Services
 
        .WithToolsFromAssembly();
 
+// Blazor Server + SignalR for /monitor
+builder.Services.AddRazorComponents()
+                .AddInteractiveServerComponents();
+builder.Services.AddSignalR();
+builder.Services.AddMudServices();
+builder.Services.AddHostedService<SaddleRAG.Mcp.Hubs.MonitorTickService>();
+
 
 
 const string PrewarmFlag = "--prewarm";
@@ -470,6 +481,13 @@ app.MapGet(HealthEndpointPath,
 // MCP endpoint
 
 app.MapMcp(McpEndpointPattern);
+
+// Blazor Server monitor
+app.MapRazorComponents<SaddleRAG.Mcp.Monitor.App>()
+   .AddInteractiveServerRenderMode();
+
+// SignalR hub
+app.MapHub<SaddleRAG.Mcp.Hubs.MonitorHub>(MonitorHubEndpointPath);
 
 
 
