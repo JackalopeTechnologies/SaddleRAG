@@ -77,6 +77,8 @@ const string KestrelHttpsEndpointKey = "Kestrel:Endpoints:Https:Url";
 const string HealthEndpointPath = "/health";
 const string HealthyStatus = "Healthy";
 const string MonitorHubEndpointPath = "/monitor/hub";
+const string KestrelHttpPortKey      = "Kestrel:Endpoints:Http:Port";
+const int    DefaultMonitorPort      = 6100;
 
 var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
 
@@ -348,6 +350,10 @@ builder.Services.AddSignalR();
 builder.Services.AddMudServices();
 builder.Services.AddHostedService<SaddleRAG.Mcp.Hubs.MonitorTickService>();
 builder.Services.AddSingleton<SaddleRAG.Monitor.Services.MonitorDataService>();
+
+var monitorPort = builder.Configuration.GetValue<int?>(KestrelHttpPortKey) ?? DefaultMonitorPort;
+builder.Services.AddHttpClient<SaddleRAG.Monitor.Services.MonitorWriteService>(client =>
+    client.BaseAddress = new Uri($"http://localhost:{monitorPort}/"));
 
 builder.Services.AddAuthorization(opts =>
     opts.AddPolicy(SaddleRAG.Mcp.Auth.DiagnosticsWriteRequirement.PolicyName,
