@@ -198,6 +198,8 @@ builder.Services.AddSingleton<SaddleRAG.Ingestion.Symbols.SymbolExtractor>();
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.RescrubService>();
 builder.Services.AddSingleton<SaddleRAG.Ingestion.RescrubJobRunner>();
 builder.Services.AddSingleton<SaddleRAG.Ingestion.BackgroundJobRunner>();
+builder.Services.AddSingleton<IBackgroundJobRunner>(sp =>
+    sp.GetRequiredService<SaddleRAG.Ingestion.BackgroundJobRunner>());
 
 // Rechunk service (consumed by rechunk_library MCP tool)
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.RechunkService>();
