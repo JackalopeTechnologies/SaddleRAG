@@ -60,15 +60,18 @@ public class PageCrawler
     public PageCrawler(IPageRepository pageRepository,
                        GitHubRepoScraper gitHubScraper,
                        IScrapeAuditWriter auditWriter,
+                       IMonitorBroadcaster broadcaster,
                        ILogger<PageCrawler> logger)
     {
         mPageRepository = pageRepository;
         mGitHubScraper = gitHubScraper;
         mAuditWriter = auditWriter;
+        mBroadcaster = broadcaster;
         mLogger = logger;
     }
 
     private readonly IScrapeAuditWriter mAuditWriter;
+    private readonly IMonitorBroadcaster mBroadcaster;
     private readonly GitHubRepoScraper mGitHubScraper;
     private readonly ILogger<PageCrawler> mLogger;
 
@@ -418,6 +421,7 @@ public class PageCrawler
         // host string as the live-crawl path (empty string for file:// URLs rather
         // than the "file://" literal that BuildHostKey returns for empty-host schemes).
         mAuditWriter.RecordFetched(auditCtx, url, null, SafeGetHost(url), effectiveDepth);
+        mBroadcaster.RecordFetch(auditCtx.JobId, url);
 
         if (samplePages.Count < SamplePageLimit)
         {
@@ -954,6 +958,7 @@ public class PageCrawler
                 int depth = inScope  ? entry.InScopeDepth :
                             sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
                 mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, depth, AuditSkipReason.QueueLimit, null);
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.QueueLimit.ToString());
             }
 
             if (gated)
@@ -964,6 +969,7 @@ public class PageCrawler
                 int depth = inScope  ? entry.InScopeDepth :
                             sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
                 mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, depth, AuditSkipReason.HostGated, null);
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.HostGated.ToString());
             }
 
             if (!overLimit && !gated && !firstVisit)
@@ -974,6 +980,7 @@ public class PageCrawler
                 int depth = inScope  ? entry.InScopeDepth :
                             sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
                 mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, null, host, depth, AuditSkipReason.AlreadyVisited, null);
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.AlreadyVisited.ToString());
             }
 
             if (firstVisit)
@@ -1009,6 +1016,7 @@ public class PageCrawler
                             sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
                 mAuditWriter.RecordSkipped(ctx.AuditCtx, url, null, host, depth, skipReason.Value.Reason,
                                            skipReason.Value.Detail);
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.Value.Reason.ToString());
                 break;
             }
             case true when GitHubRepoScraper.TryParseGitHubUrl(url, out string owner, out string repo):
@@ -1047,6 +1055,7 @@ public class PageCrawler
                                 ? $"depth={displayDepth} limit={ctx.Job.SameHostDepth}"
                                 : $"depth={displayDepth} limit={ctx.Job.OffSiteDepth}";
             mAuditWriter.RecordSkipped(ctx.AuditCtx, url, null, host, displayDepth, skipReason, detail);
+            mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.ToString());
         }
         else
             await FetchCrawlPageAsync(entry, inScope, ctx, browser);
@@ -1090,6 +1099,7 @@ public class PageCrawler
             int exDepth = exInScope  ? entry.InScopeDepth :
                           exSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
             mAuditWriter.RecordFailed(ctx.AuditCtx, url, entry.ParentUrl, SafeGetHost(url), exDepth, ex.Message);
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message);
         }
         finally
         {
@@ -1115,6 +1125,7 @@ public class PageCrawler
             int nullDepth = nullInScope  ? entry.InScopeDepth :
                             nullSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
             mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, entry.ParentUrl, SafeGetHost(originalUrl), nullDepth, NoResponseError);
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError);
         }
         else
             await DispatchKnownResponseAsync(response, page, fetchUrl, entry, ctx, limiter, originalUrl);
@@ -1145,6 +1156,7 @@ public class PageCrawler
                 await HandleRateLimitedAsync(response, limiter, ctx, originalUrl);
                 mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, entry.ParentUrl, dispatchHost, dispatchDepth,
                                           $"HTTP {response.Status} rate limited");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} rate limited");
                 break;
             }
             case true when HostRateLimiter.IsForbiddenStatus(response.Status) && inScope:
@@ -1155,6 +1167,7 @@ public class PageCrawler
                 HandleGatedPath(ctx, originalUrl);
                 mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, entry.ParentUrl, dispatchHost, dispatchDepth,
                                           $"HTTP {response.Status} gated");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} gated");
                 break;
             }
             default:
@@ -1164,6 +1177,7 @@ public class PageCrawler
                 mLogger.LogWarning("Failed to fetch {Url}: {Status}", originalUrl, response.Status);
                 mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, entry.ParentUrl, dispatchHost, dispatchDepth,
                                           $"HTTP {response.Status}");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}");
                 break;
             }
         }
@@ -1204,6 +1218,7 @@ public class PageCrawler
             await LogForbiddenDiagnosticsAsync(response, originalUrl, entry.RetryAttemptIndex + 1);
             mAuditWriter.RecordFailed(ctx.AuditCtx, originalUrl, entry.ParentUrl, SafeGetHost(originalUrl),
                                       entry.InScopeDepth, $"HTTP {response.Status} forbidden (max retries)");
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} forbidden (max retries)");
         }
     }
 
@@ -1336,6 +1351,7 @@ public class PageCrawler
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);
 
         mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), pageDepth);
+        mBroadcaster.RecordFetch(ctx.AuditCtx.JobId, fetchUrl);
 
         EnqueueDiscoveredLinks(links,
                                ctx.IsVisited,

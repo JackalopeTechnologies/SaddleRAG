@@ -43,6 +43,7 @@ public class IngestionOrchestrator
                                  IBm25ShardRepository bm25ShardRepository,
                                  SuspectDetector suspectDetector,
                                  IScrapeAuditWriter auditWriter,
+                                 IMonitorBroadcaster broadcaster,
                                  ILogger<IngestionOrchestrator> logger)
     {
         mCrawler = crawler;
@@ -58,6 +59,7 @@ public class IngestionOrchestrator
         mBm25ShardRepository = bm25ShardRepository;
         mSuspectDetector = suspectDetector;
         mAuditWriter = auditWriter;
+        mBroadcaster = broadcaster;
         mLogger = logger;
     }
 
@@ -68,6 +70,7 @@ public class IngestionOrchestrator
     private readonly IBm25ShardRepository mBm25ShardRepository;
     private readonly SuspectDetector mSuspectDetector;
     private readonly IScrapeAuditWriter mAuditWriter;
+    private readonly IMonitorBroadcaster mBroadcaster;
 
     private readonly PageCrawler mCrawler;
     private readonly IEmbeddingProvider mEmbeddingProvider;
@@ -141,6 +144,8 @@ public class IngestionOrchestrator
                                Version = job.Version
                            };
 
+        mBroadcaster.RecordJobStarted(progress.Id, job.LibraryId, job.Version, job.RootUrl ?? string.Empty);
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // Launch all five stages
@@ -180,6 +185,7 @@ public class IngestionOrchestrator
             progress.PipelineState = nameof(ScrapeJobStatus.Failed);
             progress.ErrorMessage = ex.Message;
             onProgress?.Invoke(progress);
+            mBroadcaster.RecordJobFailed(progress.Id, ex.Message);
             throw;
         }
 
@@ -192,6 +198,7 @@ public class IngestionOrchestrator
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
         onProgress?.Invoke(progress);
+        mBroadcaster.RecordJobCompleted(progress.Id, progress.PagesCompleted);
 
         mLogger.LogInformation("Streaming ingestion complete for {LibraryId} v{Version}: {Pages} pages, {Chunks} chunks searchable",
                                job.LibraryId,
@@ -554,6 +561,7 @@ public class IngestionOrchestrator
                 await output.WriteAsync(classified, cts.Token);
                 progress.PagesClassified++;
                 onProgress?.Invoke(progress);
+                mBroadcaster.RecordPageClassified(progress.Id);
             }
         }
         catch(OperationCanceledException)
@@ -645,6 +653,8 @@ public class IngestionOrchestrator
                 await output.WriteAsync(chunks.ToArray(), ct);
                 progress.ChunksGenerated += chunks.Count;
                 onProgress?.Invoke(progress);
+                for (var ci = 0; ci < chunks.Count; ci++)
+                    mBroadcaster.RecordChunkGenerated(progress.Id);
             }
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
@@ -728,6 +738,8 @@ public class IngestionOrchestrator
             await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
             progress.ChunksEmbedded += embeddedChunks.Length;
             onProgress?.Invoke(progress);
+            for (var ei = 0; ei < embeddedChunks.Length; ei++)
+                mBroadcaster.RecordChunkEmbedded(progress.Id);
 
             await output.WriteAsync(embeddedChunks, ct);
 
@@ -817,6 +829,7 @@ public class IngestionOrchestrator
                                                    ChunkCount = chunkCount
                                                }
                                           );
+                mBroadcaster.RecordPageCompleted(auditCtx.JobId);
             }
         }
         catch(OperationCanceledException)
