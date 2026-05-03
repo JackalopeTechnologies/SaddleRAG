@@ -8,6 +8,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -38,7 +39,7 @@ public static class MutationTools
                  "Errors with Outcome=Collision if the new id already exists; never silently merges libraries."
                 )]
     public static async Task<string> RenameLibrary(RepositoryFactory repositoryFactory,
-                                                   IBackgroundJobRunner runner,
+                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))] IBackgroundJobRunner runner,
                                                    [Description("Current library identifier")]
                                                    string library,
                                                    [Description("New library identifier")]
@@ -152,7 +153,7 @@ public static class MutationTools
                  "immediately; poll get_job_status for the outcome."
                 )]
     public static async Task<string> DeleteVersion(RepositoryFactory repositoryFactory,
-                                                   IBackgroundJobRunner runner,
+                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))] IBackgroundJobRunner runner,
                                                    [Description("Library identifier")]
                                                    string library,
                                                    [Description("Version to delete")]
@@ -282,7 +283,7 @@ public static class MutationTools
                  "dryRun=false returns { JobId, Status: 'Queued' } immediately; poll get_job_status for the outcome."
                 )]
     public static async Task<string> DeleteLibrary(RepositoryFactory repositoryFactory,
-                                                   IBackgroundJobRunner runner,
+                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))] IBackgroundJobRunner runner,
                                                    [Description("Library identifier")]
                                                    string library,
                                                    [Description("If true (default), preview without writing.")]

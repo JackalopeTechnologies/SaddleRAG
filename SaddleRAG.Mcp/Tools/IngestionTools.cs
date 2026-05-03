@@ -8,6 +8,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
@@ -36,7 +37,7 @@ public static class IngestionTools
                  "the URL patterns are correct and the crawl scope is reasonable."
                 )]
     public static async Task<string> DryRunScrape(PageCrawler crawler,
-                                                  IBackgroundJobRunner runner,
+                                                  [FromKeyedServices(nameof(IBackgroundJobRunner))] IBackgroundJobRunner runner,
                                                   RepositoryFactory repositoryFactory,
                                                   [Description("Root URL to begin crawling from")]
                                                   string rootUrl,

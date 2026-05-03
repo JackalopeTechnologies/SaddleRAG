@@ -206,6 +206,8 @@ builder.Services.AddSingleton<SaddleRAG.Ingestion.RescrubJobRunner>();
 builder.Services.AddSingleton<SaddleRAG.Ingestion.BackgroundJobRunner>();
 builder.Services.AddSingleton<IBackgroundJobRunner>(sp =>
     sp.GetRequiredService<SaddleRAG.Ingestion.BackgroundJobRunner>());
+builder.Services.AddKeyedSingleton<IBackgroundJobRunner>(nameof(IBackgroundJobRunner),
+    (sp, _) => sp.GetRequiredService<SaddleRAG.Ingestion.BackgroundJobRunner>());
 
 // Rechunk service (consumed by rechunk_library MCP tool)
 builder.Services.AddSingleton<SaddleRAG.Ingestion.Recon.RechunkService>();
@@ -503,7 +505,6 @@ app.MapRazorComponents<SaddleRAG.Mcp.Monitor.App>()
 app.MapHub<SaddleRAG.Mcp.Hubs.MonitorHub>(MonitorHubEndpointPath);
 
 // Monitor write API
-app.UseAuthentication();
 app.UseAuthorization();
 SaddleRAG.Mcp.Api.MonitorApiEndpoints.Map(app);
 SaddleRAG.Mcp.Api.MonitorSnapshotEndpoints.Map(app);

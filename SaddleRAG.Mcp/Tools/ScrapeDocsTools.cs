@@ -8,6 +8,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
@@ -214,7 +215,7 @@ public static class ScrapeDocsTools
                  "full report showing what was found, cached, queued, and unresolved."
                 )]
     public static async Task<string> IndexProjectDependencies(DependencyIndexer indexer,
-                                                              IBackgroundJobRunner runner,
+                                                              [FromKeyedServices(nameof(IBackgroundJobRunner))] IBackgroundJobRunner runner,
                                                               [Description("Project root directory or specific project file path"
                                                                           )]
                                                               string path,
