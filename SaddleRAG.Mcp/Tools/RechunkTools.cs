@@ -8,6 +8,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
@@ -38,7 +39,7 @@ public static class RechunkTools
                 )]
     public static async Task<string> RechunkLibrary(RepositoryFactory repositoryFactory,
                                                     RechunkService rechunkService,
-                                                    IBackgroundJobRunner runner,
+                                                    [FromKeyedServices(nameof(IBackgroundJobRunner))] IBackgroundJobRunner runner,
                                                     [Description("Library identifier (e.g. 'aerotech-aeroscript')")]
                                                     string library,
                                                     [Description("Library version (e.g. '1.0')")]
