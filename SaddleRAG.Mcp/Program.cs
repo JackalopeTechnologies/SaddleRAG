@@ -77,6 +77,7 @@ const string KestrelHttpsEndpointKey = "Kestrel:Endpoints:Https:Url";
 const string HealthEndpointPath = "/health";
 const string HealthyStatus = "Healthy";
 const string MonitorHubEndpointPath = "/monitor/hub";
+const string MonitorEndpointPath    = "/monitor";
 const string KestrelHttpPortKey      = "Kestrel:Endpoints:Http:Port";
 const int    DefaultMonitorPort      = 6100;
 
@@ -492,6 +493,9 @@ app.MapGet(HealthEndpointPath,
           );
 
 
+
+// Root redirect → monitor UI
+app.MapGet("/", () => Results.Redirect(MonitorEndpointPath));
 
 // MCP endpoint
 
