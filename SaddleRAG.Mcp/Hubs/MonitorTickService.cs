@@ -7,7 +7,6 @@
 #region Usings
 using Microsoft.AspNetCore.SignalR;
 using SaddleRAG.Core.Interfaces;
-using SaddleRAG.Core.Models.Monitor;
 #endregion
 
 namespace SaddleRAG.Mcp.Hubs;
@@ -52,21 +51,12 @@ public sealed class MonitorTickService : BackgroundService
         foreach (var jobId in activeIds)
         {
             var snapshot = mBroadcaster.GetJobSnapshot(jobId);
-            if (snapshot is not null)
-            {
-                var tick = new JobTickEvent
-                {
-                    JobId          = jobId,
-                    At             = DateTime.UtcNow,
-                    Counters       = snapshot.Counters,
-                    CurrentHost    = snapshot.CurrentHost,
-                    RecentFetches  = snapshot.RecentFetches,
-                    RecentRejects  = snapshot.RecentRejects,
-                    ErrorsThisTick = snapshot.RecentErrors
-                };
-                await mHub.Clients.Group(MonitorHub.GroupName(jobId))
-                          .SendAsync(JobTickMethod, tick, cancellationToken: ct);
-            }
+            var sendTask = snapshot is not null
+                ? mHub.Clients.Group(MonitorHub.GroupName(jobId))
+                              .SendAsync(JobTickMethod, MonitorHub.BuildTick(jobId, snapshot),
+                                         cancellationToken: ct)
+                : Task.CompletedTask;
+            await sendTask;
         }
 
         await mHub.Clients.Group(MonitorHub.LandingGroup)
