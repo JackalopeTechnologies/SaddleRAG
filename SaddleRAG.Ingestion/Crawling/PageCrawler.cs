@@ -1311,6 +1311,11 @@ public class PageCrawler
         string contentHash = ComputeHash(content);
         string urlHash = ComputeHash(fetchUrl);
 
+        bool successInScope2 = IsInRootScope(fetchUrl, ctx.RootScope);
+        bool successSameHost2 = !successInScope2 && IsSameHost(fetchUrl, ctx.RootScope);
+        int pageDepth = successInScope2  ? entry.InScopeDepth :
+                        successSameHost2 ? entry.SameHostDepth : entry.OffSiteDepth;
+
         var pageRecord = new PageRecord
                              {
                                  Id = $"{ctx.Job.LibraryId}/{ctx.Job.Version}/{urlHash[..12]}",
@@ -1321,18 +1326,16 @@ public class PageCrawler
                                  Category = DocCategory.Unclassified,
                                  RawContent = content,
                                  FetchedAt = DateTime.UtcNow,
-                                 ContentHash = contentHash
+                                 ContentHash = contentHash,
+                                 Depth = pageDepth,
+                                 ParentUrl = entry.ParentUrl
                              };
 
         await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
         int newCount = ctx.IncrementPageCount();
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);
 
-        bool successInScope = IsInRootScope(fetchUrl, ctx.RootScope);
-        bool successSameHost = !successInScope && IsSameHost(fetchUrl, ctx.RootScope);
-        int successDepth = successInScope  ? entry.InScopeDepth :
-                           successSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
-        mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), successDepth);
+        mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), pageDepth);
 
         EnqueueDiscoveredLinks(links,
                                ctx.IsVisited,

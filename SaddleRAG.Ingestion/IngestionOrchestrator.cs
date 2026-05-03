@@ -771,6 +771,7 @@ public class IngestionOrchestrator
         var pendingChunks = new List<DocChunk>();
         var indexedPageUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var pageChunkCounts = new Dictionary<string, (int ChunkCount, DocCategory Category)>(StringComparer.OrdinalIgnoreCase);
+        var pageMetadata = new Dictionary<string, (int Depth, string? ParentUrl)>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
@@ -780,7 +781,7 @@ public class IngestionOrchestrator
                 progress.ChunksCompleted += embeddedChunks.Length;
 
                 // Track unique page URLs and accumulate per-page chunk counts
-                AccumulatePageChunkCounts(embeddedChunks, indexedPageUrls, pageChunkCounts);
+                AccumulatePageChunkCounts(embeddedChunks, indexedPageUrls, pageChunkCounts, pageMetadata);
 
                 if (pendingChunks.Count >= IndexRebuildInterval)
                 {
@@ -803,11 +804,12 @@ public class IngestionOrchestrator
             foreach(var (pageUrl, (chunkCount, category)) in pageChunkCounts)
             {
                 var host = new Uri(pageUrl).Host;
+                pageMetadata.TryGetValue(pageUrl, out var meta);
                 mAuditWriter.RecordIndexed(auditCtx,
                                            pageUrl,
-                                           parentUrl: null,
+                                           parentUrl: meta.ParentUrl,
                                            host,
-                                           depth: 0,
+                                           depth: meta.Depth,
                                            new AuditPageOutcome
                                                {
                                                    FetchStatus = null,
@@ -831,7 +833,8 @@ public class IngestionOrchestrator
 
     private static void AccumulatePageChunkCounts(DocChunk[] chunks,
                                                    HashSet<string> indexedPageUrls,
-                                                   Dictionary<string, (int ChunkCount, DocCategory Category)> pageChunkCounts)
+                                                   Dictionary<string, (int ChunkCount, DocCategory Category)> pageChunkCounts,
+                                                   Dictionary<string, (int Depth, string? ParentUrl)> pageMetadata)
     {
         foreach(var chunk in chunks)
         {
@@ -840,6 +843,7 @@ public class IngestionOrchestrator
                 pageChunkCounts[chunk.PageUrl] = (existing.ChunkCount + 1, chunk.Category);
             else
                 pageChunkCounts[chunk.PageUrl] = (1, chunk.Category);
+            pageMetadata.TryAdd(chunk.PageUrl, (chunk.Depth, chunk.ParentUrl));
         }
     }
 

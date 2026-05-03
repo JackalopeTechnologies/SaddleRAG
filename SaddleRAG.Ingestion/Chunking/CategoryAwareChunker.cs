@@ -224,7 +224,9 @@ public class CategoryAwareChunker
                             Category = page.Category,
                             Content = content.Trim(),
                             SectionPath = sectionPath,
-                            ParserVersion = ParserVersionInfo.Current
+                            ParserVersion = ParserVersionInfo.Current,
+                            Depth = page.Depth,
+                            ParentUrl = page.ParentUrl
                         };
         return chunk;
     }
