@@ -48,7 +48,8 @@ public sealed class MonitorTickService : BackgroundService
 
     private async Task PushTicksAsync(CancellationToken ct)
     {
-        foreach (var jobId in mBroadcaster.GetActiveJobIds())
+        var activeIds = mBroadcaster.GetActiveJobIds();
+        foreach (var jobId in activeIds)
         {
             var snapshot = mBroadcaster.GetJobSnapshot(jobId);
             if (snapshot is not null)
@@ -68,7 +69,6 @@ public sealed class MonitorTickService : BackgroundService
             }
         }
 
-        var activeIds = mBroadcaster.GetActiveJobIds();
         await mHub.Clients.Group(MonitorHub.LandingGroup)
                   .SendAsync(ActiveJobsMethod, activeIds, cancellationToken: ct);
     }
