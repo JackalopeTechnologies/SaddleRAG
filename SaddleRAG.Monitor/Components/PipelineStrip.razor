@@ -1,0 +1,25 @@
+@* SaddleRAG.Monitor/Components/PipelineStrip.razor *@
+@using SaddleRAG.Core.Models.Monitor
+
+<MudStack Row="true" Spacing="2" Class="my-3" Wrap="Wrap.Wrap">
+    @foreach (var stage in Stages)
+    {
+        <MudPaper Elevation="1" Class="pa-2" Style="min-width:110px;text-align:center">
+            <MudText Typo="Typo.caption">@stage.Label</MudText>
+            <MudText Typo="Typo.h6">@stage.Count</MudText>
+        </MudPaper>
+    }
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public PipelineCounters Counters { get; set; } = default!;
+
+    private IReadOnlyList<(string Label, int Count)> Stages =>
+    [
+        ("Crawl",    Counters.PagesFetched),
+        ("Classify", Counters.PagesClassified),
+        ("Chunk",    Counters.ChunksGenerated),
+        ("Embed",    Counters.ChunksEmbedded),
+        ("Index",    Counters.PagesCompleted)
+    ];
+}
