@@ -86,6 +86,28 @@ public sealed class ScrapeAuditWriterTests
         Assert.NotNull(writer);
     }
 
+    [Fact]
+    public async Task AcceptsEmptyHostForFileSchemeUrls()
+    {
+        var spy = new SpyRepository();
+        var writer = new ScrapeAuditWriter(spy, batchSize: 1000,
+                                           flushInterval: TimeSpan.FromMinutes(5));
+        var ctx = NewCtx("job-file");
+        var fileUrl = "file:///E:/3rd Party Help/Mcculw_WebHelp/Welcome.htm";
+
+        writer.RecordSkipped(ctx, fileUrl, parentUrl: null, host: "", depth: 0,
+                             AuditSkipReason.PatternExclude, detail: null);
+        writer.RecordFetched(ctx, fileUrl, parentUrl: null, host: "", depth: 0);
+        writer.RecordFailed(ctx, fileUrl, parentUrl: null, host: "", depth: 0, error: "test-error");
+        writer.RecordIndexed(ctx, fileUrl, parentUrl: null, host: "", depth: 0,
+                             new AuditPageOutcome { FetchStatus = "200 OK", Category = "Overview", ChunkCount = 1 });
+
+        await writer.DisposeAsync();
+
+        Assert.Equal(4, spy.Inserted.Count);
+        Assert.All(spy.Inserted, e => Assert.Equal(string.Empty, e.Host));
+    }
+
     private static AuditContext NewCtx(string jobId) => new()
     {
         JobId = jobId,
