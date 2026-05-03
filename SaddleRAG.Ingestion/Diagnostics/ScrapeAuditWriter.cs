@@ -58,7 +58,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
-        ArgumentException.ThrowIfNullOrEmpty(host);
+        ArgumentNullException.ThrowIfNull(host);
         Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Skipped, reason, detail, null));
     }
 
@@ -71,7 +71,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
-        ArgumentException.ThrowIfNullOrEmpty(host);
+        ArgumentNullException.ThrowIfNull(host);
         Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Fetched, null, null, null));
     }
 
@@ -84,7 +84,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
-        ArgumentException.ThrowIfNullOrEmpty(host);
+        ArgumentNullException.ThrowIfNull(host);
         ArgumentException.ThrowIfNullOrEmpty(error);
         Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Failed, null, null,
                            new AuditPageOutcome { Error = error }));
@@ -100,7 +100,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
-        ArgumentException.ThrowIfNullOrEmpty(host);
+        ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(outcome);
         Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Indexed, null, null, outcome));
     }
