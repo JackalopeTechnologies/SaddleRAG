@@ -349,6 +349,12 @@ builder.Services.AddMudServices();
 builder.Services.AddHostedService<SaddleRAG.Mcp.Hubs.MonitorTickService>();
 builder.Services.AddSingleton<SaddleRAG.Monitor.Services.MonitorDataService>();
 
+builder.Services.AddAuthorization(opts =>
+    opts.AddPolicy(SaddleRAG.Mcp.Auth.DiagnosticsWriteRequirement.PolicyName,
+                   policy => policy.AddRequirements(new SaddleRAG.Mcp.Auth.DiagnosticsWriteRequirement())));
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler,
+                               SaddleRAG.Mcp.Auth.DiagnosticsWriteHandler>();
+
 
 
 const string PrewarmFlag = "--prewarm";
@@ -489,6 +495,11 @@ app.MapRazorComponents<SaddleRAG.Mcp.Monitor.App>()
 
 // SignalR hub
 app.MapHub<SaddleRAG.Mcp.Hubs.MonitorHub>(MonitorHubEndpointPath);
+
+// Monitor write API
+app.UseAuthentication();
+app.UseAuthorization();
+SaddleRAG.Mcp.Api.MonitorApiEndpoints.Map(app);
 
 
 
