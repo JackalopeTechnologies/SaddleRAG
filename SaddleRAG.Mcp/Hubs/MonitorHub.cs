@@ -52,8 +52,10 @@ public sealed class MonitorHub : Hub
         ArgumentNullException.ThrowIfNull(jobId);
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(jobId));
         var snapshot = mBroadcaster.GetJobSnapshot(jobId);
-        if (snapshot is not null)
-            await Clients.Caller.SendAsync(JobTickMethod, BuildTick(jobId, snapshot));
+        var sendTask = snapshot is not null
+            ? Clients.Caller.SendAsync(JobTickMethod, BuildTick(jobId, snapshot))
+            : Task.CompletedTask;
+        await sendTask;
     }
 
     /// <summary>
@@ -64,7 +66,7 @@ public sealed class MonitorHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, LandingGroup);
     }
 
-    private static JobTickEvent BuildTick(string jobId, JobTickSnapshot snap) => new()
+    internal static JobTickEvent BuildTick(string jobId, JobTickSnapshot snap) => new()
     {
         JobId          = jobId,
         At             = DateTime.UtcNow,
