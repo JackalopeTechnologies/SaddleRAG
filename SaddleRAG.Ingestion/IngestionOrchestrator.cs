@@ -179,7 +179,12 @@ public class IngestionOrchestrator
         {
             await Task.WhenAll(crawlTask, classifyTask, chunkTask, embedTask, indexTask);
         }
-        catch(Exception ex) when(ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            mBroadcaster.RecordJobCancelled(progress.Id);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             mLogger.LogError(ex, "Pipeline failed for {LibraryId} v{Version}", job.LibraryId, job.Version);
             progress.PipelineState = nameof(ScrapeJobStatus.Failed);
