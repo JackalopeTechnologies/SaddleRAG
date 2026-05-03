@@ -8,21 +8,23 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Monitor.Services;
 #endregion
 
 namespace SaddleRAG.Monitor.Pages;
 
 public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
 {
-    [Inject] private NavigationManager? Nav { get; set; }
+    [Inject] private NavigationManager?   Nav          { get; set; }
+    [Inject] private MonitorWriteService? WriteService { get; set; }
 
     protected List<JobTickSnapshot>    ActiveJobSnapshots { get; } = [];
     protected List<LibrarySummaryItem> Libraries          { get; } = [];
 
     private HubConnection? mHub;
 
-    private const string HubPath              = "/monitor/hub";
-    private const string ActiveJobsEvent      = "ActiveJobs";
+    private const string HubPath               = "/monitor/hub";
+    private const string ActiveJobsEvent       = "ActiveJobs";
     private const string SubscribeLandingMethod = "SubscribeLanding";
 
     protected override async Task OnInitializedAsync()
@@ -42,9 +44,10 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         await mHub.InvokeAsync(SubscribeLandingMethod);
     }
 
-    protected Task CancelJob(string jobId)
+    protected async Task CancelJob(string jobId)
     {
-        return Task.CompletedTask;
+        ArgumentNullException.ThrowIfNull(WriteService);
+        await WriteService.CancelJobAsync(jobId);
     }
 
     public async ValueTask DisposeAsync()
