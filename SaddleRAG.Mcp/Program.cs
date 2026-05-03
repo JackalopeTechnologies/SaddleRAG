@@ -229,6 +229,10 @@ builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
 builder.Services.AddSingleton<IScrapeAuditWriter>(sp =>
     new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>()));
 
+builder.Services.AddSingleton<MonitorBroadcaster>();
+builder.Services.AddSingleton<IMonitorBroadcaster>(sp =>
+    sp.GetRequiredService<MonitorBroadcaster>());
+
 
 
 // HTTP clients for package registry APIs

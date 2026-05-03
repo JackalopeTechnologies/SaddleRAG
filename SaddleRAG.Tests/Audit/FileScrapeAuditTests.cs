@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Ingestion.Crawling;
 
 #endregion
@@ -38,7 +39,8 @@ public sealed class FileScrapeAuditTests
         var auditWriter = new SpyAuditWriter();
         var pageRepo = new NullPageRepository();
         var gitHubScraper = new GitHubRepoScraper(pageRepo, NullLogger<GitHubRepoScraper>.Instance);
-        var crawler = new PageCrawler(pageRepo, gitHubScraper, auditWriter, NullLogger<PageCrawler>.Instance);
+        var crawler = new PageCrawler(pageRepo, gitHubScraper, auditWriter, new NullMonitorBroadcaster(),
+                                      NullLogger<PageCrawler>.Instance);
 
         // AllowedUrlPatterns = [""] — empty-string regex matches every URL, which is the
         // same default the MCP tool applies when the root host is empty (file:// scheme).
@@ -81,6 +83,27 @@ public sealed class FileScrapeAuditTests
     #region Spy types
 
     private sealed record AuditCall(AuditContext Context, string Url, string Host, AuditSkipReason? Reason);
+
+    private sealed class NullMonitorBroadcaster : IMonitorBroadcaster
+    {
+        public void RecordJobStarted(string jobId, string libraryId, string version, string rootUrl) { }
+        public void RecordFetch(string jobId, string url) { }
+        public void RecordReject(string jobId, string url, string reason) { }
+        public void RecordError(string jobId, string message) { }
+        public void RecordPageClassified(string jobId) { }
+        public void RecordChunkGenerated(string jobId) { }
+        public void RecordChunkEmbedded(string jobId) { }
+        public void RecordPageCompleted(string jobId) { }
+        public void RecordJobCompleted(string jobId, int indexedPageCount) { }
+        public void RecordJobFailed(string jobId, string errorMessage) { }
+        public void RecordJobCancelled(string jobId) { }
+        public void RecordSuspectFlag(string jobId, string libraryId, string version, IReadOnlyList<string> reasons) { }
+        public JobTickSnapshot? GetJobSnapshot(string jobId) => null;
+        public IReadOnlyList<string> GetActiveJobIds() => [];
+        public void Subscribe(string jobId, Func<JobTickEvent, Task> handler) { }
+        public void Unsubscribe(string jobId, Func<JobTickEvent, Task> handler) { }
+        public void BroadcastTick(string jobId) { }
+    }
 
     private sealed class SpyAuditWriter : IScrapeAuditWriter
     {
