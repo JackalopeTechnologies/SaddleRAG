@@ -408,11 +408,15 @@ public class PageCrawler
         depthDist.TryGetValue(effectiveDepth, out int existing);
         depthDist[effectiveDepth] = existing + 1;
 
-        string host = CrawlBudget.BuildHostKey(new Uri(url));
-        pagesByHost.TryGetValue(host, out int hostCount);
-        pagesByHost[host] = hostCount + 1;
+        // Use the scheme://host key for the report's per-host page count.
+        string hostKey = CrawlBudget.BuildHostKey(new Uri(url));
+        pagesByHost.TryGetValue(hostKey, out int hostCount);
+        pagesByHost[hostKey] = hostCount + 1;
 
-        mAuditWriter.RecordFetched(auditCtx, url, null, host, effectiveDepth);
+        // Use SafeGetHost for the audit event so the dryrun path produces the same
+        // host string as the live-crawl path (empty string for file:// URLs rather
+        // than the "file://" literal that BuildHostKey returns for empty-host schemes).
+        mAuditWriter.RecordFetched(auditCtx, url, null, SafeGetHost(url), effectiveDepth);
 
         if (samplePages.Count < SamplePageLimit)
         {
