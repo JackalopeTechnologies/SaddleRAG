@@ -2023,7 +2023,8 @@ public class PageCrawler
                     path = path[..^strippedExtension.Length];
             }
 
-            var normalized = $"{uri.Scheme}://{uri.Host}{path}";
+            string portSuffix = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
+            var normalized = $"{uri.Scheme}://{uri.Host}{portSuffix}{path}";
             if (!string.IsNullOrEmpty(uri.Query))
                 normalized += uri.Query;
             result = normalized;
