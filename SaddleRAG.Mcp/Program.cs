@@ -347,6 +347,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddSignalR();
 builder.Services.AddMudServices();
 builder.Services.AddHostedService<SaddleRAG.Mcp.Hubs.MonitorTickService>();
+builder.Services.AddSingleton<SaddleRAG.Monitor.Services.MonitorDataService>();
 
 
 

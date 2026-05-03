@@ -1,0 +1,34 @@
+@* SaddleRAG.Monitor/Pages/LibraryDetailPage.razor *@
+@page "/monitor/libraries/{LibraryId}"
+@rendermode InteractiveServer
+@inherits LibraryDetailPageBase
+
+@if (Detail is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudText Typo="Typo.h5" Class="mb-1">@Detail.LibraryId</MudText>
+    <MudText Typo="Typo.subtitle1" Class="mb-3">v@Detail.Version</MudText>
+
+    <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true">
+        <MudTabPanel Text="Overview">
+            <MudText>Chunks: @Detail.ChunkCount · Pages: @Detail.PageCount</MudText>
+            @if (Detail.IsSuspect)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mt-2">This library is flagged suspect.</MudAlert>
+            }
+        </MudTabPanel>
+        <MudTabPanel Text="Audit">
+            <MudButton Variant="Variant.Text"
+                       Href="@($"/monitor/audits/{LatestJobId}")"
+                       Disabled="@string.IsNullOrEmpty(LatestJobId)">
+                View Full Audit
+            </MudButton>
+        </MudTabPanel>
+        <MudTabPanel Text="Versions">
+            <MudText>Version history coming soon.</MudText>
+        </MudTabPanel>
+    </MudTabs>
+}
