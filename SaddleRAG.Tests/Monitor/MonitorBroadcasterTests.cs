@@ -80,4 +80,58 @@ public sealed class MonitorBroadcasterTests
             Assert.Equal(1, got.Counters.PagesFetched);
         }
     }
+
+    [Fact]
+    public async Task ConcurrentRecordFetchNoDataRace()
+    {
+        const int FetchCount = 100;
+        var ct          = TestContext.Current.CancellationToken;
+        var broadcaster = new MonitorBroadcaster();
+        broadcaster.RecordJobStarted("concurrent-fetch", "lib", "1.0", "https://c.com/");
+
+        var tasks = Enumerable.Range(0, FetchCount)
+                              .Select(i => Task.Run(() => broadcaster.RecordFetch("concurrent-fetch", $"https://c.com/{i}"), ct));
+        await Task.WhenAll(tasks);
+
+        var snapshot = broadcaster.GetJobSnapshot("concurrent-fetch");
+        Assert.NotNull(snapshot);
+        if (snapshot is not null)
+            Assert.Equal(FetchCount, snapshot.Counters.PagesFetched);
+    }
+
+    [Fact]
+    public async Task ConcurrentSubscribeAndBroadcastNoException()
+    {
+        const int ThreadCount = 50;
+        var ct          = TestContext.Current.CancellationToken;
+        var broadcaster = new MonitorBroadcaster();
+        broadcaster.RecordJobStarted("concurrent-sub", "lib", "1.0", "https://s.com/");
+        broadcaster.RecordFetch("concurrent-sub", "https://s.com/page");
+
+        var subscribeTasks = Enumerable.Range(0, ThreadCount)
+                                       .Select(_ => Task.Run(() =>
+                                           broadcaster.Subscribe("concurrent-sub", tick => Task.CompletedTask), ct));
+        var broadcastTasks = Enumerable.Range(0, ThreadCount)
+                                       .Select(_ => Task.Run(() => broadcaster.BroadcastTick("concurrent-sub"), ct));
+
+        await Task.WhenAll(subscribeTasks.Concat(broadcastTasks));
+    }
+
+    [Fact]
+    public async Task ConcurrentJobCompletedAndGetSnapshotNoException()
+    {
+        const int ReadCount = 200;
+        var ct          = TestContext.Current.CancellationToken;
+        var broadcaster = new MonitorBroadcaster();
+        broadcaster.RecordJobStarted("concurrent-complete", "lib", "1.0", "https://d.com/");
+        broadcaster.RecordFetch("concurrent-complete", "https://d.com/page");
+
+        var readTasks    = Enumerable.Range(0, ReadCount)
+                                     .Select(_ => Task.Run(() => broadcaster.GetJobSnapshot("concurrent-complete"), ct));
+        var completeTask = Task.Run(() => broadcaster.RecordJobCompleted("concurrent-complete", indexedPageCount: 1), ct);
+
+        await Task.WhenAll(readTasks.Append(completeTask));
+
+        Assert.Null(broadcaster.GetJobSnapshot("concurrent-complete"));
+    }
 }
