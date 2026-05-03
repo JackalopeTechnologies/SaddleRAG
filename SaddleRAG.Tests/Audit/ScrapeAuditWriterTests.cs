@@ -21,15 +21,15 @@ public sealed class ScrapeAuditWriterTests
     public async Task FlushesWhenBufferReachesSizeThreshold()
     {
         var spy = new SpyRepository();
-        await using var writer = new ScrapeAuditWriter(spy, batchSize: 5,
-                                                       flushInterval: TimeSpan.FromMinutes(1));
+        var writer = new ScrapeAuditWriter(spy, batchSize: 5,
+                                           flushInterval: TimeSpan.FromMinutes(10));
 
         for (var i = 0; i < 5; i++)
             writer.RecordSkipped(NewCtx("job-1"), $"https://a.com/{i}",
                                  parentUrl: null, host: "a.com", depth: 1,
                                  AuditSkipReason.PatternExclude, detail: null);
 
-        await writer.FlushAsync(TestContext.Current.CancellationToken);
+        await writer.DisposeAsync();
 
         Assert.Equal(5, spy.Inserted.Count);
         Assert.All(spy.Inserted, e => Assert.Equal(AuditStatus.Skipped, e.Status));
