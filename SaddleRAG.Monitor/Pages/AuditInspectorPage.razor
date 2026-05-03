@@ -1,0 +1,58 @@
+@* SaddleRAG.Monitor/Pages/AuditInspectorPage.razor *@
+@page "/monitor/audits/{JobId}"
+@rendermode InteractiveServer
+@inherits AuditInspectorPageBase
+
+<MudText Typo="Typo.h5" Class="mb-3">Audit — @JobId</MudText>
+
+<MudStack Row="true" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
+    <MudSelect T="string" Label="Status" @bind-Value="FilterStatus" Clearable="true"
+               Style="min-width:140px">
+        @foreach (var s in pmStatusOptions)
+        {
+            <MudSelectItem Value="@s">@s</MudSelectItem>
+        }
+    </MudSelect>
+    <MudSelect T="string" Label="Skip Reason" @bind-Value="FilterSkipReason" Clearable="true"
+               Style="min-width:160px">
+        @foreach (var r in pmReasonOptions)
+        {
+            <MudSelectItem Value="@r">@r</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField T="string" Label="Host"         @bind-Value="FilterHost"       Immediate="true" />
+    <MudTextField T="string" Label="URL contains" @bind-Value="FilterUrl"        Immediate="true" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyFilters">Search</MudButton>
+</MudStack>
+
+@if (Summary is not null)
+{
+    <MudStack Row="true" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
+        <MudChip T="string">Considered: @Summary.TotalConsidered</MudChip>
+        <MudChip T="string" Color="Color.Success">Indexed: @Summary.IndexedCount</MudChip>
+        <MudChip T="string" Color="Color.Warning">Skipped: @Summary.SkippedCount</MudChip>
+        <MudChip T="string" Color="Color.Error">Failed: @Summary.FailedCount</MudChip>
+    </MudStack>
+}
+
+<MudTable Items="@Entries" Dense="true" Hover="true" LoadingProgressColor="Color.Primary">
+    <HeaderContent>
+        <MudTh>URL</MudTh><MudTh>Host</MudTh><MudTh>Depth</MudTh><MudTh>Status</MudTh><MudTh>Reason</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd Style="font-family:monospace;font-size:0.72rem;max-width:480px;overflow:hidden;text-overflow:ellipsis">
+            @context.Url
+        </MudTd>
+        <MudTd>@context.Host</MudTd>
+        <MudTd>@context.Depth</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status.ToString())">
+                @context.Status
+            </MudChip>
+        </MudTd>
+        <MudTd>@context.SkipReason</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No entries match the current filters.</MudText>
+    </NoRecordsContent>
+</MudTable>
