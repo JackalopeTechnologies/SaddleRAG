@@ -68,12 +68,8 @@ else
         </MudItem>
     </MudGrid>
 
-    @if (CurrentTick.ErrorsThisTick.Count > 0)
-    {
-        <MudAlert Severity="Severity.Error" Class="mt-3">
-            @CurrentTick.ErrorsThisTick.Count error(s). Last: @CurrentTick.ErrorsThisTick[^1].Message
-        </MudAlert>
-    }
+    <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Errors</MudText>
+    <ErrorList Errors="@AllErrors"/>
 }
 else
 {
