@@ -14,11 +14,54 @@ else
 
     <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true">
         <MudTabPanel Text="Overview">
-            <MudText>Chunks: @Detail.ChunkCount · Pages: @Detail.PageCount</MudText>
-            @if (Detail.IsSuspect)
-            {
-                <MudAlert Severity="Severity.Warning" Class="mt-2">This library is flagged suspect.</MudAlert>
-            }
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-3 mb-2" Elevation="0" Outlined="true">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Counts</MudText>
+                        <MudText>Chunks: @Detail.ChunkCount</MudText>
+                        <MudText>Pages: @Detail.PageCount</MudText>
+                        @if (Detail.BoundaryIssuePct is not null)
+                        {
+                            <MudText>Boundary issues: @Detail.BoundaryIssuePct.Value.ToString("F1")%</MudText>
+                        }
+                        @if (!string.IsNullOrEmpty(Detail.EmbeddingModelName))
+                        {
+                            <MudText>Embedding: @Detail.EmbeddingProviderId / @Detail.EmbeddingModelName</MudText>
+                        }
+                        @if (Detail.LastScrapedAt is not null)
+                        {
+                            <MudText>Last scraped: @Detail.LastScrapedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+                        }
+                        @if (Detail.IsSuspect)
+                        {
+                            @if (Detail.SuspectReasons.Count > 0)
+                            {
+                                <MudAlert Severity="Severity.Warning" Class="mt-2" Dense="true">
+                                    <MudText Typo="Typo.body2" Class="mb-1">Suspect reasons:</MudText>
+                                    <MudList T="string" Dense="true">
+                                        @foreach (var r in Detail.SuspectReasons)
+                                        {
+                                            <MudListItem Icon="@Icons.Material.Filled.FiberManualRecord" IconSize="Size.Small">@r</MudListItem>
+                                        }
+                                    </MudList>
+                                    @if (Detail.LastSuspectEvaluatedAt is not null)
+                                    {
+                                        <MudText Typo="Typo.caption">Evaluated @Detail.LastSuspectEvaluatedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+                                    }
+                                </MudAlert>
+                            }
+                            else
+                            {
+                                <MudAlert Severity="Severity.Warning" Class="mt-2" Dense="true">This library is flagged suspect (no reasons recorded).</MudAlert>
+                            }
+                        }
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <HostnameDistribution Buckets="@Detail.HostnameDistribution"/>
+                    <LanguageMix Mix="@Detail.LanguageMix"/>
+                </MudItem>
+            </MudGrid>
         </MudTabPanel>
         <MudTabPanel Text="Audit">
             <MudButton Variant="Variant.Text"
