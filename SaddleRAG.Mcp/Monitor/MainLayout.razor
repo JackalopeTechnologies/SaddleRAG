@@ -1,6 +1,11 @@
 @* SaddleRAG.Mcp/Monitor/MainLayout.razor *@
 @inherits MainLayoutBase
 
+<MudThemeProvider Theme="@WyomingTheme.Create()"/>
+<MudPopoverProvider/>
+<MudSnackbarProvider/>
+<MudDialogProvider/>
+
 <MudLayout>
     <MudAppBar Elevation="1" Color="Color.Primary">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
