@@ -3,7 +3,33 @@
 @rendermode InteractiveServer
 @inherits JobDetailPageBase
 
-<MudText Typo="Typo.h5">Job: @JobId</MudText>
+@if (Info is null)
+{
+    <MudProgressCircular Indeterminate="true"/>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-3" Wrap="Wrap.Wrap">
+        <MudText Typo="Typo.h5">
+            <MudLink Href="@($"/monitor/libraries/{Info.LibraryId}")">@Info.LibraryId</MudLink>
+            <span style="opacity:.7"> v@(Info.Version)</span>
+        </MudText>
+        <MudChip T="string" Size="Size.Small" Color="@StatusColor(Info.Status)">@Info.Status</MudChip>
+        @if (Info.StartedAt is not null)
+        {
+            <MudText Typo="Typo.body2">Elapsed: @Elapsed</MudText>
+        }
+        <MudSpacer/>
+        @if (IsActive)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="CancelClicked">Cancel</MudButton>
+        }
+    </MudStack>
+    @if (!string.IsNullOrEmpty(Info.ErrorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-2">@Info.ErrorMessage</MudAlert>
+    }
+}
 
 @if (!HubConnected)
 {
