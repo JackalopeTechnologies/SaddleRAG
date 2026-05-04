@@ -171,6 +171,31 @@ public sealed class MonitorDataService
     }
 
     /// <summary>
+    ///     Returns the minimal job header info (library/version/status/timestamps), or null when missing.
+    /// </summary>
+    public async Task<JobInfo?> GetJobInfoAsync(string jobId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        JobInfo? result = null;
+        var rec = await mJobs.GetAsync(jobId, ct);
+        if (rec is not null)
+        {
+            result = new JobInfo
+                         {
+                             JobId = rec.Id,
+                             LibraryId = rec.Job.LibraryId,
+                             Version = rec.Job.Version,
+                             Status = rec.Status.ToString(),
+                             StartedAt = rec.StartedAt,
+                             CompletedAt = rec.CompletedAt,
+                             ErrorMessage = rec.ErrorMessage
+                         };
+        }
+
+        return result;
+    }
+
+    /// <summary>
     ///     Returns the audit summary for a job id, or null when the underlying audit data is missing
     ///     and the repository surfaces that as an exception.
     /// </summary>

@@ -8,6 +8,7 @@
 
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
+using MudBlazor;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Services;
 
@@ -26,23 +27,59 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     [Inject]
     private MonitorWriteService? WriteService { get; set; }
 
+    [Inject]
+    private MonitorDataService? DataService { get; set; }
+
     protected JobTickEvent? CurrentTick { get; private set; }
     protected bool HubConnected { get; private set; } = true;
-    private CancellationTokenSource mFallbackCts = new CancellationTokenSource();
+    protected JobInfo? Info { get; private set; }
 
+    protected bool IsActive => Info is not null
+                            && (Info.Status is "Queued" or "Running")
+                            && Info.CompletedAt is null;
+
+    protected string Elapsed => Info?.StartedAt is null
+                                    ? "—"
+                                    : (Info.CompletedAt ?? DateTime.UtcNow).Subtract(Info.StartedAt.Value)
+                                                                           .ToString(@"hh\:mm\:ss");
+
+    protected static Color StatusColor(string status) => status switch
+    {
+        "Running"   => Color.Info,
+        "Queued"    => Color.Default,
+        "Completed" => Color.Success,
+        "Failed"    => Color.Error,
+        "Cancelled" => Color.Warning,
+        var _       => Color.Default
+    };
+
+    private CancellationTokenSource mFallbackCts = new CancellationTokenSource();
     private HubConnection? mHub;
+    private System.Threading.Timer? mElapsedTimer;
 
     public async ValueTask DisposeAsync()
     {
         mFallbackCts.Cancel();
         mFallbackCts.Dispose();
+        if (mElapsedTimer is not null)
+            await mElapsedTimer.DisposeAsync();
         if (mHub is not null)
             await mHub.DisposeAsync();
+    }
+
+    protected async Task CancelClicked()
+    {
+        ArgumentNullException.ThrowIfNull(WriteService);
+        await WriteService.CancelJobAsync(JobId);
     }
 
     protected override async Task OnInitializedAsync()
     {
         ArgumentNullException.ThrowIfNull(Nav);
+        ArgumentNullException.ThrowIfNull(DataService);
+
+        Info = await DataService.GetJobInfoAsync(JobId);
+
         mHub = new HubConnectionBuilder()
                .WithUrl(Nav.ToAbsoluteUri(HubPath))
                .WithAutomaticReconnect()
@@ -72,6 +109,14 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 
         await mHub.StartAsync();
         await mHub.InvokeAsync(SubscribeJobMethod, JobId);
+
+        if (IsActive)
+        {
+            mElapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged),
+                                                       state: null,
+                                                       dueTime: TimeSpan.FromSeconds(1),
+                                                       period: TimeSpan.FromSeconds(1));
+        }
     }
 
     private void StartFallbackPolling()

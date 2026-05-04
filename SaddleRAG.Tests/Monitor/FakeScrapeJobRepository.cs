@@ -33,7 +33,7 @@ internal sealed class FakeScrapeJobRepository : IScrapeJobRepository
         throw new NotSupportedException("FakeScrapeJobRepository: UpsertAsync not supported in this test");
 
     public Task<ScrapeJobRecord?> GetAsync(string id, CancellationToken ct = default) =>
-        throw new NotSupportedException("FakeScrapeJobRepository: GetAsync not supported in this test");
+        Task.FromResult(mJobs.FirstOrDefault(j => j.Id == id));
 
     public Task<IReadOnlyList<ScrapeJobRecord>> ListRunningJobsAsync(CancellationToken ct = default) =>
         throw new NotSupportedException("FakeScrapeJobRepository: ListRunningJobsAsync not supported in this test");

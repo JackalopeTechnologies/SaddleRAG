@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Monitor.Services;
@@ -399,5 +400,52 @@ public sealed class MonitorDataServiceEnrichmentTests
                                          new FakeScrapeAuditRepository());
         var summary = await svc.GetAuditSummaryAsync("missing-job", TestContext.Current.CancellationToken);
         Assert.Null(summary);
+    }
+
+    [Fact]
+    public async Task GetJobInfoAsyncReturnsInfoWhenJobExists()
+    {
+        var jobRepo = new FakeScrapeJobRepository();
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "job-1",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "alpha",
+                                          Version = "1",
+                                          RootUrl = "https://x/",
+                                          LibraryHint = "alpha",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            Status = ScrapeJobStatus.Running,
+                            StartedAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc),
+                            CreatedAt = new DateTime(2026, 4, 1, 11, 59, 0, DateTimeKind.Utc)
+                        });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         jobRepo,
+                                         new FakeScrapeAuditRepository());
+        var info = await svc.GetJobInfoAsync("job-1", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(info);
+        Assert.Equal("job-1", info.JobId);
+        Assert.Equal("alpha", info.LibraryId);
+        Assert.Equal("1", info.Version);
+        Assert.Equal("Running", info.Status);
+        Assert.Equal(new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc), info.StartedAt);
+    }
+
+    [Fact]
+    public async Task GetJobInfoAsyncReturnsNullWhenJobMissing()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var info = await svc.GetJobInfoAsync("missing", TestContext.Current.CancellationToken);
+        Assert.Null(info);
     }
 }
