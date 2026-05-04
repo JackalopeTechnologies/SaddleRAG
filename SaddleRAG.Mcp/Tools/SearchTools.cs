@@ -14,7 +14,9 @@ using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -65,6 +67,7 @@ public static class SearchTools
                                                 IReRanker reRanker,
                                                 RepositoryFactory repositoryFactory,
                                                 IOptions<RankingSettings> rankingOptions,
+                                                IQueryMetrics metrics,
                                                 [Description("Natural language search query")]
                                                 string query,
                                                 [Description("Library identifier — omit to search all libraries")]
@@ -85,6 +88,7 @@ public static class SearchTools
         ArgumentNullException.ThrowIfNull(reRanker);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(rankingOptions);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentException.ThrowIfNullOrEmpty(query);
 
         var libraryRepository = repositoryFactory.GetLibraryRepository(profile);
@@ -95,19 +99,23 @@ public static class SearchTools
             json = LibraryNotFoundJson(library);
         else
         {
-            json = await ExecuteSearchAsync(vectorSearch,
-                                            embeddingProvider,
-                                            reRanker,
-                                            repositoryFactory,
-                                            rankingOptions.Value,
-                                            query,
-                                            library,
-                                            resolvedVersion,
-                                            category,
-                                            maxResults,
-                                            profile,
-                                            ct
-                                           );
+            json = await metrics.TimeAsync(QueryMetricOperations.SearchDocs,
+                                           () => ExecuteSearchAsync(vectorSearch,
+                                                                    embeddingProvider,
+                                                                    reRanker,
+                                                                    repositoryFactory,
+                                                                    rankingOptions.Value,
+                                                                    metrics,
+                                                                    query,
+                                                                    library,
+                                                                    resolvedVersion,
+                                                                    category,
+                                                                    maxResults,
+                                                                    profile,
+                                                                    ct
+                                                                   ),
+                                           note: $"library={library ?? "*"}"
+                                          );
         }
 
         return json;
@@ -178,6 +186,7 @@ public static class SearchTools
     public static async Task<string> GetLibraryOverview(IVectorSearchProvider vectorSearch,
                                                         IEmbeddingProvider embeddingProvider,
                                                         RepositoryFactory repositoryFactory,
+                                                        IQueryMetrics metrics,
                                                         [Description("Library identifier")] string library,
                                                         [Description("Specific version — defaults to current")]
                                                         string? version = null,
@@ -188,6 +197,7 @@ public static class SearchTools
         ArgumentNullException.ThrowIfNull(vectorSearch);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(metrics);
         ArgumentException.ThrowIfNullOrEmpty(library);
 
         var libraryRepository = repositoryFactory.GetLibraryRepository(profile);
@@ -199,6 +209,7 @@ public static class SearchTools
         else
             json = await BuildLibraryOverviewAsync(vectorSearch,
                                                    embeddingProvider,
+                                                   metrics,
                                                    library,
                                                    resolvedVersion,
                                                    profile,
@@ -210,13 +221,17 @@ public static class SearchTools
 
     private static async Task<string> BuildLibraryOverviewAsync(IVectorSearchProvider vectorSearch,
                                                                 IEmbeddingProvider embeddingProvider,
+                                                                IQueryMetrics metrics,
                                                                 string library,
                                                                 string resolvedVersion,
                                                                 string? profile,
                                                                 CancellationToken ct)
     {
         var query = $"{library} overview getting started introduction";
-        var embeddings = await embeddingProvider.EmbedAsync([query], ct);
+        var embeddings = await metrics.TimeAsync(QueryMetricOperations.EmbedQuery,
+                                                 () => embeddingProvider.EmbedAsync([query], ct),
+                                                 note: $"library={library}"
+                                                );
 
         var overviewFilter = new VectorSearchFilter
                                  {
@@ -226,7 +241,15 @@ public static class SearchTools
                                      Category = DocCategory.Overview
                                  };
 
-        var results = await vectorSearch.SearchAsync(embeddings[0], overviewFilter, MaxOverviewResults, ct);
+        var results = await metrics.TimeAsync(QueryMetricOperations.VectorSearch,
+                                              () => vectorSearch.SearchAsync(embeddings[0],
+                                                                             overviewFilter,
+                                                                             MaxOverviewResults,
+                                                                             ct
+                                                                            ),
+                                              resultCount: r => r.Count,
+                                              note: $"library={library}"
+                                             );
 
         if (results.Count == 0)
         {
@@ -236,7 +259,15 @@ public static class SearchTools
                                          LibraryId = library,
                                          Version = resolvedVersion
                                      };
-            results = await vectorSearch.SearchAsync(embeddings[0], fallbackFilter, MaxOverviewResults, ct);
+            results = await metrics.TimeAsync(QueryMetricOperations.VectorSearch,
+                                              () => vectorSearch.SearchAsync(embeddings[0],
+                                                                             fallbackFilter,
+                                                                             MaxOverviewResults,
+                                                                             ct
+                                                                            ),
+                                              resultCount: r => r.Count,
+                                              note: $"library={library};fallback"
+                                             );
         }
 
         var response = results.Select(r => new
@@ -304,6 +335,7 @@ public static class SearchTools
                                                          IReRanker reRanker,
                                                          RepositoryFactory repositoryFactory,
                                                          RankingSettings rankingSettings,
+                                                         IQueryMetrics metrics,
                                                          string query,
                                                          string? library,
                                                          string? resolvedVersion,
@@ -319,7 +351,10 @@ public static class SearchTools
             categoryFilter = parsed;
 
         var embedSw = Stopwatch.StartNew();
-        var embeddings = await embeddingProvider.EmbedAsync([query], ct);
+        var embeddings = await metrics.TimeAsync(QueryMetricOperations.EmbedQuery,
+                                                 () => embeddingProvider.EmbedAsync([query], ct),
+                                                 note: $"library={library ?? "*"}"
+                                                );
         embedSw.Stop();
 
         var filter = new VectorSearchFilter
@@ -332,7 +367,15 @@ public static class SearchTools
 
         var vectorSw = Stopwatch.StartNew();
         var candidateCount = maxResults * CandidateMultiplier;
-        var searchResults = await vectorSearch.SearchAsync(embeddings[0], filter, candidateCount, ct);
+        var searchResults = await metrics.TimeAsync(QueryMetricOperations.VectorSearch,
+                                                    () => vectorSearch.SearchAsync(embeddings[0],
+                                                                                   filter,
+                                                                                   candidateCount,
+                                                                                   ct
+                                                                                  ),
+                                                    resultCount: r => r.Count,
+                                                    note: $"library={library ?? "*"}"
+                                                   );
         vectorSw.Stop();
 
         var bm25Sw = Stopwatch.StartNew();
@@ -352,6 +395,7 @@ public static class SearchTools
 
         var rerankSw = Stopwatch.StartNew();
         var ranked = await ApplyRerankerOrPassThroughAsync(reRanker,
+                                                           metrics,
                                                            query,
                                                            hybrid,
                                                            maxResults,
@@ -450,6 +494,7 @@ public static class SearchTools
     }
 
     private static async Task<IReadOnlyList<RankedResult>> ApplyRerankerOrPassThroughAsync(IReRanker reRanker,
+        IQueryMetrics metrics,
         string query,
         IReadOnlyList<HybridCandidate> hybrid,
         int maxResults,
@@ -475,6 +520,7 @@ public static class SearchTools
         }
         else
             result = await BlendWithRerankerAsync(reRanker,
+                                                  metrics,
                                                   query,
                                                   hybrid,
                                                   maxResults,
@@ -486,6 +532,7 @@ public static class SearchTools
     }
 
     private static async Task<IReadOnlyList<RankedResult>> BlendWithRerankerAsync(IReRanker reRanker,
+        IQueryMetrics metrics,
         string query,
         IReadOnlyList<HybridCandidate> hybrid,
         int maxResults,
@@ -494,7 +541,10 @@ public static class SearchTools
     {
         var hybridByChunkId = hybrid.ToDictionary(c => c.Chunk.Id, c => c, StringComparer.Ordinal);
         var candidateChunks = hybrid.Select(c => c.Chunk).ToList();
-        var rerankResults = await reRanker.ReRankAsync(query, candidateChunks, hybrid.Count, ct);
+        var rerankResults = await metrics.TimeAsync(QueryMetricOperations.Rerank,
+                                                    () => reRanker.ReRankAsync(query, candidateChunks, hybrid.Count, ct),
+                                                    resultCount: r => r.Count
+                                                   );
 
         var hybridWeight = 1.0f - blendWeight;
         var blended = rerankResults
