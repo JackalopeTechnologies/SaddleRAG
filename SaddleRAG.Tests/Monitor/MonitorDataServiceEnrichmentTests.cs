@@ -7,6 +7,7 @@
 #region Usings
 
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -44,7 +45,11 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 AllVersions = new List<string> { "1" }
                             });
 
-        var svc = new MonitorDataService(repo, new FakeChunkRepository(), new FakeLibraryProfileRepository());
+        var svc = new MonitorDataService(repo,
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
         var summaries = await svc.GetLibrarySummariesAsync(TestContext.Current.CancellationToken);
 
         var ids = summaries.Select(s => s.LibraryId).ToList();
@@ -80,7 +85,11 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    SuspectReasons = new[] { "low confidence", "thin docs" }
                                });
 
-        var svc = new MonitorDataService(libRepo, new FakeChunkRepository(), new FakeLibraryProfileRepository());
+        var svc = new MonitorDataService(libRepo,
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
         Assert.NotNull(detail);
@@ -133,7 +142,11 @@ public sealed class MonitorDataServiceEnrichmentTests
                                        ["unfenced"] = 0.4
                                    });
 
-        var svc = new MonitorDataService(libRepo, chunkRepo, new FakeLibraryProfileRepository());
+        var svc = new MonitorDataService(libRepo,
+                                         chunkRepo,
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
         Assert.NotNull(detail);
@@ -180,7 +193,11 @@ public sealed class MonitorDataServiceEnrichmentTests
                           };
         profileRepo.SetProfile(profile);
 
-        var svc = new MonitorDataService(libRepo, chunkRepo, profileRepo);
+        var svc = new MonitorDataService(libRepo,
+                                         chunkRepo,
+                                         profileRepo,
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
 
         var loaded = await svc.GetLibraryProfileAsync("alpha", "1", TestContext.Current.CancellationToken);
 
@@ -198,7 +215,9 @@ public sealed class MonitorDataServiceEnrichmentTests
     {
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
-                                         new FakeLibraryProfileRepository());
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
         var loaded = await svc.GetLibraryProfileAsync("missing", "1", TestContext.Current.CancellationToken);
         Assert.Null(loaded);
     }
@@ -242,7 +261,11 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    EmbeddingDimensions = 768
                                });
 
-        var svc = new MonitorDataService(libRepo, new FakeChunkRepository(), new FakeLibraryProfileRepository());
+        var svc = new MonitorDataService(libRepo,
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
         var versions = await svc.GetVersionsAsync("alpha", TestContext.Current.CancellationToken);
 
         Assert.Equal(2, versions.Count);
@@ -255,8 +278,126 @@ public sealed class MonitorDataServiceEnrichmentTests
     {
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
-                                         new FakeLibraryProfileRepository());
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
         var versions = await svc.GetVersionsAsync("missing", TestContext.Current.CancellationToken);
         Assert.Empty(versions);
+    }
+
+    [Fact]
+    public async Task GetLatestJobIdAsyncReturnsMostRecentMatchingJob()
+    {
+        var jobRepo = new FakeScrapeJobRepository();
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "old-job",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "alpha",
+                                          Version = "1",
+                                          RootUrl = "https://x/",
+                                          LibraryHint = "alpha",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            CreatedAt = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc)
+                        });
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "new-job",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "alpha",
+                                          Version = "1",
+                                          RootUrl = "https://x/",
+                                          LibraryHint = "alpha",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            CreatedAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc)
+                        });
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "other-library",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "beta",
+                                          Version = "1",
+                                          RootUrl = "https://y/",
+                                          LibraryHint = "beta",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            CreatedAt = new DateTime(2026, 5, 1, 12, 0, 0, DateTimeKind.Utc)
+                        });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         jobRepo,
+                                         new FakeScrapeAuditRepository());
+        var jobId = await svc.GetLatestJobIdAsync("alpha", "1", TestContext.Current.CancellationToken);
+
+        Assert.Equal("new-job", jobId);
+    }
+
+    [Fact]
+    public async Task GetLatestJobIdAsyncReturnsNullWhenNoMatch()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var jobId = await svc.GetLatestJobIdAsync("missing", "1", TestContext.Current.CancellationToken);
+        Assert.Null(jobId);
+    }
+
+    [Fact]
+    public async Task GetAuditSummaryAsyncReturnsSummaryWhenPresent()
+    {
+        var auditRepo = new FakeScrapeAuditRepository();
+        auditRepo.SetSummary("job-1",
+                             new AuditSummary
+                                 {
+                                     JobId = "job-1",
+                                     TotalConsidered = 100,
+                                     IndexedCount = 50,
+                                     FetchedCount = 60,
+                                     FailedCount = 5,
+                                     SkippedCount = 35,
+                                     SkipReasonCounts = new Dictionary<AuditSkipReason, int>
+                                                            {
+                                                                [AuditSkipReason.PatternExclude] = 20,
+                                                                [AuditSkipReason.AlreadyVisited] = 15
+                                                            },
+                                     HostCounts = new Dictionary<string, int>
+                                                      {
+                                                          ["docs.x.com"] = 80,
+                                                          ["help.x.com"] = 20
+                                                      }
+                                 });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         auditRepo);
+        var summary = await svc.GetAuditSummaryAsync("job-1", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(summary);
+        Assert.Equal(100, summary.TotalConsidered);
+        Assert.Equal(50, summary.IndexedCount);
+        Assert.Equal(2, summary.SkipReasonCounts.Count);
+    }
+
+    [Fact]
+    public async Task GetAuditSummaryAsyncReturnsNullWhenAuditMissing()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var summary = await svc.GetAuditSummaryAsync("missing-job", TestContext.Current.CancellationToken);
+        Assert.Null(summary);
     }
 }

@@ -8,6 +8,7 @@
 
 using Microsoft.AspNetCore.Components;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -25,6 +26,7 @@ public abstract class LibraryDetailPageBase : ComponentBase
     protected LibraryDetailData? Detail { get; private set; }
     protected LibraryProfile? Profile { get; private set; }
     protected string? LatestJobId { get; private set; }
+    protected AuditSummary? AuditSummary { get; private set; }
     protected IReadOnlyList<LibraryVersionRecord> Versions { get; private set; } = [];
 
     protected override async Task OnParametersSetAsync()
@@ -35,6 +37,11 @@ public abstract class LibraryDetailPageBase : ComponentBase
         {
             Profile = await DataService.GetLibraryProfileAsync(LibraryId, Detail.Version);
             Versions = await DataService.GetVersionsAsync(LibraryId);
+            LatestJobId = await DataService.GetLatestJobIdAsync(LibraryId, Detail.Version);
+            if (!string.IsNullOrEmpty(LatestJobId))
+            {
+                AuditSummary = await DataService.GetAuditSummaryAsync(LatestJobId);
+            }
         }
     }
 }
