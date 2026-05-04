@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
@@ -16,14 +17,10 @@ using SaddleRAG.Core.Models.Audit;
 namespace SaddleRAG.Database.Repositories;
 
 /// <summary>
-///     MongoDB implementation of <see cref="IScrapeAuditRepository"/>.
+///     MongoDB implementation of <see cref="IScrapeAuditRepository" />.
 /// </summary>
 public sealed class ScrapeAuditRepository : IScrapeAuditRepository
 {
-    private const string AggregateIdField   = "_id";
-    private const string AggregateCountField = "count";
-    private const string MongoStatusField   = "Status";
-
     public ScrapeAuditRepository(SaddleRagDbContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -38,8 +35,11 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
         ArgumentNullException.ThrowIfNull(entries);
         var list = entries.ToList();
         var insertTask = list.Count > 0
-            ? mContext.ScrapeAuditLog.InsertManyAsync(list, new InsertManyOptions { IsOrdered = false }, ct)
-            : Task.CompletedTask;
+                             ? mContext.ScrapeAuditLog.InsertManyAsync(list,
+                                                                       new InsertManyOptions { IsOrdered = false },
+                                                                       ct
+                                                                      )
+                             : Task.CompletedTask;
         await insertTask;
     }
 
@@ -62,13 +62,15 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
             filter &= Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.Host, host);
         if (!string.IsNullOrEmpty(urlSubstring))
         {
-            var escaped = System.Text.RegularExpressions.Regex.Escape(urlSubstring);
+            var escaped = Regex.Escape(urlSubstring);
             filter &= Builders<ScrapeAuditLogEntry>.Filter.Regex(a => a.Url,
-                                                                  new BsonRegularExpression(escaped));
+                                                                 new BsonRegularExpression(escaped)
+                                                                );
         }
+
         return await mContext.ScrapeAuditLog.Find(filter)
-                                            .Limit(limit > 0 ? limit : 50)
-                                            .ToListAsync(ct);
+                             .Limit(limit > 0 ? limit : 50)
+                             .ToListAsync(ct);
     }
 
     /// <inheritdoc />
@@ -76,9 +78,10 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         ArgumentException.ThrowIfNullOrEmpty(url);
-        var filter = Builders<ScrapeAuditLogEntry>.Filter.And(
-            Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.JobId, jobId),
-            Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.Url, url));
+        var filter =
+            Builders<ScrapeAuditLogEntry>.Filter.And(Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.JobId, jobId),
+                                                     Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.Url, url)
+                                                    );
         return await mContext.ScrapeAuditLog.Find(filter).FirstOrDefaultAsync(ct);
     }
 
@@ -89,64 +92,81 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
 
         // ── status bucket pipeline ───────────────────────────────────────────────
         var statusPipeline = new[]
-        {
-            new BsonDocument("$match", new BsonDocument("JobId", jobId)),
-            new BsonDocument("$group", new BsonDocument
-            {
-                { AggregateIdField,     new BsonDocument(MongoStatusField, "$Status") },
-                { AggregateCountField,  new BsonDocument("$sum", 1) }
-            })
-        };
+                                 {
+                                     new BsonDocument("$match", new BsonDocument("JobId", jobId)),
+                                     new BsonDocument("$group",
+                                                      new BsonDocument
+                                                          {
+                                                              {
+                                                                  AggregateIdField,
+                                                                  new BsonDocument(MongoStatusField, "$Status")
+                                                              },
+                                                              {
+                                                                  AggregateCountField,
+                                                                  new BsonDocument("$sum", value: 1)
+                                                              }
+                                                          }
+                                                     )
+                                 };
 
         // ── host bucket pipeline ─────────────────────────────────────────────────
         var hostPipeline = new[]
-        {
-            new BsonDocument("$match", new BsonDocument("JobId", jobId)),
-            new BsonDocument("$group", new BsonDocument
-            {
-                { AggregateIdField,    "$Host" },
-                { AggregateCountField, new BsonDocument("$sum", 1) }
-            })
-        };
+                               {
+                                   new BsonDocument("$match", new BsonDocument("JobId", jobId)),
+                                   new BsonDocument("$group",
+                                                    new BsonDocument
+                                                        {
+                                                            { AggregateIdField, "$Host" },
+                                                            { AggregateCountField, new BsonDocument("$sum", value: 1) }
+                                                        }
+                                                   )
+                               };
 
         // ── skip-reason bucket pipeline ──────────────────────────────────────────
         var reasonPipeline = new[]
-        {
-            new BsonDocument("$match", new BsonDocument
-            {
-                { "JobId",      jobId },
-                { "SkipReason", new BsonDocument("$exists", true) }
-            }),
-            new BsonDocument("$group", new BsonDocument
-            {
-                { AggregateIdField,    "$SkipReason" },
-                { AggregateCountField, new BsonDocument("$sum", 1) }
-            })
-        };
+                                 {
+                                     new BsonDocument("$match",
+                                                      new BsonDocument
+                                                          {
+                                                              { "JobId", jobId },
+                                                              { "SkipReason", new BsonDocument("$exists", value: true) }
+                                                          }
+                                                     ),
+                                     new BsonDocument("$group",
+                                                      new BsonDocument
+                                                          {
+                                                              { AggregateIdField, "$SkipReason" },
+                                                              {
+                                                                  AggregateCountField,
+                                                                  new BsonDocument("$sum", value: 1)
+                                                              }
+                                                          }
+                                                     )
+                                 };
 
-        var col        = mContext.ScrapeAuditLog;
+        var col = mContext.ScrapeAuditLog;
         var statusTask = col.Aggregate<BsonDocument>(statusPipeline, cancellationToken: ct).ToListAsync(ct);
-        var hostTask   = col.Aggregate<BsonDocument>(hostPipeline,   cancellationToken: ct).ToListAsync(ct);
+        var hostTask = col.Aggregate<BsonDocument>(hostPipeline, cancellationToken: ct).ToListAsync(ct);
         var reasonTask = col.Aggregate<BsonDocument>(reasonPipeline, cancellationToken: ct).ToListAsync(ct);
 
         await Task.WhenAll(statusTask, hostTask, reasonTask);
 
         var statusBuckets = statusTask.Result;
-        var hostBuckets   = hostTask.Result;
+        var hostBuckets = hostTask.Result;
         var reasonBuckets = reasonTask.Result;
 
-        int total   = 0;
-        int indexed = 0;
-        int fetched = 0;
-        int failed  = 0;
-        int skipped = 0;
+        var total = 0;
+        var indexed = 0;
+        var fetched = 0;
+        var failed = 0;
+        var skipped = 0;
 
-        foreach (var doc in statusBuckets)
+        foreach(var doc in statusBuckets)
         {
-            int cnt    = doc[AggregateCountField].AsInt32;
-            total     += cnt;
+            int cnt = doc[AggregateCountField].AsInt32;
+            total += cnt;
             var status = (AuditStatus) doc[AggregateIdField][MongoStatusField].AsInt32;
-            switch (status)
+            switch(status)
             {
                 case AuditStatus.Indexed:
                     indexed = cnt;
@@ -164,26 +184,27 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
         }
 
         var skipReasonCounts = reasonBuckets
-            .Where(d => !d[AggregateIdField].IsBsonNull)
-            .ToDictionary(
-                d => (AuditSkipReason) d[AggregateIdField].AsInt32,
-                d => d[AggregateCountField].AsInt32);
+                               .Where(d => !d[AggregateIdField].IsBsonNull)
+                               .ToDictionary(d => (AuditSkipReason) d[AggregateIdField].AsInt32,
+                                             d => d[AggregateCountField].AsInt32
+                                            );
 
-        var hostCounts = hostBuckets.ToDictionary(
-            d => d[AggregateIdField].IsBsonNull ? string.Empty : d[AggregateIdField].AsString,
-            d => d[AggregateCountField].AsInt32);
+        var hostCounts =
+            hostBuckets.ToDictionary(d => d[AggregateIdField].IsBsonNull ? string.Empty : d[AggregateIdField].AsString,
+                                     d => d[AggregateCountField].AsInt32
+                                    );
 
         return new AuditSummary
-        {
-            JobId            = jobId,
-            TotalConsidered  = total,
-            IndexedCount     = indexed,
-            FetchedCount     = fetched,
-            FailedCount      = failed,
-            SkippedCount     = skipped,
-            SkipReasonCounts = skipReasonCounts,
-            HostCounts       = hostCounts
-        };
+                   {
+                       JobId = jobId,
+                       TotalConsidered = total,
+                       IndexedCount = indexed,
+                       FetchedCount = fetched,
+                       FailedCount = failed,
+                       SkippedCount = skipped,
+                       SkipReasonCounts = skipReasonCounts,
+                       HostCounts = hostCounts
+                   };
     }
 
     /// <inheritdoc />
@@ -201,10 +222,17 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
-        var filter = Builders<ScrapeAuditLogEntry>.Filter.And(
-            Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.LibraryId, libraryId),
-            Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.Version, version));
+        var filter =
+            Builders<ScrapeAuditLogEntry>.Filter.And(Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.LibraryId,
+                                                              libraryId
+                                                         ),
+                                                     Builders<ScrapeAuditLogEntry>.Filter.Eq(a => a.Version, version)
+                                                    );
         var result = await mContext.ScrapeAuditLog.DeleteManyAsync(filter, ct);
         return result.DeletedCount;
     }
+
+    private const string AggregateIdField = "_id";
+    private const string AggregateCountField = "count";
+    private const string MongoStatusField = "Status";
 }

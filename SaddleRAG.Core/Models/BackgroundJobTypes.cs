@@ -7,7 +7,7 @@
 namespace SaddleRAG.Core.Models;
 
 /// <summary>
-///     String constants for <see cref="BackgroundJobRecord.JobType"/>.
+///     String constants for <see cref="BackgroundJobRecord.JobType" />.
 /// </summary>
 public static class BackgroundJobTypes
 {

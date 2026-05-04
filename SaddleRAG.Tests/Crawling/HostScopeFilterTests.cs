@@ -68,7 +68,7 @@ public sealed class HostScopeFilterTests
         filter.GatePrefixOf(new Uri("https://example.com/solutions/y"));
         filter.GatePrefixOf(new Uri("https://example.com/it-it/products"));
 
-        Assert.Equal(3, filter.GatedPrefixes.Count);
+        Assert.Equal(expected: 3, filter.GatedPrefixes.Count);
         Assert.True(filter.IsGated(new Uri("https://example.com/products/anything")));
         Assert.True(filter.IsGated(new Uri("https://example.com/solutions/anything")));
         Assert.True(filter.IsGated(new Uri("https://example.com/it-it/anything")));
@@ -96,5 +96,4 @@ public sealed class HostScopeFilterTests
         Assert.True(filter.IsGated(new Uri("https://example.com/products/y")));
         Assert.True(filter.IsGated(new Uri("https://example.com/PRODUCTS/z")));
     }
-
 }

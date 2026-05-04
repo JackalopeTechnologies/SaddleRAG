@@ -5,19 +5,24 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.Components;
 using SaddleRAG.Monitor.Services;
+
 #endregion
 
 namespace SaddleRAG.Monitor.Pages;
 
 public abstract class LibraryDetailPageBase : ComponentBase
 {
-    [Parameter] public string LibraryId { get; set; } = string.Empty;
-    [Inject] private MonitorDataService? DataService { get; set; }
+    [Parameter]
+    public string LibraryId { get; set; } = string.Empty;
 
-    protected LibraryDetailData? Detail      { get; private set; }
-    protected string?            LatestJobId { get; private set; }
+    [Inject]
+    private MonitorDataService? DataService { get; set; }
+
+    protected LibraryDetailData? Detail { get; private set; }
+    protected string? LatestJobId { get; private set; }
 
     protected override async Task OnParametersSetAsync()
     {

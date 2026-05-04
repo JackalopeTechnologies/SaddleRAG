@@ -17,7 +17,6 @@ namespace SaddleRAG.Ingestion.Symbols;
 ///     token in chunk content. Used by the rejection accumulator to
 ///     attach 2-3 sample sentences to each ExcludedSymbol record so the
 ///     calling LLM can decide whether the rejection was correct.
-///
 ///     The output is whitespace-normalized (newlines/tabs become single
 ///     spaces, multiple spaces collapse) and capped at WindowMaxChars
 ///     total characters. Returns null when the token is not present in
@@ -27,8 +26,8 @@ namespace SaddleRAG.Ingestion.Symbols;
 public static class SampleWindowExtractor
 {
     /// <summary>
-    ///     Extract a window around the first occurrence of <paramref name="token"/>
-    ///     in <paramref name="content"/>. Token comparison is Ordinal
+    ///     Extract a window around the first occurrence of <paramref name="token" />
+    ///     in <paramref name="content" />. Token comparison is Ordinal
     ///     (case-sensitive) and uses the exact token text.
     /// </summary>
     public static string? Extract(string content, string token)
@@ -45,8 +44,11 @@ public static class SampleWindowExtractor
 
     private static string BuildWindow(string content, string token, int index)
     {
-        var leftStart = ExpandToWordBoundary(content, Math.Max(0, index - WindowSideChars), expandLeft: true);
-        var rightEnd = ExpandToWordBoundary(content, Math.Min(content.Length, index + token.Length + WindowSideChars), expandLeft: false);
+        var leftStart = ExpandToWordBoundary(content, Math.Max(val1: 0, index - WindowSideChars), expandLeft: true);
+        var rightEnd = ExpandToWordBoundary(content,
+                                            Math.Min(content.Length, index + token.Length + WindowSideChars),
+                                            expandLeft: false
+                                           );
 
         var raw = content.Substring(leftStart, rightEnd - leftStart);
         var collapsed = smWhitespaceRegex.Replace(raw, " ").Trim();
@@ -75,6 +77,7 @@ public static class SampleWindowExtractor
             while (result < content.Length && !char.IsWhiteSpace(content[result]))
                 result++;
         }
+
         return result;
     }
 
@@ -100,8 +103,8 @@ public static class SampleWindowExtractor
         return result;
     }
 
-    private static readonly Regex smWhitespaceRegex = new(@"\s+", RegexOptions.Compiled);
-
     private const int WindowSideChars = 100;
     private const int WindowMaxChars = 200;
+
+    private static readonly Regex smWhitespaceRegex = new Regex(@"\s+", RegexOptions.Compiled);
 }

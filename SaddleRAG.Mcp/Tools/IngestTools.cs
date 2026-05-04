@@ -8,10 +8,11 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -42,13 +43,16 @@ public static class IngestTools
     public static async Task<string> StartIngest(RepositoryFactory repositoryFactory,
                                                  [Description("Root URL of the docs site to ingest")]
                                                  string url,
-                                                 [Description("Library identifier (e.g. 'aerotech-aeroscript'). Required for now; URL-based inference is a future enhancement.")]
+                                                 [Description("Library identifier (e.g. 'aerotech-aeroscript'). Required for now; URL-based inference is a future enhancement."
+                                                             )]
                                                  string library,
                                                  [Description("Library version (e.g. '2025.3'). Required for now.")]
                                                  string version,
-                                                 [Description("If true, auto-proceed through ready transitions (placeholder; not used yet).")]
+                                                 [Description("If true, auto-proceed through ready transitions (placeholder; not used yet)."
+                                                             )]
                                                  bool auto = false,
-                                                 [Description("If true, force re-ingest even when status would be READY (placeholder; not used yet).")]
+                                                 [Description("If true, force re-ingest even when status would be READY (placeholder; not used yet)."
+                                                             )]
                                                  bool force = false,
                                                  [Description("Optional database profile name")]
                                                  string? profile = null,
@@ -65,9 +69,9 @@ public static class IngestTools
         var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
 
         var libraryProfile = await profileRepo.GetAsync(library, version, ct);
-        var chunkCount = await chunkRepo.GetChunkCountAsync(library, version, ct);
+        int chunkCount = await chunkRepo.GetChunkCountAsync(library, version, ct);
 
-        bool stale = false;
+        var stale = false;
         if (chunkCount > 0)
             stale = await chunkRepo.HasStaleChunksAsync(library, version, ParserVersionInfo.Current, ct);
 
@@ -77,19 +81,33 @@ public static class IngestTools
         bool isInProgress = activeJob != null;
         bool isSuspect = versionRecord != null && versionRecord.Suspect;
         string activeJobId = activeJob?.Id ?? string.Empty;
-        IReadOnlyList<string> suspectReasons = versionRecord?.SuspectReasons ?? [];
+        var suspectReasons = versionRecord?.SuspectReasons ?? [];
 
-        IngestStatusResponse? suspectResponse = isSuspect && !isInProgress
-            ? await MakeUrlSuspectAsync(library, version, url, suspectReasons, chunkRepo, ct)
-            : null;
+        var suspectResponse = isSuspect && !isInProgress
+                                  ? await MakeUrlSuspectAsync(library,
+                                                              version,
+                                                              url,
+                                                              suspectReasons,
+                                                              chunkRepo,
+                                                              ct
+                                                             )
+                                  : null;
 
-        IngestStatusResponse response = isInProgress switch
-        {
-            true => MakeInProgress(library, version, url, activeJobId),
-            false => suspectResponse ?? ResolveStatus(libraryProfile, chunkCount, stale, library, version, url, force)
-        };
+        var response = isInProgress switch
+            {
+                true => MakeInProgress(library, version, url, activeJobId),
+                false => suspectResponse ??
+                         ResolveStatus(libraryProfile,
+                                       chunkCount,
+                                       stale,
+                                       library,
+                                       version,
+                                       url,
+                                       force
+                                      )
+            };
 
-        var json = JsonSerializer.Serialize(response, smJsonOptions);
+        string json = JsonSerializer.Serialize(response, smJsonOptions);
         return json;
     }
 
@@ -105,26 +123,27 @@ public static class IngestTools
         bool hasChunks = chunkCount > 0;
 
         var response = (hasProfile, hasChunks, stale, force) switch
-        {
-            (false, _, _, _) => MakeReconNeeded(library, version, url),
-            (true, false, _, _) => MakeReadyToScrape(library, version, url, MessageReadyToScrapeFresh),
-            (true, true, true, _) => MakeStale(library, version, url),
-            (true, true, false, true) => MakeReadyToScrape(library, version, url, MessageReadyToScrapeForce),
-            (true, true, false, false) => MakeReady(library, version, url)
-        };
+            {
+                (false, var _, var _, var _) => MakeReconNeeded(library, version, url),
+                (true, false, var _, var _) => MakeReadyToScrape(library, version, url, MessageReadyToScrapeFresh),
+                (true, true, true, var _) => MakeStale(library, version, url),
+                (true, true, false, true) => MakeReadyToScrape(library, version, url, MessageReadyToScrapeForce),
+                (true, true, false, false) => MakeReady(library, version, url)
+            };
 
         return response;
     }
 
     private static IngestStatusResponse MakeInProgress(string library, string version, string url, string jobId) =>
-        new()
+        new IngestStatusResponse
             {
                 Status = IngestStatus.InProgress,
                 LibraryId = library,
                 Version = version,
                 Url = url,
                 NextTool = "get_scrape_status",
-                Message = $"Scrape job {jobId} is already running. Poll get_scrape_status, or call cancel_scrape to abort.",
+                Message =
+                    $"Scrape job {jobId} is already running. Poll get_scrape_status, or call cancel_scrape to abort.",
                 NextToolArgs = new Dictionary<string, string>
                                    {
                                        ["jobId"] = jobId
@@ -132,15 +151,16 @@ public static class IngestTools
             };
 
     private static IngestStatusResponse MakeReconNeeded(string library, string version, string url) =>
-        new()
+        new IngestStatusResponse
             {
                 Status = IngestStatus.ReconNeeded,
                 LibraryId = library,
                 Version = version,
                 Url = url,
                 NextTool = "recon_library",
-                Message = "No library profile cached. Call recon_library (args in NextToolArgs) to get the schema and instructions, "
-                        + "then browse the docs site and call submit_library_profile with the resulting JSON.",
+                Message =
+                    "No library profile cached. Call recon_library (args in NextToolArgs) to get the schema and instructions, " +
+                    "then browse the docs site and call submit_library_profile with the resulting JSON.",
                 NextToolArgs = new Dictionary<string, string>
                                    {
                                        ["url"] = url,
@@ -150,7 +170,7 @@ public static class IngestTools
             };
 
     private static IngestStatusResponse MakeReadyToScrape(string library, string version, string url, string message) =>
-        new()
+        new IngestStatusResponse
             {
                 Status = IngestStatus.ReadyToScrape,
                 LibraryId = library,
@@ -167,15 +187,15 @@ public static class IngestTools
             };
 
     private static IngestStatusResponse MakeStale(string library, string version, string url) =>
-        new()
+        new IngestStatusResponse
             {
                 Status = IngestStatus.Stale,
                 LibraryId = library,
                 Version = version,
                 Url = url,
                 NextTool = "rescrub_library",
-                Message = "Chunks exist but were extracted with an older parser. "
-                        + "Call rescrub_library to re-run the extractor over stored content (no re-crawl).",
+                Message = "Chunks exist but were extracted with an older parser. " +
+                          "Call rescrub_library to re-run the extractor over stored content (no re-crawl).",
                 NextToolArgs = new Dictionary<string, string>
                                    {
                                        ["library"] = library,
@@ -184,21 +204,22 @@ public static class IngestTools
             };
 
     private static IngestStatusResponse MakeReady(string library, string version, string url) =>
-        new()
+        new IngestStatusResponse
             {
                 Status = IngestStatus.Ready,
                 LibraryId = library,
                 Version = version,
                 Url = url,
-                Message = "Profile cached, index built, current parser version. Ready to query — call search_docs for natural-language search, get_class_reference for a specific type, or get_library_overview for an introduction."
+                Message =
+                    "Profile cached, index built, current parser version. Ready to query — call search_docs for natural-language search, get_class_reference for a specific type, or get_library_overview for an introduction."
             };
 
     private static async Task<IngestStatusResponse> MakeUrlSuspectAsync(string library,
-                                                                         string version,
-                                                                         string url,
-                                                                         IReadOnlyList<string> suspectReasons,
-                                                                         SaddleRAG.Core.Interfaces.IChunkRepository chunkRepo,
-                                                                         CancellationToken ct)
+                                                                        string version,
+                                                                        string url,
+                                                                        IReadOnlyList<string> suspectReasons,
+                                                                        IChunkRepository chunkRepo,
+                                                                        CancellationToken ct)
     {
         var sampleTitles = await chunkRepo.GetSampleTitlesAsync(library, version, UrlSuspectSampleTitleLimit, ct);
         var hostnameDist = await chunkRepo.GetHostnameDistributionAsync(library, version, ct);
@@ -214,21 +235,19 @@ public static class IngestTools
                              Version = version,
                              Url = url,
                              NextTool = "submit_url_correction",
-                             Message = $"Indexed content looks wrong: {reasonsJoined}. "
-                                     + $"Sample titles: {sampleTitlesJoined}. "
-                                     + $"Hostnames: {hostnamesJoined}. "
-                                     + "Browse the URL and call submit_url_correction with a better one if needed. "
-                                     + "The library and version are pre-filled in NextToolArgs; you must supply newUrl yourself after browsing.",
+                             Message = $"Indexed content looks wrong: {reasonsJoined}. " +
+                                       $"Sample titles: {sampleTitlesJoined}. " +
+                                       $"Hostnames: {hostnamesJoined}. " +
+                                       "Browse the URL and call submit_url_correction with a better one if needed. " +
+                                       "The library and version are pre-filled in NextToolArgs; you must supply newUrl yourself after browsing.",
                              NextToolArgs = new Dictionary<string, string>
-                                               {
-                                                   ["library"] = library,
-                                                   ["version"] = version
-                                               }
+                                                {
+                                                    ["library"] = library,
+                                                    ["version"] = version
+                                                }
                          };
         return result;
     }
-
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
 
     private const string MessageReadyToScrapeFresh =
         "Profile cached, no chunks indexed. Call scrape_docs (args in NextToolArgs) to begin ingestion.";
@@ -241,4 +260,6 @@ public static class IngestTools
     private const int UrlSuspectHostnamesShown = 5;
     private const string SemicolonSeparator = "; ";
     private const string CommaSeparator = ", ";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

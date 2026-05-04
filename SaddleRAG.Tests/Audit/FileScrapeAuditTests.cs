@@ -18,7 +18,7 @@ using SaddleRAG.Ingestion.Crawling;
 namespace SaddleRAG.Tests.Audit;
 
 /// <summary>
-///     Verifies that <see cref="PageCrawler.DryRunAsync"/> correctly crawls a local
+///     Verifies that <see cref="PageCrawler.DryRunAsync" /> correctly crawls a local
 ///     file:// documentation tree, records consistent audit host strings, and
 ///     skips off-site links without attempting to fetch them.
 /// </summary>
@@ -32,15 +32,20 @@ public sealed class FileScrapeAuditTests
     {
         var fixtureRoot = Path.Combine(AppContext.BaseDirectory, "TestData", "FileScrape");
         Assert.True(Directory.Exists(fixtureRoot),
-                    $"Test fixture directory must be copied to output. Looked for: {fixtureRoot}");
+                    $"Test fixture directory must be copied to output. Looked for: {fixtureRoot}"
+                   );
 
         var rootUrl = new Uri(Path.Combine(fixtureRoot, "index.htm")).AbsoluteUri;
 
         var auditWriter = new SpyAuditWriter();
         var pageRepo = new NullPageRepository();
         var gitHubScraper = new GitHubRepoScraper(pageRepo, NullLogger<GitHubRepoScraper>.Instance);
-        var crawler = new PageCrawler(pageRepo, gitHubScraper, auditWriter, new NullMonitorBroadcaster(),
-                                      NullLogger<PageCrawler>.Instance);
+        var crawler = new PageCrawler(pageRepo,
+                                      gitHubScraper,
+                                      auditWriter,
+                                      new NullMonitorBroadcaster(),
+                                      NullLogger<PageCrawler>.Instance
+                                     );
 
         // AllowedUrlPatterns = [""] — empty-string regex matches every URL, which is the
         // same default the MCP tool applies when the root host is empty (file:// scheme).
@@ -60,16 +65,20 @@ public sealed class FileScrapeAuditTests
                           OffSiteDepth = 0
                       };
 
-        await crawler.DryRunAsync(job, "file-scrape-test", "1.0", "test-job-file",
-                                  ct: TestContext.Current.CancellationToken);
+        await crawler.DryRunAsync(job,
+                                  "file-scrape-test",
+                                  "1.0",
+                                  "test-job-file",
+                                  ct: TestContext.Current.CancellationToken
+                                 );
 
         // All 4 local .htm files must be fetched.
-        Assert.Equal(4, auditWriter.FetchedCalls.Count);
+        Assert.Equal(expected: 4, auditWriter.FetchedCalls.Count);
 
         // The off-site https link must be skipped (depth-exceeded or pattern-based).
         Assert.Contains(auditWriter.SkippedCalls,
-                        c => c.Reason == AuditSkipReason.OffSiteDepth
-                          || c.Reason == AuditSkipReason.PatternMissAllowed);
+                        c => c.Reason == AuditSkipReason.OffSiteDepth || c.Reason == AuditSkipReason.PatternMissAllowed
+                       );
 
         // All fetched audit events must carry the same host string — the fix for the
         // dryrun vs. live path inconsistency.  For file:// URLs the canonical host is
@@ -86,43 +95,105 @@ public sealed class FileScrapeAuditTests
 
     private sealed class NullMonitorBroadcaster : IMonitorBroadcaster
     {
-        public void RecordJobStarted(string jobId, string libraryId, string version, string rootUrl) { }
-        public void RecordFetch(string jobId, string url) { }
-        public void RecordReject(string jobId, string url, string reason) { }
-        public void RecordError(string jobId, string message) { }
-        public void RecordPageClassified(string jobId) { }
-        public void RecordChunkGenerated(string jobId) { }
-        public void RecordChunkEmbedded(string jobId) { }
-        public void RecordPageCompleted(string jobId) { }
-        public void RecordJobCompleted(string jobId, int indexedPageCount) { }
-        public void RecordJobFailed(string jobId, string errorMessage) { }
-        public void RecordJobCancelled(string jobId) { }
-        public void RecordSuspectFlag(string jobId, string libraryId, string version, IReadOnlyList<string> reasons) { }
+        public void RecordJobStarted(string jobId, string libraryId, string version, string rootUrl)
+        {
+        }
+
+        public void RecordFetch(string jobId, string url)
+        {
+        }
+
+        public void RecordReject(string jobId, string url, string reason)
+        {
+        }
+
+        public void RecordError(string jobId, string message)
+        {
+        }
+
+        public void RecordPageClassified(string jobId)
+        {
+        }
+
+        public void RecordChunkGenerated(string jobId)
+        {
+        }
+
+        public void RecordChunkEmbedded(string jobId)
+        {
+        }
+
+        public void RecordPageCompleted(string jobId)
+        {
+        }
+
+        public void RecordJobCompleted(string jobId, int indexedPageCount)
+        {
+        }
+
+        public void RecordJobFailed(string jobId, string errorMessage)
+        {
+        }
+
+        public void RecordJobCancelled(string jobId)
+        {
+        }
+
+        public void RecordSuspectFlag(string jobId, string libraryId, string version, IReadOnlyList<string> reasons)
+        {
+        }
+
         public JobTickSnapshot? GetJobSnapshot(string jobId) => null;
         public IReadOnlyList<string> GetActiveJobIds() => [];
-        public void Subscribe(string jobId, Func<JobTickEvent, Task> handler) { }
-        public void Unsubscribe(string jobId, Func<JobTickEvent, Task> handler) { }
-        public void BroadcastTick(string jobId) { }
+
+        public void Subscribe(string jobId, Func<JobTickEvent, Task> handler)
+        {
+        }
+
+        public void Unsubscribe(string jobId, Func<JobTickEvent, Task> handler)
+        {
+        }
+
+        public void BroadcastTick(string jobId)
+        {
+        }
     }
 
     private sealed class SpyAuditWriter : IScrapeAuditWriter
     {
-        public List<AuditCall> FetchedCalls { get; } = new();
-        public List<AuditCall> SkippedCalls { get; } = new();
+        public List<AuditCall> FetchedCalls { get; } = new List<AuditCall>();
+        public List<AuditCall> SkippedCalls { get; } = new List<AuditCall>();
 
-        public void RecordSkipped(AuditContext ctx, string url, string? parentUrl, string host, int depth,
-                                  AuditSkipReason reason, string? detail)
+        public void RecordSkipped(AuditContext ctx,
+                                  string url,
+                                  string? parentUrl,
+                                  string host,
+                                  int depth,
+                                  AuditSkipReason reason,
+                                  string? detail)
             => SkippedCalls.Add(new AuditCall(ctx, url, host, reason));
 
-        public void RecordFetched(AuditContext ctx, string url, string? parentUrl, string host, int depth)
+        public void RecordFetched(AuditContext ctx,
+                                  string url,
+                                  string? parentUrl,
+                                  string host,
+                                  int depth)
             => FetchedCalls.Add(new AuditCall(ctx, url, host, Reason: null));
 
-        public void RecordFailed(AuditContext ctx, string url, string? parentUrl, string host, int depth,
+        public void RecordFailed(AuditContext ctx,
+                                 string url,
+                                 string? parentUrl,
+                                 string host,
+                                 int depth,
                                  string error)
         {
         }
 
-        public void RecordIndexed(AuditContext ctx, string url, string? parentUrl, string host, int depth,
+        public void RecordIndexed(AuditContext ctx,
+                                  string url,
+                                  string? parentUrl,
+                                  string host,
+                                  int depth,
                                   AuditPageOutcome outcome)
         {
         }
@@ -137,19 +208,22 @@ public sealed class FileScrapeAuditTests
         public Task UpsertPageAsync(PageRecord record, CancellationToken ct = default)
             => Task.CompletedTask;
 
-        public Task<IReadOnlyList<PageRecord>> GetPagesAsync(string libraryId, string version,
-                                                              CancellationToken ct = default)
+        public Task<IReadOnlyList<PageRecord>> GetPagesAsync(string libraryId,
+                                                             string version,
+                                                             CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<PageRecord>>(Array.Empty<PageRecord>());
 
-        public Task<PageRecord?> GetPageByUrlAsync(string libraryId, string version, string url,
-                                                    CancellationToken ct = default)
-            => Task.FromResult<PageRecord?>(null);
+        public Task<PageRecord?> GetPageByUrlAsync(string libraryId,
+                                                   string version,
+                                                   string url,
+                                                   CancellationToken ct = default)
+            => Task.FromResult<PageRecord?>(result: null);
 
         public Task<int> GetPageCountAsync(string libraryId, string version, CancellationToken ct = default)
-            => Task.FromResult(0);
+            => Task.FromResult(result: 0);
 
         public Task<long> DeleteAsync(string libraryId, string version, CancellationToken ct = default)
-            => Task.FromResult(0L);
+            => Task.FromResult(result: 0L);
     }
 
     #endregion

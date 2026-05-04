@@ -14,9 +14,9 @@ using SaddleRAG.Core.Models;
 namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
-///     Pre-loading shard-routed term lookup over <see cref="IBm25ShardRepository"/>.
+///     Pre-loading shard-routed term lookup over <see cref="IBm25ShardRepository" />.
 ///     One instance per query path; not thread-safe. The scorer creates
-///     one, calls <see cref="PreloadAsync"/> with the query terms, then
+///     one, calls <see cref="PreloadAsync" /> with the query terms, then
 ///     scores synchronously against the cached postings.
 /// </summary>
 public class ShardedBm25TermLookup : IBm25TermLookup
@@ -38,14 +38,16 @@ public class ShardedBm25TermLookup : IBm25TermLookup
         mShardCount = shardCount;
     }
 
-    private readonly IBm25ShardRepository mShardRepository;
     private readonly string mLibraryId;
-    private readonly string mVersion;
+
+    private readonly Dictionary<string, IReadOnlyList<Bm25Posting>> mPostingsCache =
+        new Dictionary<string, IReadOnlyList<Bm25Posting>>(StringComparer.Ordinal);
+
+    private readonly Dictionary<int, Bm25Shard?> mShardCache = new Dictionary<int, Bm25Shard?>();
     private readonly int mShardCount;
 
-    private readonly Dictionary<int, Bm25Shard?> mShardCache = new();
-    private readonly Dictionary<string, IReadOnlyList<Bm25Posting>> mPostingsCache =
-        new(StringComparer.Ordinal);
+    private readonly IBm25ShardRepository mShardRepository;
+    private readonly string mVersion;
 
     /// <inheritdoc />
     public async Task PreloadAsync(IReadOnlyList<string> queryTerms, CancellationToken ct = default)

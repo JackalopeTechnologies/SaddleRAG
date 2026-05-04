@@ -11,10 +11,10 @@ namespace SaddleRAG.Monitor.Pages;
 /// </summary>
 public sealed record LibraryDetailData
 {
-    public required string LibraryId  { get; init; }
-    public required string Version    { get; init; }
-    public required int    ChunkCount { get; init; }
-    public required int    PageCount  { get; init; }
-    public required bool   IsSuspect  { get; init; }
-    public required string Hint       { get; init; }
+    public required string LibraryId { get; init; }
+    public required string Version { get; init; }
+    public required int ChunkCount { get; init; }
+    public required int PageCount { get; init; }
+    public required bool IsSuspect { get; init; }
+    public required string Hint { get; init; }
 }

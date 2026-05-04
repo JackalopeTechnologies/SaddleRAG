@@ -5,7 +5,9 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using SaddleRAG.Core.Models.Monitor;
+
 #endregion
 
 namespace SaddleRAG.Core.Interfaces;

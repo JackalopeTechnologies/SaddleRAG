@@ -1,11 +1,10 @@
 @* SaddleRAG.Monitor/Components/JobCardStrip.razor *@
-@using SaddleRAG.Core.Models.Monitor
 
 <MudCard Class="mb-2">
     <MudCardContent>
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
             <MudText Typo="Typo.subtitle1">@Job.JobId</MudText>
-            <MudProgressLinear Value="@ProgressPct" Color="Color.Primary" Class="flex-1" />
+            <MudProgressLinear Value="@ProgressPct" Color="Color.Primary" Class="flex-1"/>
             <MudText Typo="Typo.body2">
                 @Job.Counters.PagesCompleted / @Job.Counters.PagesQueued pages
             </MudText>
@@ -19,10 +18,16 @@
 </MudCard>
 
 @code {
-    [Parameter, EditorRequired] public JobTickSnapshot Job      { get; set; } = default!;
-    [Parameter]                 public EventCallback   OnCancel { get; set; }
+
+    [Parameter]
+    [EditorRequired]
+    public JobTickSnapshot Job { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
 
     private double ProgressPct => Job.Counters.PagesQueued == 0
-        ? 0
-        : (double) Job.Counters.PagesCompleted / Job.Counters.PagesQueued * 100.0;
+                                      ? 0
+                                      : (double) Job.Counters.PagesCompleted / Job.Counters.PagesQueued * 100.0;
+
 }

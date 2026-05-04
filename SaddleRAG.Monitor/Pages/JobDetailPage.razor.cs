@@ -5,58 +5,70 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Services;
+
 #endregion
 
 namespace SaddleRAG.Monitor.Pages;
 
 public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 {
-    [Parameter] public string JobId { get; set; } = string.Empty;
-    [Inject] private NavigationManager?   Nav          { get; set; }
-    [Inject] private MonitorWriteService? WriteService { get; set; }
+    [Parameter]
+    public string JobId { get; set; } = string.Empty;
 
-    protected JobTickEvent? CurrentTick  { get; private set; }
-    protected bool          HubConnected { get; private set; } = true;
+    [Inject]
+    private NavigationManager? Nav { get; set; }
 
-    private HubConnection?          mHub;
-    private CancellationTokenSource mFallbackCts = new();
+    [Inject]
+    private MonitorWriteService? WriteService { get; set; }
 
-    private const string HubPath             = "/monitor/hub";
-    private const string JobTickMethod       = "JobTick";
-    private const string SubscribeJobMethod  = "SubscribeJob";
-    private const int    FallbackPollSeconds = 3;
+    protected JobTickEvent? CurrentTick { get; private set; }
+    protected bool HubConnected { get; private set; } = true;
+    private CancellationTokenSource mFallbackCts = new CancellationTokenSource();
+
+    private HubConnection? mHub;
+
+    public async ValueTask DisposeAsync()
+    {
+        mFallbackCts.Cancel();
+        mFallbackCts.Dispose();
+        if (mHub is not null)
+            await mHub.DisposeAsync();
+    }
 
     protected override async Task OnInitializedAsync()
     {
         ArgumentNullException.ThrowIfNull(Nav);
         mHub = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri(HubPath))
-            .WithAutomaticReconnect()
-            .Build();
+               .WithUrl(Nav.ToAbsoluteUri(HubPath))
+               .WithAutomaticReconnect()
+               .Build();
 
-        mHub.On<JobTickEvent>(JobTickMethod, async tick =>
-        {
-            CurrentTick = tick;
-            await InvokeAsync(StateHasChanged);
-        });
+        mHub.On<JobTickEvent>(JobTickMethod,
+                              async tick =>
+                              {
+                                  CurrentTick = tick;
+                                  await InvokeAsync(StateHasChanged);
+                              }
+                             );
 
         mHub.Closed += async _ =>
-        {
-            HubConnected = false;
-            StartFallbackPolling();
-            await InvokeAsync(StateHasChanged);
-        };
+                       {
+                           HubConnected = false;
+                           StartFallbackPolling();
+                           await InvokeAsync(StateHasChanged);
+                       };
 
         mHub.Reconnected += async _ =>
-        {
-            HubConnected = true;
-            mFallbackCts.Cancel();
-            await InvokeAsync(StateHasChanged);
-        };
+                            {
+                                HubConnected = true;
+                                mFallbackCts.Cancel();
+                                await InvokeAsync(StateHasChanged);
+                            };
 
         await mHub.StartAsync();
         await mHub.InvokeAsync(SubscribeJobMethod, JobId);
@@ -78,7 +90,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
             while (await timer.WaitForNextTickAsync(ct))
                 await PollOnceAsync(ct);
         }
-        catch (OperationCanceledException)
+        catch(OperationCanceledException)
         {
         }
     }
@@ -96,22 +108,20 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
         }
     }
 
-    private static JobTickEvent SnapshotToTick(JobTickSnapshot snap) => new()
-    {
-        JobId          = snap.JobId,
-        At             = DateTime.UtcNow,
-        Counters       = snap.Counters,
-        CurrentHost    = snap.CurrentHost,
-        RecentFetches  = snap.RecentFetches,
-        RecentRejects  = snap.RecentRejects,
-        ErrorsThisTick = snap.RecentErrors
-    };
+    private static JobTickEvent SnapshotToTick(JobTickSnapshot snap) =>
+        new JobTickEvent
+            {
+                JobId = snap.JobId,
+                At = DateTime.UtcNow,
+                Counters = snap.Counters,
+                CurrentHost = snap.CurrentHost,
+                RecentFetches = snap.RecentFetches,
+                RecentRejects = snap.RecentRejects,
+                ErrorsThisTick = snap.RecentErrors
+            };
 
-    public async ValueTask DisposeAsync()
-    {
-        mFallbackCts.Cancel();
-        mFallbackCts.Dispose();
-        if (mHub is not null)
-            await mHub.DisposeAsync();
-    }
+    private const string HubPath = "/monitor/hub";
+    private const string JobTickMethod = "JobTick";
+    private const string SubscribeJobMethod = "SubscribeJob";
+    private const int FallbackPollSeconds = 3;
 }

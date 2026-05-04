@@ -30,11 +30,9 @@ public static class ScrapeJobThresholds
     /// </summary>
     public static TimeSpan StaleRunning { get; } = TimeSpan.FromHours(StaleRunningHours);
 
-    private const int StaleRunningHours = 4;
-
     /// <summary>
-    ///     True when <paramref name="job"/> is in <see cref="ScrapeJobStatus.Running"/>
-    ///     and has had no forward motion since <paramref name="staleCutoff"/>.
+    ///     True when <paramref name="job" /> is in <see cref="ScrapeJobStatus.Running" />
+    ///     and has had no forward motion since <paramref name="staleCutoff" />.
     ///     Jobs that have never recorded progress fall back to CreatedAt so
     ///     a Running row that died before its first heartbeat is still
     ///     classified as stale.
@@ -43,12 +41,15 @@ public static class ScrapeJobThresholds
     {
         ArgumentNullException.ThrowIfNull(job);
 
-        bool res = false;
+        var res = false;
         if (job.Status == ScrapeJobStatus.Running)
         {
             var effective = job.LastProgressAt ?? job.CreatedAt;
             res = effective < staleCutoff;
         }
+
         return res;
     }
+
+    private const int StaleRunningHours = 4;
 }

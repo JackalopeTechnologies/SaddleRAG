@@ -356,7 +356,9 @@ public sealed class SymbolExtractorTests
 
         var result = extractor.Extract("alongthing.", profile);
 
-        Assert.Contains(result.Rejected, r => r.Name == "alongthing" && r.Reason == SymbolRejectionReason.NoStructureSignal);
+        Assert.Contains(result.Rejected,
+                        r => r.Name == "alongthing" && r.Reason == SymbolRejectionReason.NoStructureSignal
+                       );
     }
 
     [Fact]

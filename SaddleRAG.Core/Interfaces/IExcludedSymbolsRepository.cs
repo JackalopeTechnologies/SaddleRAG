@@ -26,10 +26,10 @@ public interface IExcludedSymbolsRepository
     ///     ChunkCount descending) so the LLM sees the loudest noise first.
     /// </summary>
     Task<IReadOnlyList<ExcludedSymbol>> ListAsync(string libraryId,
-                                                   string version,
-                                                   SymbolRejectionReason? reason,
-                                                   int limit,
-                                                   CancellationToken ct = default);
+                                                  string version,
+                                                  SymbolRejectionReason? reason,
+                                                  int limit,
+                                                  CancellationToken ct = default);
 
     /// <summary>
     ///     Insert or update each entry by Id. Existing entries with the same

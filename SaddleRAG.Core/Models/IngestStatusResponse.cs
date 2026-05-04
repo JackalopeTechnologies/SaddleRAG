@@ -24,7 +24,7 @@ public record IngestStatusResponse
     public required IngestStatus Status { get; init; }
 
     /// <summary>
-    ///     Human-readable name of <see cref="Status"/> (e.g. "InProgress",
+    ///     Human-readable name of <see cref="Status" /> (e.g. "InProgress",
     ///     "ReadyToScrape"). Always populated alongside the numeric Status
     ///     so MCP-facing consumers don't have to memorize the enum values.
     /// </summary>

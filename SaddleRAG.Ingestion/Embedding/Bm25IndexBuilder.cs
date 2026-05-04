@@ -15,12 +15,11 @@ namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
 ///     Builds a sharded BM25 inverted index from a library's chunk
-///     content. Postings are partitioned across <see cref="DefaultShardCount"/>
+///     content. Postings are partitioned across <see cref="DefaultShardCount" />
 ///     buckets via stable hash on the term, so any single shard fits
 ///     comfortably in a Mongo document for the corpus sizes SaddleRAG is
 ///     built for. The repository layer applies further per-term and
 ///     per-shard GridFS spill at write time as a robustness net.
-///
 ///     Tokenization: lowercased word characters, with original-cased
 ///     identifier-shaped tokens (PascalCase, dotted, ::-joined) ALSO
 ///     emitted as-is so identifier queries match. This dual emission is
@@ -31,8 +30,8 @@ public static class Bm25IndexBuilder
     /// <summary>
     ///     Build a sharded BM25 index over the supplied chunks. Reads
     ///     each chunk's Id and Content fields; produces inverted postings
-    ///     keyed by term, partitioned into <paramref name="shardCount"/>
-    ///     shards. Returns the inline <see cref="Bm25Stats"/> and the
+    ///     keyed by term, partitioned into <paramref name="shardCount" />
+    ///     shards. Returns the inline <see cref="Bm25Stats" /> and the
     ///     full shard list — caller persists shards via
     ///     <c>IBm25ShardRepository.ReplaceShardsAsync</c>.
     /// </summary>
@@ -100,10 +99,10 @@ public static class Bm25IndexBuilder
         for(var i = 0; i < shardCount; i++)
             buckets[i] = new Dictionary<string, IReadOnlyList<Bm25Posting>>(StringComparer.Ordinal);
 
-        foreach(var (term, list) in postings)
+        foreach((var term, var list) in postings)
         {
             var idx = ShardIndexFor(term, shardCount);
-            ((Dictionary<string, IReadOnlyList<Bm25Posting>>) buckets[idx])[term] = list;
+            buckets[idx][term] = list;
         }
 
         var shards = new List<Bm25Shard>(shardCount);
@@ -111,6 +110,7 @@ public static class Bm25IndexBuilder
         {
             var inline = buckets[i];
             if (inline.Count > 0)
+            {
                 shards.Add(new Bm25Shard
                                {
                                    Id = $"{libraryId}/{version}/{i}",
@@ -118,7 +118,9 @@ public static class Bm25IndexBuilder
                                    Version = version,
                                    ShardIndex = i,
                                    InlineTerms = inline
-                               });
+                               }
+                          );
+            }
         }
 
         return shards;
@@ -131,7 +133,7 @@ public static class Bm25IndexBuilder
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // 1) Lowercase prose tokens.
-        foreach(Match match in smProseTokenRegex.Matches(chunk.Content).Where(m => m.Value.Length >= MinTokenLength))
+        foreach(var match in smProseTokenRegex.Matches(chunk.Content).Where(m => m.Value.Length >= MinTokenLength))
         {
             var lower = match.Value.ToLowerInvariant();
             counts[lower] = counts.TryGetValue(lower, out var c) ? c + 1 : 1;
@@ -139,7 +141,7 @@ public static class Bm25IndexBuilder
 
         // 2) Original-cased identifier tokens (preserve case so
         //    PascalCase queries match without lowercasing).
-        foreach(Match match in smIdentifierTokenRegex.Matches(chunk.Content).Where(m => m.Value.Length >= MinTokenLength))
+        foreach(var match in smIdentifierTokenRegex.Matches(chunk.Content).Where(m => m.Value.Length >= MinTokenLength))
         {
             var raw = match.Value;
             counts[raw] = counts.TryGetValue(raw, out var c) ? c + 1 : 1;
@@ -149,7 +151,7 @@ public static class Bm25IndexBuilder
         if (docLength > 0)
         {
             docLengths[chunk.Id] = docLength;
-            foreach(var (term, freq) in counts)
+            foreach((var term, var freq) in counts)
             {
                 var posting = new Bm25Posting { ChunkId = chunk.Id, TermFrequency = freq };
                 if (!postings.TryGetValue(term, out var list))
@@ -157,22 +159,11 @@ public static class Bm25IndexBuilder
                     list = [];
                     postings[term] = list;
                 }
+
                 list.Add(posting);
             }
         }
     }
-
-    // Prose tokens: word characters, lowercased after match.
-    private static readonly Regex smProseTokenRegex = new(
-        "[A-Za-z][A-Za-z0-9]+",
-        RegexOptions.Compiled
-    );
-
-    // Identifier-shaped tokens: PascalCase, dotted, ::-joined, snake_case.
-    private static readonly Regex smIdentifierTokenRegex = new(
-        @"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*",
-        RegexOptions.Compiled
-    );
 
     private const int MinTokenLength = 2;
     private const int DefaultShardCount = 64;
@@ -180,4 +171,11 @@ public static class Bm25IndexBuilder
     // FNV-1a-style mixing constants. Stable across runs / processes.
     private const uint HashSeed = 2166136261u;
     private const uint HashMultiplier = 16777619u;
+
+    // Prose tokens: word characters, lowercased after match.
+    private static readonly Regex smProseTokenRegex = new Regex("[A-Za-z][A-Za-z0-9]+", RegexOptions.Compiled);
+
+    // Identifier-shaped tokens: PascalCase, dotted, ::-joined, snake_case.
+    private static readonly Regex smIdentifierTokenRegex =
+        new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*", RegexOptions.Compiled);
 }

@@ -7,12 +7,12 @@
 #region Usings
 
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -43,7 +43,9 @@ public class ScrapeJobRunner : IScrapeJobQueue
         mAppStoppingToken = lifetime.ApplicationStopping;
     }
 
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> mActiveJobCts = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> mActiveJobCts =
+        new ConcurrentDictionary<string, CancellationTokenSource>();
+
     private readonly CancellationToken mAppStoppingToken;
     private readonly IChunkRepository mChunkRepository;
     private readonly IScrapeJobRepository mJobRepository;
@@ -102,7 +104,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
             await mOrchestrator.IngestAsync(jobRecord.Job,
                                             jobRecord.Profile,
-                                            forceClean: jobRecord.Job.ForceClean,
+                                            jobRecord.Job.ForceClean,
                                             updatedRecord =>
                                             {
                                                 bool counterIncreased =
@@ -144,7 +146,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
             mLogger.LogInformation("Scrape job {JobId} completed successfully", jobRecord.Id);
         }
-        catch(Exception) when (cts != null && cts.IsCancellationRequested)
+        catch(Exception) when(cts != null && cts.IsCancellationRequested)
         {
             mLogger.LogInformation("Scrape job {JobId} was cancelled", jobRecord.Id);
 
@@ -173,7 +175,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
         {
             if (cts != null)
             {
-                mActiveJobCts.TryRemove(jobRecord.Id, out _);
+                mActiveJobCts.TryRemove(jobRecord.Id, out var _);
                 cts.Dispose();
             }
 
@@ -243,7 +245,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
         var record = await jobRepo.GetAsync(jobId, ct);
 
         CancelScrapeOutcome result;
-        switch (record)
+        switch(record)
         {
             case null:
                 result = CancelScrapeOutcome.NotFound;

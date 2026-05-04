@@ -6,13 +6,13 @@
 
 #region Usings
 
+using Microsoft.Extensions.Hosting;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Mcp.Tools;
-using Microsoft.Extensions.Hosting;
 
 #endregion
 
@@ -20,30 +20,42 @@ namespace SaddleRAG.Tests.Mcp;
 
 public sealed class UrlCorrectionToolsTests
 {
+    private sealed record TestHarness(
+        RepositoryFactory Factory,
+        ILibraryRepository LibraryRepo,
+        ScrapeJobRunner Runner,
+        IChunkRepository ChunkRepo,
+        IPageRepository PageRepo,
+        ILibraryProfileRepository ProfileRepo,
+        ILibraryIndexRepository IndexRepo,
+        IBm25ShardRepository Bm25Repo,
+        IScrapeJobRepository ScrapeJobRepo);
+
     [Fact]
     public async Task SubmitUrlCorrectionDryRunReportsCascadeWithoutWriting()
     {
         var harness = MakeFactory();
-        harness.ChunkRepo.GetChunkCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(50);
-        harness.PageRepo.GetPageCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(20);
+        harness.ChunkRepo.GetChunkCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 50);
+        harness.PageRepo.GetPageCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 20);
 
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeNoopBackgroundRunner(),
-                                                                library: "foo",
-                                                                version: "1.0",
-                                                                newUrl: "https://docs.foo.com",
+                                                                "foo",
+                                                                "1.0",
+                                                                "https://docs.foo.com",
                                                                 dryRun: true,
                                                                 profile: null,
-                                                                ct: TestContext.Current.CancellationToken);
+                                                                TestContext.Current.CancellationToken
+                                                               );
 
         Assert.Contains("\"DryRun\": true", json);
         Assert.Contains("\"Chunks\": 50", json);
         Assert.Contains("\"Pages\": 20", json);
         await harness.Runner.DidNotReceive()
-                            .QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+                     .QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await harness.Runner.DidNotReceive()
-                            .CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+                     .CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -52,17 +64,18 @@ public sealed class UrlCorrectionToolsTests
         var harness = MakeFactory();
         var orphan = MakeJobRecord("orphan-1", "foo", "1.0", ScrapeJobStatus.Running);
         harness.ScrapeJobRepo.ListActiveJobsAsync("foo", "1.0", Arg.Any<CancellationToken>())
-                             .Returns(new[] { orphan });
+               .Returns(new[] { orphan });
 
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeNoopBackgroundRunner(),
-                                                                library: "foo",
-                                                                version: "1.0",
-                                                                newUrl: "https://docs.foo.com",
+                                                                "foo",
+                                                                "1.0",
+                                                                "https://docs.foo.com",
                                                                 dryRun: true,
                                                                 profile: null,
-                                                                ct: TestContext.Current.CancellationToken);
+                                                                TestContext.Current.CancellationToken
+                                                               );
 
         Assert.Contains("\"WouldCancel\":", json);
         Assert.Contains("\"orphan-1\"", json);
@@ -73,31 +86,38 @@ public sealed class UrlCorrectionToolsTests
     public async Task SubmitUrlCorrectionApplyDropsAndRequeues()
     {
         var harness = MakeFactory();
-        harness.ChunkRepo.DeleteChunksAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(50L);
-        harness.PageRepo.DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(20L);
+        harness.ChunkRepo.DeleteChunksAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 50L);
+        harness.PageRepo.DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 20L);
         harness.Runner.QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-                      .Returns("new-job-id");
+               .Returns("new-job-id");
 
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeInlineBackgroundRunner(),
-                                                                library: "foo",
-                                                                version: "1.0",
-                                                                newUrl: "https://docs.foo.com",
+                                                                "foo",
+                                                                "1.0",
+                                                                "https://docs.foo.com",
                                                                 dryRun: false,
                                                                 profile: null,
-                                                                ct: TestContext.Current.CancellationToken);
+                                                                TestContext.Current.CancellationToken
+                                                               );
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await harness.ChunkRepo.Received(1).DeleteChunksAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await harness.PageRepo.Received(1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await harness.ProfileRepo.Received(1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await harness.IndexRepo.Received(1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await harness.Bm25Repo.Received(1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await harness.LibraryRepo.Received(1).ClearSuspectAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await harness.Runner.Received(1)
-                            .QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await harness.ChunkRepo.Received(requiredNumberOfCalls: 1)
+                     .DeleteChunksAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await harness.PageRepo.Received(requiredNumberOfCalls: 1)
+                     .DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await harness.ProfileRepo.Received(requiredNumberOfCalls: 1)
+                     .DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await harness.IndexRepo.Received(requiredNumberOfCalls: 1)
+                     .DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await harness.Bm25Repo.Received(requiredNumberOfCalls: 1)
+                     .DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await harness.LibraryRepo.Received(requiredNumberOfCalls: 1)
+                     .ClearSuspectAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await harness.Runner.Received(requiredNumberOfCalls: 1)
+                     .QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -107,30 +127,31 @@ public sealed class UrlCorrectionToolsTests
         var first = MakeJobRecord("running-1", "foo", "1.0", ScrapeJobStatus.Running);
         var second = MakeJobRecord("running-2", "foo", "1.0", ScrapeJobStatus.Running);
         harness.ScrapeJobRepo.ListActiveJobsAsync("foo", "1.0", Arg.Any<CancellationToken>())
-                             .Returns(new[] { first, second });
+               .Returns(new[] { first, second });
         harness.Runner.CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                      .Returns(CancelScrapeOutcome.Signalled);
+               .Returns(CancelScrapeOutcome.Signalled);
         harness.Runner.QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-                      .Returns("new-job-id");
+               .Returns("new-job-id");
 
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeInlineBackgroundRunner(),
-                                                                library: "foo",
-                                                                version: "1.0",
-                                                                newUrl: "https://docs.foo.com",
+                                                                "foo",
+                                                                "1.0",
+                                                                "https://docs.foo.com",
                                                                 dryRun: false,
                                                                 profile: null,
-                                                                ct: TestContext.Current.CancellationToken);
+                                                                TestContext.Current.CancellationToken
+                                                               );
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await harness.Runner.Received(1).CancelAsync("running-1", Arg.Any<CancellationToken>());
-        await harness.Runner.Received(1).CancelAsync("running-2", Arg.Any<CancellationToken>());
+        await harness.Runner.Received(requiredNumberOfCalls: 1).CancelAsync("running-1", Arg.Any<CancellationToken>());
+        await harness.Runner.Received(requiredNumberOfCalls: 1).CancelAsync("running-2", Arg.Any<CancellationToken>());
     }
 
     private static ScrapeJobRecord MakeJobRecord(string id, string library, string version, ScrapeJobStatus status) =>
-        new()
+        new ScrapeJobRecord
             {
                 Id = id,
                 Job = new ScrapeJob
@@ -142,18 +163,8 @@ public sealed class UrlCorrectionToolsTests
                               AllowedUrlPatterns = Array.Empty<string>()
                           },
                 Status = status,
-                CreatedAt = DateTime.UtcNow - TimeSpan.FromMinutes(10)
+                CreatedAt = DateTime.UtcNow - TimeSpan.FromMinutes(minutes: 10)
             };
-
-    private sealed record TestHarness(RepositoryFactory Factory,
-                                       ILibraryRepository LibraryRepo,
-                                       ScrapeJobRunner Runner,
-                                       IChunkRepository ChunkRepo,
-                                       IPageRepository PageRepo,
-                                       ILibraryProfileRepository ProfileRepo,
-                                       ILibraryIndexRepository IndexRepo,
-                                       IBm25ShardRepository Bm25Repo,
-                                       IScrapeJobRepository ScrapeJobRepo);
 
     private static TestHarness MakeFactory()
     {
@@ -177,20 +188,26 @@ public sealed class UrlCorrectionToolsTests
 
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
-        var runner = Substitute.ForPartsOf<ScrapeJobRunner>(
-            new object?[]
-            {
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                lifetime
-            });
+        var runner = Substitute.ForPartsOf<ScrapeJobRunner>(null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            lifetime
+                                                           );
         runner.QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(string.Empty);
-        return new TestHarness(factory, libraryRepo, runner, chunkRepo, pageRepo, profileRepo, indexRepo, bm25Repo, scrapeJobRepo);
+        return new TestHarness(factory,
+                               libraryRepo,
+                               runner,
+                               chunkRepo,
+                               pageRepo,
+                               profileRepo,
+                               indexRepo,
+                               bm25Repo,
+                               scrapeJobRepo
+                              );
     }
 
     private static IBackgroundJobRunner MakeNoopBackgroundRunner()
@@ -198,7 +215,8 @@ public sealed class UrlCorrectionToolsTests
         var runner = Substitute.For<IBackgroundJobRunner>();
         runner.QueueAsync(Arg.Any<BackgroundJobRecord>(),
                           Arg.Any<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>(),
-                          Arg.Any<CancellationToken>())
+                          Arg.Any<CancellationToken>()
+                         )
               .Returns(Guid.NewGuid().ToString());
         return runner;
     }
@@ -208,14 +226,17 @@ public sealed class UrlCorrectionToolsTests
         var runner = Substitute.For<IBackgroundJobRunner>();
         runner.QueueAsync(Arg.Any<BackgroundJobRecord>(),
                           Arg.Any<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>(),
-                          Arg.Any<CancellationToken>())
+                          Arg.Any<CancellationToken>()
+                         )
               .Returns(async callInfo =>
                        {
                            var record = callInfo.Arg<BackgroundJobRecord>();
-                           var execute = callInfo.Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>();
-                           await execute(record, null, CancellationToken.None);
+                           var execute = callInfo
+                               .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>();
+                           await execute(record, arg2: null, CancellationToken.None);
                            return record.Id;
-                       });
+                       }
+                      );
         return runner;
     }
 }

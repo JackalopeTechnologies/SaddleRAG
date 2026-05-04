@@ -8,14 +8,13 @@
 
 using System.ComponentModel;
 using System.Text.Json;
-using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Scanning;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -43,7 +42,8 @@ public static class ScrapeDocsTools
                 )]
     public static async Task<string> ScrapeDocs(ScrapeJobRunner runner,
                                                 RepositoryFactory repositoryFactory,
-                                                [Description("Root URL of the documentation site (optional when resume=true)")]
+                                                [Description("Root URL of the documentation site (optional when resume=true)"
+                                                            )]
                                                 string? url = null,
                                                 [Description("Unique library identifier for cache key")]
                                                 string libraryId = "",
@@ -57,11 +57,13 @@ public static class ScrapeDocsTools
                                                 int fetchDelayMs = 500,
                                                 [Description("Re-scrape even if already cached")]
                                                 bool force = false,
-                                                [Description("Optional URL patterns (regex) to allow. Defaults to the rootUrl host when omitted.")]
+                                                [Description("Optional URL patterns (regex) to allow. Defaults to the rootUrl host when omitted."
+                                                            )]
                                                 string[]? allowedUrlPatterns = null,
                                                 [Description("Optional URL patterns (regex) to exclude.")]
                                                 string[]? excludedUrlPatterns = null,
-                                                [Description("Resume the most recent scrape for this (libraryId, version), reusing its RootUrl/patterns")]
+                                                [Description("Resume the most recent scrape for this (libraryId, version), reusing its RootUrl/patterns"
+                                                            )]
                                                 bool resume = false,
                                                 [Description("Optional database profile name")]
                                                 string? profile = null,
@@ -77,9 +79,9 @@ public static class ScrapeDocsTools
 
         var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
 
-        string json = string.Empty;
+        var json = string.Empty;
         ScrapeJob? jobToQueue = null;
-        bool earlyResponseEmitted = false;
+        var earlyResponseEmitted = false;
 
         if (resume)
         {
@@ -94,7 +96,8 @@ public static class ScrapeDocsTools
                 var noPrior = new
                                   {
                                       Status = StatusNoPriorJob,
-                                      Message = $"resume=true but no previous scrape job exists for {libraryId} v{version}. Pass url to start a fresh scrape."
+                                      Message =
+                                          $"resume=true but no previous scrape job exists for {libraryId} v{version}. Pass url to start a fresh scrape."
                                   };
                 json = JsonSerializer.Serialize(noPrior, new JsonSerializerOptions { WriteIndented = true });
                 earlyResponseEmitted = true;
@@ -108,8 +111,9 @@ public static class ScrapeDocsTools
                                       {
                                           Status = StatusRefused,
                                           Reason = ReasonUrlSuspect,
-                                          SuspectReasons = versionRecord.SuspectReasons,
-                                          Hint = "Call submit_url_correction(library, version, newUrl) with a corrected URL."
+                                          versionRecord.SuspectReasons,
+                                          Hint =
+                                              "Call submit_url_correction(library, version, newUrl) with a corrected URL."
                                       };
                     json = JsonSerializer.Serialize(refused, new JsonSerializerOptions { WriteIndented = true });
                     earlyResponseEmitted = true;
@@ -150,7 +154,16 @@ public static class ScrapeDocsTools
             else
             {
                 string resolvedUrl = url ?? string.Empty;
-                jobToQueue ??= BuildJobForUrl(resolvedUrl, libraryId, version, hint, maxPages, fetchDelayMs, force, allowedUrlPatterns, excludedUrlPatterns);
+                jobToQueue ??= BuildJobForUrl(resolvedUrl,
+                                              libraryId,
+                                              version,
+                                              hint,
+                                              maxPages,
+                                              fetchDelayMs,
+                                              force,
+                                              allowedUrlPatterns,
+                                              excludedUrlPatterns
+                                             );
                 var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
                 await scrapeAuditRepo.DeleteByLibraryVersionAsync(libraryId, version, ct);
                 var jobId = await runner.QueueAsync(jobToQueue, profile, ct);
@@ -160,7 +173,8 @@ public static class ScrapeDocsTools
                                        Status = nameof(ScrapeJobStatus.Queued),
                                        LibraryId = libraryId,
                                        Version = version,
-                                       Message = $"Scrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
+                                       Message =
+                                           $"Scrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
                                    };
                 json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
             }
@@ -196,9 +210,15 @@ public static class ScrapeDocsTools
                       };
         }
         else
-        {
-            job = ScrapeJobFactory.CreateFromUrl(url, libraryId, version, hint, maxPages, fetchDelayMs, forceClean: force);
-        }
+            job = ScrapeJobFactory.CreateFromUrl(url,
+                                                 libraryId,
+                                                 version,
+                                                 hint,
+                                                 maxPages,
+                                                 fetchDelayMs,
+                                                 force
+                                                );
+
         return job;
     }
 
@@ -215,7 +235,8 @@ public static class ScrapeDocsTools
                  "full report showing what was found, cached, queued, and unresolved."
                 )]
     public static async Task<string> IndexProjectDependencies(DependencyIndexer indexer,
-                                                              [FromKeyedServices(nameof(IBackgroundJobRunner))] IBackgroundJobRunner runner,
+                                                              [FromKeyedServices(nameof(IBackgroundJobRunner))]
+                                                              IBackgroundJobRunner runner,
                                                               [Description("Project root directory or specific project file path"
                                                                           )]
                                                               string path,
@@ -240,16 +261,16 @@ public static class ScrapeDocsTools
         var jobId = await runner.QueueAsync(jobRecord,
                                             async (record, onProgress, jobCt) =>
                                             {
-                                                var report = await indexer.IndexProjectAsync(path, profile, onProgress, jobCt);
+                                                var report =
+                                                    await indexer.IndexProjectAsync(path, profile, onProgress, jobCt);
                                                 record.ResultJson = JsonSerializer.Serialize(report, smIndexOptions);
                                             },
-                                            ct);
+                                            ct
+                                           );
 
         var response = new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) };
         return JsonSerializer.Serialize(response, smIndexOptions);
     }
-
-    private static readonly JsonSerializerOptions smIndexOptions = new() { WriteIndented = true };
 
     private const string StatusAlreadyCached = "AlreadyCached";
     private const string StatusNoPriorJob = "NoPriorJob";
@@ -257,4 +278,6 @@ public static class ScrapeDocsTools
     private const string ReasonUrlSuspect = "URL_SUSPECT";
     private const string ItemsLabelPackages = "packages";
     private const int DefaultMaxPages = 0;
+
+    private static readonly JsonSerializerOptions smIndexOptions = new JsonSerializerOptions { WriteIndented = true };
 }

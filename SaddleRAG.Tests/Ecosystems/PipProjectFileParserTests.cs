@@ -54,10 +54,9 @@ public sealed class PipProjectFileParserTests
     [Theory]
     [InlineData("flask>=2.3.0", "flask", "2.3.0")]
     [InlineData("numpy~=1.24.0", "numpy", "1.24.0")]
-    public async Task ParseAsyncRequirementsTxtOtherSpecifiersParsesPackage(
-        string line,
-        string expectedId,
-        string expectedVersion)
+    public async Task ParseAsyncRequirementsTxtOtherSpecifiersParsesPackage(string line,
+                                                                            string expectedId,
+                                                                            string expectedVersion)
     {
         (string dir, string path) = WriteNamedTempFile("requirements.txt", line + "\n");
         try

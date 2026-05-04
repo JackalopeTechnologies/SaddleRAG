@@ -6,11 +6,11 @@
 
 #region Usings
 
+using Microsoft.Extensions.Options;
+using MongoDB.Driver;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Database;
 using SaddleRAG.Database.Repositories;
-using Microsoft.Extensions.Options;
-using MongoDB.Driver;
 
 #endregion
 
@@ -23,8 +23,6 @@ namespace SaddleRAG.Tests.Audit;
 [Trait("Category", "Integration")]
 public sealed class ScrapeAuditRepositoryTests
 {
-    private const string TestDatabaseName = "SaddleRAG_test_audit";
-
     public ScrapeAuditRepositoryTests()
     {
         var settings = Options.Create(new SaddleRagDbSettings
@@ -63,19 +61,24 @@ public sealed class ScrapeAuditRepositoryTests
         var jobId = $"test-{Guid.NewGuid():N}";
 
         var entries = new[]
-        {
-            MakeEntry(jobId, "https://a.com/1", AuditStatus.Indexed),
-            MakeEntry(jobId, "https://a.com/2", AuditStatus.Skipped, AuditSkipReason.PatternExclude),
-            MakeEntry(jobId, "https://b.com/1", AuditStatus.Fetched)
-        };
+                          {
+                              MakeEntry(jobId, "https://a.com/1", AuditStatus.Indexed),
+                              MakeEntry(jobId, "https://a.com/2", AuditStatus.Skipped, AuditSkipReason.PatternExclude),
+                              MakeEntry(jobId, "https://b.com/1", AuditStatus.Fetched)
+                          };
 
         await repo.InsertManyAsync(entries, TestContext.Current.CancellationToken);
 
-        var fetched = await repo.QueryAsync(jobId, status: null, skipReason: null,
-                                            host: null, urlSubstring: null, limit: 100,
-                                            TestContext.Current.CancellationToken);
+        var fetched = await repo.QueryAsync(jobId,
+                                            status: null,
+                                            skipReason: null,
+                                            host: null,
+                                            urlSubstring: null,
+                                            limit: 100,
+                                            TestContext.Current.CancellationToken
+                                           );
 
-        Assert.Equal(3, fetched.Count);
+        Assert.Equal(expected: 3, fetched.Count);
     }
 
     [Fact]
@@ -88,13 +91,20 @@ public sealed class ScrapeAuditRepositoryTests
         var lib = $"lib-{Guid.NewGuid():N}";
 
         await repo.InsertManyAsync(new[] { MakeEntry(jobId, "https://a.com/", AuditStatus.Indexed, libraryId: lib) },
-                                   TestContext.Current.CancellationToken);
+                                   TestContext.Current.CancellationToken
+                                  );
 
         var removed = await repo.DeleteByLibraryVersionAsync(lib, "1.0", TestContext.Current.CancellationToken);
 
         Assert.True(removed >= 1);
-        var remaining = await repo.QueryAsync(jobId, null, null, null, null, 100,
-                                              TestContext.Current.CancellationToken);
+        var remaining = await repo.QueryAsync(jobId,
+                                              status: null,
+                                              skipReason: null,
+                                              host: null,
+                                              urlSubstring: null,
+                                              limit: 100,
+                                              TestContext.Current.CancellationToken
+                                             );
         Assert.Empty(remaining);
     }
 
@@ -107,42 +117,44 @@ public sealed class ScrapeAuditRepositoryTests
         var jobId = $"test-{Guid.NewGuid():N}";
 
         var entries = new[]
-        {
-            MakeEntry(jobId, "https://a.com/1", AuditStatus.Indexed),
-            MakeEntry(jobId, "https://a.com/2", AuditStatus.Indexed),
-            MakeEntry(jobId, "https://a.com/3", AuditStatus.Skipped, AuditSkipReason.OffSiteDepth),
-            MakeEntry(jobId, "https://a.com/4", AuditStatus.Skipped, AuditSkipReason.OffSiteDepth),
-            MakeEntry(jobId, "https://a.com/5", AuditStatus.Skipped, AuditSkipReason.PatternExclude)
-        };
+                          {
+                              MakeEntry(jobId, "https://a.com/1", AuditStatus.Indexed),
+                              MakeEntry(jobId, "https://a.com/2", AuditStatus.Indexed),
+                              MakeEntry(jobId, "https://a.com/3", AuditStatus.Skipped, AuditSkipReason.OffSiteDepth),
+                              MakeEntry(jobId, "https://a.com/4", AuditStatus.Skipped, AuditSkipReason.OffSiteDepth),
+                              MakeEntry(jobId, "https://a.com/5", AuditStatus.Skipped, AuditSkipReason.PatternExclude)
+                          };
         await repo.InsertManyAsync(entries, TestContext.Current.CancellationToken);
 
         var summary = await repo.SummarizeAsync(jobId, TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, summary.IndexedCount);
-        Assert.Equal(3, summary.SkippedCount);
-        Assert.Equal(2, summary.SkipReasonCounts[AuditSkipReason.OffSiteDepth]);
-        Assert.Equal(1, summary.SkipReasonCounts[AuditSkipReason.PatternExclude]);
+        Assert.Equal(expected: 2, summary.IndexedCount);
+        Assert.Equal(expected: 3, summary.SkippedCount);
+        Assert.Equal(expected: 2, summary.SkipReasonCounts[AuditSkipReason.OffSiteDepth]);
+        Assert.Equal(expected: 1, summary.SkipReasonCounts[AuditSkipReason.PatternExclude]);
     }
 
     private static ScrapeAuditLogEntry MakeEntry(string jobId,
-                                                  string url,
-                                                  AuditStatus status,
-                                                  AuditSkipReason? skip = null,
-                                                  string libraryId = "lib-x")
+                                                 string url,
+                                                 AuditStatus status,
+                                                 AuditSkipReason? skip = null,
+                                                 string libraryId = "lib-x")
     {
         var uri = new Uri(url);
         return new ScrapeAuditLogEntry
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            JobId = jobId,
-            LibraryId = libraryId,
-            Version = "1.0",
-            Url = url,
-            Host = uri.Host,
-            Depth = 1,
-            DiscoveredAt = DateTime.UtcNow,
-            Status = status,
-            SkipReason = skip
-        };
+                   {
+                       Id = Guid.NewGuid().ToString("N"),
+                       JobId = jobId,
+                       LibraryId = libraryId,
+                       Version = "1.0",
+                       Url = url,
+                       Host = uri.Host,
+                       Depth = 1,
+                       DiscoveredAt = DateTime.UtcNow,
+                       Status = status,
+                       SkipReason = skip
+                   };
     }
+
+    private const string TestDatabaseName = "SaddleRAG_test_audit";
 }

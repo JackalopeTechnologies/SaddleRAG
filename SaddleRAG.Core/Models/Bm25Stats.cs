@@ -11,7 +11,6 @@ namespace SaddleRAG.Core.Models;
 ///     LibraryIndex document. The actual postings live in the sharded
 ///     bm25Shards collection (with per-shard and per-term GridFS spill
 ///     for any shard or term too large to inline).
-///
 ///     Stats are small even for very large libraries — DocLengths grows
 ///     with the number of chunks, which stays well under the 16MB Mongo
 ///     document limit for any realistic corpus.

@@ -22,10 +22,11 @@ public sealed class ScrapeAuditCleanupIntegrationTests
     public async Task DeleteByLibraryVersionRemovesPriorAuditRows()
     {
         var settings = Options.Create(new SaddleRagDbSettings
-        {
-            ConnectionString = "mongodb://localhost:27017",
-            DatabaseName = TestDatabaseName
-        });
+                                          {
+                                              ConnectionString = "mongodb://localhost:27017",
+                                              DatabaseName = TestDatabaseName
+                                          }
+                                     );
         var ctx = new SaddleRagDbContext(settings);
         await ctx.EnsureIndexesAsync(TestContext.Current.CancellationToken);
         var repo = new ScrapeAuditRepository(ctx);
@@ -34,40 +35,50 @@ public sealed class ScrapeAuditCleanupIntegrationTests
         var jobId = $"job-{Guid.NewGuid():N}";
 
         await repo.InsertManyAsync(new[]
-        {
-            new ScrapeAuditLogEntry
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                JobId = jobId,
-                LibraryId = lib,
-                Version = "1.0",
-                Url = "https://x.com/1",
-                Host = "x.com",
-                Depth = 0,
-                DiscoveredAt = DateTime.UtcNow,
-                Status = AuditStatus.Indexed
-            },
-            new ScrapeAuditLogEntry
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                JobId = jobId,
-                LibraryId = lib,
-                Version = "1.0",
-                Url = "https://x.com/2",
-                Host = "x.com",
-                Depth = 1,
-                DiscoveredAt = DateTime.UtcNow,
-                Status = AuditStatus.Skipped,
-                SkipReason = AuditSkipReason.PatternExclude
-            }
-        }, TestContext.Current.CancellationToken);
+                                       {
+                                           new ScrapeAuditLogEntry
+                                               {
+                                                   Id = Guid.NewGuid().ToString("N"),
+                                                   JobId = jobId,
+                                                   LibraryId = lib,
+                                                   Version = "1.0",
+                                                   Url = "https://x.com/1",
+                                                   Host = "x.com",
+                                                   Depth = 0,
+                                                   DiscoveredAt = DateTime.UtcNow,
+                                                   Status = AuditStatus.Indexed
+                                               },
+                                           new ScrapeAuditLogEntry
+                                               {
+                                                   Id = Guid.NewGuid().ToString("N"),
+                                                   JobId = jobId,
+                                                   LibraryId = lib,
+                                                   Version = "1.0",
+                                                   Url = "https://x.com/2",
+                                                   Host = "x.com",
+                                                   Depth = 1,
+                                                   DiscoveredAt = DateTime.UtcNow,
+                                                   Status = AuditStatus.Skipped,
+                                                   SkipReason = AuditSkipReason.PatternExclude
+                                               }
+                                       },
+                                   TestContext.Current.CancellationToken
+                                  );
 
-        var deleted = await repo.DeleteByLibraryVersionAsync(lib, "1.0",
-                                                              TestContext.Current.CancellationToken);
+        var deleted = await repo.DeleteByLibraryVersionAsync(lib,
+                                                             "1.0",
+                                                             TestContext.Current.CancellationToken
+                                                            );
 
-        Assert.Equal(2L, deleted);
-        var remaining = await repo.QueryAsync(jobId, null, null, null, null, 100,
-                                              TestContext.Current.CancellationToken);
+        Assert.Equal(expected: 2L, deleted);
+        var remaining = await repo.QueryAsync(jobId,
+                                              status: null,
+                                              skipReason: null,
+                                              host: null,
+                                              urlSubstring: null,
+                                              limit: 100,
+                                              TestContext.Current.CancellationToken
+                                             );
         Assert.Empty(remaining);
     }
 

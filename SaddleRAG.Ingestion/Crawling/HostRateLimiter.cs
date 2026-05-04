@@ -38,9 +38,12 @@ public sealed class HostRateLimiter
         if (maxConcurrency < minConcurrency)
             throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "maxConcurrency must be >= minConcurrency");
         if (initialConcurrency < minConcurrency || initialConcurrency > maxConcurrency)
+        {
             throw new ArgumentOutOfRangeException(nameof(initialConcurrency),
                                                   "initialConcurrency must be in [minConcurrency, maxConcurrency]"
                                                  );
+        }
+
         if (growthThreshold < 1)
             throw new ArgumentOutOfRangeException(nameof(growthThreshold), "growthThreshold must be >= 1");
 
@@ -52,19 +55,8 @@ public sealed class HostRateLimiter
         mPermits = Channel.CreateBounded<byte>(maxConcurrency);
 
         for(var i = 0; i < initialConcurrency; i++)
-            mPermits.Writer.TryWrite(0);
+            mPermits.Writer.TryWrite(item: 0);
     }
-
-    private readonly TimeSpan mDefaultPenalty;
-    private readonly int mGrowthThreshold;
-    private readonly Lock mLock = new();
-    private readonly int mMaxConcurrency;
-    private readonly int mMinConcurrency;
-    private readonly Channel<byte> mPermits;
-
-    private int mConsecutiveSuccesses;
-    private int mCurrentConcurrency;
-    private long mPenaltyUntilTicks;
 
     /// <summary>
     ///     Snapshot of the current allowed concurrency for this host.
@@ -75,16 +67,30 @@ public sealed class HostRateLimiter
         {
             int result;
             lock(mLock)
+            {
                 result = mCurrentConcurrency;
+            }
+
             return result;
         }
     }
 
     /// <summary>
     ///     Snapshot of the current penalty pause end time (UTC).
-    ///     <see cref="DateTime.MinValue"/> when no penalty is active.
+    ///     <see cref="DateTime.MinValue" /> when no penalty is active.
     /// </summary>
-    public DateTime PenaltyUntilUtc => new(Interlocked.Read(ref mPenaltyUntilTicks), DateTimeKind.Utc);
+    public DateTime PenaltyUntilUtc => new DateTime(Interlocked.Read(ref mPenaltyUntilTicks), DateTimeKind.Utc);
+
+    private readonly TimeSpan mDefaultPenalty;
+    private readonly int mGrowthThreshold;
+    private readonly Lock mLock = new Lock();
+    private readonly int mMaxConcurrency;
+    private readonly int mMinConcurrency;
+    private readonly Channel<byte> mPermits;
+
+    private int mConsecutiveSuccesses;
+    private int mCurrentConcurrency;
+    private long mPenaltyUntilTicks;
 
     /// <summary>
     ///     Acquire a slot for one fetch against this host. Honors any active
@@ -103,7 +109,7 @@ public sealed class HostRateLimiter
 
     /// <summary>
     ///     Report a successful fetch. After
-    ///     <see cref="DefaultGrowthThreshold"/> consecutive successes,
+    ///     <see cref="DefaultGrowthThreshold" /> consecutive successes,
     ///     concurrency grows by 1 (capped at <c>maxConcurrency</c>).
     /// </summary>
     public void ReportSuccess()
@@ -122,16 +128,16 @@ public sealed class HostRateLimiter
         }
 
         if (grow)
-            mPermits.Writer.TryWrite(0);
+            mPermits.Writer.TryWrite(item: 0);
     }
 
     /// <summary>
     ///     Report a rate-limit response (HTTP 429 / 503, or an in-scope 403).
     ///     Halves concurrency (floored at <c>minConcurrency</c>) and arms a
-    ///     penalty pause for <paramref name="retryAfter"/> if supplied,
+    ///     penalty pause for <paramref name="retryAfter" /> if supplied,
     ///     otherwise the default.
     ///     For out-of-scope 403s, callers should prefer
-    ///     <see cref="HostScopeFilter.GatePrefixOf"/> instead — those signal
+    ///     <see cref="HostScopeFilter.GatePrefixOf" /> instead — those signal
     ///     a gated path, not a rate problem, and pacing the host punishes
     ///     unrelated working paths on the same host.
     /// </summary>
@@ -171,7 +177,9 @@ public sealed class HostRateLimiter
     public void ReportTransientError()
     {
         lock(mLock)
+        {
             mConsecutiveSuccesses = 0;
+        }
     }
 
     private async Task DrainPermitsAsync(int count)
@@ -198,7 +206,7 @@ public sealed class HostRateLimiter
 
     internal void Release()
     {
-        mPermits.Writer.TryWrite(0);
+        mPermits.Writer.TryWrite(item: 0);
     }
 
     /// <summary>
@@ -211,7 +219,7 @@ public sealed class HostRateLimiter
             {
                 HttpTooManyRequests => true,
                 HttpServiceUnavailable => true,
-                _ => false
+                var _ => false
             };
 
     /// <summary>
@@ -219,7 +227,7 @@ public sealed class HostRateLimiter
     ///     return 403 when they classify a fetcher as a bot, but on
     ///     path-segregated WAFs (e.g. mongodb.com gates marketing while
     ///     leaving docs open) the right response is to gate the path
-    ///     prefix via <see cref="HostScopeFilter"/>, not pace the host.
+    ///     prefix via <see cref="HostScopeFilter" />, not pace the host.
     ///     Caller decides based on whether the URL is in the crawl's
     ///     root scope.
     /// </summary>
@@ -229,5 +237,5 @@ public sealed class HostRateLimiter
     private const int HttpForbidden = 403;
     private const int HttpTooManyRequests = 429;
     private const int HttpServiceUnavailable = 503;
-    private static readonly TimeSpan smDefaultPenaltyDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan smDefaultPenaltyDuration = TimeSpan.FromSeconds(seconds: 30);
 }

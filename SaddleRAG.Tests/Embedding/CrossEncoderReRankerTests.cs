@@ -37,7 +37,7 @@ public sealed class CrossEncoderReRankerTests
     {
         var result = CrossEncoderReRanker.ParseScore(response);
 
-        Assert.Equal(0.85f, result);
+        Assert.Equal(expected: 0.85f, result);
     }
 
     [Theory]
@@ -63,7 +63,7 @@ public sealed class CrossEncoderReRankerTests
     {
         var result = CrossEncoderReRanker.ParseScore(response);
 
-        Assert.Equal(0f, result);
+        Assert.Equal(expected: 0f, result);
     }
 
     [Fact]
@@ -74,7 +74,6 @@ public sealed class CrossEncoderReRankerTests
         // encountered is the most likely intended answer).
         var result = CrossEncoderReRanker.ParseScore("0.85 vs 0.42");
 
-        Assert.Equal(0.85f, result);
+        Assert.Equal(expected: 0.85f, result);
     }
-
 }

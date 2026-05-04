@@ -5,9 +5,11 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Monitor.Pages;
+
 #endregion
 
 namespace SaddleRAG.Monitor.Services;
@@ -20,7 +22,7 @@ namespace SaddleRAG.Monitor.Services;
 public sealed class MonitorDataService
 {
     /// <summary>
-    ///     Initializes a new instance of <see cref="MonitorDataService"/>.
+    ///     Initializes a new instance of <see cref="MonitorDataService" />.
     /// </summary>
     public MonitorDataService(ILibraryRepository libraries)
     {
@@ -34,20 +36,24 @@ public sealed class MonitorDataService
     /// </summary>
     public async Task<IReadOnlyList<LibrarySummaryItem>> GetLibrarySummariesAsync(CancellationToken ct = default)
     {
-        var libs         = await mLibraries.GetAllLibrariesAsync(ct);
+        var libs = await mLibraries.GetAllLibrariesAsync(ct);
         var versionTasks = libs.Select(lib => lib.CurrentVersion is not null
-            ? mLibraries.GetVersionAsync(lib.Id, lib.CurrentVersion, ct)
-            : Task.FromResult<LibraryVersionRecord?>(null));
+                                                  ? mLibraries.GetVersionAsync(lib.Id, lib.CurrentVersion, ct)
+                                                  : Task.FromResult<LibraryVersionRecord?>(result: null)
+                                      );
         var versions = await Task.WhenAll(versionTasks);
-        return libs.Zip(versions, (lib, ver) => new LibrarySummaryItem
-        {
-            LibraryId  = lib.Id,
-            Version    = lib.CurrentVersion ?? string.Empty,
-            ChunkCount = ver?.ChunkCount ?? 0,
-            PageCount  = ver?.PageCount  ?? 0,
-            IsSuspect  = ver?.Suspect    ?? false,
-            Hint       = lib.Hint
-        }).ToList();
+        return libs.Zip(versions,
+                        (lib, ver) => new LibrarySummaryItem
+                                          {
+                                              LibraryId = lib.Id,
+                                              Version = lib.CurrentVersion ?? string.Empty,
+                                              ChunkCount = ver?.ChunkCount ?? 0,
+                                              PageCount = ver?.PageCount ?? 0,
+                                              IsSuspect = ver?.Suspect ?? false,
+                                              Hint = lib.Hint
+                                          }
+                       )
+                   .ToList();
     }
 
     /// <summary>
@@ -61,20 +67,21 @@ public sealed class MonitorDataService
         var lib = await mLibraries.GetLibraryAsync(libraryId, ct);
         if (lib is not null)
         {
-            var version   = lib.CurrentVersion ?? string.Empty;
+            var version = lib.CurrentVersion ?? string.Empty;
             var verRecord = string.IsNullOrEmpty(version)
-                ? null
-                : await mLibraries.GetVersionAsync(lib.Id, version, ct);
+                                ? null
+                                : await mLibraries.GetVersionAsync(lib.Id, version, ct);
             result = new LibraryDetailData
-            {
-                LibraryId  = lib.Id,
-                Version    = version,
-                ChunkCount = verRecord?.ChunkCount ?? 0,
-                PageCount  = verRecord?.PageCount  ?? 0,
-                IsSuspect  = verRecord?.Suspect    ?? false,
-                Hint       = lib.Hint
-            };
+                         {
+                             LibraryId = lib.Id,
+                             Version = version,
+                             ChunkCount = verRecord?.ChunkCount ?? 0,
+                             PageCount = verRecord?.PageCount ?? 0,
+                             IsSuspect = verRecord?.Suspect ?? false,
+                             Hint = lib.Hint
+                         };
         }
+
         return result;
     }
 }

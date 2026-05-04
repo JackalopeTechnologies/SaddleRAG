@@ -8,7 +8,7 @@ namespace SaddleRAG.Core.Models.Monitor;
 
 public sealed record RecentReject
 {
-    public required string Url    { get; init; }
+    public required string Url { get; init; }
     public required string Reason { get; init; }
     public DateTime At { get; init; }
 }

@@ -19,31 +19,40 @@ namespace SaddleRAG.Ingestion.Symbols;
 ///     produced by reconnaissance plus, when available, a CorpusContext
 ///     carrying cross-chunk facts (code-fence symbols, prose mention
 ///     counts).
-///
 ///     Keep rules (any one is sufficient unless rejected by the stoplist):
-///       1. Appears in profile.LikelySymbols (recon's boost set).
-///       2. Appears in corpus.CodeFenceSymbols (somewhere in the corpus,
-///          inside a fenced code block).
-///       3. Has a Container — appeared in X.Member or X::Member shape.
-///       4. Was preceded by a declared-form keyword (class, interface,
-///          struct, enum, record, type, def, function).
-///       5. Has internal structure prose words don't have: "_", ".",
-///          "::", "->", mid-word capital, callable shape "(", or generic
-///          shape "&lt;".
-///       6. Appears at or above ProseMentionThreshold capitalized in
-///          prose corpus-wide AND is not in the stoplist.
-///
+///     1. Appears in profile.LikelySymbols (recon's boost set).
+///     2. Appears in corpus.CodeFenceSymbols (somewhere in the corpus,
+///     inside a fenced code block).
+///     3. Has a Container — appeared in X.Member or X::Member shape.
+///     4. Was preceded by a declared-form keyword (class, interface,
+///     struct, enum, record, type, def, function).
+///     5. Has internal structure prose words don't have: "_", ".",
+///     "::", "->", mid-word capital, callable shape "(", or generic
+///     shape "&lt;".
+///     6. Appears at or above ProseMentionThreshold capitalized in
+///     prose corpus-wide AND is not in the stoplist.
 ///     Reject overrides: stoplist match drops a candidate regardless of
 ///     other signals.
 /// </summary>
 public class SymbolExtractor
 {
+    private enum ProseFrequentResult
+    {
+        NotFrequent,
+        Frequent,
+        BlockedByAbbreviation
+    }
+
     public SymbolExtractor(int proseMentionThreshold = DefaultProseMentionThreshold)
     {
         if (proseMentionThreshold < 1)
+        {
             throw new ArgumentOutOfRangeException(nameof(proseMentionThreshold),
                                                   proseMentionThreshold,
-                                                  "ProseMentionThreshold must be >= 1");
+                                                  "ProseMentionThreshold must be >= 1"
+                                                 );
+        }
+
         mProseMentionThreshold = proseMentionThreshold;
     }
 
@@ -115,31 +124,31 @@ public class SymbolExtractor
         var leafMatch = Stoplist.Match(token.LeafName, profile);
         var nameMatch = Stoplist.Match(token.Name, profile);
         var stopMatch = (leafMatch, nameMatch) switch
-        {
-            (StoplistMatch.Global, _) => StoplistMatch.Global,
-            (_, StoplistMatch.Global) => StoplistMatch.Global,
-            (StoplistMatch.Library, _) => StoplistMatch.Library,
-            (_, StoplistMatch.Library) => StoplistMatch.Library,
-            _ => StoplistMatch.None
-        };
+            {
+                (StoplistMatch.Global, var _) => StoplistMatch.Global,
+                (var _, StoplistMatch.Global) => StoplistMatch.Global,
+                (StoplistMatch.Library, var _) => StoplistMatch.Library,
+                (var _, StoplistMatch.Library) => StoplistMatch.Library,
+                var _ => StoplistMatch.None
+            };
 
         var unitHit = UnitsLookup.IsUnit(token.LeafName) || UnitsLookup.IsUnit(token.Name);
         var belowMin = token.Name.Length < MinIdentifierLength;
 
-        SymbolRejectionReason? result = (stopMatch, unitHit, belowMin) switch
-        {
-            (StoplistMatch.Global, _, _) => SymbolRejectionReason.GlobalStoplist,
-            (StoplistMatch.Library, _, _) => SymbolRejectionReason.LibraryStoplist,
-            (StoplistMatch.None, true, _) => SymbolRejectionReason.Unit,
-            (StoplistMatch.None, false, true) => SymbolRejectionReason.BelowMinLength,
-            _ => ResolveKeepRuleReason(token, likelySet, corpus)
-        };
+        var result = (stopMatch, unitHit, belowMin) switch
+            {
+                (StoplistMatch.Global, var _, var _) => SymbolRejectionReason.GlobalStoplist,
+                (StoplistMatch.Library, var _, var _) => SymbolRejectionReason.LibraryStoplist,
+                (StoplistMatch.None, true, var _) => SymbolRejectionReason.Unit,
+                (StoplistMatch.None, false, true) => SymbolRejectionReason.BelowMinLength,
+                var _ => ResolveKeepRuleReason(token, likelySet, corpus)
+            };
         return result;
     }
 
     private SymbolRejectionReason? ResolveKeepRuleReason(TokenCandidate token,
-                                                          HashSet<string> likelySet,
-                                                          CorpusContext corpus)
+                                                         HashSet<string> likelySet,
+                                                         CorpusContext corpus)
     {
         var name = token.Name;
         var leaf = token.LeafName;
@@ -150,22 +159,25 @@ public class SymbolExtractor
         bool hasInternalStructure = HasInternalStructure(name);
         var proseState = ResolveProseFrequent(name, leaf, corpus);
 
-        bool admissible = token.IsDeclared
-                       || inLikely
-                       || inCodeFence
-                       || hasContainer
-                       || hasInternalStructure
-                       || token.HasCallableShape
-                       || token.HasGenericShape
-                       || proseState == ProseFrequentResult.Frequent;
+        bool admissible = token.IsDeclared ||
+                          inLikely ||
+                          inCodeFence ||
+                          hasContainer ||
+                          hasInternalStructure ||
+                          token.HasCallableShape ||
+                          token.HasGenericShape ||
+                          proseState == ProseFrequentResult.Frequent;
 
         SymbolRejectionReason? result;
         if (admissible)
             result = null;
         else
+        {
             result = proseState == ProseFrequentResult.BlockedByAbbreviation
                          ? SymbolRejectionReason.LikelyAbbreviation
                          : SymbolRejectionReason.NoStructureSignal;
+        }
+
         return result;
     }
 
@@ -175,13 +187,13 @@ public class SymbolExtractor
         var leafState = ProseFrequentState(leaf, corpus);
 
         var combined = (nameState, leafState) switch
-        {
-            (ProseFrequentResult.Frequent, _) => ProseFrequentResult.Frequent,
-            (_, ProseFrequentResult.Frequent) => ProseFrequentResult.Frequent,
-            (ProseFrequentResult.BlockedByAbbreviation, _) => ProseFrequentResult.BlockedByAbbreviation,
-            (_, ProseFrequentResult.BlockedByAbbreviation) => ProseFrequentResult.BlockedByAbbreviation,
-            _ => ProseFrequentResult.NotFrequent
-        };
+            {
+                (ProseFrequentResult.Frequent, var _) => ProseFrequentResult.Frequent,
+                (var _, ProseFrequentResult.Frequent) => ProseFrequentResult.Frequent,
+                (ProseFrequentResult.BlockedByAbbreviation, var _) => ProseFrequentResult.BlockedByAbbreviation,
+                (var _, ProseFrequentResult.BlockedByAbbreviation) => ProseFrequentResult.BlockedByAbbreviation,
+                var _ => ProseFrequentResult.NotFrequent
+            };
         return combined;
     }
 
@@ -192,19 +204,12 @@ public class SymbolExtractor
         var abbreviation = IsLikelyAbbreviation(identifier);
 
         var result = (aboveThreshold, abbreviation) switch
-        {
-            (true, false) => ProseFrequentResult.Frequent,
-            (true, true) => ProseFrequentResult.BlockedByAbbreviation,
-            _ => ProseFrequentResult.NotFrequent
-        };
+            {
+                (true, false) => ProseFrequentResult.Frequent,
+                (true, true) => ProseFrequentResult.BlockedByAbbreviation,
+                var _ => ProseFrequentResult.NotFrequent
+            };
         return result;
-    }
-
-    private enum ProseFrequentResult
-    {
-        NotFrequent,
-        Frequent,
-        BlockedByAbbreviation
     }
 
     /// <summary>
@@ -224,11 +229,11 @@ public class SymbolExtractor
 
     private static bool HasInternalStructure(string name)
     {
-        bool result = name.Contains(Underscore, StringComparison.Ordinal)
-                   || name.Contains(Dot, StringComparison.Ordinal)
-                   || name.Contains(DoubleColon, StringComparison.Ordinal)
-                   || name.Contains(Arrow, StringComparison.Ordinal)
-                   || HasMidWordCapital(name);
+        bool result = name.Contains(Underscore, StringComparison.Ordinal) ||
+                      name.Contains(Dot, StringComparison.Ordinal) ||
+                      name.Contains(DoubleColon, StringComparison.Ordinal) ||
+                      name.Contains(Arrow, StringComparison.Ordinal) ||
+                      HasMidWordCapital(name);
         return result;
     }
 
@@ -243,20 +248,21 @@ public class SymbolExtractor
     /// </summary>
     private static bool HasMidWordCapital(string name)
     {
-        bool found = false;
-        for (int i = 1; i < name.Length && !found; i++)
+        var found = false;
+        for(var i = 1; i < name.Length && !found; i++)
         {
             var prev = name[i - 1];
             var curr = name[i];
             var lowerToUpper = char.IsLower(prev) && char.IsUpper(curr);
-            var acronymThenLowerCluster = i >= 2
-                                       && char.IsUpper(name[i - 2])
-                                       && char.IsUpper(prev)
-                                       && char.IsLower(curr)
-                                       && i + 1 < name.Length
-                                       && char.IsLower(name[i + 1]);
+            var acronymThenLowerCluster = i >= 2 &&
+                                          char.IsUpper(name[i - 2]) &&
+                                          char.IsUpper(prev) &&
+                                          char.IsLower(curr) &&
+                                          i + 1 < name.Length &&
+                                          char.IsLower(name[i + 1]);
             found = lowerToUpper || acronymThenLowerCluster;
         }
+
         return found;
     }
 
@@ -277,21 +283,23 @@ public class SymbolExtractor
         var declared = (token.IsDeclared, token.DeclaredFormKeyword?.ToLowerInvariant());
 
         var kind = declared switch
-        {
-            (true, KeywordClass) => SymbolKind.Type,
-            (true, KeywordInterface) => SymbolKind.Type,
-            (true, KeywordStruct) => SymbolKind.Type,
-            (true, KeywordRecord) => SymbolKind.Type,
-            (true, KeywordType) => SymbolKind.Type,
-            (true, KeywordEnum) => SymbolKind.Enum,
-            (true, KeywordDef) => SymbolKind.Function,
-            (true, KeywordFunction) => SymbolKind.Function,
-            var _ => ResolveKindFromShape(token, likelySet, profile)
-        };
+            {
+                (true, KeywordClass) => SymbolKind.Type,
+                (true, KeywordInterface) => SymbolKind.Type,
+                (true, KeywordStruct) => SymbolKind.Type,
+                (true, KeywordRecord) => SymbolKind.Type,
+                (true, KeywordType) => SymbolKind.Type,
+                (true, KeywordEnum) => SymbolKind.Enum,
+                (true, KeywordDef) => SymbolKind.Function,
+                (true, KeywordFunction) => SymbolKind.Function,
+                var _ => ResolveKindFromShape(token, likelySet, profile)
+            };
         return kind;
     }
 
-    private static SymbolKind ResolveKindFromShape(TokenCandidate token, HashSet<string> likelySet, LibraryProfile profile)
+    private static SymbolKind ResolveKindFromShape(TokenCandidate token,
+                                                   HashSet<string> likelySet,
+                                                   LibraryProfile profile)
     {
         var shape = (token.HasCallableShape,
                      token.HasGenericShape,
@@ -299,13 +307,13 @@ public class SymbolExtractor
                      InLikely: likelySet.Contains(token.Name) || likelySet.Contains(token.LeafName));
 
         var kind = shape switch
-        {
-            (true, _, _, _) => SymbolKind.Function,
-            (false, true, _, _) => SymbolKind.Type,
-            (false, false, true, _) => SymbolKind.Property,
-            (false, false, false, true) => SymbolKind.Type,
-            var _ => InferKindFromCasing(token, profile)
-        };
+            {
+                (true, var _, var _, var _) => SymbolKind.Function,
+                (false, true, var _, var _) => SymbolKind.Type,
+                (false, false, true, var _) => SymbolKind.Property,
+                (false, false, false, true) => SymbolKind.Type,
+                var _ => InferKindFromCasing(token, profile)
+            };
         return kind;
     }
 
@@ -330,18 +338,18 @@ public class SymbolExtractor
         var fingerprint = (isPascal, isSnake, typesArePascal, methodsAreSnake);
 
         var kind = fingerprint switch
-        {
-            (true, _, true, _) => SymbolKind.Type,
-            (_, true, _, true) => SymbolKind.Function,
-            var _ => SymbolKind.Unknown
-        };
+            {
+                (true, var _, true, var _) => SymbolKind.Type,
+                (var _, true, var _, true) => SymbolKind.Function,
+                var _ => SymbolKind.Unknown
+            };
         return kind;
     }
 
     private static bool MatchesPascalCase(string leaf)
     {
         var hasContent = !string.IsNullOrEmpty(leaf);
-        var startsUpper = hasContent && char.IsUpper(leaf[0]);
+        var startsUpper = hasContent && char.IsUpper(leaf[index: 0]);
         var hasMidCapital = hasContent && HasMidWordCapital(leaf);
         var hasNoUnderscore = hasContent && !leaf.Contains(Underscore, StringComparison.Ordinal);
         var result = startsUpper && hasMidCapital && hasNoUnderscore;
@@ -352,7 +360,8 @@ public class SymbolExtractor
     {
         var hasContent = !string.IsNullOrEmpty(leaf);
         var hasUnderscore = hasContent && leaf.Contains(Underscore, StringComparison.Ordinal);
-        var allLowerOrDigitOrUnderscore = hasContent && leaf.All(c => char.IsLower(c) || char.IsDigit(c) || c == Underscore);
+        var allLowerOrDigitOrUnderscore =
+            hasContent && leaf.All(c => char.IsLower(c) || char.IsDigit(c) || c == Underscore);
         var result = hasUnderscore && allLowerOrDigitOrUnderscore;
         return result;
     }
@@ -380,15 +389,15 @@ public class SymbolExtractor
     }
 
     private static int RankKind(SymbolKind kind) => kind switch
-    {
-        SymbolKind.Type => 0,
-        SymbolKind.Enum => 1,
-        SymbolKind.Function => 2,
-        SymbolKind.Property => 3,
-        SymbolKind.Parameter => 4,
-        SymbolKind.Namespace => 5,
-        var _ => 6
-    };
+        {
+            SymbolKind.Type => 0,
+            SymbolKind.Enum => 1,
+            SymbolKind.Function => 2,
+            SymbolKind.Property => 3,
+            SymbolKind.Parameter => 4,
+            SymbolKind.Namespace => 5,
+            var _ => 6
+        };
 
     private const int DefaultProseMentionThreshold = 3;
     private const int MinIdentifierLength = 2;

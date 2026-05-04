@@ -5,9 +5,11 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.SignalR;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Monitor;
+
 #endregion
 
 namespace SaddleRAG.Mcp.Hubs;
@@ -18,7 +20,7 @@ namespace SaddleRAG.Mcp.Hubs;
 public sealed class MonitorHub : Hub
 {
     /// <summary>
-    ///     Initializes a new instance of <see cref="MonitorHub"/>.
+    ///     Initializes a new instance of <see cref="MonitorHub" />.
     /// </summary>
     public MonitorHub(IMonitorBroadcaster broadcaster)
     {
@@ -26,8 +28,6 @@ public sealed class MonitorHub : Hub
     }
 
     private readonly IMonitorBroadcaster mBroadcaster;
-
-    private const string JobTickMethod = "JobTick";
 
     /// <summary>
     ///     Returns the SignalR group name for a specific job.
@@ -39,11 +39,6 @@ public sealed class MonitorHub : Hub
     }
 
     /// <summary>
-    ///     Group name for the landing-page coarse-update feed.
-    /// </summary>
-    public const string LandingGroup = "landing";
-
-    /// <summary>
     ///     Subscribe to tick events for a specific job. Called by the job-detail page.
     ///     Sends the current snapshot immediately so the page doesn't wait for the first tick.
     /// </summary>
@@ -53,8 +48,8 @@ public sealed class MonitorHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(jobId));
         var snapshot = mBroadcaster.GetJobSnapshot(jobId);
         var sendTask = snapshot is not null
-            ? Clients.Caller.SendAsync(JobTickMethod, BuildTick(jobId, snapshot))
-            : Task.CompletedTask;
+                           ? Clients.Caller.SendAsync(JobTickMethod, BuildTick(jobId, snapshot))
+                           : Task.CompletedTask;
         await sendTask;
     }
 
@@ -66,14 +61,22 @@ public sealed class MonitorHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, LandingGroup);
     }
 
-    internal static JobTickEvent BuildTick(string jobId, JobTickSnapshot snap) => new()
-    {
-        JobId          = jobId,
-        At             = DateTime.UtcNow,
-        Counters       = snap.Counters,
-        CurrentHost    = snap.CurrentHost,
-        RecentFetches  = snap.RecentFetches,
-        RecentRejects  = snap.RecentRejects,
-        ErrorsThisTick = snap.RecentErrors
-    };
+    internal static JobTickEvent BuildTick(string jobId, JobTickSnapshot snap) =>
+        new JobTickEvent
+            {
+                JobId = jobId,
+                At = DateTime.UtcNow,
+                Counters = snap.Counters,
+                CurrentHost = snap.CurrentHost,
+                RecentFetches = snap.RecentFetches,
+                RecentRejects = snap.RecentRejects,
+                ErrorsThisTick = snap.RecentErrors
+            };
+
+    private const string JobTickMethod = "JobTick";
+
+    /// <summary>
+    ///     Group name for the landing-page coarse-update feed.
+    /// </summary>
+    public const string LandingGroup = "landing";
 }

@@ -4,10 +4,14 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
+using Microsoft.Extensions.Hosting;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Mcp.Tools;
-using Microsoft.Extensions.Hosting;
+
+#endregion
 
 namespace SaddleRAG.Tests.Mcp;
 
@@ -19,8 +23,10 @@ public sealed class CancellationToolsTests
         var runner = MakeRunnerSubstitute();
         runner.CancelAsync("abc", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.Signalled);
 
-        var json = await CancellationTools.CancelScrape(runner, jobId: "abc",
-                                                        ct: TestContext.Current.CancellationToken);
+        var json = await CancellationTools.CancelScrape(runner,
+                                                        "abc",
+                                                        TestContext.Current.CancellationToken
+                                                       );
 
         Assert.Contains("\"Outcome\": \"Signalled\"", json);
     }
@@ -31,8 +37,10 @@ public sealed class CancellationToolsTests
         var runner = MakeRunnerSubstitute();
         runner.CancelAsync("missing", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.NotFound);
 
-        var json = await CancellationTools.CancelScrape(runner, jobId: "missing",
-                                                        ct: TestContext.Current.CancellationToken);
+        var json = await CancellationTools.CancelScrape(runner,
+                                                        "missing",
+                                                        TestContext.Current.CancellationToken
+                                                       );
 
         Assert.Contains("\"Outcome\": \"NotFound\"", json);
     }
@@ -43,8 +51,10 @@ public sealed class CancellationToolsTests
         var runner = MakeRunnerSubstitute();
         runner.CancelAsync("orphan", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.OrphanCleanedUp);
 
-        var json = await CancellationTools.CancelScrape(runner, jobId: "orphan",
-                                                        ct: TestContext.Current.CancellationToken);
+        var json = await CancellationTools.CancelScrape(runner,
+                                                        "orphan",
+                                                        TestContext.Current.CancellationToken
+                                                       );
 
         Assert.Contains("\"Outcome\": \"OrphanCleanedUp\"", json);
     }
@@ -55,8 +65,10 @@ public sealed class CancellationToolsTests
         var runner = MakeRunnerSubstitute();
         runner.CancelAsync("done", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.AlreadyTerminal);
 
-        var json = await CancellationTools.CancelScrape(runner, jobId: "done",
-                                                        ct: TestContext.Current.CancellationToken);
+        var json = await CancellationTools.CancelScrape(runner,
+                                                        "done",
+                                                        TestContext.Current.CancellationToken
+                                                       );
 
         Assert.Contains("\"Outcome\": \"AlreadyTerminal\"", json);
     }
@@ -66,18 +78,15 @@ public sealed class CancellationToolsTests
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
 
-        var runner = Substitute.ForPartsOf<ScrapeJobRunner>(
-            new object?[]
-            {
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                lifetime
-            });
+        var runner = Substitute.ForPartsOf<ScrapeJobRunner>(null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            null,
+                                                            lifetime
+                                                           );
         return runner;
     }
 }

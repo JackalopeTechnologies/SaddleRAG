@@ -8,13 +8,13 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Scanning;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -45,10 +45,8 @@ public static class UrlCorrectionTools
     public static async Task<string> SubmitUrlCorrection(RepositoryFactory repositoryFactory,
                                                          ScrapeJobRunner scrapeRunner,
                                                          IBackgroundJobRunner backgroundRunner,
-                                                         [Description("Library identifier")]
-                                                         string library,
-                                                         [Description("Version")]
-                                                         string version,
+                                                         [Description("Library identifier")] string library,
+                                                         [Description("Version")] string version,
                                                          [Description("Corrected docs root URL")]
                                                          string newUrl,
                                                          [Description("If true, preview without writing or queueing.")]
@@ -77,8 +75,15 @@ public static class UrlCorrectionTools
             var preview = new
                               {
                                   DryRun = true,
-                                  WouldDelete = new { Chunks = chunks, Pages = pages, Profiles = 1, Indexes = 1, Bm25Shards = 1 },
-                                  WouldCancel = activeJobs.Select(j => new { j.Id, j.Status, PipelineState = j.Status.ToString() }).ToList(),
+                                  WouldDelete = new
+                                                    {
+                                                        Chunks = chunks, Pages = pages, Profiles = 1, Indexes = 1,
+                                                        Bm25Shards = 1
+                                                    },
+                                  WouldCancel = activeJobs
+                                                .Select(j => new { j.Id, j.Status, PipelineState = j.Status.ToString() }
+                                                       )
+                                                .ToList(),
                                   WouldQueue = new { RootUrl = newUrl, Library = library, Version = version }
                               };
             result = JsonSerializer.Serialize(preview, smJsonOptions);
@@ -99,60 +104,97 @@ public static class UrlCorrectionTools
             var jobId = await backgroundRunner.QueueAsync(jobRecord,
                                                           async (record, _, jobCt) =>
                                                           {
-                                                              var scrapeJobRepo = repositoryFactory.GetScrapeJobRepository(profile);
-                                                              var activeJobs = await scrapeJobRepo.ListActiveJobsAsync(library, version, jobCt);
+                                                              var scrapeJobRepo =
+                                                                  repositoryFactory.GetScrapeJobRepository(profile);
+                                                              var activeJobs =
+                                                                  await scrapeJobRepo.ListActiveJobsAsync(library,
+                                                                           version,
+                                                                           jobCt
+                                                                      );
                                                               var cancelledIds = new List<string>();
-                                                              foreach (var existing in activeJobs)
+                                                              foreach(var existing in activeJobs)
                                                               {
                                                                   await scrapeRunner.CancelAsync(existing.Id, jobCt);
                                                                   cancelledIds.Add(existing.Id);
                                                               }
 
-                                                              var chunkRepo = repositoryFactory.GetChunkRepository(profile);
-                                                              var pageRepo = repositoryFactory.GetPageRepository(profile);
-                                                              var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
-                                                              var indexRepo = repositoryFactory.GetLibraryIndexRepository(profile);
-                                                              var bm25Repo = repositoryFactory.GetBm25ShardRepository(profile);
-                                                              var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
-                                                              var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
+                                                              var chunkRepo =
+                                                                  repositoryFactory.GetChunkRepository(profile);
+                                                              var pageRepo =
+                                                                  repositoryFactory.GetPageRepository(profile);
+                                                              var profileRepo =
+                                                                  repositoryFactory
+                                                                      .GetLibraryProfileRepository(profile);
+                                                              var indexRepo =
+                                                                  repositoryFactory.GetLibraryIndexRepository(profile);
+                                                              var bm25Repo =
+                                                                  repositoryFactory.GetBm25ShardRepository(profile);
+                                                              var libraryRepo =
+                                                                  repositoryFactory.GetLibraryRepository(profile);
+                                                              var scrapeAuditRepo =
+                                                                  repositoryFactory.GetScrapeAuditRepository(profile);
 
-                                                              var chunks = await chunkRepo.DeleteChunksAsync(library, version, jobCt);
-                                                              var pages = await pageRepo.DeleteAsync(library, version, jobCt);
+                                                              var chunks =
+                                                                  await chunkRepo.DeleteChunksAsync(library,
+                                                                           version,
+                                                                           jobCt
+                                                                      );
+                                                              var pages =
+                                                                  await pageRepo.DeleteAsync(library, version, jobCt);
                                                               await profileRepo.DeleteAsync(library, version, jobCt);
                                                               await indexRepo.DeleteAsync(library, version, jobCt);
                                                               await bm25Repo.DeleteAsync(library, version, jobCt);
-                                                              await scrapeAuditRepo.DeleteByLibraryVersionAsync(library, version, jobCt);
-                                                              await libraryRepo.ClearSuspectAsync(library, version, jobCt);
+                                                              await scrapeAuditRepo.DeleteByLibraryVersionAsync(library,
+                                                                       version,
+                                                                       jobCt
+                                                                  );
+                                                              await libraryRepo.ClearSuspectAsync(library,
+                                                                       version,
+                                                                       jobCt
+                                                                  );
 
                                                               var scrapeJob = ScrapeJobFactory.CreateFromUrl(newUrl,
-                                                                                                             library,
-                                                                                                             version,
-                                                                                                             hint: CorrectedHint,
-                                                                                                             maxPages: DefaultMaxPages,
-                                                                                                             fetchDelayMs: ScrapeJob.DefaultFetchDelayMs,
-                                                                                                             forceClean: true);
-                                                              var scrapeJobId = await scrapeRunner.QueueAsync(scrapeJob, profile, jobCt);
+                                                                       library,
+                                                                       version,
+                                                                       CorrectedHint,
+                                                                       DefaultMaxPages,
+                                                                       ScrapeJob.DefaultFetchDelayMs,
+                                                                       forceClean: true
+                                                                  );
+                                                              var scrapeJobId =
+                                                                  await scrapeRunner.QueueAsync(scrapeJob,
+                                                                           profile,
+                                                                           jobCt
+                                                                      );
 
-                                                              record.ResultJson = JsonSerializer.Serialize(
-                                                                  new
-                                                                  {
-                                                                      Cleared = new { Chunks = chunks, Pages = pages },
-                                                                      CancelledJobs = cancelledIds,
-                                                                      ScrapeJobId = scrapeJobId,
-                                                                      Message = $"Suspect chunks dropped, scrape re-queued at {newUrl}. Poll get_scrape_status with jobId='{scrapeJobId}'."
-                                                                  },
-                                                                  smJsonOptions);
+                                                              record.ResultJson = JsonSerializer.Serialize(new
+                                                                           {
+                                                                               Cleared = new
+                                                                                   {
+                                                                                       Chunks = chunks,
+                                                                                       Pages = pages
+                                                                                   },
+                                                                               CancelledJobs = cancelledIds,
+                                                                               ScrapeJobId = scrapeJobId,
+                                                                               Message =
+                                                                                   $"Suspect chunks dropped, scrape re-queued at {newUrl}. Poll get_scrape_status with jobId='{scrapeJobId}'."
+                                                                           },
+                                                                       smJsonOptions
+                                                                  );
                                                           },
-                                                          ct);
+                                                          ct
+                                                         );
 
-            result = JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) }, smJsonOptions);
+            result = JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) },
+                                              smJsonOptions
+                                             );
         }
 
         return result;
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
-
     private const string CorrectedHint = "(corrected URL)";
     private const int DefaultMaxPages = 0;
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

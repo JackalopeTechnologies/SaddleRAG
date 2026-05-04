@@ -8,6 +8,6 @@ namespace SaddleRAG.Core.Models.Monitor;
 
 public sealed record JobFailedEvent
 {
-    public required string JobId        { get; init; }
+    public required string JobId { get; init; }
     public required string ErrorMessage { get; init; }
 }

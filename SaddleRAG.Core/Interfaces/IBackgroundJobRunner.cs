@@ -4,7 +4,11 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
 using SaddleRAG.Core.Models;
+
+#endregion
 
 namespace SaddleRAG.Core.Interfaces;
 
@@ -14,12 +18,11 @@ namespace SaddleRAG.Core.Interfaces;
 public interface IBackgroundJobRunner
 {
     /// <summary>
-    ///     Persist <paramref name="jobRecord"/>, fire off background execution,
+    ///     Persist <paramref name="jobRecord" />, fire off background execution,
     ///     and return its id. The runner owns the full lifecycle
     ///     (Queued → Running → Completed/Failed/Cancelled).
     /// </summary>
-    Task<string> QueueAsync(
-        BackgroundJobRecord jobRecord,
-        Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute,
-        CancellationToken ct = default);
+    Task<string> QueueAsync(BackgroundJobRecord jobRecord,
+                            Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute,
+                            CancellationToken ct = default);
 }

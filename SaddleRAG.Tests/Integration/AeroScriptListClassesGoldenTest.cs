@@ -24,6 +24,10 @@ namespace SaddleRAG.Tests.Integration;
 /// </summary>
 public sealed class AeroScriptListClassesGoldenTest
 {
+    private record ChunkFixture(IReadOnlyList<string> Chunks);
+
+    private record KnownSymbolsFixture(IReadOnlyList<string> Symbols);
+
     [Fact]
     public void NewExtractorEmitsRealTypesAndDropsJunk()
     {
@@ -66,14 +70,16 @@ public sealed class AeroScriptListClassesGoldenTest
         AssertAbsent(allNames, "with");
 
         // Trailing-period artifacts must be absent.
-        var trailingPeriod = allNames.Where(n => n.EndsWith('.')).ToList();
+        var trailingPeriod = allNames.Where(n => n.EndsWith(value: '.')).ToList();
         Assert.True(trailingPeriod.Count == 0,
-                    $"No symbol should end with '.', found: {string.Join(", ", trailingPeriod)}");
+                    $"No symbol should end with '.', found: {string.Join(", ", trailingPeriod)}"
+                   );
 
         // Single-character symbols must be absent.
         var singleChar = allNames.Where(n => n.Length < 2).ToList();
         Assert.True(singleChar.Count == 0,
-                    $"No symbol should be a single character, found: {string.Join(", ", singleChar)}");
+                    $"No symbol should be a single character, found: {string.Join(", ", singleChar)}"
+                   );
     }
 
     [Fact]
@@ -103,12 +109,13 @@ public sealed class AeroScriptListClassesGoldenTest
 
         const double MinRequiredSurvival = 0.80;
         Assert.True(survivalRate >= MinRequiredSurvival,
-                    $"Calibration: only {survived.Count}/{knownSymbols.Count} known symbols survived "
-                  + $"({survivalRate:P0}); need >= {MinRequiredSurvival:P0}. Died: {string.Join(", ", died)}");
+                    $"Calibration: only {survived.Count}/{knownSymbols.Count} known symbols survived " +
+                    $"({survivalRate:P0}); need >= {MinRequiredSurvival:P0}. Died: {string.Join(", ", died)}"
+                   );
     }
 
     private static LibraryProfile MakeAeroScriptProfile() =>
-        new()
+        new LibraryProfile
             {
                 Id = "aerotech-aeroscript/2025.3",
                 LibraryId = "aerotech-aeroscript",
@@ -129,8 +136,8 @@ public sealed class AeroScriptListClassesGoldenTest
 
     private static IReadOnlyList<string> LoadChunks()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "AeroScriptChunks.json");
-        var json = File.ReadAllText(path);
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "AeroScriptChunks.json");
+        string json = File.ReadAllText(path);
         var doc = JsonSerializer.Deserialize<ChunkFixture>(json, smJsonOptions);
         Assert.NotNull(doc);
         return doc.Chunks;
@@ -138,8 +145,8 @@ public sealed class AeroScriptListClassesGoldenTest
 
     private static IReadOnlyList<string> LoadKnownSymbols()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "AeroScriptKnownSymbols.json");
-        var json = File.ReadAllText(path);
+        string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "AeroScriptKnownSymbols.json");
+        string json = File.ReadAllText(path);
         var doc = JsonSerializer.Deserialize<KnownSymbolsFixture>(json, smJsonOptions);
         Assert.NotNull(doc);
         return doc.Symbols;
@@ -147,17 +154,15 @@ public sealed class AeroScriptListClassesGoldenTest
 
     private static void AssertContains(HashSet<string> names, string expected) =>
         Assert.True(names.Contains(expected),
-                    $"Expected '{expected}' in extracted type names. Got: {string.Join(", ", names.OrderBy(n => n, StringComparer.Ordinal))}");
+                    $"Expected '{expected}' in extracted type names. Got: {string.Join(", ", names.OrderBy(n => n, StringComparer.Ordinal))}"
+                   );
 
     private static void AssertAbsent(HashSet<string> names, string forbidden) =>
         Assert.False(names.Contains(forbidden),
-                     $"Junk word '{forbidden}' should not have survived extraction");
+                     $"Junk word '{forbidden}' should not have survived extraction"
+                    );
 
-    private record ChunkFixture(IReadOnlyList<string> Chunks);
-
-    private record KnownSymbolsFixture(IReadOnlyList<string> Symbols);
-
-    private static readonly JsonSerializerOptions smJsonOptions = new()
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions
                                                                       {
                                                                           PropertyNameCaseInsensitive = true
                                                                       };

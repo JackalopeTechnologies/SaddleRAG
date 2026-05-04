@@ -8,10 +8,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -34,8 +34,7 @@ public static class HealthTools
                  "null if healthy). For the actual library content, use get_library_overview instead."
                 )]
     public static async Task<string> GetLibraryHealth(RepositoryFactory repositoryFactory,
-                                                      [Description("Library identifier")]
-                                                      string library,
+                                                      [Description("Library identifier")] string library,
                                                       [Description("Specific version — defaults to current")]
                                                       string? version = null,
                                                       [Description("Optional database profile name")]
@@ -53,40 +52,50 @@ public static class HealthTools
         if (lib == null)
             result = JsonSerializer.Serialize(new { Error = $"Library '{library}' not found." }, smJsonOptions);
         else
-            result = await BuildHealthResponseAsync(library, lib, version, chunkRepo, libraryRepo, ct);
+            result = await BuildHealthResponseAsync(library,
+                                                    lib,
+                                                    version,
+                                                    chunkRepo,
+                                                    libraryRepo,
+                                                    ct
+                                                   );
         return result;
     }
 
-    private static async Task<string> BuildHealthResponseAsync(
-        string library,
-        LibraryRecord lib,
-        string? version,
-        IChunkRepository chunkRepo,
-        ILibraryRepository libraryRepo,
-        CancellationToken ct)
+    private static async Task<string> BuildHealthResponseAsync(string library,
+                                                               LibraryRecord lib,
+                                                               string? version,
+                                                               IChunkRepository chunkRepo,
+                                                               ILibraryRepository libraryRepo,
+                                                               CancellationToken ct)
     {
-        var resolvedVersion = version ?? lib.CurrentVersion;
+        string resolvedVersion = version ?? lib.CurrentVersion;
         var versionRecord = await libraryRepo.GetVersionAsync(library, resolvedVersion, ct);
 
         string result;
         if (versionRecord == null)
             result = JsonSerializer.Serialize(new { Error = $"Version '{resolvedVersion}' not found." }, smJsonOptions);
         else
-            result = await BuildVersionSnapshotAsync(library, lib, resolvedVersion, versionRecord, chunkRepo, ct);
+            result = await BuildVersionSnapshotAsync(library,
+                                                     lib,
+                                                     resolvedVersion,
+                                                     versionRecord,
+                                                     chunkRepo,
+                                                     ct
+                                                    );
         return result;
     }
 
-    private static async Task<string> BuildVersionSnapshotAsync(
-        string library,
-        LibraryRecord lib,
-        string resolvedVersion,
-        LibraryVersionRecord versionRecord,
-        IChunkRepository chunkRepo,
-        CancellationToken ct)
+    private static async Task<string> BuildVersionSnapshotAsync(string library,
+                                                                LibraryRecord lib,
+                                                                string resolvedVersion,
+                                                                LibraryVersionRecord versionRecord,
+                                                                IChunkRepository chunkRepo,
+                                                                CancellationToken ct)
     {
         var languageMix = await chunkRepo.GetLanguageMixAsync(library, resolvedVersion, ct);
         var hostnames = await chunkRepo.GetHostnameDistributionAsync(library, resolvedVersion, ct);
-        var (boundaryHint, boundaryHintMessage) = ResolveBoundaryHint(versionRecord.BoundaryIssuePct);
+        (string? boundaryHint, string? boundaryHintMessage) = ResolveBoundaryHint(versionRecord.BoundaryIssuePct);
 
         var hostnamesProjection = hostnames.OrderByDescending(kv => kv.Value)
                                            .Take(MaxHostnamesReturned)
@@ -113,14 +122,14 @@ public static class HealthTools
     }
 
     private static (string? hint, string? message) ResolveBoundaryHint(double pct) => pct switch
-    {
-        >= BoundaryHintRecommendThreshold => (BoundaryHintRecommendedKey, BoundaryHintRecommendedMessage),
-        >= BoundaryHintMayHelpThreshold => (BoundaryHintMayHelpKey, BoundaryHintMayHelpMessage),
-        _ => (null, null)
-    };
+        {
+            >= BoundaryHintRecommendThreshold => (BoundaryHintRecommendedKey, BoundaryHintRecommendedMessage),
+            >= BoundaryHintMayHelpThreshold => (BoundaryHintMayHelpKey, BoundaryHintMayHelpMessage),
+            var _ => (null, null)
+        };
 
     [McpServerTool(Name = "get_dashboard_index")]
-    [McpMeta("anthropic/alwaysLoad", true)]
+    [McpMeta("anthropic/alwaysLoad", value: true)]
     [Description("Start here in any fresh or disoriented session. Returns a single-call " +
                  "SaddleRAG status overview: library/version counts, recent scrape jobs (with " +
                  "Stale flags for Running jobs that haven't progressed in 4+ hours), and up to " +
@@ -140,15 +149,15 @@ public static class HealthTools
         var jobRepo = repositoryFactory.GetScrapeJobRepository(profile);
 
         var libraries = await libraryRepo.GetAllLibrariesAsync(ct);
-        var recentJobs = await jobRepo.ListRecentAsync(limit: RecentJobsLimit, ct);
+        var recentJobs = await jobRepo.ListRecentAsync(RecentJobsLimit, ct);
         var runningJobs = await jobRepo.ListRunningJobsAsync(ct);
         var mergedJobs = MergeRecentAndRunning(recentJobs, runningJobs);
 
         var suspectList = new List<object>();
-        int versionCount = 0;
-        foreach (var lib in libraries)
+        var versionCount = 0;
+        foreach(var lib in libraries)
         {
-            foreach (var v in lib.AllVersions)
+            foreach(string v in lib.AllVersions)
             {
                 versionCount++;
                 var versionRecord = await libraryRepo.GetVersionAsync(lib.Id, v, ct);
@@ -165,20 +174,33 @@ public static class HealthTools
                                                                   PipelineState = j.Status.ToString(),
                                                                   Library = j.Job.LibraryId,
                                                                   j.Job.Version,
-                                                                  Stale = ScrapeJobThresholds.IsStaleRunning(j, staleCutoff),
+                                                                  Stale =
+                                                                      ScrapeJobThresholds
+                                                                          .IsStaleRunning(j, staleCutoff),
                                                                   j.LastProgressAt
-                                                              })
-                                              .ToList();
+                                                              }
+                                                    )
+                                             .ToList();
 
         int staleRunning = mergedJobs.Count(j => ScrapeJobThresholds.IsStaleRunning(j, staleCutoff));
 
         object suggested = (libraries.Count == 0, suspectList.Count > 0, staleRunning > 0) switch
-        {
-            (true, _, _) => new { tool = (string?) SuggestToolScrape, message = EmptyDbSuggestion },
-            (_, true, _) => new { tool = (string?) SuggestToolCorrectUrl, message = $"{suspectList.Count} suspect libraries — review and correct URLs." },
-            (_, _, true) => new { tool = (string?) SuggestToolCancelScrape, message = $"{staleRunning} jobs have not progressed in over {ScrapeJobThresholds.StaleRunning.TotalHours}h." },
-            _ => new { tool = (string?) null, message = SuggestMessageHealthy }
-        };
+            {
+                (true, var _, var _) => new { tool = (string?) SuggestToolScrape, message = EmptyDbSuggestion },
+                (var _, true, var _) => new
+                                            {
+                                                tool = (string?) SuggestToolCorrectUrl,
+                                                message =
+                                                    $"{suspectList.Count} suspect libraries — review and correct URLs."
+                                            },
+                (var _, var _, true) => new
+                                            {
+                                                tool = (string?) SuggestToolCancelScrape,
+                                                message =
+                                                    $"{staleRunning} jobs have not progressed in over {ScrapeJobThresholds.StaleRunning.TotalHours}h."
+                                            },
+                var _ => new { tool = (string?) null, message = SuggestMessageHealthy }
+            };
 
         var response = new
                            {
@@ -196,17 +218,15 @@ public static class HealthTools
                                                                         IReadOnlyList<ScrapeJobRecord> running)
     {
         var byId = new Dictionary<string, ScrapeJobRecord>(StringComparer.Ordinal);
-        foreach (var job in recent)
+        foreach(var job in recent)
             byId[job.Id] = job;
-        foreach (var job in running)
+        foreach(var job in running)
             byId.TryAdd(job.Id, job);
         var result = byId.Values
                          .OrderByDescending(j => j.CreatedAt)
                          .ToList();
         return result;
     }
-
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
 
     private const int MaxHostnamesReturned = 20;
     private const double BoundaryHintMayHelpThreshold = 5.0;
@@ -222,4 +242,6 @@ public static class HealthTools
     private const string SuggestToolCorrectUrl = "submit_url_correction";
     private const string SuggestToolCancelScrape = "cancel_scrape";
     private const string SuggestMessageHealthy = "All libraries look healthy.";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

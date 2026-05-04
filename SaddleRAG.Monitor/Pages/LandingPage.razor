@@ -1,7 +1,6 @@
 @* SaddleRAG.Monitor/Pages/LandingPage.razor *@
 @page "/monitor"
 @rendermode InteractiveServer
-@using SaddleRAG.Monitor.Components
 @inherits LandingPageBase
 
 <MudText Typo="Typo.h4" Class="mb-4">SaddleRAG Monitor</MudText>
@@ -9,12 +8,13 @@
 @if (ActiveJobSnapshots.Count > 0)
 {
     <MudText Typo="Typo.h6" Class="mb-2">Active Jobs</MudText>
-    @foreach (var job in ActiveJobSnapshots)
+    @foreach(var job in ActiveJobSnapshots)
     {
         <JobCardStrip Job="@job"
-                      OnCancel="@(() => CancelJob(job.JobId))" />
+                      OnCancel="@(() => CancelJob(job.JobId))"/>
     }
-    <MudDivider Class="my-4" />
+
+    <MudDivider Class="my-4"/>
 }
 
 <MudText Typo="Typo.h6" Class="mb-2">Libraries</MudText>
@@ -29,10 +29,10 @@
 else
 {
     <MudGrid>
-        @foreach (var lib in Libraries)
+        @foreach(var lib in Libraries)
         {
             <MudItem xs="12" sm="6" md="4">
-                <LibraryCard Library="@lib" />
+                <LibraryCard Library="@lib"/>
             </MudItem>
         }
     </MudGrid>

@@ -7,7 +7,7 @@
 namespace SaddleRAG.Ingestion.Crawling;
 
 /// <summary>
-///     RAII slot returned by <see cref="HostRateLimiter.AcquireAsync"/>.
+///     RAII slot returned by <see cref="HostRateLimiter.AcquireAsync" />.
 ///     Disposing returns the permit to the pool.
 /// </summary>
 public readonly struct HostSlot : IDisposable

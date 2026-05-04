@@ -21,7 +21,7 @@ public sealed class ListSymbolsToolTests
     [Fact]
     public async Task ListSymbolsClassKindReturnsClassesOnly()
     {
-        var (factory, libraryRepo, chunkRepo) = MakeFactory();
+        (var factory, var libraryRepo, var chunkRepo) = MakeFactory();
         libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
                    .Returns(new LibraryRecord
                                 {
@@ -30,12 +30,16 @@ public sealed class ListSymbolsToolTests
                                     Hint = "h",
                                     CurrentVersion = "1.0",
                                     AllVersions = new List<string> { "1.0" }
-                                });
-        chunkRepo.GetSymbolsAsync("foo", "1.0", SymbolKind.Type, null, Arg.Any<CancellationToken>())
+                                }
+                           );
+        chunkRepo.GetSymbolsAsync("foo", "1.0", SymbolKind.Type, filter: null, Arg.Any<CancellationToken>())
                  .Returns(new[] { "ClassA", "ClassB" });
 
-        var json = await LibraryTools.ListSymbols(factory, library: "foo", kind: "class",
-                                                  ct: TestContext.Current.CancellationToken);
+        var json = await LibraryTools.ListSymbols(factory,
+                                                  "foo",
+                                                  "class",
+                                                  ct: TestContext.Current.CancellationToken
+                                                 );
 
         Assert.Contains("\"ClassA\"", json);
         Assert.Contains("\"class\"", json);
@@ -44,7 +48,7 @@ public sealed class ListSymbolsToolTests
     [Fact]
     public async Task ListSymbolsNullKindReturnsAllKindsTagged()
     {
-        var (factory, libraryRepo, chunkRepo) = MakeFactory();
+        (var factory, var libraryRepo, var chunkRepo) = MakeFactory();
         libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
                    .Returns(new LibraryRecord
                                 {
@@ -53,16 +57,21 @@ public sealed class ListSymbolsToolTests
                                     Hint = "h",
                                     CurrentVersion = "1.0",
                                     AllVersions = new List<string> { "1.0" }
-                                });
-        chunkRepo.GetAllSymbolsAsync("foo", "1.0", null, Arg.Any<CancellationToken>())
+                                }
+                           );
+        chunkRepo.GetAllSymbolsAsync("foo", "1.0", filter: null, Arg.Any<CancellationToken>())
                  .Returns(new[]
                               {
                                   new Symbol { Name = "ClassA", Kind = SymbolKind.Type },
                                   new Symbol { Name = "FuncB", Kind = SymbolKind.Function }
-                              });
+                              }
+                         );
 
-        var json = await LibraryTools.ListSymbols(factory, library: "foo", kind: null,
-                                                  ct: TestContext.Current.CancellationToken);
+        var json = await LibraryTools.ListSymbols(factory,
+                                                  "foo",
+                                                  kind: null,
+                                                  ct: TestContext.Current.CancellationToken
+                                                 );
 
         Assert.Contains("\"ClassA\"", json);
         Assert.Contains("\"FuncB\"", json);
@@ -73,11 +82,14 @@ public sealed class ListSymbolsToolTests
     [Fact]
     public async Task ListSymbolsNotFoundReturnsErrorJson()
     {
-        var (factory, libraryRepo, _) = MakeFactory();
+        (var factory, var libraryRepo, var _) = MakeFactory();
         libraryRepo.GetLibraryAsync("missing", Arg.Any<CancellationToken>()).Returns((LibraryRecord?) null);
 
-        var json = await LibraryTools.ListSymbols(factory, library: "missing", kind: "class",
-                                                  ct: TestContext.Current.CancellationToken);
+        var json = await LibraryTools.ListSymbols(factory,
+                                                  "missing",
+                                                  "class",
+                                                  ct: TestContext.Current.CancellationToken
+                                                 );
 
         Assert.Contains("not found", json, StringComparison.OrdinalIgnoreCase);
     }

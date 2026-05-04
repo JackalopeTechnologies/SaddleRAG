@@ -9,10 +9,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -23,7 +23,6 @@ namespace SaddleRAG.Ingestion.Recon;
 ///     reconnaissance. The profile hash is what LibraryManifest stores as
 ///     LastProfileHash so rescrub auto-detect can decide whether
 ///     classification needs to re-run when the profile changes.
-///
 ///     The repository is taken per-call rather than via constructor so the
 ///     same singleton can dispatch to multiple database profiles
 ///     (multi-user MCP support).
@@ -73,21 +72,23 @@ public class LibraryProfileService
     ///     re-doing it. Non-empty incoming Stoplists are never overridden.
     /// </summary>
     private static async Task<LibraryProfile> ApplyStoplistCarryForwardAsync(ILibraryProfileRepository repository,
-                                                                              LibraryProfile profile,
-                                                                              CancellationToken ct)
+                                                                             LibraryProfile profile,
+                                                                             CancellationToken ct)
     {
-        LibraryProfile result = profile;
+        var result = profile;
         if (profile.Stoplist.Count == 0)
         {
             var all = await repository.ListAllAsync(ct);
-            var prior = all.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal)
-                                    && !string.Equals(p.Version, profile.Version, StringComparison.Ordinal)
-                                    && p.Stoplist.Count > 0)
+            var prior = all.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
+                                       !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
+                                       p.Stoplist.Count > 0
+                                 )
                            .OrderByDescending(p => p.CreatedUtc)
                            .FirstOrDefault();
             if (prior != null)
                 result = profile with { Stoplist = prior.Stoplist };
         }
+
         return result;
     }
 
@@ -111,7 +112,8 @@ public class LibraryProfileService
                                 Languages = profile.Languages.OrderBy(s => s, StringComparer.Ordinal).ToArray(),
                                 profile.Casing,
                                 Separators = profile.Separators.OrderBy(s => s, StringComparer.Ordinal).ToArray(),
-                                CallableShapes = profile.CallableShapes.OrderBy(s => s, StringComparer.Ordinal).ToArray(),
+                                CallableShapes = profile.CallableShapes.OrderBy(s => s, StringComparer.Ordinal)
+                                                        .ToArray(),
                                 LikelySymbols = profile.LikelySymbols.OrderBy(s => s, StringComparer.Ordinal).ToArray(),
                                 profile.CanonicalInventoryUrl
                             };
@@ -194,7 +196,7 @@ public class LibraryProfileService
         return result;
     }
 
-    private static readonly JsonSerializerOptions smHashJsonOptions = new()
+    private static readonly JsonSerializerOptions smHashJsonOptions = new JsonSerializerOptions
                                                                           {
                                                                               WriteIndented = false
                                                                           };
