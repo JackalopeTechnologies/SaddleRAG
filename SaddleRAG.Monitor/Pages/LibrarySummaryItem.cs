@@ -18,5 +18,5 @@ public sealed record LibrarySummaryItem
     public required bool IsSuspect { get; init; }
     public IReadOnlyList<string> SuspectReasons { get; init; } = Array.Empty<string>();
     public DateTime? LastScrapedAt { get; init; }
-    public string? Hint { get; init; }
+    public string Hint { get; init; } = string.Empty;
 }

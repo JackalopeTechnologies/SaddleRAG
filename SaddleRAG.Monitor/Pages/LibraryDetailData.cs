@@ -16,11 +16,11 @@ public sealed record LibraryDetailData
     public required int ChunkCount { get; init; }
     public required int PageCount { get; init; }
     public required bool IsSuspect { get; init; }
-    public required string? Hint { get; init; }
+    public string Hint { get; init; } = string.Empty;
     public IReadOnlyList<string> SuspectReasons { get; init; } = Array.Empty<string>();
     public DateTime? LastScrapedAt { get; init; }
     public DateTime? LastSuspectEvaluatedAt { get; init; }
-    public double BoundaryIssuePct { get; init; }
+    public double? BoundaryIssuePct { get; init; }
     public string? EmbeddingProviderId { get; init; }
     public string? EmbeddingModelName { get; init; }
 }
