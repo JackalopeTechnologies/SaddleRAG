@@ -53,6 +53,58 @@ public sealed class MonitorWriteService
         return result;
     }
 
+    /// <summary>
+    ///     Rescrape (libraryId, version) by re-queueing the most recent prior ScrapeJob.
+    ///     Returns the new job id on success or null if the server didn't accept.
+    /// </summary>
+    public async Task<string?> RescrapeAsync(string libraryId, string version, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        var url = string.Format(RescrapeUrlTemplate, libraryId);
+        var response = await mHttp.PostAsJsonAsync(url, new { Version = version }, ct);
+        return await ExtractJobIdAsync(response, ct);
+    }
+
+    /// <summary>
+    ///     Rescrub (libraryId, version) — re-runs the identifier-aware extractor over
+    ///     existing chunks without re-crawling. Returns the new background job id.
+    /// </summary>
+    public async Task<string?> RescrubAsync(string libraryId, string version, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        var url = string.Format(RescrubUrlTemplate, libraryId);
+        var response = await mHttp.PostAsJsonAsync(url, new { Version = version }, ct);
+        return await ExtractJobIdAsync(response, ct);
+    }
+
+    /// <summary>
+    ///     Delete a specific (libraryId, version). Returns true on success.
+    /// </summary>
+    public async Task<bool> DeleteVersionAsync(string libraryId, string version, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        var url = string.Format(DeleteVersionUrlTemplate, libraryId, version);
+        var response = await mHttp.DeleteAsync(url, ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    private static async Task<string?> ExtractJobIdAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        string? result = null;
+        if (response.IsSuccessStatusCode)
+        {
+            var payload = await response.Content.ReadFromJsonAsync<JobIdResponse>(ct);
+            result = payload?.JobId;
+        }
+        return result;
+    }
+
     private const string CancelJobUrlTemplate = "/api/monitor/jobs/{0}/cancel";
     private const string SnapshotUrlTemplate = "/api/monitor/jobs/{0}/snapshot";
+    private const string RescrapeUrlTemplate = "/api/monitor/libraries/{0}/rescrape";
+    private const string RescrubUrlTemplate = "/api/monitor/libraries/{0}/rescrub";
+    private const string DeleteVersionUrlTemplate = "/api/monitor/libraries/{0}/versions/{1}";
 }

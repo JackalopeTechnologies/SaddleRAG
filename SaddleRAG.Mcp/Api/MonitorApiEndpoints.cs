@@ -25,8 +25,6 @@ public static class MonitorApiEndpoints
                        .RequireAuthorization(DiagnosticsWriteRequirement.PolicyName);
 
         group.MapPost(CancelJobPath, CancelJob);
-        group.MapPost(RescrapeLibraryPath, RescrapeLibrary);
-        group.MapPost(RescrubLibraryPath, RescrubLibrary);
     }
 
     private static async Task<IResult> CancelJob(string jobId, ScrapeJobRunner runner)
@@ -35,19 +33,7 @@ public static class MonitorApiEndpoints
         return Results.Ok(new { JobId = jobId, Status = CancelRequestedStatus });
     }
 
-    private static IResult RescrapeLibrary(string _)
-    {
-        return Results.StatusCode(StatusCodes.Status501NotImplemented);
-    }
-
-    private static IResult RescrubLibrary(string _)
-    {
-        return Results.StatusCode(StatusCodes.Status501NotImplemented);
-    }
-
     private const string CancelJobPath = "/jobs/{jobId}/cancel";
-    private const string RescrapeLibraryPath = "/libraries/{libraryId}/rescrape";
-    private const string RescrubLibraryPath = "/libraries/{libraryId}/rescrub";
     private const string ApiGroupPath = "/api/monitor";
 
     private const string CancelRequestedStatus = "CancelRequested";

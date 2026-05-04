@@ -435,6 +435,7 @@ else
     app.UseAuthorization();
     app.UseAntiforgery();
     MonitorApiEndpoints.Map(app);
+    MonitorLibraryActionsEndpoints.Map(app);
     MonitorSnapshotEndpoints.Map(app);
 
 

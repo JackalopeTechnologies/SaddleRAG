@@ -12,6 +12,15 @@ else
     <MudText Typo="Typo.h5" Class="mb-1">@Detail.LibraryId</MudText>
     <MudText Typo="Typo.subtitle1" Class="mb-3">v@(Detail.Version)</MudText>
 
+    <MudStack Row="true" Spacing="1" Class="mb-3">
+        <MudButton StartIcon="@Icons.Material.Filled.Refresh" Variant="Variant.Outlined"
+                   OnClick="@RescrapeAsync">Rescrape</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.CleaningServices" Variant="Variant.Outlined"
+                   OnClick="@RescrubAsync">Rescrub</MudButton>
+        <MudButton StartIcon="@Icons.Material.Filled.DeleteForever" Variant="Variant.Outlined"
+                   Color="Color.Error" OnClick="@DeleteVersionAsync">Delete version</MudButton>
+    </MudStack>
+
     <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true">
         <MudTabPanel Text="Overview">
             <MudGrid>
