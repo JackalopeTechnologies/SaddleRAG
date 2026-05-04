@@ -53,6 +53,7 @@ public sealed class MonitorDataService
                                               Hint = lib.Hint
                                           }
                        )
+                   .OrderBy(s => s.LibraryId, StringComparer.OrdinalIgnoreCase)
                    .ToList();
     }
 
