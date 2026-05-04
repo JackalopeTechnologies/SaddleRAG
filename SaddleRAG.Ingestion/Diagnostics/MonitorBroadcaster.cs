@@ -14,8 +14,14 @@ using SaddleRAG.Core.Models.Monitor;
 
 namespace SaddleRAG.Ingestion.Diagnostics;
 
-public sealed class MonitorBroadcaster : IMonitorBroadcaster
+public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
 {
+    public event Action<JobStartedEvent>?   JobStarted;
+    public event Action<JobCompletedEvent>? JobCompleted;
+    public event Action<JobFailedEvent>?    JobFailed;
+    public event Action<JobCancelledEvent>? JobCancelled;
+    public event Action<SuspectFlagEvent>?  SuspectFlagRaised;
+
     private sealed class JobState
     {
         public required string JobId { get; init; }
@@ -58,6 +64,15 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster
                             RootUrl = rootUrl
                         };
         mJobs[jobId] = state;
+        SafeRaise(() => JobStarted?.Invoke(new JobStartedEvent
+                                               {
+                                                   JobId = jobId,
+                                                   LibraryId = libraryId,
+                                                   Version = version,
+                                                   RootUrl = rootUrl
+                                               }
+                                          )
+                 );
     }
 
     public void RecordFetch(string jobId, string url)
@@ -140,7 +155,16 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster
     public void RecordJobCompleted(string jobId, int indexedPageCount)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
+        var finalCounters = CaptureCounters(jobId);
         mJobs.TryRemove(jobId, out var _);
+        SafeRaise(() => JobCompleted?.Invoke(new JobCompletedEvent
+                                                 {
+                                                     JobId = jobId,
+                                                     FinalCounters = finalCounters,
+                                                     IndexedPageCount = indexedPageCount
+                                                 }
+                                            )
+                 );
     }
 
     public void RecordJobFailed(string jobId, string errorMessage)
@@ -148,12 +172,27 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         ArgumentException.ThrowIfNullOrEmpty(errorMessage);
         mJobs.TryRemove(jobId, out var _);
+        SafeRaise(() => JobFailed?.Invoke(new JobFailedEvent
+                                              {
+                                                  JobId = jobId,
+                                                  ErrorMessage = errorMessage
+                                              }
+                                         )
+                 );
     }
 
     public void RecordJobCancelled(string jobId)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
+        var partialCounters = CaptureCounters(jobId);
         mJobs.TryRemove(jobId, out var _);
+        SafeRaise(() => JobCancelled?.Invoke(new JobCancelledEvent
+                                                 {
+                                                     JobId = jobId,
+                                                     PartialCounters = partialCounters
+                                                 }
+                                            )
+                 );
     }
 
     public void RecordSuspectFlag(string jobId,
@@ -165,6 +204,15 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentNullException.ThrowIfNull(reasons);
+        SafeRaise(() => SuspectFlagRaised?.Invoke(new SuspectFlagEvent
+                                                      {
+                                                          JobId = jobId,
+                                                          LibraryId = libraryId,
+                                                          Version = version,
+                                                          Reasons = reasons
+                                                      }
+                                                 )
+                 );
     }
 
     public JobTickSnapshot? GetJobSnapshot(string jobId)
@@ -265,6 +313,32 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster
             queue.Dequeue();
     }
 
+    private PipelineCounters CaptureCounters(string jobId)
+    {
+        PipelineCounters result = smEmptyCounters;
+        if (mJobs.TryGetValue(jobId, out var state))
+        {
+            lock(state.pmLock)
+            {
+                result = BuildCounters(state);
+            }
+        }
+
+        return result;
+    }
+
+    private static void SafeRaise(Action raise)
+    {
+        try
+        {
+            raise();
+        }
+        catch(Exception)
+        {
+            // Subscriber failed; do not let it propagate into the pipeline.
+        }
+    }
+
     private static PipelineCounters BuildCounters(JobState s) =>
         new PipelineCounters
             {
@@ -293,4 +367,6 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster
 
     private const int RecentFeedCapacity = 50;
     private const int ErrorFeedCapacity = 20;
+
+    private static readonly PipelineCounters smEmptyCounters = new PipelineCounters();
 }
