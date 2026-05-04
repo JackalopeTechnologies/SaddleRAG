@@ -199,6 +199,11 @@ builder.Services.AddSingleton<IMonitorEvents>(sp =>
                                                   sp.GetRequiredService<MonitorBroadcaster>()
                                              );
 
+builder.Services.AddSingleton<QueryMetricsRecorder>();
+builder.Services.AddSingleton<IQueryMetrics>(sp =>
+                                                 sp.GetRequiredService<QueryMetricsRecorder>()
+                                            );
+
 
 // HTTP clients for package registry APIs
 
