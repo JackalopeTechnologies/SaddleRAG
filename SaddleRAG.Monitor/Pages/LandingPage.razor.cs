@@ -19,13 +19,13 @@ namespace SaddleRAG.Monitor.Pages;
 public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
 {
     [Inject]
-    protected NavigationManager? Nav { get; set; }
+    private NavigationManager? Nav { get; set; }
 
     [Inject]
-    protected MonitorWriteService? WriteService { get; set; }
+    private MonitorWriteService? WriteService { get; set; }
 
     [Inject]
-    protected MonitorDataService? DataService { get; set; }
+    private MonitorDataService? DataService { get; set; }
 
     [Inject]
     protected IMonitorBroadcaster? Broadcaster { get; set; }
@@ -68,7 +68,7 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         await mHub.InvokeAsync(SubscribeLandingMethod);
     }
 
-    public void RebuildFromIds(IReadOnlyList<string> ids)
+    protected void RebuildFromIds(IReadOnlyList<string> ids)
     {
         ArgumentNullException.ThrowIfNull(ids);
         ArgumentNullException.ThrowIfNull(Broadcaster);

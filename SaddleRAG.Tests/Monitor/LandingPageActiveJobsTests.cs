@@ -24,7 +24,7 @@ public sealed class LandingPageActiveJobsTests
         bcast.SetSnapshot("job-2", MakeSnap("job-2", queued: 5));
         var page = new TestableLandingPage { BroadcasterForTest = bcast };
 
-        page.RebuildFromIds(new[] { "job-1", "job-2", "job-missing" });
+        page.RebuildFromIdsForTest(new[] { "job-1", "job-2", "job-missing" });
 
         Assert.Equal(2, page.ActiveJobsForTest.Count);
         Assert.Contains(page.ActiveJobsForTest, j => j.JobId == "job-1");
@@ -50,6 +50,8 @@ public sealed class LandingPageActiveJobsTests
             get => Broadcaster;
             set => Broadcaster = value;
         }
+
+        public void RebuildFromIdsForTest(IReadOnlyList<string> ids) => RebuildFromIds(ids);
     }
 }
 
@@ -59,19 +61,34 @@ internal sealed class FakeBroadcaster : IMonitorBroadcaster
     public void SetSnapshot(string id, JobTickSnapshot s) => mSnaps[id] = s;
     public JobTickSnapshot? GetJobSnapshot(string jobId) => mSnaps.GetValueOrDefault(jobId);
     public IReadOnlyList<string> GetActiveJobIds() => mSnaps.Keys.ToList();
-    public void RecordJobStarted(string j, string l, string v, string r) {}
-    public void RecordFetch(string j, string u) {}
-    public void RecordReject(string j, string u, string r) {}
-    public void RecordError(string j, string m) {}
-    public void RecordPageClassified(string j) {}
-    public void RecordChunkGenerated(string j) {}
-    public void RecordChunkEmbedded(string j) {}
-    public void RecordPageCompleted(string j) {}
-    public void RecordJobCompleted(string j, int n) {}
-    public void RecordJobFailed(string j, string m) {}
-    public void RecordJobCancelled(string j) {}
-    public void RecordSuspectFlag(string j, string l, string v, IReadOnlyList<string> r) {}
-    public void Subscribe(string j, Func<JobTickEvent, Task> h) {}
-    public void Unsubscribe(string j, Func<JobTickEvent, Task> h) {}
-    public void BroadcastTick(string j) {}
+    public void RecordJobStarted(string j, string l, string v, string r) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordJobStarted not supported in this test");
+    public void RecordFetch(string j, string u) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordFetch not supported in this test");
+    public void RecordReject(string j, string u, string r) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordReject not supported in this test");
+    public void RecordError(string j, string m) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordError not supported in this test");
+    public void RecordPageClassified(string j) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordPageClassified not supported in this test");
+    public void RecordChunkGenerated(string j) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordChunkGenerated not supported in this test");
+    public void RecordChunkEmbedded(string j) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordChunkEmbedded not supported in this test");
+    public void RecordPageCompleted(string j) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordPageCompleted not supported in this test");
+    public void RecordJobCompleted(string j, int n) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordJobCompleted not supported in this test");
+    public void RecordJobFailed(string j, string m) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordJobFailed not supported in this test");
+    public void RecordJobCancelled(string j) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordJobCancelled not supported in this test");
+    public void RecordSuspectFlag(string j, string l, string v, IReadOnlyList<string> r) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordSuspectFlag not supported in this test");
+    public void Subscribe(string j, Func<JobTickEvent, Task> h) =>
+        throw new NotSupportedException("FakeBroadcaster: Subscribe not supported in this test");
+    public void Unsubscribe(string j, Func<JobTickEvent, Task> h) =>
+        throw new NotSupportedException("FakeBroadcaster: Unsubscribe not supported in this test");
+    public void BroadcastTick(string j) =>
+        throw new NotSupportedException("FakeBroadcaster: BroadcastTick not supported in this test");
 }
