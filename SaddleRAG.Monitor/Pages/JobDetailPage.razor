@@ -38,7 +38,7 @@ else
 
 @if (CurrentTick is not null)
 {
-    <PipelineStrip Counters="@CurrentTick.Counters"/>
+    <RatePipelineStrip Counters="@CurrentTick.Counters" Rates="@Rates"/>
 
     <MudGrid Class="mt-2">
         <MudItem xs="12" md="6">

@@ -1,0 +1,37 @@
+@* SaddleRAG.Monitor/Components/RatePipelineStrip.razor *@
+@using SaddleRAG.Monitor.Services
+@using SaddleRAG.Core.Models.Monitor
+
+<MudStack Row="true" Spacing="2" Class="my-3" Wrap="Wrap.Wrap">
+    @foreach (var stage in Stages)
+    {
+        <MudPaper Elevation="1" Class="pa-2" Style="min-width:130px; text-align:center">
+            <MudText Typo="Typo.caption">@stage.Label</MudText>
+            <MudText Typo="Typo.h6">@stage.Count</MudText>
+            <MudText Typo="Typo.caption" Color="@(stage.Rate > 0 ? Color.Success : Color.Default)">
+                @stage.Rate.ToString("F1") /s
+            </MudText>
+        </MudPaper>
+    }
+</MudStack>
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public PipelineCounters Counters { get; set; } = default!;
+
+    [Parameter]
+    [EditorRequired]
+    public PipelineRates Rates { get; set; } = PipelineRates.Zero;
+
+    private IReadOnlyList<(string Label, int Count, double Rate)> Stages =>
+        [
+            ("Crawl",    Counters.PagesFetched,    Rates.PagesFetchedPerSec),
+            ("Classify", Counters.PagesClassified, Rates.PagesClassifiedPerSec),
+            ("Chunk",    Counters.ChunksGenerated, Rates.ChunksGeneratedPerSec),
+            ("Embed",    Counters.ChunksEmbedded,  Rates.ChunksEmbeddedPerSec),
+            ("Index",    Counters.PagesCompleted,  Rates.PagesCompletedPerSec)
+        ];
+
+}
