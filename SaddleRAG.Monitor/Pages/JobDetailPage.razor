@@ -1,7 +1,6 @@
 @* SaddleRAG.Monitor/Pages/JobDetailPage.razor *@
 @page "/monitor/jobs/{JobId}"
 @rendermode InteractiveServer
-@using SaddleRAG.Monitor.Components
 @inherits JobDetailPageBase
 
 <MudText Typo="Typo.h5">Job: @JobId</MudText>
@@ -13,16 +12,16 @@
 
 @if (CurrentTick is not null)
 {
-    <PipelineStrip Counters="@CurrentTick.Counters" />
+    <PipelineStrip Counters="@CurrentTick.Counters"/>
 
     <MudGrid Class="mt-2">
         <MudItem xs="12" md="6">
             <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Fetches</MudText>
             <MudList Dense="true" T="string">
-                @foreach (var f in CurrentTick.RecentFetches)
+                @foreach(var f in CurrentTick.RecentFetches)
                 {
                     <MudListItem>
-                        <MudText Style="font-family:monospace;font-size:0.75rem">@f.Url</MudText>
+                        <MudText Style="font-family: monospace; font-size: 0.75rem">@f.Url</MudText>
                     </MudListItem>
                 }
             </MudList>
@@ -30,11 +29,11 @@
         <MudItem xs="12" md="6">
             <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Rejects</MudText>
             <MudList Dense="true" T="string">
-                @foreach (var r in CurrentTick.RecentRejects)
+                @foreach(var r in CurrentTick.RecentRejects)
                 {
                     <MudListItem>
                         <MudStack Row="true">
-                            <MudText Style="font-family:monospace;font-size:0.75rem">@r.Url</MudText>
+                            <MudText Style="font-family: monospace; font-size: 0.75rem">@r.Url</MudText>
                             <MudChip T="string" Size="Size.Small">@r.Reason</MudChip>
                         </MudStack>
                     </MudListItem>

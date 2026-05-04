@@ -6,12 +6,12 @@
 
 #region Usings
 
-using SaddleRAG.Core.Interfaces;
-using SaddleRAG.Core.Models;
-using SaddleRAG.Database.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson.Serialization;
+using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
+using SaddleRAG.Database.Repositories;
 
 #endregion
 
@@ -26,7 +26,7 @@ public static class ServiceCollectionExtensions
     ///     Adds SaddleRAG MongoDB database services with profile support.
     /// </summary>
     public static IServiceCollection AddSaddleRagDatabase(this IServiceCollection services,
-                                                       IConfiguration configuration)
+                                                          IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -41,8 +41,8 @@ public static class ServiceCollectionExtensions
 
         // Default-profile singletons (used by ingestion and the default MCP path)
         services.AddSingleton<SaddleRagDbContext>(sp =>
-                                                   sp.GetRequiredService<SaddleRagDbContextFactory>().GetDefault()
-                                              );
+                                                      sp.GetRequiredService<SaddleRagDbContextFactory>().GetDefault()
+                                                 );
         services.AddSingleton<ILibraryRepository, LibraryRepository>();
         services.AddSingleton<IPageRepository, PageRepository>();
         services.AddSingleton<IChunkRepository, ChunkRepository>();

@@ -12,8 +12,8 @@ namespace SaddleRAG.Core.Models.Audit;
 public enum AuditStatus
 {
     Considered = 0,
-    Skipped    = 1,
-    Fetched    = 2,
-    Failed     = 3,
-    Indexed    = 4
+    Skipped = 1,
+    Fetched = 2,
+    Failed = 3,
+    Indexed = 4
 }

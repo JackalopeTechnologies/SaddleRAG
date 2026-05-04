@@ -6,9 +6,9 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Driver;
 
 #endregion
 

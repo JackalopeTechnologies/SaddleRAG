@@ -41,7 +41,7 @@ public interface IBm25ShardRepository
     ///     never been indexed). The returned shard's
     ///     <c>InlineTerms</c>/<c>ExternalTerms</c> are populated as-is —
     ///     external term postings are NOT auto-fetched; callers go
-    ///     through <see cref="LoadPostingsAsync"/> to resolve them.
+    ///     through <see cref="LoadPostingsAsync" /> to resolve them.
     /// </summary>
     Task<Bm25Shard?> GetShardAsync(string libraryId,
                                    string version,
@@ -51,7 +51,7 @@ public interface IBm25ShardRepository
     /// <summary>
     ///     Load all shards for (libraryId, version). Used by the rescrub
     ///     path and full-corpus operations; for query-time scoring,
-    ///     prefer <see cref="GetShardAsync"/> per-term hashing to avoid
+    ///     prefer <see cref="GetShardAsync" /> per-term hashing to avoid
     ///     loading the full index.
     /// </summary>
     Task<IReadOnlyList<Bm25Shard>> GetAllShardsAsync(string libraryId,

@@ -7,13 +7,14 @@
 #region Usings
 
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Symbols;
-using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -31,6 +32,13 @@ namespace SaddleRAG.Ingestion.Recon;
 /// </summary>
 public class RescrubService
 {
+    private sealed record RescrubOneResult
+    {
+        public required DocChunk Chunk { get; init; }
+        public required RescrubDiff? Diff { get; init; }
+        public required ExtractedSymbols Extracted { get; init; }
+    }
+
     public RescrubService(SymbolExtractor extractor,
                           LlmClassifier classifier,
                           ILogger<RescrubService> logger)
@@ -40,8 +48,9 @@ public class RescrubService
         mLogger = logger;
     }
 
-    private readonly SymbolExtractor mExtractor;
     private readonly LlmClassifier mClassifier;
+
+    private readonly SymbolExtractor mExtractor;
     private readonly ILogger<RescrubService> mLogger;
 
     /// <summary>
@@ -76,7 +85,18 @@ public class RescrubService
         if (profile == null)
             result = new RescrubResult { LibraryId = libraryId, Version = version, ReconNeeded = true };
         else
-            result = await RunRescrubAsync(chunkRepo, indexRepo, bm25ShardRepo, excludedRepo, libraryRepo, libraryId, version, profile, options, onProgress, ct);
+            result = await RunRescrubAsync(chunkRepo,
+                                           indexRepo,
+                                           bm25ShardRepo,
+                                           excludedRepo,
+                                           libraryRepo,
+                                           libraryId,
+                                           version,
+                                           profile,
+                                           options,
+                                           onProgress,
+                                           ct
+                                          );
 
         return result;
     }
@@ -101,7 +121,7 @@ public class RescrubService
         var corpus = BuildCorpusContext(scoped);
         var boundaryIssues = options.BoundaryAudit ? ChunkBoundaryAudit.CountIssues(scoped) : 0;
 
-        var accumulator = new RejectionAccumulator(libraryId, version, Math.Max(scoped.Count, 1));
+        var accumulator = new RejectionAccumulator(libraryId, version, Math.Max(scoped.Count, val2: 1));
         var keptCount = 0;
 
         var processedDiffs = await ProcessChunksAsync(chunkRepo,
@@ -122,7 +142,15 @@ public class RescrubService
         var indexesBuilt = false;
         if (options.RebuildIndexes && !options.DryRun)
         {
-            await PersistLibraryIndexAsync(indexRepo, bm25ShardRepo, libraryId, version, profile, corpus, scoped, ct);
+            await PersistLibraryIndexAsync(indexRepo,
+                                           bm25ShardRepo,
+                                           libraryId,
+                                           version,
+                                           profile,
+                                           corpus,
+                                           scoped,
+                                           ct
+                                          );
             indexesBuilt = true;
         }
 
@@ -163,22 +191,28 @@ public class RescrubService
                               );
 
         if (!options.DryRun && options.BoundaryAudit)
-            await PersistBoundaryIssuePctAsync(libraryRepo, libraryId, version, boundaryIssues, scoped.Count, ct);
+            await PersistBoundaryIssuePctAsync(libraryRepo,
+                                               libraryId,
+                                               version,
+                                               boundaryIssues,
+                                               scoped.Count,
+                                               ct
+                                              );
 
         return result;
     }
 
     private static async Task PersistBoundaryIssuePctAsync(ILibraryRepository libraryRepo,
-                                                            string libraryId,
-                                                            string version,
-                                                            int boundaryIssues,
-                                                            int chunkCount,
-                                                            CancellationToken ct)
+                                                           string libraryId,
+                                                           string version,
+                                                           int boundaryIssues,
+                                                           int chunkCount,
+                                                           CancellationToken ct)
     {
         var versionRecord = await libraryRepo.GetVersionAsync(libraryId, version, ct);
         if (versionRecord != null)
         {
-            var pct = BoundaryIssuePctScale * boundaryIssues / Math.Max(1, chunkCount);
+            var pct = BoundaryIssuePctScale * boundaryIssues / Math.Max(val1: 1, chunkCount);
             versionRecord.BoundaryIssuePct = pct;
             await libraryRepo.UpsertVersionAsync(versionRecord, ct);
         }
@@ -198,7 +232,7 @@ public class RescrubService
         var diffs = new List<RescrubDiff>();
         var updated = new List<DocChunk>();
 
-        for (int i = 0; i < chunks.Count; i++)
+        for(var i = 0; i < chunks.Count; i++)
         {
             var chunk = chunks[i];
             var oneResult = await RescrubOneAsync(chunk, profile, corpus, doReclassify, ct);
@@ -235,7 +269,7 @@ public class RescrubService
             newCategory = await ReclassifyAsync(chunk, profile, ct);
 
         var changed = HasChanged(chunk, extracted, newCategory);
-        DocChunk newChunk = chunk;
+        var newChunk = chunk;
         RescrubDiff? diff = null;
 
         if (changed)
@@ -269,7 +303,7 @@ public class RescrubService
         return result;
     }
 
-    private async Task<Core.Enums.DocCategory> ReclassifyAsync(DocChunk chunk, LibraryProfile profile, CancellationToken ct)
+    private async Task<DocCategory> ReclassifyAsync(DocChunk chunk, LibraryProfile profile, CancellationToken ct)
     {
         var pageRecord = new PageRecord
                              {
@@ -286,16 +320,17 @@ public class RescrubService
         var hint = profile.Languages.Count > 0
                        ? string.Join(LanguagesSeparator, profile.Languages)
                        : profile.LibraryId;
-        var (category, _) = await mClassifier.ClassifyAsync(pageRecord, hint, ct);
+        (var category, var _) = await mClassifier.ClassifyAsync(pageRecord, hint, ct);
         return category;
     }
 
-    private static bool HasChanged(DocChunk chunk, ExtractedSymbols extracted, Core.Enums.DocCategory newCategory)
+    private static bool HasChanged(DocChunk chunk, ExtractedSymbols extracted, DocCategory newCategory)
     {
         var symbolsChanged = !SymbolListsEqual(chunk.Symbols, extracted.Symbols);
         var nameChanged = !string.Equals(chunk.QualifiedName,
                                          extracted.PrimaryQualifiedName ?? chunk.QualifiedName,
-                                         StringComparison.Ordinal);
+                                         StringComparison.Ordinal
+                                        );
         var versionChanged = chunk.ParserVersion < ParserVersionInfo.Current;
         var categoryChanged = chunk.Category != newCategory;
         var result = symbolsChanged || nameChanged || versionChanged || categoryChanged;
@@ -307,11 +342,14 @@ public class RescrubService
         var equal = a.Count == b.Count;
         if (equal)
         {
-            for (int i = 0; i < a.Count && equal; i++)
-                equal = string.Equals(a[i].Name, b[i].Name, StringComparison.Ordinal)
-                     && a[i].Kind == b[i].Kind
-                     && string.Equals(a[i].Container, b[i].Container, StringComparison.Ordinal);
+            for(var i = 0; i < a.Count && equal; i++)
+            {
+                equal = string.Equals(a[i].Name, b[i].Name, StringComparison.Ordinal) &&
+                        a[i].Kind == b[i].Kind &&
+                        string.Equals(a[i].Container, b[i].Container, StringComparison.Ordinal);
+            }
         }
+
         return equal;
     }
 
@@ -331,10 +369,12 @@ public class RescrubService
     {
         var profileChanged = !string.Equals(manifest.LastProfileHash,
                                             LibraryProfileService.ComputeHash(profile),
-                                            StringComparison.Ordinal);
+                                            StringComparison.Ordinal
+                                           );
         var classifierChanged = !string.Equals(manifest.LastClassifierVersion,
                                                mClassifier.GetCurrentVersion(),
-                                               StringComparison.Ordinal);
+                                               StringComparison.Ordinal
+                                              );
         var result = profileChanged || classifierChanged;
         return result;
     }
@@ -360,9 +400,10 @@ public class RescrubService
         {
             var stripped = StripCodeFences(chunk.Content);
             var matches = smCapitalizedIdentifierRegex.Matches(stripped);
-            foreach(Match m in matches.Where(m => m.Value.Length >= MinIdentifierLength))
+            foreach(var m in matches.Where(m => m.Value.Length >= MinIdentifierLength))
                 counts[m.Value] = counts.TryGetValue(m.Value, out var c) ? c + 1 : 1;
         }
+
         return counts;
     }
 
@@ -406,50 +447,27 @@ public class RescrubService
         await indexRepo.UpsertAsync(index, ct);
     }
 
-    private static readonly Regex smCapitalizedIdentifierRegex = new(
-        @"\b[A-Z][A-Za-z0-9_]+\b",
-        RegexOptions.Compiled
-    );
-
-    private static readonly Regex smTripleBacktickRegex = new(
-        @"```[^\r\n]*\r?\n.*?```",
-        RegexOptions.Compiled | RegexOptions.Singleline
-    );
-
-    private static readonly Regex smPreCodeRegex = new(
-        "<pre[^>]*>.*?</pre>",
-        RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase
-    );
-
-    private sealed record RescrubOneResult
-    {
-        public required DocChunk Chunk { get; init; }
-        public required RescrubDiff? Diff { get; init; }
-        public required ExtractedSymbols Extracted { get; init; }
-    }
-
     private static IReadOnlyList<string> BuildHints(string libraryId,
-                                                     string version,
-                                                     int processedChunks,
-                                                     int keptCount,
-                                                     int excludedCount)
+                                                    string version,
+                                                    int processedChunks,
+                                                    int keptCount,
+                                                    int excludedCount)
     {
         var totalCandidates = keptCount + excludedCount;
         var ratio = totalCandidates > 0 ? (double) excludedCount / totalCandidates : 0;
-        var trigger = excludedCount >= HintMinAbsoluteExclusions
-                   && ratio >= HintMinExclusionRatio;
+        var trigger = excludedCount >= HintMinAbsoluteExclusions && ratio >= HintMinExclusionRatio;
         IReadOnlyList<string> result = trigger
-                                            ? new[]
-                                                  {
-                                                      $"Rescrub complete: {processedChunks} chunks, {keptCount} candidate tokens kept, {excludedCount} excluded as likely noise.",
-                                                      "If list_classes/list_functions output looks off, refine per-library:",
-                                                      $"  list_excluded_symbols(library='{libraryId}', version='{version}') — review rejections with sample sentences",
-                                                      "  add_to_likely_symbols(...) — promote tokens that ARE real symbols",
-                                                      "  add_to_stoplist(...) — demote tokens that are noise",
-                                                      "  Then call rescrub_library again to apply.",
-                                                      "These steps are OPTIONAL — only worth running if symbol coverage looks wrong on spot-check."
-                                                  }
-                                            : Array.Empty<string>();
+                                           ? new[]
+                                                 {
+                                                     $"Rescrub complete: {processedChunks} chunks, {keptCount} candidate tokens kept, {excludedCount} excluded as likely noise.",
+                                                     "If list_classes/list_functions output looks off, refine per-library:",
+                                                     $"  list_excluded_symbols(library='{libraryId}', version='{version}') — review rejections with sample sentences",
+                                                     "  add_to_likely_symbols(...) — promote tokens that ARE real symbols",
+                                                     "  add_to_stoplist(...) — demote tokens that are noise",
+                                                     "  Then call rescrub_library again to apply.",
+                                                     "These steps are OPTIONAL — only worth running if symbol coverage looks wrong on spot-check."
+                                                 }
+                                           : Array.Empty<string>();
         return result;
     }
 
@@ -459,4 +477,16 @@ public class RescrubService
     private const int HintMinAbsoluteExclusions = 20;
     private const double HintMinExclusionRatio = 0.05;
     private const double BoundaryIssuePctScale = 100.0;
+
+    private static readonly Regex smCapitalizedIdentifierRegex =
+        new Regex(@"\b[A-Z][A-Za-z0-9_]+\b", RegexOptions.Compiled);
+
+    private static readonly Regex smTripleBacktickRegex =
+        new Regex(@"```[^\r\n]*\r?\n.*?```", RegexOptions.Compiled | RegexOptions.Singleline);
+
+    private static readonly Regex smPreCodeRegex = new Regex("<pre[^>]*>.*?</pre>",
+                                                             RegexOptions.Compiled |
+                                                             RegexOptions.Singleline |
+                                                             RegexOptions.IgnoreCase
+                                                            );
 }

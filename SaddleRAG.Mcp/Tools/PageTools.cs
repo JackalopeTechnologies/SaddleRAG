@@ -8,10 +8,11 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -32,8 +33,7 @@ public static class PageTools
                  "URLs to top up via add_page. Returns Url, Title, FetchedAt per page, plus a Count."
                 )]
     public static async Task<string> ListPages(RepositoryFactory repositoryFactory,
-                                               [Description("Library identifier")]
-                                               string library,
+                                               [Description("Library identifier")] string library,
                                                [Description("Specific version — defaults to current")]
                                                string? version = null,
                                                [Description("Optional database profile name")]
@@ -58,10 +58,10 @@ public static class PageTools
     }
 
     private static async Task<string> BuildPageListResponseAsync(string library,
-                                                                  Core.Models.LibraryRecord lib,
-                                                                  string? version,
-                                                                  IPageRepository pageRepo,
-                                                                  CancellationToken ct)
+                                                                 LibraryRecord lib,
+                                                                 string? version,
+                                                                 IPageRepository pageRepo,
+                                                                 CancellationToken ct)
     {
         var resolvedVersion = version ?? lib.CurrentVersion;
         var pages = await pageRepo.GetPagesAsync(library, resolvedVersion, ct);
@@ -73,7 +73,8 @@ public static class PageTools
                                               p.Url,
                                               p.Title,
                                               p.FetchedAt
-                                          })
+                                          }
+                                )
                          .ToList();
 
         var response = new
@@ -120,22 +121,38 @@ public static class PageTools
         var lib = await libraryRepo.GetLibraryAsync(library, ct);
         string result = (lib, lib?.AllVersions.Contains(version) ?? false) switch
             {
-                (null, _) => JsonSerializer.Serialize(new { Error = $"Library '{library}' not found." }, smJsonOptions),
-                (_, false) => JsonSerializer.Serialize(new { Error = $"Version '{version}' not found for library '{library}'." }, smJsonOptions),
-                _ => await DispatchAddPageAsync(orchestrator, pageRepo, library, version, url, force, profile, ct)
+                (null, var _) => JsonSerializer.Serialize(new { Error = $"Library '{library}' not found." },
+                                                          smJsonOptions
+                                                         ),
+                (var _, false) => JsonSerializer.Serialize(new
+                                                               {
+                                                                   Error =
+                                                                       $"Version '{version}' not found for library '{library}'."
+                                                               },
+                                                           smJsonOptions
+                                                          ),
+                var _ => await DispatchAddPageAsync(orchestrator,
+                                                    pageRepo,
+                                                    library,
+                                                    version,
+                                                    url,
+                                                    force,
+                                                    profile,
+                                                    ct
+                                                   )
             };
 
         return result;
     }
 
     private static async Task<string> DispatchAddPageAsync(IngestionOrchestrator orchestrator,
-                                                            IPageRepository pageRepo,
-                                                            string library,
-                                                            string version,
-                                                            string url,
-                                                            bool force,
-                                                            string? profile,
-                                                            CancellationToken ct)
+                                                           IPageRepository pageRepo,
+                                                           string library,
+                                                           string version,
+                                                           string url,
+                                                           bool force,
+                                                           string? profile,
+                                                           CancellationToken ct)
     {
         string result;
 
@@ -160,8 +177,10 @@ public static class PageTools
         return result;
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
-
     private const string StatusSkipped = "Skipped";
-    private const string ReasonAlreadyIndexed = "URL is already indexed for this library/version. Pass force=true to re-fetch.";
+
+    private const string ReasonAlreadyIndexed =
+        "URL is already indexed for this library/version. Pass force=true to re-fetch.";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

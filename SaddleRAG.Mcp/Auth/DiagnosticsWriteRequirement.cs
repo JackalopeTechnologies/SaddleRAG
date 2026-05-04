@@ -5,7 +5,9 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.Authorization;
+
 #endregion
 
 namespace SaddleRAG.Mcp.Auth;

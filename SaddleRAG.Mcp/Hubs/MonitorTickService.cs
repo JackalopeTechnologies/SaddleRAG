@@ -5,8 +5,10 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.SignalR;
 using SaddleRAG.Core.Interfaces;
+
 #endregion
 
 namespace SaddleRAG.Mcp.Hubs;
@@ -18,26 +20,19 @@ namespace SaddleRAG.Mcp.Hubs;
 public sealed class MonitorTickService : BackgroundService
 {
     /// <summary>
-    ///     Initializes a new instance of <see cref="MonitorTickService"/>.
+    ///     Initializes a new instance of <see cref="MonitorTickService" />.
     /// </summary>
     public MonitorTickService(IMonitorBroadcaster broadcaster,
                               IHubContext<MonitorHub> hub)
     {
         mBroadcaster = broadcaster;
-        mHub         = hub;
+        mHub = hub;
     }
 
-    private readonly IMonitorBroadcaster     mBroadcaster;
+    private readonly IMonitorBroadcaster mBroadcaster;
     private readonly IHubContext<MonitorHub> mHub;
 
-    private const int TickIntervalMs = 750;
-
-    private static readonly TimeSpan smTickInterval = TimeSpan.FromMilliseconds(TickIntervalMs);
-
-    private const string JobTickMethod    = "JobTick";
-    private const string ActiveJobsMethod = "ActiveJobs";
-
-    /// <inheritdoc/>
+    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(smTickInterval);
@@ -48,18 +43,27 @@ public sealed class MonitorTickService : BackgroundService
     private async Task PushTicksAsync(CancellationToken ct)
     {
         var activeIds = mBroadcaster.GetActiveJobIds();
-        foreach (var jobId in activeIds)
+        foreach(var jobId in activeIds)
         {
             var snapshot = mBroadcaster.GetJobSnapshot(jobId);
             var sendTask = snapshot is not null
-                ? mHub.Clients.Group(MonitorHub.GroupName(jobId))
-                              .SendAsync(JobTickMethod, MonitorHub.BuildTick(jobId, snapshot),
-                                         cancellationToken: ct)
-                : Task.CompletedTask;
+                               ? mHub.Clients.Group(MonitorHub.GroupName(jobId))
+                                     .SendAsync(JobTickMethod,
+                                                MonitorHub.BuildTick(jobId, snapshot),
+                                                ct
+                                               )
+                               : Task.CompletedTask;
             await sendTask;
         }
 
         await mHub.Clients.Group(MonitorHub.LandingGroup)
-                  .SendAsync(ActiveJobsMethod, activeIds, cancellationToken: ct);
+                  .SendAsync(ActiveJobsMethod, activeIds, ct);
     }
+
+    private const int TickIntervalMs = 750;
+
+    private const string JobTickMethod = "JobTick";
+    private const string ActiveJobsMethod = "ActiveJobs";
+
+    private static readonly TimeSpan smTickInterval = TimeSpan.FromMilliseconds(TickIntervalMs);
 }

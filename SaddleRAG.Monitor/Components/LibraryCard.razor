@@ -1,7 +1,6 @@
 @* SaddleRAG.Monitor/Components/LibraryCard.razor *@
-@using SaddleRAG.Monitor.Pages
 
-<MudCard @onclick="@Navigate" Style="cursor:pointer">
+<MudCard @onclick="@Navigate" Style="cursor: pointer">
     <MudCardContent>
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
             <MudText Typo="Typo.subtitle1">@Library.LibraryId</MudText>
@@ -9,7 +8,7 @@
                 @(Library.IsSuspect ? "suspect" : "healthy")
             </MudChip>
         </MudStack>
-        <MudText Typo="Typo.caption">v@Library.Version · @Library.ChunkCount chunks · @Library.PageCount pages</MudText>
+        <MudText Typo="Typo.caption">v@(Library.Version) · @Library.ChunkCount chunks · @Library.PageCount pages</MudText>
         @if (!string.IsNullOrEmpty(Library.Hint))
         {
             <MudText Typo="Typo.body2" Class="mt-1">@Library.Hint</MudText>
@@ -18,8 +17,17 @@
 </MudCard>
 
 @code {
-    [Parameter, EditorRequired] public LibrarySummaryItem Library { get; set; } = default!;
-    [Inject] private NavigationManager Nav { get; set; } = default!;
 
-    private void Navigate() => Nav.NavigateTo($"/monitor/libraries/{Library.LibraryId}");
+    [Parameter]
+    [EditorRequired]
+    public LibrarySummaryItem Library { get; set; } = default!;
+
+    [Inject]
+    private NavigationManager Nav { get; set; } = default!;
+
+    private void Navigate()
+    {
+        Nav.NavigateTo($"/monitor/libraries/{Library.LibraryId}");
+    }
+
 }

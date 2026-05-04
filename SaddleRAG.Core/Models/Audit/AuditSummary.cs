@@ -22,27 +22,27 @@ public sealed record AuditSummary
     public required int TotalConsidered { get; init; }
 
     /// <summary>
-    ///     Number of URLs that reached <see cref="AuditStatus.Indexed"/>.
+    ///     Number of URLs that reached <see cref="AuditStatus.Indexed" />.
     /// </summary>
     public required int IndexedCount { get; init; }
 
     /// <summary>
-    ///     Number of URLs that reached <see cref="AuditStatus.Fetched"/> but were not indexed.
+    ///     Number of URLs that reached <see cref="AuditStatus.Fetched" /> but were not indexed.
     /// </summary>
     public required int FetchedCount { get; init; }
 
     /// <summary>
-    ///     Number of URLs that reached <see cref="AuditStatus.Failed"/>.
+    ///     Number of URLs that reached <see cref="AuditStatus.Failed" />.
     /// </summary>
     public required int FailedCount { get; init; }
 
     /// <summary>
-    ///     Number of URLs that reached <see cref="AuditStatus.Skipped"/>.
+    ///     Number of URLs that reached <see cref="AuditStatus.Skipped" />.
     /// </summary>
     public required int SkippedCount { get; init; }
 
     /// <summary>
-    ///     Count of skipped URLs broken down by <see cref="AuditSkipReason"/>.
+    ///     Count of skipped URLs broken down by <see cref="AuditSkipReason" />.
     /// </summary>
     public required IReadOnlyDictionary<AuditSkipReason, int> SkipReasonCounts { get; init; }
 

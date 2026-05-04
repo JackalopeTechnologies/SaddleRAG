@@ -21,8 +21,8 @@ public sealed class Bm25IndexBuilderTests
     {
         var build = Bm25IndexBuilder.Build("lib", "1.0", []);
 
-        Assert.Equal(0, build.Stats.DocumentCount);
-        Assert.Equal(0.0, build.Stats.AverageDocLength);
+        Assert.Equal(expected: 0, build.Stats.DocumentCount);
+        Assert.Equal(expected: 0.0, build.Stats.AverageDocLength);
         Assert.Empty(build.Shards);
     }
 
@@ -34,11 +34,13 @@ public sealed class Bm25IndexBuilderTests
 
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach(var shard in build.Shards)
+        {
             foreach(var term in shard.InlineTerms.Keys)
                 counts[term] = counts.TryGetValue(term, out var c) ? c + 1 : 1;
+        }
 
         Assert.NotEmpty(counts);
-        Assert.All(counts.Values, count => Assert.Equal(1, count));
+        Assert.All(counts.Values, count => Assert.Equal(expected: 1, count));
     }
 
     [Fact]
@@ -47,18 +49,20 @@ public sealed class Bm25IndexBuilderTests
         var chunks = ManyChunks();
         const int ShardCount = 16;
 
-        var build = Bm25IndexBuilder.Build("lib", "1.0", chunks, shardCount: ShardCount);
+        var build = Bm25IndexBuilder.Build("lib", "1.0", chunks, ShardCount);
 
         foreach(var shard in build.Shards)
+        {
             foreach(var term in shard.InlineTerms.Keys)
                 Assert.Equal(shard.ShardIndex, Bm25IndexBuilder.ShardIndexFor(term, ShardCount));
+        }
     }
 
     [Fact]
     public void ShardIndexForIsDeterministicAcrossCalls()
     {
-        var first = Bm25IndexBuilder.ShardIndexFor("MoveLinear", 64);
-        var second = Bm25IndexBuilder.ShardIndexFor("MoveLinear", 64);
+        var first = Bm25IndexBuilder.ShardIndexFor("MoveLinear", shardCount: 64);
+        var second = Bm25IndexBuilder.ShardIndexFor("MoveLinear", shardCount: 64);
         Assert.Equal(first, second);
     }
 
@@ -70,7 +74,7 @@ public sealed class Bm25IndexBuilderTests
         // pathologically collapsing.
         var hits = new HashSet<int>();
         for(var i = 0; i < 1000; i++)
-            hits.Add(Bm25IndexBuilder.ShardIndexFor($"term{i}", 64));
+            hits.Add(Bm25IndexBuilder.ShardIndexFor($"term{i}", shardCount: 64));
 
         Assert.True(hits.Count > 30, $"expected > 30 unique buckets, got {hits.Count}");
     }
@@ -81,42 +85,42 @@ public sealed class Bm25IndexBuilderTests
         var chunks = ManyChunks();
         var build = Bm25IndexBuilder.Build("lib", "1.0", chunks, shardCount: 32);
 
-        Assert.Equal(32, build.Stats.ShardCount);
+        Assert.Equal(expected: 32, build.Stats.ShardCount);
     }
 
     [Fact]
     public void StatsDocumentCountAndAverageDocLengthAreSane()
     {
         var chunks = new[]
-        {
-            MakeChunk("a", "MoveLinear axis homing"),
-            MakeChunk("b", "Configure encoder feedback signal")
-        };
+                         {
+                             MakeChunk("a", "MoveLinear axis homing"),
+                             MakeChunk("b", "Configure encoder feedback signal")
+                         };
 
         var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
 
-        Assert.Equal(2, build.Stats.DocumentCount);
+        Assert.Equal(expected: 2, build.Stats.DocumentCount);
         Assert.True(build.Stats.AverageDocLength > 0);
     }
 
     private static IReadOnlyList<DocChunk> ManyChunks() =>
-    [
-        MakeChunk("a", "MoveLinear axis homing on each axis."),
-        MakeChunk("b", "Configure encoder feedback for the controller."),
-        MakeChunk("c", "AxisFault.Disabled is the cleared state of the latch."),
-        MakeChunk("d", "ServoLoopGain controls the response of the loop."),
-        MakeChunk("e", "TaskState transitions to Idle when the program completes.")
-    ];
+        [
+            MakeChunk("a", "MoveLinear axis homing on each axis."),
+            MakeChunk("b", "Configure encoder feedback for the controller."),
+            MakeChunk("c", "AxisFault.Disabled is the cleared state of the latch."),
+            MakeChunk("d", "ServoLoopGain controls the response of the loop."),
+            MakeChunk("e", "TaskState transitions to Idle when the program completes.")
+        ];
 
     private static DocChunk MakeChunk(string id, string content) =>
-        new()
-        {
-            Id = id,
-            LibraryId = "lib",
-            Version = "1.0",
-            PageUrl = "https://example.com",
-            PageTitle = "Page",
-            Category = DocCategory.ApiReference,
-            Content = content
-        };
+        new DocChunk
+            {
+                Id = id,
+                LibraryId = "lib",
+                Version = "1.0",
+                PageUrl = "https://example.com",
+                PageTitle = "Page",
+                Category = DocCategory.ApiReference,
+                Content = content
+            };
 }

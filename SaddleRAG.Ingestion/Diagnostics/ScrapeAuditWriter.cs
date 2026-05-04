@@ -16,9 +16,9 @@ namespace SaddleRAG.Ingestion.Diagnostics;
 
 /// <summary>
 ///     Buffers scrape audit events in memory and flushes them to the repository
-///     either when the batch reaches <see cref="DefaultBatchSize"/> entries or
-///     after <see cref="smDefaultFlushInterval"/>, whichever comes first.
-///     <see cref="DisposeAsync"/> drains any remaining buffered entries.
+///     either when the batch reaches <see cref="DefaultBatchSize" /> entries or
+///     after <see cref="smDefaultFlushInterval" />, whichever comes first.
+///     <see cref="DisposeAsync" /> drains any remaining buffered entries.
 /// </summary>
 public sealed class ScrapeAuditWriter : IScrapeAuditWriter
 {
@@ -32,84 +32,140 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         mBatchSize = batchSize;
         mFlushInterval = flushInterval ?? smDefaultFlushInterval;
         mChannel = Channel.CreateUnbounded<ScrapeAuditLogEntry>(new UnboundedChannelOptions
-        {
-            SingleReader = false,
-            SingleWriter = false
-        });
+                                                                    {
+                                                                        SingleReader = false,
+                                                                        SingleWriter = false
+                                                                    }
+                                                               );
         mLoop = Task.Run(RunFlushLoopAsync);
     }
 
-    private const int DefaultBatchSize = 500;
-    private static readonly TimeSpan smDefaultFlushInterval = TimeSpan.FromSeconds(1);
+    private readonly int mBatchSize;
+    private readonly Channel<ScrapeAuditLogEntry> mChannel;
+    private readonly CancellationTokenSource mCts = new CancellationTokenSource();
+    private readonly TimeSpan mFlushInterval;
+    private readonly Task mLoop;
 
     private readonly IScrapeAuditRepository mRepo;
-    private readonly int mBatchSize;
-    private readonly TimeSpan mFlushInterval;
-    private readonly Channel<ScrapeAuditLogEntry> mChannel;
-    private readonly Task mLoop;
-    private readonly CancellationTokenSource mCts = new();
     private bool mDisposed;
 
     #region RecordSkipped method
 
-    /// <inheritdoc/>
-    public void RecordSkipped(AuditContext ctx, string url, string? parentUrl, string host, int depth,
-                              AuditSkipReason reason, string? detail)
+    /// <inheritdoc />
+    public void RecordSkipped(AuditContext ctx,
+                              string url,
+                              string? parentUrl,
+                              string host,
+                              int depth,
+                              AuditSkipReason reason,
+                              string? detail)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
-        Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Skipped, reason, detail, null));
+        Enqueue(BuildEntry(ctx,
+                           url,
+                           parentUrl,
+                           host,
+                           depth,
+                           AuditStatus.Skipped,
+                           reason,
+                           detail,
+                           outcome: null
+                          )
+               );
     }
 
     #endregion
 
     #region RecordFetched method
 
-    /// <inheritdoc/>
-    public void RecordFetched(AuditContext ctx, string url, string? parentUrl, string host, int depth)
+    /// <inheritdoc />
+    public void RecordFetched(AuditContext ctx,
+                              string url,
+                              string? parentUrl,
+                              string host,
+                              int depth)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
-        Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Fetched, null, null, null));
+        Enqueue(BuildEntry(ctx,
+                           url,
+                           parentUrl,
+                           host,
+                           depth,
+                           AuditStatus.Fetched,
+                           reason: null,
+                           detail: null,
+                           outcome: null
+                          )
+               );
     }
 
     #endregion
 
     #region RecordFailed method
 
-    /// <inheritdoc/>
-    public void RecordFailed(AuditContext ctx, string url, string? parentUrl, string host, int depth, string error)
+    /// <inheritdoc />
+    public void RecordFailed(AuditContext ctx,
+                             string url,
+                             string? parentUrl,
+                             string host,
+                             int depth,
+                             string error)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
         ArgumentException.ThrowIfNullOrEmpty(error);
-        Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Failed, null, null,
-                           new AuditPageOutcome { Error = error }));
+        Enqueue(BuildEntry(ctx,
+                           url,
+                           parentUrl,
+                           host,
+                           depth,
+                           AuditStatus.Failed,
+                           reason: null,
+                           detail: null,
+                           new AuditPageOutcome { Error = error }
+                          )
+               );
     }
 
     #endregion
 
     #region RecordIndexed method
 
-    /// <inheritdoc/>
-    public void RecordIndexed(AuditContext ctx, string url, string? parentUrl, string host, int depth,
+    /// <inheritdoc />
+    public void RecordIndexed(AuditContext ctx,
+                              string url,
+                              string? parentUrl,
+                              string host,
+                              int depth,
                               AuditPageOutcome outcome)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(outcome);
-        Enqueue(BuildEntry(ctx, url, parentUrl, host, depth, AuditStatus.Indexed, null, null, outcome));
+        Enqueue(BuildEntry(ctx,
+                           url,
+                           parentUrl,
+                           host,
+                           depth,
+                           AuditStatus.Indexed,
+                           reason: null,
+                           detail: null,
+                           outcome
+                          )
+               );
     }
 
     #endregion
 
     #region FlushAsync method
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public async Task FlushAsync(CancellationToken ct = default)
     {
         var batch = new List<ScrapeAuditLogEntry>(mBatchSize);
@@ -117,8 +173,8 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
             batch.Add(entry);
 
         var flushTask = batch.Count > 0
-            ? mRepo.InsertManyAsync(batch, ct)
-            : Task.CompletedTask;
+                            ? mRepo.InsertManyAsync(batch, ct)
+                            : Task.CompletedTask;
         await flushTask;
     }
 
@@ -126,7 +182,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
 
     #region DisposeAsync method
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (!mDisposed)
@@ -138,9 +194,10 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
             {
                 await mLoop;
             }
-            catch (OperationCanceledException)
+            catch(OperationCanceledException)
             {
             }
+
             await FlushAsync();
             mCts.Dispose();
         }
@@ -162,20 +219,20 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
                 while (await mChannel.Reader.WaitToReadAsync(timeoutCts.Token))
                     await DrainAvailableAsync(buffer);
             }
-            catch (OperationCanceledException)
+            catch(OperationCanceledException)
             {
             }
 
             var periodicFlushTask = buffer.Count > 0
-                ? mRepo.InsertManyAsync(buffer, CancellationToken.None)
-                : Task.CompletedTask;
+                                        ? mRepo.InsertManyAsync(buffer, CancellationToken.None)
+                                        : Task.CompletedTask;
             await periodicFlushTask;
             buffer.Clear();
         }
 
         var finalFlushTask = buffer.Count > 0
-            ? mRepo.InsertManyAsync(buffer, CancellationToken.None)
-            : Task.CompletedTask;
+                                 ? mRepo.InsertManyAsync(buffer, CancellationToken.None)
+                                 : Task.CompletedTask;
         await finalFlushTask;
     }
 
@@ -192,23 +249,32 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         }
     }
 
-    private static ScrapeAuditLogEntry BuildEntry(AuditContext ctx, string url, string? parentUrl,
-                                                   string host, int depth, AuditStatus status,
-                                                   AuditSkipReason? reason, string? detail,
-                                                   AuditPageOutcome? outcome) => new()
-    {
-        Id = Guid.NewGuid().ToString("N"),
-        JobId = ctx.JobId,
-        LibraryId = ctx.LibraryId,
-        Version = ctx.Version,
-        Url = url,
-        ParentUrl = parentUrl,
-        Host = host,
-        Depth = depth,
-        DiscoveredAt = DateTime.UtcNow,
-        Status = status,
-        SkipReason = reason,
-        SkipDetail = detail,
-        PageOutcome = outcome
-    };
+    private static ScrapeAuditLogEntry BuildEntry(AuditContext ctx,
+                                                  string url,
+                                                  string? parentUrl,
+                                                  string host,
+                                                  int depth,
+                                                  AuditStatus status,
+                                                  AuditSkipReason? reason,
+                                                  string? detail,
+                                                  AuditPageOutcome? outcome) =>
+        new ScrapeAuditLogEntry
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                JobId = ctx.JobId,
+                LibraryId = ctx.LibraryId,
+                Version = ctx.Version,
+                Url = url,
+                ParentUrl = parentUrl,
+                Host = host,
+                Depth = depth,
+                DiscoveredAt = DateTime.UtcNow,
+                Status = status,
+                SkipReason = reason,
+                SkipDetail = detail,
+                PageOutcome = outcome
+            };
+
+    private const int DefaultBatchSize = 500;
+    private static readonly TimeSpan smDefaultFlushInterval = TimeSpan.FromSeconds(seconds: 1);
 }

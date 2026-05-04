@@ -68,7 +68,10 @@ public interface ILibraryRepository
     /// <summary>
     ///     Mark a library version as suspect, recording the reasons and evaluation timestamp.
     /// </summary>
-    Task SetSuspectAsync(string libraryId, string version, IReadOnlyList<string> reasons, CancellationToken ct = default);
+    Task SetSuspectAsync(string libraryId,
+                         string version,
+                         IReadOnlyList<string> reasons,
+                         CancellationToken ct = default);
 
     /// <summary>
     ///     Clear the suspect flag on a library version, resetting reasons and updating the evaluation timestamp.

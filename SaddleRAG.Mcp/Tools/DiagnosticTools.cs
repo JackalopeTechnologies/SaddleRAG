@@ -62,7 +62,7 @@ public static class DiagnosticTools
         {
             try
             {
-                IReadOnlyList<string> allLines = ReadLogFileShared(logFile);
+                var allLines = ReadLogFileShared(logFile);
 
                 IEnumerable<string> filtered = allLines;
                 if (!string.IsNullOrEmpty(filter))
@@ -99,7 +99,7 @@ public static class DiagnosticTools
 
     /// <summary>
     ///     Pick the most recently written log file matching the search pattern.
-    ///     Sort by <see cref="FileSystemInfo.LastWriteTimeUtc"/> rather than
+    ///     Sort by <see cref="FileSystemInfo.LastWriteTimeUtc" /> rather than
     ///     filename so the picker is robust against rotation schemes that
     ///     don't sort lexicographically.
     /// </summary>
@@ -112,7 +112,7 @@ public static class DiagnosticTools
                      .EnumerateFiles(LogFileSearchPattern)
                      .OrderByDescending(f => f.LastWriteTimeUtc)
                      .FirstOrDefault()
-                    ?.FullName;
+                     ?.FullName;
         }
 
         return result;
@@ -124,7 +124,7 @@ public static class DiagnosticTools
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         using var reader = new StreamReader(stream);
 
-        var line = reader.ReadLine();
+        string? line = reader.ReadLine();
         while (line != null)
         {
             lines.Add(line);

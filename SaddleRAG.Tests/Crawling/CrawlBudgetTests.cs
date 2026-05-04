@@ -25,7 +25,7 @@ public sealed class CrawlBudgetTests
 
         Assert.Same(first, second);
         Assert.NotSame(first, other);
-        Assert.Equal(2, budget.HostCount);
+        Assert.Equal(expected: 2, budget.HostCount);
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public sealed class CrawlBudgetTests
         var upper = budget.GetLimiter(new Uri("https://DOCS.EXAMPLE.COM/"));
 
         Assert.Same(lower, upper);
-        Assert.Equal(1, budget.HostCount);
+        Assert.Equal(expected: 1, budget.HostCount);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class CrawlBudgetTests
         var https = budget.GetLimiter(new Uri("https://docs.example.com/"));
 
         Assert.NotSame(http, https);
-        Assert.Equal(2, budget.HostCount);
+        Assert.Equal(expected: 2, budget.HostCount);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class CrawlBudgetTests
         var second = budget.GetLimiter(new Uri("file:///E:/docs/other.htm"));
 
         Assert.Same(first, second);
-        Assert.Equal(1, budget.HostCount);
+        Assert.Equal(expected: 1, budget.HostCount);
     }
 
     [Fact]
@@ -103,11 +103,14 @@ public sealed class CrawlBudgetTests
     public void BuildHostKeyProducesSchemeAndHost()
     {
         Assert.Equal("https://docs.example.com",
-                     CrawlBudget.BuildHostKey(new Uri("https://docs.example.com/some/path")));
+                     CrawlBudget.BuildHostKey(new Uri("https://docs.example.com/some/path"))
+                    );
         Assert.Equal("http://docs.example.com",
-                     CrawlBudget.BuildHostKey(new Uri("http://docs.example.com/")));
+                     CrawlBudget.BuildHostKey(new Uri("http://docs.example.com/"))
+                    );
         Assert.Equal("file://",
-                     CrawlBudget.BuildHostKey(new Uri("file:///E:/docs/index.htm")));
+                     CrawlBudget.BuildHostKey(new Uri("file:///E:/docs/index.htm"))
+                    );
     }
 
     [Fact]
@@ -118,12 +121,12 @@ public sealed class CrawlBudgetTests
         var docsLimiter = budget.GetLimiter(new Uri("https://docs.example.com/"));
         budget.GetLimiter(new Uri("https://api.example.com/"));
 
-        docsLimiter.ReportRateLimited(retryAfter: TimeSpan.Zero);
+        docsLimiter.ReportRateLimited(TimeSpan.Zero);
 
         var snapshot = budget.GetSnapshot();
 
-        Assert.Equal(2, snapshot["https://docs.example.com"]);
-        Assert.Equal(4, snapshot["https://api.example.com"]);
+        Assert.Equal(expected: 2, snapshot["https://docs.example.com"]);
+        Assert.Equal(expected: 4, snapshot["https://api.example.com"]);
     }
 
     [Fact]
@@ -131,24 +134,24 @@ public sealed class CrawlBudgetTests
     {
         var result = CrawlBudget.ParseRetryAfter("30");
 
-        Assert.Equal(TimeSpan.FromSeconds(30), result);
+        Assert.Equal(TimeSpan.FromSeconds(seconds: 30), result);
     }
 
     [Fact]
     public void ParseRetryAfterAcceptsHttpDate()
     {
-        var future = DateTime.UtcNow.AddMinutes(2);
-        string headerValue = future.ToString("R");
+        var future = DateTime.UtcNow.AddMinutes(value: 2);
+        var headerValue = future.ToString("R");
 
         var result = CrawlBudget.ParseRetryAfter(headerValue);
 
         Assert.NotNull(result);
-        Assert.True(result.Value > TimeSpan.FromSeconds(60));
-        Assert.True(result.Value < TimeSpan.FromMinutes(3));
+        Assert.True(result.Value > TimeSpan.FromSeconds(seconds: 60));
+        Assert.True(result.Value < TimeSpan.FromMinutes(minutes: 3));
     }
 
     [Theory]
-    [InlineData(null)]
+    [InlineData(data: null)]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("not-a-number")]
@@ -164,7 +167,7 @@ public sealed class CrawlBudgetTests
     [Fact]
     public void ParseRetryAfterReturnsNullForPastDate()
     {
-        var past = DateTime.UtcNow.AddMinutes(-5).ToString("R");
+        var past = DateTime.UtcNow.AddMinutes(value: -5).ToString("R");
 
         var result = CrawlBudget.ParseRetryAfter(past);
 

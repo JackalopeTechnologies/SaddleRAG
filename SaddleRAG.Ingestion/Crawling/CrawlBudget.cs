@@ -14,7 +14,7 @@ using System.Globalization;
 namespace SaddleRAG.Ingestion.Crawling;
 
 /// <summary>
-///     Per-crawl budget that holds one <see cref="HostRateLimiter"/> per
+///     Per-crawl budget that holds one <see cref="HostRateLimiter" /> per
 ///     <c>(scheme, host)</c> bucket encountered during a crawl. The first
 ///     time a bucket is seen, a limiter is created lazily with the
 ///     configured initial / min / max concurrency. Bucketing on scheme +
@@ -38,17 +38,17 @@ public sealed class CrawlBudget
         mScopeFilters = new ConcurrentDictionary<string, HostScopeFilter>(StringComparer.OrdinalIgnoreCase);
     }
 
-    private readonly int mInitialConcurrency;
-    private readonly ConcurrentDictionary<string, HostRateLimiter> mLimiters;
-    private readonly ConcurrentDictionary<string, HostScopeFilter> mScopeFilters;
-    private readonly int mMaxConcurrency;
-    private readonly int mMinConcurrency;
-
     /// <summary>
     ///     Total number of distinct buckets routed through this budget.
     ///     Stable across the crawl lifetime.
     /// </summary>
     public int HostCount => mLimiters.Count;
+
+    private readonly int mInitialConcurrency;
+    private readonly ConcurrentDictionary<string, HostRateLimiter> mLimiters;
+    private readonly int mMaxConcurrency;
+    private readonly int mMinConcurrency;
+    private readonly ConcurrentDictionary<string, HostScopeFilter> mScopeFilters;
 
     /// <summary>
     ///     Build the dictionary key for a URL: <c>scheme://host</c>.
@@ -58,7 +58,7 @@ public sealed class CrawlBudget
     {
         ArgumentNullException.ThrowIfNull(uri);
 
-        string result = $"{uri.Scheme}://{uri.Host}";
+        var result = $"{uri.Scheme}://{uri.Host}";
         return result;
     }
 
@@ -102,7 +102,7 @@ public sealed class CrawlBudget
     public IReadOnlyDictionary<string, int> GetSnapshot()
     {
         var result = new Dictionary<string, int>(mLimiters.Count, StringComparer.OrdinalIgnoreCase);
-        foreach((string key, HostRateLimiter limiter) in mLimiters)
+        foreach((string key, var limiter) in mLimiters)
             result[key] = limiter.CurrentConcurrency;
         return result;
     }
@@ -139,7 +139,7 @@ public sealed class CrawlBudget
         bool parsed = DateTime.TryParse(value,
                                         CultureInfo.InvariantCulture,
                                         DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                                        out DateTime when
+                                        out var when
                                        );
         if (parsed)
         {

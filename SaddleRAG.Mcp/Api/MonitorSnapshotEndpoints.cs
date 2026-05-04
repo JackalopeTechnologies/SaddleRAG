@@ -5,15 +5,15 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using SaddleRAG.Core.Interfaces;
+
 #endregion
 
 namespace SaddleRAG.Mcp.Api;
 
 public static class MonitorSnapshotEndpoints
 {
-    private const string SnapshotPath = "/api/monitor/jobs/{jobId}/snapshot";
-
     /// <summary>
     ///     Maps the read-only /api/monitor snapshot endpoints onto the app.
     /// </summary>
@@ -26,7 +26,9 @@ public static class MonitorSnapshotEndpoints
     private static IResult GetSnapshot(string jobId, IMonitorBroadcaster broadcaster)
     {
         var snapshot = broadcaster.GetJobSnapshot(jobId);
-        IResult result = snapshot is not null ? Results.Ok(snapshot) : Results.NotFound();
+        var result = snapshot is not null ? Results.Ok(snapshot) : Results.NotFound();
         return result;
     }
+
+    private const string SnapshotPath = "/api/monitor/jobs/{jobId}/snapshot";
 }

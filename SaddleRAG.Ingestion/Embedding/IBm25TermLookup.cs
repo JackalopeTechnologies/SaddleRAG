@@ -31,7 +31,7 @@ public interface IBm25TermLookup
     /// <summary>
     ///     Get postings for a term. Returns an empty list if the term is
     ///     not in the index. Must NOT block on I/O — call
-    ///     <see cref="PreloadAsync"/> first for any term you'll look up.
+    ///     <see cref="PreloadAsync" /> first for any term you'll look up.
     /// </summary>
     IReadOnlyList<Bm25Posting> GetPostings(string term);
 }

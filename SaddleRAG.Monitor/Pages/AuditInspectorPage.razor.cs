@@ -5,31 +5,31 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Audit;
+
 #endregion
 
 namespace SaddleRAG.Monitor.Pages;
 
 public abstract class AuditInspectorPageBase : ComponentBase
 {
-    [Parameter] public string JobId { get; set; } = string.Empty;
-    [Inject] private IScrapeAuditRepository? AuditRepo { get; set; }
+    [Parameter]
+    public string JobId { get; set; } = string.Empty;
 
-    protected AuditSummary?                      Summary { get; private set; }
+    [Inject]
+    private IScrapeAuditRepository? AuditRepo { get; set; }
+
+    protected AuditSummary? Summary { get; private set; }
     protected IReadOnlyList<ScrapeAuditLogEntry> Entries { get; private set; } = [];
 
-    protected string? FilterStatus     { get; set; }
+    protected string? FilterStatus { get; set; }
     protected string? FilterSkipReason { get; set; }
-    protected string? FilterHost       { get; set; }
-    protected string? FilterUrl        { get; set; }
-
-    private const int DefaultEntryLimit = 200;
-
-    protected static readonly string[] pmStatusOptions = Enum.GetNames<AuditStatus>();
-    protected static readonly string[] pmReasonOptions = Enum.GetNames<AuditSkipReason>();
+    protected string? FilterHost { get; set; }
+    protected string? FilterUrl { get; set; }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -46,28 +46,38 @@ public abstract class AuditInspectorPageBase : ComponentBase
         ArgumentNullException.ThrowIfNull(AuditRepo);
         Summary = await AuditRepo.SummarizeAsync(JobId);
 
-        AuditStatus?     status = ParseEnum<AuditStatus>(FilterStatus);
-        AuditSkipReason? reason = ParseEnum<AuditSkipReason>(FilterSkipReason);
+        var status = ParseEnum<AuditStatus>(FilterStatus);
+        var reason = ParseEnum<AuditSkipReason>(FilterSkipReason);
 
-        Entries = await AuditRepo.QueryAsync(JobId, status, reason,
-                                             FilterHost, FilterUrl,
-                                             limit: DefaultEntryLimit);
+        Entries = await AuditRepo.QueryAsync(JobId,
+                                             status,
+                                             reason,
+                                             FilterHost,
+                                             FilterUrl,
+                                             DefaultEntryLimit
+                                            );
     }
 
     protected static Color StatusColor(string status) => status switch
-    {
-        "Indexed" => Color.Success,
-        "Fetched" => Color.Info,
-        "Skipped" => Color.Warning,
-        "Failed"  => Color.Error,
-        _         => Color.Default
-    };
+        {
+            "Indexed" => Color.Success,
+            "Fetched" => Color.Info,
+            "Skipped" => Color.Warning,
+            "Failed" => Color.Error,
+            var _ => Color.Default
+        };
 
-    private static T? ParseEnum<T>(string? raw) where T : struct, Enum
+    private static T? ParseEnum<T>(string? raw)
+        where T : struct, Enum
     {
         T? result = null;
         if (!string.IsNullOrEmpty(raw) && Enum.TryParse<T>(raw, ignoreCase: true, out var v))
             result = v;
         return result;
     }
+
+    private const int DefaultEntryLimit = 200;
+
+    protected static readonly string[] pmStatusOptions = Enum.GetNames<AuditStatus>();
+    protected static readonly string[] pmReasonOptions = Enum.GetNames<AuditSkipReason>();
 }

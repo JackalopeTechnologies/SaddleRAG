@@ -5,12 +5,12 @@
 
 @if (Detail is null)
 {
-    <MudProgressCircular Indeterminate="true" />
+    <MudProgressCircular Indeterminate="true"/>
 }
 else
 {
     <MudText Typo="Typo.h5" Class="mb-1">@Detail.LibraryId</MudText>
-    <MudText Typo="Typo.subtitle1" Class="mb-3">v@Detail.Version</MudText>
+    <MudText Typo="Typo.subtitle1" Class="mb-3">v@(Detail.Version)</MudText>
 
     <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true">
         <MudTabPanel Text="Overview">

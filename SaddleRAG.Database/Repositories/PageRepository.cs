@@ -6,9 +6,9 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Driver;
 
 #endregion
 
@@ -100,10 +100,9 @@ public class PageRepository : IPageRepository
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        var filter = Builders<PageRecord>.Filter.And(
-            Builders<PageRecord>.Filter.Eq(p => p.LibraryId, libraryId),
-            Builders<PageRecord>.Filter.Eq(p => p.Version, version)
-        );
+        var filter = Builders<PageRecord>.Filter.And(Builders<PageRecord>.Filter.Eq(p => p.LibraryId, libraryId),
+                                                     Builders<PageRecord>.Filter.Eq(p => p.Version, version)
+                                                    );
         var result = await mContext.Pages.DeleteManyAsync(filter, ct);
         return result.DeletedCount;
     }

@@ -80,20 +80,9 @@ public class ScrapeJobRecord
     /// <summary>
     ///     Non-fatal error count across all stages. The crawl stage runs up to
     ///     <c>MaxParallelWorkers</c> concurrent fetchers, so increments must
-    ///     route through <see cref="IncrementErrorCount"/> for atomicity.
+    ///     route through <see cref="IncrementErrorCount" /> for atomicity.
     /// </summary>
-    public int ErrorCount
-    {
-        get => Volatile.Read(ref mErrorCount);
-        set => Volatile.Write(ref mErrorCount, value);
-    }
-
-    /// <summary>
-    ///     Atomically bump <see cref="ErrorCount"/> by 1 and return the new value.
-    /// </summary>
-    public int IncrementErrorCount() => Interlocked.Increment(ref mErrorCount);
-
-    private int mErrorCount;
+    public int ErrorCount { get => Volatile.Read(ref mErrorCount); set => Volatile.Write(ref mErrorCount, value); }
 
     /// <summary>
     ///     Error message if Status is Failed.
@@ -124,4 +113,11 @@ public class ScrapeJobRecord
     ///     When the job was cancelled, if applicable.
     /// </summary>
     public DateTime? CancelledAt { get; set; }
+
+    private int mErrorCount;
+
+    /// <summary>
+    ///     Atomically bump <see cref="ErrorCount" /> by 1 and return the new value.
+    /// </summary>
+    public int IncrementErrorCount() => Interlocked.Increment(ref mErrorCount);
 }

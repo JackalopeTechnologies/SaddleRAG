@@ -8,10 +8,6 @@ namespace SaddleRAG.Mcp;
 
 internal static class PrewarmHelpers
 {
-    public const int BytesPerMegabyte = 1024 * 1024;
-
-    private const int ReadBufferSize = 81920;
-
     /// <summary>
     ///     Walks the directory recursively and reads every file end-to-end with sequential-scan
     ///     hint, forcing the OS file cache to populate before service startup. Returns the file
@@ -23,7 +19,7 @@ internal static class PrewarmHelpers
         ArgumentException.ThrowIfNullOrEmpty(root);
 
         long totalBytes = 0;
-        int fileCount = 0;
+        var fileCount = 0;
         var buffer = new byte[ReadBufferSize];
 
         foreach(var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
@@ -55,10 +51,10 @@ internal static class PrewarmHelpers
             int read;
             do
             {
-                read = fs.Read(buffer, 0, buffer.Length);
+                read = fs.Read(buffer, offset: 0, buffer.Length);
                 total += read;
             }
-            while(read > 0);
+            while (read > 0);
         }
         catch(IOException)
         {
@@ -66,6 +62,11 @@ internal static class PrewarmHelpers
         catch(UnauthorizedAccessException)
         {
         }
+
         return total;
     }
+
+    public const int BytesPerMegabyte = 1024 * 1024;
+
+    private const int ReadBufferSize = 81920;
 }

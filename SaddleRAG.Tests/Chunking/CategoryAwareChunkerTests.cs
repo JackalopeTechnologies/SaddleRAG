@@ -24,7 +24,7 @@ public sealed class CategoryAwareChunkerTests
         // 2400-char chunk size limit) and whose only "." in the back half
         // of the split window is INSIDE a dotted identifier (AxisFault.Disabled).
         // The pre-fix behavior splits between AxisFault and Disabled.
-        var filler = new string('a', 1300) + " ";
+        var filler = new string(c: 'a', count: 1300) + " ";
         var content = filler + "Set AxisFault.Disabled to acknowledge the latch and continue. " + filler;
         var page = MakePage(content, DocCategory.HowTo);
 
@@ -35,9 +35,11 @@ public sealed class CategoryAwareChunkerTests
         foreach(var chunk in chunks)
         {
             Assert.False(chunk.Content.EndsWith("AxisFault.", StringComparison.Ordinal),
-                         $"chunk should not end mid-dotted-identifier: '{chunk.Content[^60..]}'");
+                         $"chunk should not end mid-dotted-identifier: '{chunk.Content[^60..]}'"
+                        );
             Assert.False(chunk.Content.StartsWith("Disabled", StringComparison.Ordinal),
-                         $"chunk should not start with the leaf of a cut identifier: '{chunk.Content[..30]}'");
+                         $"chunk should not start with the leaf of a cut identifier: '{chunk.Content[..30]}'"
+                        );
         }
     }
 
@@ -46,7 +48,7 @@ public sealed class CategoryAwareChunkerTests
     {
         // Force SplitToCharLimit to fire and ensure that a real sentence-end
         // period (followed by whitespace) IS used as a break point.
-        var filler = new string('b', 1300);
+        var filler = new string(c: 'b', count: 1300);
         var sentenceEnd = "End of first sentence. Beginning of second sentence.";
         var content = filler + " " + sentenceEnd + " " + filler;
         var page = MakePage(content, DocCategory.HowTo);
@@ -55,22 +57,23 @@ public sealed class CategoryAwareChunkerTests
         var chunks = chunker.Chunk(page);
 
         Assert.True(chunks.Count >= 2, "expected the over-limit content to split into multiple chunks");
-        var firstHasSentenceTerminator = chunks[0].Content.EndsWith(".", StringComparison.Ordinal);
+        var firstHasSentenceTerminator = chunks[index: 0].Content.EndsWith(".", StringComparison.Ordinal);
         Assert.True(firstHasSentenceTerminator,
-                    $"first chunk should end at a sentence terminator: '{chunks[0].Content[^30..]}'");
+                    $"first chunk should end at a sentence terminator: '{chunks[index: 0].Content[^30..]}'"
+                   );
     }
 
     private static PageRecord MakePage(string content, DocCategory category) =>
-        new()
-        {
-            Id = "test-page",
-            LibraryId = "test-lib",
-            Version = "1.0",
-            Url = "https://example.com/test",
-            Title = "Test Page",
-            Category = category,
-            RawContent = content,
-            FetchedAt = DateTime.UtcNow,
-            ContentHash = "test-hash"
-        };
+        new PageRecord
+            {
+                Id = "test-page",
+                LibraryId = "test-lib",
+                Version = "1.0",
+                Url = "https://example.com/test",
+                Title = "Test Page",
+                Category = category,
+                RawContent = content,
+                FetchedAt = DateTime.UtcNow,
+                ContentHash = "test-hash"
+            };
 }

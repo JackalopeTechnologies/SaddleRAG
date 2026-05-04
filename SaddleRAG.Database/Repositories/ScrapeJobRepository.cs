@@ -6,10 +6,10 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Driver;
 
 #endregion
 
@@ -26,9 +26,6 @@ public class ScrapeJobRepository : IScrapeJobRepository
     }
 
     private readonly SaddleRagDbContext mContext;
-
-    private const string JobLibraryIdPath = "Job.LibraryId";
-    private const string JobVersionPath = "Job.Version";
 
     /// <inheritdoc />
     public async Task UpsertAsync(ScrapeJobRecord job, CancellationToken ct = default)
@@ -77,17 +74,19 @@ public class ScrapeJobRepository : IScrapeJobRepository
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ScrapeJobRecord>> ListActiveJobsAsync(string libraryId,
-                                                                           string version,
-                                                                           CancellationToken ct = default)
+                                                                          string version,
+                                                                          CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        var filter = Builders<ScrapeJobRecord>.Filter.And(
-            Builders<ScrapeJobRecord>.Filter.Eq(JobLibraryIdPath, libraryId),
-            Builders<ScrapeJobRecord>.Filter.Eq(JobVersionPath, version),
-            Builders<ScrapeJobRecord>.Filter.In(j => j.Status, new[] { ScrapeJobStatus.Queued, ScrapeJobStatus.Running })
-        );
+        var filter =
+            Builders<ScrapeJobRecord>.Filter.And(Builders<ScrapeJobRecord>.Filter.Eq(JobLibraryIdPath, libraryId),
+                                                 Builders<ScrapeJobRecord>.Filter.Eq(JobVersionPath, version),
+                                                 Builders<ScrapeJobRecord>.Filter.In(j => j.Status,
+                                                          new[] { ScrapeJobStatus.Queued, ScrapeJobStatus.Running }
+                                                     )
+                                                );
         var results = await mContext.ScrapeJobs.Find(filter)
                                     .SortByDescending(j => j.CreatedAt)
                                     .ToListAsync(ct);
@@ -107,4 +106,7 @@ public class ScrapeJobRepository : IScrapeJobRepository
         var result = candidates.FirstOrDefault(j => !ScrapeJobThresholds.IsStaleRunning(j, staleCutoff));
         return result;
     }
+
+    private const string JobLibraryIdPath = "Job.LibraryId";
+    private const string JobVersionPath = "Job.Version";
 }

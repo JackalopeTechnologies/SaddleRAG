@@ -26,8 +26,11 @@ internal sealed class InMemoryBm25TermLookup : IBm25TermLookup
 
         var allPostings = new Dictionary<string, IReadOnlyList<Bm25Posting>>(StringComparer.Ordinal);
         foreach(var shard in build.Shards)
-            foreach(var (term, postings) in shard.InlineTerms)
+        {
+            foreach((var term, var postings) in shard.InlineTerms)
                 allPostings[term] = postings;
+        }
+
         mAllPostings = allPostings;
     }
 

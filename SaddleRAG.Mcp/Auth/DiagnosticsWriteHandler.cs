@@ -5,7 +5,9 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.Authorization;
+
 #endregion
 
 namespace SaddleRAG.Mcp.Auth;
@@ -13,7 +15,7 @@ namespace SaddleRAG.Mcp.Auth;
 public sealed class DiagnosticsWriteHandler : AuthorizationHandler<DiagnosticsWriteRequirement>
 {
     /// <summary>
-    ///     Initializes a new instance of <see cref="DiagnosticsWriteHandler"/>.
+    ///     Initializes a new instance of <see cref="DiagnosticsWriteHandler" />.
     /// </summary>
     public DiagnosticsWriteHandler(IConfiguration configuration)
     {
@@ -22,12 +24,9 @@ public sealed class DiagnosticsWriteHandler : AuthorizationHandler<DiagnosticsWr
 
     private readonly string? mToken;
 
-    private const string DiagnosticsConfigKey = "Diagnostics:WriteToken";
-    private const string BearerPrefix          = "Bearer ";
-
-    /// <inheritdoc/>
+    /// <inheritdoc />
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context,
-                                                    DiagnosticsWriteRequirement requirement)
+                                                   DiagnosticsWriteRequirement requirement)
     {
         bool succeeded = DetermineSuccess(context);
         if (succeeded)
@@ -42,12 +41,16 @@ public sealed class DiagnosticsWriteHandler : AuthorizationHandler<DiagnosticsWr
 
     private bool IsValidBearer(AuthorizationHandlerContext context)
     {
-        bool result = false;
+        var result = false;
         if (context.Resource is HttpContext http)
         {
-            var authHeader = http.Request.Headers.Authorization.FirstOrDefault();
+            string? authHeader = http.Request.Headers.Authorization.FirstOrDefault();
             result = string.Equals(authHeader, BearerPrefix + mToken, StringComparison.Ordinal);
         }
+
         return result;
     }
+
+    private const string DiagnosticsConfigKey = "Diagnostics:WriteToken";
+    private const string BearerPrefix = "Bearer ";
 }

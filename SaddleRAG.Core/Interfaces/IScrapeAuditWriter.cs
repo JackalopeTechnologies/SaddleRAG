@@ -16,31 +16,48 @@ namespace SaddleRAG.Core.Interfaces;
 
 /// <summary>
 ///     Fire-and-forget writer that buffers scrape audit events and flushes
-///     them to <see cref="IScrapeAuditRepository"/> in batches.
+///     them to <see cref="IScrapeAuditRepository" /> in batches.
 /// </summary>
 public interface IScrapeAuditWriter : IAsyncDisposable
 {
     /// <summary>
     ///     Record a URL that was skipped before fetching.
     /// </summary>
-    void RecordSkipped(AuditContext ctx, string url, string? parentUrl, string host, int depth,
-                       AuditSkipReason reason, string? detail);
+    void RecordSkipped(AuditContext ctx,
+                       string url,
+                       string? parentUrl,
+                       string host,
+                       int depth,
+                       AuditSkipReason reason,
+                       string? detail);
 
     /// <summary>
     ///     Record a URL that was successfully fetched but not yet indexed.
     /// </summary>
-    void RecordFetched(AuditContext ctx, string url, string? parentUrl, string host, int depth);
+    void RecordFetched(AuditContext ctx,
+                       string url,
+                       string? parentUrl,
+                       string host,
+                       int depth);
 
     /// <summary>
     ///     Record a URL whose fetch or processing failed.
     /// </summary>
-    void RecordFailed(AuditContext ctx, string url, string? parentUrl, string host, int depth,
+    void RecordFailed(AuditContext ctx,
+                      string url,
+                      string? parentUrl,
+                      string host,
+                      int depth,
                       string error);
 
     /// <summary>
     ///     Record a URL that was fetched and fully indexed.
     /// </summary>
-    void RecordIndexed(AuditContext ctx, string url, string? parentUrl, string host, int depth,
+    void RecordIndexed(AuditContext ctx,
+                       string url,
+                       string? parentUrl,
+                       string host,
+                       int depth,
                        AuditPageOutcome outcome);
 
     /// <summary>

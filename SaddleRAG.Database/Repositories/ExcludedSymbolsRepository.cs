@@ -6,10 +6,10 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Driver;
 
 #endregion
 
@@ -31,10 +31,10 @@ public class ExcludedSymbolsRepository : IExcludedSymbolsRepository
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ExcludedSymbol>> ListAsync(string libraryId,
-                                                                string version,
-                                                                SymbolRejectionReason? reason,
-                                                                int limit,
-                                                                CancellationToken ct = default)
+                                                               string version,
+                                                               SymbolRejectionReason? reason,
+                                                               int limit,
+                                                               CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
@@ -42,9 +42,10 @@ public class ExcludedSymbolsRepository : IExcludedSymbolsRepository
         var filterBase = mContext.ExcludedSymbols
                                  .Find(e => e.LibraryId == libraryId && e.Version == version);
         var filtered = reason.HasValue
-                           ? mContext.ExcludedSymbols.Find(e => e.LibraryId == libraryId
-                                                             && e.Version == version
-                                                             && e.Reason == reason.Value)
+                           ? mContext.ExcludedSymbols.Find(e => e.LibraryId == libraryId &&
+                                                                e.Version == version &&
+                                                                e.Reason == reason.Value
+                                                          )
                            : filterBase;
 
         var ordered = filtered.SortByDescending(e => e.ChunkCount).Limit(limit);
@@ -60,11 +61,13 @@ public class ExcludedSymbolsRepository : IExcludedSymbolsRepository
         var list = entries.ToList();
         if (list.Count > 0)
         {
-            var models = list.Select(e => new ReplaceOneModel<ExcludedSymbol>(
-                                              Builders<ExcludedSymbol>.Filter.Eq(x => x.Id, e.Id),
-                                              e
-                                          )
-                                      { IsUpsert = true });
+            var models =
+                list.Select(e =>
+                                new ReplaceOneModel<ExcludedSymbol>(Builders<ExcludedSymbol>.Filter.Eq(x => x.Id, e.Id),
+                                                                    e
+                                                                   )
+                                    { IsUpsert = true }
+                           );
             await mContext.ExcludedSymbols.BulkWriteAsync(models, cancellationToken: ct);
         }
     }
@@ -82,11 +85,11 @@ public class ExcludedSymbolsRepository : IExcludedSymbolsRepository
         var nameList = names.ToList();
         if (nameList.Count > 0)
         {
-            var filter = Builders<ExcludedSymbol>.Filter.And(
-                Builders<ExcludedSymbol>.Filter.Eq(e => e.LibraryId, libraryId),
-                Builders<ExcludedSymbol>.Filter.Eq(e => e.Version, version),
-                Builders<ExcludedSymbol>.Filter.In(e => e.Name, nameList)
-            );
+            var filter =
+                Builders<ExcludedSymbol>.Filter.And(Builders<ExcludedSymbol>.Filter.Eq(e => e.LibraryId, libraryId),
+                                                    Builders<ExcludedSymbol>.Filter.Eq(e => e.Version, version),
+                                                    Builders<ExcludedSymbol>.Filter.In(e => e.Name, nameList)
+                                                   );
             // Case-insensitive Name match: aligns with the per-library Stoplist
             // contract ("foo" demotion blocks "Foo" / "FOO"). Without this, an
             // LLM that passed "foo" but the extractor stored "Foo" would leave
@@ -117,7 +120,9 @@ public class ExcludedSymbolsRepository : IExcludedSymbolsRepository
         ArgumentException.ThrowIfNullOrEmpty(version);
 
         var count = await mContext.ExcludedSymbols
-                                  .CountDocumentsAsync(e => e.LibraryId == libraryId && e.Version == version, cancellationToken: ct);
+                                  .CountDocumentsAsync(e => e.LibraryId == libraryId && e.Version == version,
+                                                       cancellationToken: ct
+                                                      );
         var result = (int) count;
         return result;
     }

@@ -28,8 +28,8 @@ public sealed class SampleWindowExtractorTests
     [Fact]
     public void CapsTotalLengthAt200Characters()
     {
-        var prefix = new string('a', 500);
-        var suffix = new string('b', 500);
+        var prefix = new string(c: 'a', count: 500);
+        var suffix = new string(c: 'b', count: 500);
         var content = $"{prefix} TOKEN {suffix}";
 
         var sample = SampleWindowExtractor.Extract(content, "TOKEN");
@@ -46,7 +46,7 @@ public sealed class SampleWindowExtractorTests
         // (not pinned to position 0). The edge should sit at a space, so
         // the sample starts with a complete "prefixNN" word, not a partial
         // fragment like "fix37".
-        var prefix = string.Join(" ", Enumerable.Range(0, 50).Select(i => $"prefix{i:D2}"));
+        var prefix = string.Join(" ", Enumerable.Range(start: 0, count: 50).Select(i => $"prefix{i:D2}"));
         var content = $"{prefix} Symbol suffix";
 
         var sample = SampleWindowExtractor.Extract(content, "Symbol");

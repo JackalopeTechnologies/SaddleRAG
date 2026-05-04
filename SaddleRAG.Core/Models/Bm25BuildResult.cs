@@ -20,7 +20,7 @@ public record Bm25BuildResult
     public required Bm25Stats Stats { get; init; }
 
     /// <summary>
-    ///     One <see cref="Bm25Shard"/> per non-empty bucket. Shards arrive
+    ///     One <see cref="Bm25Shard" /> per non-empty bucket. Shards arrive
     ///     fully inline; the repository decides spill-to-GridFS at write
     ///     time based on serialized size.
     /// </summary>

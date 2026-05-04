@@ -7,21 +7,21 @@
 
 <MudStack Row="true" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
     <MudSelect T="string" Label="Status" @bind-Value="FilterStatus" Clearable="true"
-               Style="min-width:140px">
-        @foreach (var s in pmStatusOptions)
+               Style="min-width: 140px">
+        @foreach(string s in pmStatusOptions)
         {
             <MudSelectItem Value="@s">@s</MudSelectItem>
         }
     </MudSelect>
     <MudSelect T="string" Label="Skip Reason" @bind-Value="FilterSkipReason" Clearable="true"
-               Style="min-width:160px">
-        @foreach (var r in pmReasonOptions)
+               Style="min-width: 160px">
+        @foreach(string r in pmReasonOptions)
         {
             <MudSelectItem Value="@r">@r</MudSelectItem>
         }
     </MudSelect>
-    <MudTextField T="string" Label="Host"         @bind-Value="FilterHost"       Immediate="true" />
-    <MudTextField T="string" Label="URL contains" @bind-Value="FilterUrl"        Immediate="true" />
+    <MudTextField T="string" Label="Host" @bind-Value="FilterHost" Immediate="true"/>
+    <MudTextField T="string" Label="URL contains" @bind-Value="FilterUrl" Immediate="true"/>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyFilters">Search</MudButton>
 </MudStack>
 
@@ -40,7 +40,7 @@
         <MudTh>URL</MudTh><MudTh>Host</MudTh><MudTh>Depth</MudTh><MudTh>Status</MudTh><MudTh>Reason</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd Style="font-family:monospace;font-size:0.72rem;max-width:480px;overflow:hidden;text-overflow:ellipsis">
+        <MudTd Style="font-family: monospace; font-size: 0.72rem; max-width: 480px; overflow: hidden; text-overflow: ellipsis">
             @context.Url
         </MudTd>
         <MudTd>@context.Host</MudTd>

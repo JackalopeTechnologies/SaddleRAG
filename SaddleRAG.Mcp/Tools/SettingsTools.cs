@@ -8,8 +8,8 @@
 
 using System.ComponentModel;
 using System.Text.Json;
-using SaddleRAG.Ingestion.Embedding;
 using ModelContextProtocol.Server;
+using SaddleRAG.Ingestion.Embedding;
 using Serilog.Core;
 using Serilog.Events;
 
@@ -34,7 +34,8 @@ public static class SettingsTools
                  "Returns the current state plus the strategy that will actually dispatch."
                 )]
     public static string ToggleReRanking(ToggleableReRanker reRanker,
-                                         [Description("true to enable, false to disable, omit to just check current state")]
+                                         [Description("true to enable, false to disable, omit to just check current state"
+                                                     )]
                                          bool? enabled = null)
     {
         ArgumentNullException.ThrowIfNull(reRanker);
@@ -55,9 +56,11 @@ public static class SettingsTools
     [Description("Change the minimum log level at runtime. " +
                  "Use 'Warning' or 'Error' for quiet production operation. " +
                  "Use 'Information' or 'Debug' for troubleshooting. " +
-                 "Returns the current level.")]
+                 "Returns the current level."
+                )]
     public static string ToggleLogging(LoggingLevelSwitch levelSwitch,
-                                       [Description("Minimum log level: Verbose, Debug, Information, Warning, Error, Fatal. Omit to check current level.")]
+                                       [Description("Minimum log level: Verbose, Debug, Information, Warning, Error, Fatal. Omit to check current level."
+                                                   )]
                                        string? level = null)
     {
         ArgumentNullException.ThrowIfNull(levelSwitch);
@@ -83,5 +86,5 @@ public static class SettingsTools
     private const string InvalidLevelWarningFormat =
         "Unknown level '{0}'. Valid values: Verbose, Debug, Information, Warning, Error, Fatal. Current level unchanged.";
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

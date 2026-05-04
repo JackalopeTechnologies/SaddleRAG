@@ -5,8 +5,10 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using System.Reflection;
 using SaddleRAG.Ingestion.Crawling;
+
 #endregion
 
 namespace SaddleRAG.Tests.Crawling;
@@ -17,10 +19,11 @@ public sealed class NormalizeUrlTests
     private static string? Invoke(string url, bool keepExtension = false)
     {
         var method = typeof(PageCrawler).GetMethod("NormalizeUrl",
-            BindingFlags.NonPublic | BindingFlags.Static);
+                                                   BindingFlags.NonPublic | BindingFlags.Static
+                                                  );
         if (method == null)
             throw new InvalidOperationException("NormalizeUrl method not found on PageCrawler.");
-        return (string?) method.Invoke(null, [url, keepExtension]);
+        return (string?) method.Invoke(obj: null, [url, keepExtension]);
     }
 
     [Fact]

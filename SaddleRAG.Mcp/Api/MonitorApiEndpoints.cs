@@ -5,21 +5,16 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using SaddleRAG.Ingestion;
 using SaddleRAG.Mcp.Auth;
+
 #endregion
 
 namespace SaddleRAG.Mcp.Api;
 
 public static class MonitorApiEndpoints
 {
-    private const string CancelJobPath      = "/jobs/{jobId}/cancel";
-    private const string RescrapeLibraryPath = "/libraries/{libraryId}/rescrape";
-    private const string RescrubLibraryPath  = "/libraries/{libraryId}/rescrub";
-    private const string ApiGroupPath        = "/api/monitor";
-
-    private const string CancelRequestedStatus = "CancelRequested";
-
     /// <summary>
     ///     Maps all /api/monitor write endpoints onto the app.
     /// </summary>
@@ -29,9 +24,9 @@ public static class MonitorApiEndpoints
         var group = app.MapGroup(ApiGroupPath)
                        .RequireAuthorization(DiagnosticsWriteRequirement.PolicyName);
 
-        group.MapPost(CancelJobPath,      CancelJob);
+        group.MapPost(CancelJobPath, CancelJob);
         group.MapPost(RescrapeLibraryPath, RescrapeLibrary);
-        group.MapPost(RescrubLibraryPath,  RescrubLibrary);
+        group.MapPost(RescrubLibraryPath, RescrubLibrary);
     }
 
     private static async Task<IResult> CancelJob(string jobId, ScrapeJobRunner runner)
@@ -49,4 +44,11 @@ public static class MonitorApiEndpoints
     {
         return Results.StatusCode(StatusCodes.Status501NotImplemented);
     }
+
+    private const string CancelJobPath = "/jobs/{jobId}/cancel";
+    private const string RescrapeLibraryPath = "/libraries/{libraryId}/rescrape";
+    private const string RescrubLibraryPath = "/libraries/{libraryId}/rescrub";
+    private const string ApiGroupPath = "/api/monitor";
+
+    private const string CancelRequestedStatus = "CancelRequested";
 }
