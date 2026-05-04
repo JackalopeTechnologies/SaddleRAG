@@ -85,7 +85,7 @@ public sealed class MonitorDataService
                              SuspectReasons = verRecord?.SuspectReasons ?? Array.Empty<string>(),
                              LastScrapedAt = verRecord?.ScrapedAt,
                              LastSuspectEvaluatedAt = verRecord?.LastSuspectEvaluatedAt,
-                             BoundaryIssuePct = verRecord?.BoundaryIssuePct ?? 0.0,
+                             BoundaryIssuePct = verRecord?.BoundaryIssuePct,
                              EmbeddingProviderId = verRecord?.EmbeddingProviderId,
                              EmbeddingModelName = verRecord?.EmbeddingModelName
                          };
