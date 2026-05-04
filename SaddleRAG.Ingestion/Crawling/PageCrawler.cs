@@ -12,11 +12,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
+using Microsoft.Playwright;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using Microsoft.Extensions.Logging;
-using Microsoft.Playwright;
+using SaddleRAG.Core.Models.Audit;
 
 #endregion
 
@@ -30,11 +31,13 @@ namespace SaddleRAG.Ingestion.Crawling;
 /// </summary>
 public class PageCrawler
 {
-    private record CrawlEntry(string Url,
-                              int InScopeDepth,
-                              int SameHostDepth,
-                              int OffSiteDepth,
-                              int RetryAttemptIndex = 0);
+    private record CrawlEntry(
+        string Url,
+        int InScopeDepth,
+        int SameHostDepth,
+        int OffSiteDepth,
+        int RetryAttemptIndex = 0,
+        string? ParentUrl = null);
 
     private record RootScope(string Scheme, string Host, string PathPrefix);
 
@@ -55,15 +58,143 @@ public class PageCrawler
         public bool HitMaxLimit { get; set; }
     }
 
+    /// <summary>
+    ///     Per-crawl mutable state shared by parallel worker tasks.
+    ///     One instance per <see cref="CrawlAsync" /> call.
+    ///     Two channels back the priority queue: <see cref="InScopeEntries" />
+    ///     for URLs that match the root scope's path prefix, and
+    ///     <see cref="OffPathEntries" /> for everything else. Workers drain
+    ///     in-scope first so the source path makes progress even when the
+    ///     off-path queue explodes from marketing/locale links.
+    /// </summary>
+    private sealed class CrawlContext
+    {
+        public required ScrapeJob Job { get; init; }
+        public required RootScope RootScope { get; init; }
+        public required ChannelWriter<PageRecord> PageOutput { get; init; }
+        public required Channel<CrawlEntry> InScopeEntries { get; init; }
+        public required Channel<CrawlEntry> OffPathEntries { get; init; }
+        public required Channel<CrawlEntry> RetryEntries { get; init; }
+        public required ConcurrentDictionary<string, byte> Visited { get; init; }
+        public required ConcurrentDictionary<string, byte> ClonedRepos { get; init; }
+        public required CrawlBudget Budget { get; init; }
+        public required Action<int>? OnPageFetched { get; init; }
+        public required Action<int>? OnQueued { get; init; }
+        public required Action? OnFetchError { get; init; }
+        public required CancellationToken Token { get; init; }
+        public required AuditContext AuditCtx { get; init; }
+
+        /// <summary>
+        ///     URLs that 403'd in-scope on every retry attempt and were
+        ///     ultimately dropped. Surfaced for diagnostics so the caller
+        ///     can log or report which pages slipped through.
+        /// </summary>
+        public ConcurrentBag<string> DroppedInScopeUrls { get; } = new ConcurrentBag<string>();
+
+        public string? SiteExtension { get; set; }
+
+        public int PageCount => Volatile.Read(ref mPageCount);
+        public int InFlightCount => Volatile.Read(ref mInFlight);
+
+        private int mInFlight;
+        private int mPageCount;
+
+        public int IncrementPageCount() => Interlocked.Increment(ref mPageCount);
+        public void IncrementInFlight() => Interlocked.Increment(ref mInFlight);
+        public int DecrementInFlight() => Interlocked.Decrement(ref mInFlight);
+
+        public void EnqueueChild(CrawlEntry entry, bool inScope)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+
+            IncrementInFlight();
+            var writer = inScope ? InScopeEntries.Writer : OffPathEntries.Writer;
+            if (!writer.TryWrite(entry))
+                DecrementInFlight();
+        }
+
+        /// <summary>
+        ///     Schedule a retry of <paramref name="entry" /> after the policy
+        ///     delay. In-flight is incremented immediately so the channels
+        ///     don't complete during the wait, then the entry is written to
+        ///     <see cref="RetryEntries" /> for the dedicated retry worker.
+        /// </summary>
+        public void ScheduleRetry(CrawlEntry entry)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+
+            var retryEntry = entry with { RetryAttemptIndex = entry.RetryAttemptIndex + 1 };
+            var delay = RetryPolicy.ComputeRetryDelay(entry.RetryAttemptIndex);
+
+            IncrementInFlight();
+
+            _ = Task.Run(async () =>
+                         {
+                             try
+                             {
+                                 await Task.Delay(delay, Token);
+                                 if (!RetryEntries.Writer.TryWrite(retryEntry))
+                                     DecrementInFlight();
+                             }
+                             catch(OperationCanceledException)
+                             {
+                                 DecrementInFlight();
+                             }
+                         }
+                        );
+        }
+
+        public void CompleteAllEntries()
+        {
+            InScopeEntries.Writer.TryComplete();
+            OffPathEntries.Writer.TryComplete();
+            RetryEntries.Writer.TryComplete();
+        }
+
+        public bool IsVisited(string url)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(url);
+
+            bool result = Visited.ContainsKey(url);
+            return result;
+        }
+
+        /// <summary>
+        ///     Returns true when <paramref name="url" /> is out-of-scope and
+        ///     its host's <see cref="HostScopeFilter" /> has gated the URL's
+        ///     path prefix from a prior 403. In-scope URLs are never gated.
+        /// </summary>
+        public bool IsGated(string url)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(url);
+
+            var result = false;
+            if (!IsInRootScope(url, RootScope))
+            {
+                var uri = new Uri(url);
+                var filter = Budget.GetScopeFilter(uri);
+                result = filter.IsGated(uri);
+            }
+
+            return result;
+        }
+    }
+
     public PageCrawler(IPageRepository pageRepository,
                        GitHubRepoScraper gitHubScraper,
+                       IScrapeAuditWriter auditWriter,
+                       IMonitorBroadcaster broadcaster,
                        ILogger<PageCrawler> logger)
     {
         mPageRepository = pageRepository;
         mGitHubScraper = gitHubScraper;
+        mAuditWriter = auditWriter;
+        mBroadcaster = broadcaster;
         mLogger = logger;
     }
 
+    private readonly IScrapeAuditWriter mAuditWriter;
+    private readonly IMonitorBroadcaster mBroadcaster;
     private readonly GitHubRepoScraper mGitHubScraper;
     private readonly ILogger<PageCrawler> mLogger;
 
@@ -76,10 +207,23 @@ public class PageCrawler
     ///     decide whether the real crawl will produce reasonable results.
     /// </summary>
     public async Task<DryRunReport> DryRunAsync(ScrapeJob job,
-                                                 Action<int, int>? onProgress = null,
-                                                 CancellationToken ct = default)
+                                                string libraryId,
+                                                string version,
+                                                string jobId,
+                                                Action<int, int>? onProgress = null,
+                                                CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+
+        var auditCtx = new AuditContext
+                           {
+                               JobId = jobId,
+                               LibraryId = libraryId,
+                               Version = version
+                           };
 
         var startTime = DateTime.UtcNow;
 
@@ -126,6 +270,7 @@ public class PageCrawler
                                               entry,
                                               job,
                                               rootScope,
+                                              auditCtx,
                                               browser,
                                               visited,
                                               queue,
@@ -168,6 +313,7 @@ public class PageCrawler
                                                CrawlEntry entry,
                                                ScrapeJob job,
                                                RootScope rootScope,
+                                               AuditContext auditCtx,
                                                IBrowser browser,
                                                HashSet<string> visited,
                                                Queue<CrawlEntry> queue,
@@ -179,11 +325,27 @@ public class PageCrawler
                                                DryRunStats stats,
                                                CancellationToken ct)
     {
+        var filterSkip = IsAllowed(url, job);
         switch(true)
         {
-            case true when !IsAllowed(url, job):
+            case true when filterSkip != null:
+            {
                 stats.FilteredSkips++;
+                string host = SafeGetHost(url);
+                bool inScope = IsInRootScope(url, rootScope);
+                bool sameHost = !inScope && IsSameHost(url, rootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(auditCtx,
+                                           url,
+                                           parentUrl: null,
+                                           host,
+                                           depth,
+                                           filterSkip.Value.Reason,
+                                           filterSkip.Value.Detail
+                                          );
                 break;
+            }
             case true when GitHubRepoScraper.TryParseGitHubUrl(url, out string owner, out string repo):
                 githubRepos.Add($"{owner}/{repo}");
                 break;
@@ -192,6 +354,7 @@ public class PageCrawler
                                                entry,
                                                job,
                                                rootScope,
+                                               auditCtx,
                                                browser,
                                                visited,
                                                queue,
@@ -210,6 +373,7 @@ public class PageCrawler
                                                 CrawlEntry entry,
                                                 ScrapeJob job,
                                                 RootScope rootScope,
+                                                AuditContext auditCtx,
                                                 IBrowser browser,
                                                 HashSet<string> visited,
                                                 Queue<CrawlEntry> queue,
@@ -227,13 +391,31 @@ public class PageCrawler
                                         entry.OffSiteDepth >= job.OffSiteDepth;
 
         if (depthExceeded)
+        {
             stats.DepthLimitedSkips++;
+            string host = SafeGetHost(url);
+            int displayDepth = inScope  ? entry.InScopeDepth :
+                               sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+            var skipReason = sameHost ? AuditSkipReason.SameHostDepth : AuditSkipReason.OffSiteDepth;
+            string detail = sameHost
+                                ? $"depth={displayDepth} limit={job.SameHostDepth}"
+                                : $"depth={displayDepth} limit={job.OffSiteDepth}";
+            mAuditWriter.RecordSkipped(auditCtx,
+                                       url,
+                                       parentUrl: null,
+                                       host,
+                                       displayDepth,
+                                       skipReason,
+                                       detail
+                                      );
+        }
         else
         {
             await FetchDryRunPageAsync(url,
                                        entry,
                                        job,
                                        rootScope,
+                                       auditCtx,
                                        browser,
                                        visited,
                                        queue,
@@ -252,6 +434,7 @@ public class PageCrawler
                                             CrawlEntry entry,
                                             ScrapeJob job,
                                             RootScope rootScope,
+                                            AuditContext auditCtx,
                                             IBrowser browser,
                                             HashSet<string> visited,
                                             Queue<CrawlEntry> queue,
@@ -300,6 +483,7 @@ public class PageCrawler
                                                                entry,
                                                                job,
                                                                rootScope,
+                                                               auditCtx,
                                                                inScope,
                                                                visited,
                                                                queue,
@@ -337,6 +521,7 @@ public class PageCrawler
                                                             CrawlEntry entry,
                                                             ScrapeJob job,
                                                             RootScope rootScope,
+                                                            AuditContext auditCtx,
                                                             bool inScope,
                                                             HashSet<string> visited,
                                                             Queue<CrawlEntry> queue,
@@ -363,9 +548,16 @@ public class PageCrawler
         depthDist.TryGetValue(effectiveDepth, out int existing);
         depthDist[effectiveDepth] = existing + 1;
 
-        string host = CrawlBudget.BuildHostKey(new Uri(url));
-        pagesByHost.TryGetValue(host, out int hostCount);
-        pagesByHost[host] = hostCount + 1;
+        // Use the scheme://host key for the report's per-host page count.
+        string hostKey = CrawlBudget.BuildHostKey(new Uri(url));
+        pagesByHost.TryGetValue(hostKey, out int hostCount);
+        pagesByHost[hostKey] = hostCount + 1;
+
+        // Use SafeGetHost for the audit event so the dryrun path produces the same
+        // host string as the live-crawl path (empty string for file:// URLs rather
+        // than the "file://" literal that BuildHostKey returns for empty-host schemes).
+        mAuditWriter.RecordFetched(auditCtx, url, parentUrl: null, SafeGetHost(url), effectiveDepth);
+        mBroadcaster.RecordFetch(auditCtx.JobId, url);
 
         if (samplePages.Count < SamplePageLimit)
         {
@@ -385,7 +577,8 @@ public class PageCrawler
                                job,
                                rootScope,
                                entry,
-                               (child, _) => queue.Enqueue(child)
+                               (child, _) => queue.Enqueue(child),
+                               auditCtx: auditCtx
                               );
 
         if (job.FetchDelayMs > 0)
@@ -393,128 +586,7 @@ public class PageCrawler
     }
 
     /// <summary>
-    ///     Per-crawl mutable state shared by parallel worker tasks.
-    ///     One instance per <see cref="CrawlAsync"/> call.
-    ///     Two channels back the priority queue: <see cref="InScopeEntries"/>
-    ///     for URLs that match the root scope's path prefix, and
-    ///     <see cref="OffPathEntries"/> for everything else. Workers drain
-    ///     in-scope first so the source path makes progress even when the
-    ///     off-path queue explodes from marketing/locale links.
-    /// </summary>
-    private sealed class CrawlContext
-    {
-        public required ScrapeJob Job { get; init; }
-        public required RootScope RootScope { get; init; }
-        public required ChannelWriter<PageRecord> PageOutput { get; init; }
-        public required Channel<CrawlEntry> InScopeEntries { get; init; }
-        public required Channel<CrawlEntry> OffPathEntries { get; init; }
-        public required Channel<CrawlEntry> RetryEntries { get; init; }
-        public required ConcurrentDictionary<string, byte> Visited { get; init; }
-        public required ConcurrentDictionary<string, byte> ClonedRepos { get; init; }
-        public required CrawlBudget Budget { get; init; }
-        public required Action<int>? OnPageFetched { get; init; }
-        public required Action<int>? OnQueued { get; init; }
-        public required Action? OnFetchError { get; init; }
-        public required CancellationToken Token { get; init; }
-
-        /// <summary>
-        ///     URLs that 403'd in-scope on every retry attempt and were
-        ///     ultimately dropped. Surfaced for diagnostics so the caller
-        ///     can log or report which pages slipped through.
-        /// </summary>
-        public ConcurrentBag<string> DroppedInScopeUrls { get; } = new();
-
-        public string? SiteExtension { get; set; }
-
-        private int mInFlight;
-        private int mPageCount;
-
-        public int PageCount => Volatile.Read(ref mPageCount);
-        public int InFlightCount => Volatile.Read(ref mInFlight);
-
-        public int IncrementPageCount() => Interlocked.Increment(ref mPageCount);
-        public void IncrementInFlight() => Interlocked.Increment(ref mInFlight);
-        public int DecrementInFlight() => Interlocked.Decrement(ref mInFlight);
-
-        public void EnqueueChild(CrawlEntry entry, bool inScope)
-        {
-            ArgumentNullException.ThrowIfNull(entry);
-
-            IncrementInFlight();
-            var writer = inScope ? InScopeEntries.Writer : OffPathEntries.Writer;
-            if (!writer.TryWrite(entry))
-                DecrementInFlight();
-        }
-
-        /// <summary>
-        ///     Schedule a retry of <paramref name="entry"/> after the policy
-        ///     delay. In-flight is incremented immediately so the channels
-        ///     don't complete during the wait, then the entry is written to
-        ///     <see cref="RetryEntries"/> for the dedicated retry worker.
-        /// </summary>
-        public void ScheduleRetry(CrawlEntry entry)
-        {
-            ArgumentNullException.ThrowIfNull(entry);
-
-            var retryEntry = entry with { RetryAttemptIndex = entry.RetryAttemptIndex + 1 };
-            var delay = RetryPolicy.ComputeRetryDelay(entry.RetryAttemptIndex);
-
-            IncrementInFlight();
-
-            _ = Task.Run(async () =>
-                             {
-                                 try
-                                 {
-                                     await Task.Delay(delay, Token);
-                                     if (!RetryEntries.Writer.TryWrite(retryEntry))
-                                         DecrementInFlight();
-                                 }
-                                 catch(OperationCanceledException)
-                                 {
-                                     DecrementInFlight();
-                                 }
-                             }
-                       );
-        }
-
-        public void CompleteAllEntries()
-        {
-            InScopeEntries.Writer.TryComplete();
-            OffPathEntries.Writer.TryComplete();
-            RetryEntries.Writer.TryComplete();
-        }
-
-        public bool IsVisited(string url)
-        {
-            ArgumentException.ThrowIfNullOrEmpty(url);
-
-            bool result = Visited.ContainsKey(url);
-            return result;
-        }
-
-        /// <summary>
-        ///     Returns true when <paramref name="url"/> is out-of-scope and
-        ///     its host's <see cref="HostScopeFilter"/> has gated the URL's
-        ///     path prefix from a prior 403. In-scope URLs are never gated.
-        /// </summary>
-        public bool IsGated(string url)
-        {
-            ArgumentException.ThrowIfNullOrEmpty(url);
-
-            bool result = false;
-            if (!IsInRootScope(url, RootScope))
-            {
-                var uri = new Uri(url);
-                var filter = Budget.GetScopeFilter(uri);
-                result = filter.IsGated(uri);
-            }
-
-            return result;
-        }
-    }
-
-    /// <summary>
-    ///     Fetch a single URL into a <see cref="PageRecord"/> without
+    ///     Fetch a single URL into a <see cref="PageRecord" /> without
     ///     starting a BFS — used by the <c>add_page</c> top-up path. Goes
     ///     through the same Playwright + 403 retry loop a regular crawl
     ///     would use, but skips link extraction so we don't drag the rest
@@ -542,7 +614,7 @@ public class PageCrawler
                                                                        );
 
         PageRecord? result = null;
-        int attempt = 0;
+        var attempt = 0;
         int maxAttempts = RetryPolicy.MaxRetryAttempts + 1;
 
         while (result == null && attempt < maxAttempts)
@@ -570,10 +642,10 @@ public class PageCrawler
     }
 
     private async Task<PageRecord?> TryFetchSingleOnceAsync(IBrowser browser,
-                                                             string libraryId,
-                                                             string version,
-                                                             string url,
-                                                             CancellationToken ct)
+                                                            string libraryId,
+                                                            string version,
+                                                            string url,
+                                                            CancellationToken ct)
     {
         PageRecord? result = null;
         var page = await browser.NewPageAsync();
@@ -601,10 +673,10 @@ public class PageCrawler
     }
 
     private async Task<PageRecord> BuildAndPersistPageRecordAsync(IPage page,
-                                                                    string libraryId,
-                                                                    string version,
-                                                                    string url,
-                                                                    CancellationToken ct)
+                                                                  string libraryId,
+                                                                  string version,
+                                                                  string url,
+                                                                  CancellationToken ct)
     {
         string title = await page.TitleAsync();
         await ExpandCollapsibleNavigationAsync(page);
@@ -632,12 +704,13 @@ public class PageCrawler
 
     /// <summary>
     ///     Crawl a documentation library starting from the root URL.
-    ///     Spawns up to <see cref="MaxParallelWorkers"/> concurrent workers
+    ///     Spawns up to <see cref="MaxParallelWorkers" /> concurrent workers
     ///     that pull entries off a shared channel; each fetch is gated by a
-    ///     <see cref="HostRateLimiter"/> keyed on the URL's host.
+    ///     <see cref="HostRateLimiter" /> keyed on the URL's host.
     /// </summary>
     public async Task CrawlAsync(ScrapeJob job,
                                  ChannelWriter<PageRecord> output,
+                                 string jobId = "",
                                  IReadOnlySet<string>? resumeUrls = null,
                                  Action<int>? onPageFetched = null,
                                  Action<int>? onQueued = null,
@@ -646,6 +719,13 @@ public class PageCrawler
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(output);
+
+        var auditCtx = new AuditContext
+                           {
+                               JobId = jobId,
+                               LibraryId = job.LibraryId,
+                               Version = job.Version
+                           };
 
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -675,7 +755,8 @@ public class PageCrawler
                           OnPageFetched = onPageFetched,
                           OnQueued = onQueued,
                           OnFetchError = onFetchError,
-                          Token = ct
+                          Token = ct,
+                          AuditCtx = auditCtx
                       };
 
         if (resumeUrls != null)
@@ -690,7 +771,7 @@ public class PageCrawler
         ctx.IncrementInFlight();
         ctx.InScopeEntries.Writer.TryWrite(rootEntry);
 
-        int workerCount = Math.Max(1, MaxParallelWorkers);
+        int workerCount = Math.Max(val1: 1, MaxParallelWorkers);
         await RunWorkerPoolAsync(ctx, browser, workerCount, ct);
 
         if (ctx.DroppedInScopeUrls.Count > 0)
@@ -737,7 +818,7 @@ public class PageCrawler
 
     private async Task RunCrawlWorkerAsync(CrawlContext ctx, IBrowser browser)
     {
-        bool keepGoing = true;
+        var keepGoing = true;
         while (keepGoing)
             keepGoing = await TryProcessNextAsync(ctx, browser);
     }
@@ -804,15 +885,15 @@ public class PageCrawler
     }
 
     /// <summary>
-    ///     Dedicated worker that drains <see cref="CrawlContext.RetryEntries"/>
-    ///     sequentially, sleeping <see cref="RetryPolicy.MinDelayBetweenRetriesMs"/>
+    ///     Dedicated worker that drains <see cref="CrawlContext.RetryEntries" />
+    ///     sequentially, sleeping <see cref="RetryPolicy.MinDelayBetweenRetriesMs" />
     ///     between attempts so the WAF sees a slow trickle rather than a burst.
     ///     Runs alongside the main worker pool — main work isn't blocked on
     ///     retries, but retries also don't compete with main work for slots.
     /// </summary>
     private async Task RunRetryWorkerAsync(CrawlContext ctx, IBrowser browser)
     {
-        bool keepReading = true;
+        var keepReading = true;
         while (keepReading)
         {
             try
@@ -834,7 +915,7 @@ public class PageCrawler
 
     private static async Task<bool> DelayBetweenRetriesAsync(CancellationToken ct)
     {
-        bool result = true;
+        var result = true;
         try
         {
             await Task.Delay(RetryPolicy.MinDelayBetweenRetriesMs, ct);
@@ -882,6 +963,61 @@ public class PageCrawler
             bool overLimit = ctx.Job.MaxPages > 0 && ctx.PageCount >= ctx.Job.MaxPages;
             bool gated = !overLimit && ctx.IsGated(entry.Url);
             bool firstVisit = !overLimit && !gated && ctx.Visited.TryAdd(entry.Url, value: 0);
+
+            if (overLimit)
+            {
+                string host = SafeGetHost(entry.Url);
+                bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx,
+                                           entry.Url,
+                                           parentUrl: null,
+                                           host,
+                                           depth,
+                                           AuditSkipReason.QueueLimit,
+                                           detail: null
+                                          );
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.QueueLimit.ToString());
+            }
+
+            if (gated)
+            {
+                string host = SafeGetHost(entry.Url);
+                bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx,
+                                           entry.Url,
+                                           parentUrl: null,
+                                           host,
+                                           depth,
+                                           AuditSkipReason.HostGated,
+                                           detail: null
+                                          );
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.HostGated.ToString());
+            }
+
+            if (!overLimit && !gated && !firstVisit)
+            {
+                string host = SafeGetHost(entry.Url);
+                bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx,
+                                           entry.Url,
+                                           parentUrl: null,
+                                           host,
+                                           depth,
+                                           AuditSkipReason.AlreadyVisited,
+                                           detail: null
+                                          );
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.AlreadyVisited.ToString());
+            }
+
             if (firstVisit)
                 await ProcessCrawlEntryAsync(entry, ctx, browser);
         }
@@ -902,13 +1038,30 @@ public class PageCrawler
     private async Task ProcessCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser)
     {
         string url = entry.Url;
+        var skipReason = IsAllowed(url, ctx.Job);
 
         switch(true)
         {
-            case true when !IsAllowed(url, ctx.Job):
+            case true when skipReason != null:
+            {
+                string host = SafeGetHost(url);
+                bool inScope = IsInRootScope(url, ctx.RootScope);
+                bool sameHost = !inScope && IsSameHost(url, ctx.RootScope);
+                int depth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+                mAuditWriter.RecordSkipped(ctx.AuditCtx,
+                                           url,
+                                           parentUrl: null,
+                                           host,
+                                           depth,
+                                           skipReason.Value.Reason,
+                                           skipReason.Value.Detail
+                                          );
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.Value.Reason.ToString());
                 break;
+            }
             case true when GitHubRepoScraper.TryParseGitHubUrl(url, out string owner, out string repo):
-                string repoKey = $"{owner}/{repo}";
+                var repoKey = $"{owner}/{repo}";
                 if (ctx.ClonedRepos.TryAdd(repoKey, value: 0))
                 {
                     mLogger.LogInformation("Delegating to GitHub scraper for {Repo}", repoKey);
@@ -936,6 +1089,21 @@ public class PageCrawler
             int displayDepth = inScope  ? entry.InScopeDepth :
                                sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
             mLogger.LogDebug("Skipping {Url} - depth {Depth} exceeded", url, displayDepth);
+
+            string host = SafeGetHost(url);
+            var skipReason = sameHost ? AuditSkipReason.SameHostDepth : AuditSkipReason.OffSiteDepth;
+            string detail = sameHost
+                                ? $"depth={displayDepth} limit={ctx.Job.SameHostDepth}"
+                                : $"depth={displayDepth} limit={ctx.Job.OffSiteDepth}";
+            mAuditWriter.RecordSkipped(ctx.AuditCtx,
+                                       url,
+                                       parentUrl: null,
+                                       host,
+                                       displayDepth,
+                                       skipReason,
+                                       detail
+                                      );
+            mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.ToString());
         }
         else
             await FetchCrawlPageAsync(entry, inScope, ctx, browser);
@@ -967,13 +1135,32 @@ public class PageCrawler
             if (response != null && response.Status == HttpNotFound && ctx.SiteExtension == null)
                 (page, response, fetchUrl) = await RetryWithExtensionsAsync(url, page, browser, ctx, ctx.Token);
 
-            await DispatchFetchOutcomeAsync(response, page, fetchUrl, entry, ctx, limiter, url);
+            await DispatchFetchOutcomeAsync(response,
+                                            page,
+                                            fetchUrl,
+                                            entry,
+                                            ctx,
+                                            limiter,
+                                            url
+                                           );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
             limiter.ReportTransientError();
             ctx.OnFetchError?.Invoke();
             mLogger.LogError(ex, "Error fetching {Url}", url);
+            bool exInScope = IsInRootScope(url, ctx.RootScope);
+            bool exSameHost = !exInScope && IsSameHost(url, ctx.RootScope);
+            int exDepth = exInScope  ? entry.InScopeDepth :
+                          exSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+            mAuditWriter.RecordFailed(ctx.AuditCtx,
+                                      url,
+                                      entry.ParentUrl,
+                                      SafeGetHost(url),
+                                      exDepth,
+                                      ex.Message
+                                     );
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message);
         }
         finally
         {
@@ -982,6 +1169,43 @@ public class PageCrawler
     }
 
     private async Task DispatchFetchOutcomeAsync(IResponse? response,
+                                                 IPage page,
+                                                 string fetchUrl,
+                                                 CrawlEntry entry,
+                                                 CrawlContext ctx,
+                                                 HostRateLimiter limiter,
+                                                 string originalUrl)
+    {
+        if (response == null)
+        {
+            limiter.ReportTransientError();
+            ctx.OnFetchError?.Invoke();
+            mLogger.LogWarning("No response from {Url}", originalUrl);
+            bool nullInScope = IsInRootScope(originalUrl, ctx.RootScope);
+            bool nullSameHost = !nullInScope && IsSameHost(originalUrl, ctx.RootScope);
+            int nullDepth = nullInScope  ? entry.InScopeDepth :
+                            nullSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+            mAuditWriter.RecordFailed(ctx.AuditCtx,
+                                      originalUrl,
+                                      entry.ParentUrl,
+                                      SafeGetHost(originalUrl),
+                                      nullDepth,
+                                      NoResponseError
+                                     );
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError);
+        }
+        else
+            await DispatchKnownResponseAsync(response,
+                                             page,
+                                             fetchUrl,
+                                             entry,
+                                             ctx,
+                                             limiter,
+                                             originalUrl
+                                            );
+    }
+
+    private async Task DispatchKnownResponseAsync(IResponse response,
                                                   IPage page,
                                                   string fetchUrl,
                                                   CrawlEntry entry,
@@ -989,25 +1213,11 @@ public class PageCrawler
                                                   HostRateLimiter limiter,
                                                   string originalUrl)
     {
-        if (response == null)
-        {
-            limiter.ReportTransientError();
-            ctx.OnFetchError?.Invoke();
-            mLogger.LogWarning("No response from {Url}", originalUrl);
-        }
-        else
-            await DispatchKnownResponseAsync(response, page, fetchUrl, entry, ctx, limiter, originalUrl);
-    }
-
-    private async Task DispatchKnownResponseAsync(IResponse response,
-                                                   IPage page,
-                                                   string fetchUrl,
-                                                   CrawlEntry entry,
-                                                   CrawlContext ctx,
-                                                   HostRateLimiter limiter,
-                                                   string originalUrl)
-    {
         bool inScope = IsInRootScope(originalUrl, ctx.RootScope);
+        bool sameHost = !inScope && IsSameHost(originalUrl, ctx.RootScope);
+        int dispatchDepth = inScope  ? entry.InScopeDepth :
+                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+        string dispatchHost = SafeGetHost(originalUrl);
 
         switch(true)
         {
@@ -1016,19 +1226,49 @@ public class PageCrawler
                 await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx);
                 break;
             case true when HostRateLimiter.IsRateLimitStatus(response.Status):
+            {
                 await HandleRateLimitedAsync(response, limiter, ctx, originalUrl);
+                mAuditWriter.RecordFailed(ctx.AuditCtx,
+                                          originalUrl,
+                                          entry.ParentUrl,
+                                          dispatchHost,
+                                          dispatchDepth,
+                                          $"HTTP {response.Status} rate limited"
+                                         );
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} rate limited");
                 break;
+            }
             case true when HostRateLimiter.IsForbiddenStatus(response.Status) && inScope:
                 await HandleInScopeForbiddenAsync(response, entry, ctx, limiter, originalUrl);
                 break;
             case true when HostRateLimiter.IsForbiddenStatus(response.Status):
+            {
                 HandleGatedPath(ctx, originalUrl);
+                mAuditWriter.RecordFailed(ctx.AuditCtx,
+                                          originalUrl,
+                                          entry.ParentUrl,
+                                          dispatchHost,
+                                          dispatchDepth,
+                                          $"HTTP {response.Status} gated"
+                                         );
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} gated");
                 break;
+            }
             default:
+            {
                 limiter.ReportTransientError();
                 ctx.OnFetchError?.Invoke();
                 mLogger.LogWarning("Failed to fetch {Url}: {Status}", originalUrl, response.Status);
+                mAuditWriter.RecordFailed(ctx.AuditCtx,
+                                          originalUrl,
+                                          entry.ParentUrl,
+                                          dispatchHost,
+                                          dispatchDepth,
+                                          $"HTTP {response.Status}"
+                                         );
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}");
                 break;
+            }
         }
     }
 
@@ -1037,8 +1277,8 @@ public class PageCrawler
     ///     limiter (the 403 might be rate-driven), but the page itself
     ///     gets queued for sequential retry on the dedicated retry worker
     ///     instead of being dropped immediately. After
-    ///     <see cref="RetryPolicy.MaxRetryAttempts"/> failed retries the
-    ///     URL is added to <see cref="CrawlContext.DroppedInScopeUrls"/>
+    ///     <see cref="RetryPolicy.MaxRetryAttempts" /> failed retries the
+    ///     URL is added to <see cref="CrawlContext.DroppedInScopeUrls" />
     ///     and the error count ticks once.
     /// </summary>
     private async Task HandleInScopeForbiddenAsync(IResponse response,
@@ -1065,6 +1305,14 @@ public class PageCrawler
             ctx.DroppedInScopeUrls.Add(originalUrl);
             ctx.OnFetchError?.Invoke();
             await LogForbiddenDiagnosticsAsync(response, originalUrl, entry.RetryAttemptIndex + 1);
+            mAuditWriter.RecordFailed(ctx.AuditCtx,
+                                      originalUrl,
+                                      entry.ParentUrl,
+                                      SafeGetHost(originalUrl),
+                                      entry.InScopeDepth,
+                                      $"HTTP {response.Status} forbidden (max retries)"
+                                     );
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} forbidden (max retries)");
         }
     }
 
@@ -1077,12 +1325,12 @@ public class PageCrawler
     /// </summary>
     private async Task LogForbiddenDiagnosticsAsync(IResponse response, string url, int totalAttempts)
     {
-        string serverHeader = string.Empty;
-        string cfRay = string.Empty;
-        string via = string.Empty;
-        string xAmznRequestId = string.Empty;
-        string xAmzCfId = string.Empty;
-        string bodySnippet = string.Empty;
+        var serverHeader = string.Empty;
+        var cfRay = string.Empty;
+        var via = string.Empty;
+        var xAmznRequestId = string.Empty;
+        var xAmzCfId = string.Empty;
+        var bodySnippet = string.Empty;
 
         try
         {
@@ -1101,7 +1349,7 @@ public class PageCrawler
         {
             string body = await response.TextAsync();
             int take = Math.Min(body.Length, ForbiddenBodySnippetMaxChars);
-            bodySnippet = body[..take].Replace('\n', ' ').Replace('\r', ' ');
+            bodySnippet = body[..take].Replace(oldChar: '\n', newChar: ' ').Replace(oldChar: '\r', newChar: ' ');
         }
         catch(PlaywrightException)
         {
@@ -1172,6 +1420,11 @@ public class PageCrawler
         string contentHash = ComputeHash(content);
         string urlHash = ComputeHash(fetchUrl);
 
+        bool successInScope2 = IsInRootScope(fetchUrl, ctx.RootScope);
+        bool successSameHost2 = !successInScope2 && IsSameHost(fetchUrl, ctx.RootScope);
+        int pageDepth = successInScope2  ? entry.InScopeDepth :
+                        successSameHost2 ? entry.SameHostDepth : entry.OffSiteDepth;
+
         var pageRecord = new PageRecord
                              {
                                  Id = $"{ctx.Job.LibraryId}/{ctx.Job.Version}/{urlHash[..12]}",
@@ -1182,12 +1435,17 @@ public class PageCrawler
                                  Category = DocCategory.Unclassified,
                                  RawContent = content,
                                  FetchedAt = DateTime.UtcNow,
-                                 ContentHash = contentHash
+                                 ContentHash = contentHash,
+                                 Depth = pageDepth,
+                                 ParentUrl = entry.ParentUrl
                              };
 
         await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
         int newCount = ctx.IncrementPageCount();
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);
+
+        mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), pageDepth);
+        mBroadcaster.RecordFetch(ctx.AuditCtx.JobId, fetchUrl);
 
         EnqueueDiscoveredLinks(links,
                                ctx.IsVisited,
@@ -1195,7 +1453,8 @@ public class PageCrawler
                                ctx.RootScope,
                                entry,
                                ctx.EnqueueChild,
-                               ctx.SiteExtension != null
+                               ctx.SiteExtension != null,
+                               ctx.AuditCtx
                               );
 
         ctx.OnPageFetched?.Invoke(newCount);
@@ -1376,39 +1635,70 @@ public class PageCrawler
     ///     The enqueue callback receives the in-scope flag so the caller
     ///     can route entries to a priority channel.
     /// </summary>
-    private static void EnqueueDiscoveredLinks(IReadOnlyList<string> links,
-                                               Func<string, bool> isVisited,
-                                               ScrapeJob job,
-                                               RootScope rootScope,
-                                               CrawlEntry parentEntry,
-                                               Action<CrawlEntry, bool> enqueue,
-                                               bool keepExtension = false)
+    private void EnqueueDiscoveredLinks(IReadOnlyList<string> links,
+                                        Func<string, bool> isVisited,
+                                        ScrapeJob job,
+                                        RootScope rootScope,
+                                        CrawlEntry parentEntry,
+                                        Action<CrawlEntry, bool> enqueue,
+                                        bool keepExtension = false,
+                                        AuditContext? auditCtx = null)
     {
         foreach(string normalized in links
                                      .Select(u => NormalizeUrl(u, keepExtension))
                                      .OfType<string>()
-                                     .Where(n => !isVisited(n) && IsAllowed(n, job)))
+                                     .Where(n => !isVisited(n)))
         {
-            bool linkInScope = IsInRootScope(normalized, rootScope);
-            bool linkSameHost = !linkInScope && IsSameHost(normalized, rootScope);
-
-            var child = linkInScope switch
+            var skipReason = IsAllowed(normalized, job);
+            if (skipReason != null)
+            {
+                if (auditCtx != null)
                 {
-                    true => new CrawlEntry(normalized, parentEntry.InScopeDepth + 1, SameHostDepth: 0, OffSiteDepth: 0),
-                    false => linkSameHost
-                                 ? new CrawlEntry(normalized,
-                                                  parentEntry.InScopeDepth,
-                                                  parentEntry.SameHostDepth + 1,
-                                                  parentEntry.OffSiteDepth
-                                                 )
-                                 : new CrawlEntry(normalized,
-                                                  parentEntry.InScopeDepth,
-                                                  parentEntry.SameHostDepth,
-                                                  parentEntry.OffSiteDepth + 1
-                                                 )
-                };
+                    string host = SafeGetHost(normalized);
+                    bool linkInScope = IsInRootScope(normalized, rootScope);
+                    bool linkSameHost = !linkInScope && IsSameHost(normalized, rootScope);
+                    int depth = linkInScope  ? parentEntry.InScopeDepth + 1 :
+                                linkSameHost ? parentEntry.SameHostDepth + 1 : parentEntry.OffSiteDepth + 1;
+                    mAuditWriter.RecordSkipped(auditCtx,
+                                               normalized,
+                                               parentEntry.Url,
+                                               host,
+                                               depth,
+                                               skipReason.Value.Reason,
+                                               skipReason.Value.Detail
+                                              );
+                }
+            }
+            else
+            {
+                bool linkInScope = IsInRootScope(normalized, rootScope);
+                bool linkSameHost = !linkInScope && IsSameHost(normalized, rootScope);
 
-            enqueue(child, linkInScope);
+                var child = linkInScope switch
+                    {
+                        true => new CrawlEntry(normalized,
+                                               parentEntry.InScopeDepth + 1,
+                                               SameHostDepth: 0,
+                                               OffSiteDepth: 0,
+                                               ParentUrl: parentEntry.Url
+                                              ),
+                        false => linkSameHost
+                                     ? new CrawlEntry(normalized,
+                                                      parentEntry.InScopeDepth,
+                                                      parentEntry.SameHostDepth + 1,
+                                                      parentEntry.OffSiteDepth,
+                                                      ParentUrl: parentEntry.Url
+                                                     )
+                                     : new CrawlEntry(normalized,
+                                                      parentEntry.InScopeDepth,
+                                                      parentEntry.SameHostDepth,
+                                                      parentEntry.OffSiteDepth + 1,
+                                                      ParentUrl: parentEntry.Url
+                                                     )
+                    };
+
+                enqueue(child, linkInScope);
+            }
         }
     }
 
@@ -1468,6 +1758,25 @@ public class PageCrawler
         catch
         {
             // Malformed URL â€” treat as off-site
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Returns the host portion of a URL, or the URL itself if parsing fails.
+    ///     Used for audit event population where a best-effort host is sufficient.
+    /// </summary>
+    private static string SafeGetHost(string url)
+    {
+        string result;
+        try
+        {
+            result = new Uri(url).Host;
+        }
+        catch(UriFormatException)
+        {
+            result = url;
         }
 
         return result;
@@ -1667,7 +1976,7 @@ public class PageCrawler
                                                                                      });
                                                                              }
                                                                              """,
-                                                                 arg: smSupportedSchemesJs
+                                                                 smSupportedSchemesJs
                                                                 );
             result = links;
         }
@@ -1730,7 +2039,11 @@ public class PageCrawler
         }
     }
 
-    private static bool IsAllowed(string url, ScrapeJob job)
+    /// <summary>
+    ///     Returns null when the URL is allowed, or a (reason, detail) pair
+    ///     describing the first rejection that applies.
+    /// </summary>
+    private static (AuditSkipReason Reason, string? Detail)? IsAllowed(string url, ScrapeJob job)
     {
         var regexTimeout = TimeSpan.FromMilliseconds(RegexTimeoutMs);
 
@@ -1738,22 +2051,30 @@ public class PageCrawler
                                                           SafeRegexIsMatch(url, pattern, regexTimeout)
                                                      );
 
-        bool result = !isBinary;
+        (AuditSkipReason Reason, string? Detail)? result = null;
 
-        if (result)
+        if (isBinary)
+            result = (AuditSkipReason.BinaryExt, null);
+
+        if (result == null)
         {
             bool allowed = job.AllowedUrlPatterns.Any(pattern =>
                                                           SafeRegexIsMatch(url, pattern, regexTimeout)
                                                      );
-            result = allowed;
+            if (!allowed)
+                result = (AuditSkipReason.PatternMissAllowed, null);
         }
 
-        if (result)
+        if (result == null)
         {
-            bool excluded = job.ExcludedUrlPatterns.Any(pattern =>
-                                                            SafeRegexIsMatch(url, pattern, regexTimeout)
-                                                       );
-            result = !excluded;
+            string? excludedPattern = job.ExcludedUrlPatterns.FirstOrDefault(pattern =>
+                                                                                 SafeRegexIsMatch(url,
+                                                                                          pattern,
+                                                                                          regexTimeout
+                                                                                     )
+                                                                            );
+            if (excludedPattern != null)
+                result = (AuditSkipReason.PatternExclude, excludedPattern);
         }
 
         return result;
@@ -1782,12 +2103,16 @@ public class PageCrawler
     ///     Returns updated page, response, and fetch URL.
     /// </summary>
     private async Task<(IPage Page, IResponse? Response, string FetchUrl)>
-        RetryWithExtensionsAsync(string url, IPage page, IBrowser browser, CrawlContext ctx, CancellationToken ct)
+        RetryWithExtensionsAsync(string url,
+                                 IPage page,
+                                 IBrowser browser,
+                                 CrawlContext ctx,
+                                 CancellationToken ct)
     {
         string fetchUrl = url;
         IResponse? response = null;
 
-        foreach (string ext in smExtensionsToStrip)
+        foreach(string ext in smExtensionsToStrip)
         {
             string retryUrl = url + ext;
             mLogger.LogDebug("Got 404 for {Url}, retrying with {Ext}: {RetryUrl}", url, ext, retryUrl);
@@ -1817,7 +2142,8 @@ public class PageCrawler
 
             bool isFilesystem = string.Equals(uri.Scheme,
                                               Uri.UriSchemeFile,
-                                              StringComparison.OrdinalIgnoreCase);
+                                              StringComparison.OrdinalIgnoreCase
+                                             );
             bool stripExtension = !keepExtension && !isFilesystem;
             if (stripExtension)
             {
@@ -1828,7 +2154,8 @@ public class PageCrawler
                     path = path[..^strippedExtension.Length];
             }
 
-            var normalized = $"{uri.Scheme}://{uri.Host}{path}";
+            string portSuffix = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
+            var normalized = $"{uri.Scheme}://{uri.Host}{portSuffix}{path}";
             if (!string.IsNullOrEmpty(uri.Query))
                 normalized += uri.Query;
             result = normalized;
@@ -1861,6 +2188,7 @@ public class PageCrawler
     private const int HttpNotFound = 404;
     private const string RetryAfterHeader = "retry-after";
     private const string DroppedUrlSeparator = ", ";
+    private const string NoResponseError = "No response";
     private const int ForbiddenBodySnippetMaxChars = 400;
 
     private const string ServerHeader = "server";
@@ -1877,13 +2205,28 @@ public class PageCrawler
     private const float ContentFrameMaxTextScore = 5f;
     private const float ContentFrameMaxRatioScore = 5f;
     private const float ContentFrameNameBonus = 3f;
+    private const string InScopeLabel = "scope";
+    private const string OutOfScopeLabel = "out";
+    private const string MainPageLoadLabel = "main page load";
+    private const string BodySelector = "body";
+
+    private const string FrameHintContent = "content";
+    private const string FrameHintMain = "main";
+    private const string FrameHintTopic = "topic";
+    private const string FrameHintBody = "body";
+    private const string FrameHintDetail = "detail";
+    private const string FrameHintArticle = "article";
+
+    private const string ExtensionHtml = ".html";
+    private const string ExtensionHtm = ".htm";
+    private const string ExtensionAspx = ".aspx";
 
     /// <summary>
     ///     URL schemes the crawler will follow. Anything else is dropped at link-extraction
     ///     time. http/https cover live web docs; file:// covers local docs trees served off disk.
     /// </summary>
     private static readonly HashSet<string> smSupportedSchemes =
-        new(StringComparer.OrdinalIgnoreCase) { "http", "https", "file" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "http", "https", "file" };
 
     /// <summary>
     ///     Lowercase scheme list precomputed for in-browser JS link filtering.
@@ -1912,20 +2255,4 @@ public class PageCrawler
         ];
 
     private static readonly string[] smExtensionsToStrip = [ExtensionHtml, ExtensionHtm, ExtensionAspx];
-    private const string InScopeLabel = "scope";
-    private const string OutOfScopeLabel = "out";
-    private const string MainPageLoadLabel = "main page load";
-    private const string BodySelector = "body";
-
-    private const string FrameHintContent = "content";
-    private const string FrameHintMain = "main";
-    private const string FrameHintTopic = "topic";
-    private const string FrameHintBody = "body";
-    private const string FrameHintDetail = "detail";
-    private const string FrameHintArticle = "article";
-
-    private const string ExtensionHtml = ".html";
-    private const string ExtensionHtm = ".htm";
-    private const string ExtensionAspx = ".aspx";
-
 }

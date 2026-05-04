@@ -20,7 +20,6 @@ namespace SaddleRAG.Ingestion.Symbols;
 ///     and callable shapes (Foo()). Strips trailing/leading punctuation
 ///     before classification so that prose mentions like "AxisFault." do
 ///     not survive as tokens with the period attached.
-///
 ///     Kept deliberately library-agnostic: shape-only recognition. The
 ///     SymbolExtractor consumes the candidates and decides keep/reject
 ///     using LibraryProfile + corpus context.
@@ -38,7 +37,9 @@ public static class IdentifierTokenizer
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         var matches = smTokenRegex.Matches(content);
-        foreach(var token in matches.Select(m => BuildCandidate(m, content)).Where(t => t != null).Cast<TokenCandidate>())
+        foreach(var token in matches.Select(m => BuildCandidate(m, content))
+                                    .Where(t => t != null)
+                                    .Cast<TokenCandidate>())
         {
             var dedupKey = MakeDedupKey(token);
             if (!seen.Contains(dedupKey))
@@ -58,9 +59,9 @@ public static class IdentifierTokenizer
         var raw = match.Value;
         var trimmed = TrimEdgePunctuation(raw);
 
-        if (!string.IsNullOrEmpty(trimmed) && IsIdentifierStartChar(trimmed[0]))
+        if (!string.IsNullOrEmpty(trimmed) && IsIdentifierStartChar(trimmed[index: 0]))
         {
-            var (container, leaf) = SplitContainer(trimmed);
+            (var container, var leaf) = SplitContainer(trimmed);
 
             var startIndex = match.Index;
             var endIndex = match.Index + match.Length;
@@ -107,7 +108,7 @@ public static class IdentifierTokenizer
 
     private static bool HasFollowingChar(string content, int endIndex, char target)
     {
-        bool result = false;
+        var result = false;
         if (endIndex >= 0 && endIndex < content.Length)
             result = content[endIndex] == target;
         return result;
@@ -142,28 +143,6 @@ public static class IdentifierTokenizer
     private static string MakeDedupKey(TokenCandidate candidate) =>
         $"{candidate.Name}|{(candidate.IsDeclared ? '1' : '0')}|{(candidate.HasCallableShape ? '1' : '0')}|{(candidate.HasGenericShape ? '1' : '0')}";
 
-    // Token regex:
-    //   - Starts with letter or underscore
-    //   - Followed by word chars (letters/digits/underscore) and optional dash segments (kebab-case)
-    //   - Optional dotted/::-joined/->joined extensions, each segment again identifier-shaped
-    //   - Anchors at word boundary; does NOT include trailing dots/colons (the bug we're fixing)
-    private static readonly Regex smTokenRegex = new(
-        @"[A-Za-z_][A-Za-z0-9_]*(?:-[A-Za-z][A-Za-z0-9_]*)*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*",
-        RegexOptions.Compiled
-    );
-
-    private static readonly char[] smTrailingPunctuation =
-    {
-        '.', ',', ';', ':', '!', '?', ')', '(', ']', '[', '>', '<', '"', '\'', '`'
-    };
-
-    private static readonly string[] smSeparators = { SeparatorDoubleColon, SeparatorArrow, SeparatorDot, SeparatorColon };
-
-    private static readonly HashSet<string> smDeclaredKeywords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "class", "interface", "struct", "enum", "record", "type", "def", "function"
-    };
-
     private const char OpenParen = '(';
     private const char OpenAngle = '<';
     private const char Underscore = '_';
@@ -171,4 +150,28 @@ public static class IdentifierTokenizer
     private const string SeparatorColon = ":";
     private const string SeparatorDoubleColon = "::";
     private const string SeparatorArrow = "->";
+
+    // Token regex:
+    //   - Starts with letter or underscore
+    //   - Followed by word chars (letters/digits/underscore) and optional dash segments (kebab-case)
+    //   - Optional dotted/::-joined/->joined extensions, each segment again identifier-shaped
+    //   - Anchors at word boundary; does NOT include trailing dots/colons (the bug we're fixing)
+    private static readonly Regex smTokenRegex =
+        new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:-[A-Za-z][A-Za-z0-9_]*)*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*",
+                  RegexOptions.Compiled
+                 );
+
+    private static readonly char[] smTrailingPunctuation =
+        {
+            '.', ',', ';', ':', '!', '?', ')', '(', ']', '[', '>', '<', '"', '\'', '`'
+        };
+
+    private static readonly string[] smSeparators =
+        { SeparatorDoubleColon, SeparatorArrow, SeparatorDot, SeparatorColon };
+
+    private static readonly HashSet<string> smDeclaredKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                                                                     {
+                                                                         "class", "interface", "struct", "enum",
+                                                                         "record", "type", "def", "function"
+                                                                     };
 }

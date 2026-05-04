@@ -6,11 +6,11 @@
 
 #region Usings
 
+using MongoDB.Bson;
+using MongoDB.Driver;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Bson;
-using MongoDB.Driver;
 
 #endregion
 
@@ -146,32 +146,6 @@ public class ChunkRepository : IChunkRepository
         return distinct;
     }
 
-    private static IEnumerable<string> ProjectTypeNames(IReadOnlyList<DocChunk> chunks)
-    {
-        // For v2+ chunks: return Symbols[] entries with Kind == Type.
-        // For legacy v1 chunks: fall back to QualifiedName so the tool stays useful
-        // until a rescrub bumps them. Each chunk yields zero or more names.
-        var v2Names = chunks
-                      .Where(c => c.ParserVersion >= ParserVersionV2 && c.Symbols.Count > 0)
-                      .SelectMany(c => c.Symbols.Where(s => s.Kind == SymbolKind.Type).Select(s => s.Name));
-
-        var legacyNames = chunks
-                          .Where(c => c.ParserVersion < ParserVersionV2)
-                          .Select(c => c.QualifiedName ?? string.Empty)
-                          .Where(n => !string.IsNullOrEmpty(n));
-
-        var result = v2Names.Concat(legacyNames).Where(n => !string.IsNullOrEmpty(n));
-        return result;
-    }
-
-    private static IEnumerable<string> ApplyFilter(IEnumerable<string> names, string? filter)
-    {
-        var result = string.IsNullOrWhiteSpace(filter)
-                         ? names
-                         : names.Where(n => n.Contains(filter, StringComparison.OrdinalIgnoreCase));
-        return result;
-    }
-
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetSymbolsAsync(string libraryId,
                                                              string version,
@@ -206,14 +180,14 @@ public class ChunkRepository : IChunkRepository
         var seen = new HashSet<(string Name, SymbolKind Kind)>();
         var symbols = new List<Symbol>();
 
-        foreach (var chunk in chunks)
+        foreach(var chunk in chunks)
         {
             var filtered = string.IsNullOrEmpty(filter)
                                ? chunk.Symbols
                                : chunk.Symbols.Where(s => s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                                             .ToList();
+                                      .ToList();
 
-            foreach (var s in filtered)
+            foreach(var s in filtered)
             {
                 var key = (s.Name, s.Kind);
                 if (seen.Add(key))
@@ -258,21 +232,21 @@ public class ChunkRepository : IChunkRepository
         var filter = Builders<DocChunk>.Filter.And(Builders<DocChunk>.Filter.Eq(c => c.LibraryId, libraryId),
                                                    Builders<DocChunk>.Filter.Eq(c => c.Version, version),
                                                    Builders<DocChunk>.Filter.Lt(c => c.ParserVersion,
-                                                                                currentParserVersion
+                                                                                    currentParserVersion
                                                                                )
                                                   );
 
         var match = await mContext.Chunks
                                   .Find(filter)
-                                  .Limit(1)
+                                  .Limit(limit: 1)
                                   .FirstOrDefaultAsync(ct);
         return match != null;
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyDictionary<string, double>> GetLanguageMixAsync(string libraryId,
-                                                                                string version,
-                                                                                CancellationToken ct = default)
+                                                                               string version,
+                                                                               CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
@@ -289,8 +263,8 @@ public class ChunkRepository : IChunkRepository
 
     /// <inheritdoc />
     public async Task<IReadOnlyDictionary<string, int>> GetHostnameDistributionAsync(string libraryId,
-                                                                                      string version,
-                                                                                      CancellationToken ct = default)
+        string version,
+        CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
@@ -300,19 +274,20 @@ public class ChunkRepository : IChunkRepository
                                                   );
         var urls = await mContext.Chunks.Find(filter).Project(c => c.PageUrl).ToListAsync(ct);
         var dist = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var url in urls)
+        foreach(var url in urls)
         {
             var host = Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : UnknownHostKey;
             dist[host] = dist.GetValueOrDefault(host) + 1;
         }
+
         return dist;
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetSampleTitlesAsync(string libraryId,
-                                                                   string version,
-                                                                   int limit,
-                                                                   CancellationToken ct = default)
+                                                                  string version,
+                                                                  int limit,
+                                                                  CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
@@ -321,11 +296,37 @@ public class ChunkRepository : IChunkRepository
                                                    Builders<DocChunk>.Filter.Eq(c => c.Version, version)
                                                   );
         var titles = await mContext.Chunks.Find(filter)
-                                          .Project(c => c.PageTitle)
-                                          .Limit(limit)
-                                          .ToListAsync(ct);
+                                   .Project(c => c.PageTitle)
+                                   .Limit(limit)
+                                   .ToListAsync(ct);
         var distinct = titles.Distinct().Take(limit).ToList();
         return distinct;
+    }
+
+    private static IEnumerable<string> ProjectTypeNames(IReadOnlyList<DocChunk> chunks)
+    {
+        // For v2+ chunks: return Symbols[] entries with Kind == Type.
+        // For legacy v1 chunks: fall back to QualifiedName so the tool stays useful
+        // until a rescrub bumps them. Each chunk yields zero or more names.
+        var v2Names = chunks
+                      .Where(c => c.ParserVersion >= ParserVersionV2 && c.Symbols.Count > 0)
+                      .SelectMany(c => c.Symbols.Where(s => s.Kind == SymbolKind.Type).Select(s => s.Name));
+
+        var legacyNames = chunks
+                          .Where(c => c.ParserVersion < ParserVersionV2)
+                          .Select(c => c.QualifiedName ?? string.Empty)
+                          .Where(n => !string.IsNullOrEmpty(n));
+
+        var result = v2Names.Concat(legacyNames).Where(n => !string.IsNullOrEmpty(n));
+        return result;
+    }
+
+    private static IEnumerable<string> ApplyFilter(IEnumerable<string> names, string? filter)
+    {
+        var result = string.IsNullOrWhiteSpace(filter)
+                         ? names
+                         : names.Where(n => n.Contains(filter, StringComparison.OrdinalIgnoreCase));
+        return result;
     }
 
     private async Task UpsertChunksBulkAsync(IReadOnlyList<DocChunk> chunks, CancellationToken ct)

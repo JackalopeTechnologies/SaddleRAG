@@ -11,10 +11,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -377,6 +377,28 @@ public class GitHubRepoScraper
     private const int MaxFileSizeBytes = MaxFileSizeKb * 1024;
     private const int CloneTimeoutMs = 120000;
 
+    private const string GitExtension = ".git";
+    private const string ReadmePrefix = "readme";
+
+    private const string ChangelogPrefix = "changelog";
+    private const string ChangesPrefix = "changes";
+    private const string HistoryPrefix = "history";
+    private const string ReleasesPrefix = "releases";
+    private const string ReleaseNotesHyphen = "release-notes.md";
+    private const string ReleaseNotesUnderscore = "release_notes.md";
+
+    private const string SamplesPath = "/samples/";
+    private const string SamplePath = "/sample/";
+    private const string ExamplesPath = "/examples/";
+    private const string ExamplePath = "/example/";
+    private const string DemoPath = "/demo/";
+    private const string DemosPath = "/demos/";
+
+    private const string DocsSlash = "docs/";
+    private const string DocSlash = "doc/";
+    private const string SlashDocsSlash = "/docs/";
+    private const string SlashDocSlash = "/doc/";
+
     private static readonly HashSet<string> smTextExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                                                                    {
                                                                        // Code
@@ -409,31 +431,14 @@ public class GitHubRepoScraper
                                                                         "packages", ".nuget"
                                                                     };
 
-    private const string GitExtension = ".git";
-    private const string ReadmePrefix = "readme";
+    private static readonly string[] smChangelogPrefixes =
+            [ChangelogPrefix, ChangesPrefix, HistoryPrefix, ReleasesPrefix];
 
-    private const string ChangelogPrefix = "changelog";
-    private const string ChangesPrefix = "changes";
-    private const string HistoryPrefix = "history";
-    private const string ReleasesPrefix = "releases";
-    private const string ReleaseNotesHyphen = "release-notes.md";
-    private const string ReleaseNotesUnderscore = "release_notes.md";
-
-    private const string SamplesPath = "/samples/";
-    private const string SamplePath = "/sample/";
-    private const string ExamplesPath = "/examples/";
-    private const string ExamplePath = "/example/";
-    private const string DemoPath = "/demo/";
-    private const string DemosPath = "/demos/";
-
-    private const string DocsSlash = "docs/";
-    private const string DocSlash = "doc/";
-    private const string SlashDocsSlash = "/docs/";
-    private const string SlashDocSlash = "/doc/";
-
-    private static readonly string[] smChangelogPrefixes = [ChangelogPrefix, ChangesPrefix, HistoryPrefix, ReleasesPrefix];
     private static readonly string[] smChangelogExactNames = [ReleaseNotesHyphen, ReleaseNotesUnderscore];
-    private static readonly string[] smSamplePaths = [SamplesPath, SamplePath, ExamplesPath, ExamplePath, DemoPath, DemosPath];
+
+    private static readonly string[] smSamplePaths =
+            [SamplesPath, SamplePath, ExamplesPath, ExamplePath, DemoPath, DemosPath];
+
     private static readonly string[] smDocsStartPaths = [DocsSlash, DocSlash];
     private static readonly string[] smDocsContainPaths = [SlashDocsSlash, SlashDocSlash];
 }

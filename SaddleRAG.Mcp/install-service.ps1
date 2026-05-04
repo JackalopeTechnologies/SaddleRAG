@@ -107,6 +107,36 @@ if (-not $SkipStart)
 
 $service = Get-Service -Name $ServiceName
 
+# Set OLLAMA_KEEP_ALIVE=-1 system-wide if not already configured.
+# Records a registry marker so uninstall-service.ps1 can clean up only if
+# we set the value (and the user did not change it afterward).
+$ollamaEnvVar    = 'OLLAMA_KEEP_ALIVE'
+$ollamaOurValue  = '-1'
+$ollamaRegPath   = 'HKLM:\Software\Jackalope Technologies\SaddleRAG'
+$ollamaMarker    = 'OllamaKeepAliveSetByUs'
+
+$ollamaExisting = [Environment]::GetEnvironmentVariable($ollamaEnvVar, 'Machine')
+
+if ([string]::IsNullOrEmpty($ollamaExisting))
+{
+    if ($PSCmdlet.ShouldProcess($ollamaEnvVar, "Set system environment variable to '$ollamaOurValue'"))
+    {
+        [Environment]::SetEnvironmentVariable($ollamaEnvVar, $ollamaOurValue, 'Machine')
+
+        if (-not (Test-Path -LiteralPath $ollamaRegPath))
+        {
+            New-Item -Path $ollamaRegPath -Force | Out-Null
+        }
+
+        Set-ItemProperty -LiteralPath $ollamaRegPath -Name $ollamaMarker -Value 1 -Type DWord
+        Write-Output "OllamaKeepAlive: set system-wide to '$ollamaOurValue' (reboot recommended)"
+    }
+}
+else
+{
+    Write-Output "OllamaKeepAlive: already set to '$ollamaExisting'; left unchanged"
+}
+
 Write-Output "ServiceName: $ServiceName"
 Write-Output "InstallDirectory: $targetDirectory"
 Write-Output "Status: $($service.Status)"

@@ -15,14 +15,13 @@ namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
 ///     Standard BM25 scoring against a sharded postings store. The scorer
-///     extracts query terms, asks the supplied <see cref="IBm25TermLookup"/>
+///     extracts query terms, asks the supplied <see cref="IBm25TermLookup" />
 ///     to pre-load whichever shards back those terms, then computes scores
 ///     synchronously against the cached postings. Used by the hybrid
 ///     retrieval path to blend keyword scores with vector cosine
 ///     similarity, especially valuable for identifier queries where
 ///     embedding similarity alone struggles to discriminate between
 ///     "mentions term" and "is canonical reference for term".
-///
 ///     k1 = 1.5, b = 0.75 are the standard defaults; configurable for
 ///     bench tuning later if needed.
 /// </summary>
@@ -57,7 +56,7 @@ public static class Bm25Scorer
 
     /// <summary>
     ///     Score and return the top-N chunk ids ordered by score desc.
-    ///     Convenience wrapper around <see cref="ScoreAsync"/>.
+    ///     Convenience wrapper around <see cref="ScoreAsync" />.
     /// </summary>
     public static async Task<IReadOnlyList<(string ChunkId, double Score)>> TopNAsync(IBm25TermLookup termLookup,
                                                                                       Bm25Stats stats,
@@ -111,7 +110,8 @@ public static class Bm25Scorer
         var numerator = termFreq * (K1 + 1.0);
         var denominator = termFreq + (K1 * lengthNorm);
         var contribution = idf * (numerator / denominator);
-        scores[posting.ChunkId] = scores.TryGetValue(posting.ChunkId, out var current) ? current + contribution : contribution;
+        scores[posting.ChunkId] =
+            scores.TryGetValue(posting.ChunkId, out var current) ? current + contribution : contribution;
     }
 
     private static double ComputeIdf(int documentCount, int postingCount)
@@ -124,7 +124,7 @@ public static class Bm25Scorer
     }
 
     /// <summary>
-    ///     Tokenize a query the SAME way <see cref="Bm25IndexBuilder"/>
+    ///     Tokenize a query the SAME way <see cref="Bm25IndexBuilder" />
     ///     tokenizes chunks. Lowercased prose tokens AND original-cased
     ///     identifier tokens, deduped. Public so callers (e.g.,
     ///     <c>SearchTools</c>) can pre-feed the term list into the
@@ -137,28 +137,23 @@ public static class Bm25Scorer
         var terms = new List<string>();
 
         // Lowercase prose tokens.
-        foreach(Match match in smProseTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
+        foreach(var match in smProseTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
             terms.Add(match.Value.ToLowerInvariant());
 
         // Original-cased identifier tokens.
-        foreach(Match match in smIdentifierTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
+        foreach(var match in smIdentifierTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
             terms.Add(match.Value);
 
         var distinct = terms.Distinct(StringComparer.Ordinal).ToList();
         return distinct;
     }
 
-    private static readonly Regex smProseTokenRegex = new(
-        "[A-Za-z][A-Za-z0-9]+",
-        RegexOptions.Compiled
-    );
-
-    private static readonly Regex smIdentifierTokenRegex = new(
-        @"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*",
-        RegexOptions.Compiled
-    );
-
     private const int MinTokenLength = 2;
     private const double K1 = 1.5;
     private const double B = 0.75;
+
+    private static readonly Regex smProseTokenRegex = new Regex("[A-Za-z][A-Za-z0-9]+", RegexOptions.Compiled);
+
+    private static readonly Regex smIdentifierTokenRegex =
+        new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*", RegexOptions.Compiled);
 }

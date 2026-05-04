@@ -12,6 +12,7 @@ namespace SaddleRAG.Core.Models;
 ///     (because no versions remained), and the new currentVersion if
 ///     one had to be repointed.
 /// </summary>
-public sealed record DeleteVersionResult(long VersionsDeleted,
-                                         bool LibraryRowDeleted,
-                                         string? CurrentVersionRepointedTo);
+public sealed record DeleteVersionResult(
+    long VersionsDeleted,
+    bool LibraryRowDeleted,
+    string? CurrentVersionRepointedTo);

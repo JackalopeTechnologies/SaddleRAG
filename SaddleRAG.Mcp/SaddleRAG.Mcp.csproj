@@ -25,6 +25,7 @@
     <ProjectReference Include="..\SaddleRAG.Core\SaddleRAG.Core.csproj" />
     <ProjectReference Include="..\SaddleRAG.Database\SaddleRAG.Database.csproj" />
     <ProjectReference Include="..\SaddleRAG.Ingestion\SaddleRAG.Ingestion.csproj" />
+    <ProjectReference Include="..\SaddleRAG.Monitor\SaddleRAG.Monitor.csproj" />
   </ItemGroup>
 
   <ItemGroup>

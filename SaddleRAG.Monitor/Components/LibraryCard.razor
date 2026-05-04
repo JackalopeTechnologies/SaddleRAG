@@ -1,0 +1,35 @@
+@* SaddleRAG.Monitor/Components/LibraryCard.razor *@
+
+<MudCard @onclick="@Navigate" Style="cursor: pointer">
+    <MudCardContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <MudText Typo="Typo.subtitle1">@Library.LibraryId</MudText>
+            <SuspectChip IsSuspect="@Library.IsSuspect" Reasons="@Library.SuspectReasons"/>
+        </MudStack>
+        <MudText Typo="Typo.caption">v@(Library.Version) · @Library.ChunkCount chunks · @Library.PageCount pages</MudText>
+        @if (Library.LastScrapedAt is not null)
+        {
+            <MudText Typo="Typo.caption">Scraped @Library.LastScrapedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+        }
+        @if (!string.IsNullOrEmpty(Library.Hint))
+        {
+            <MudText Typo="Typo.body2" Class="mt-1">@Library.Hint</MudText>
+        }
+    </MudCardContent>
+</MudCard>
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public LibrarySummaryItem Library { get; set; } = default!;
+
+    [Inject]
+    private NavigationManager Nav { get; set; } = default!;
+
+    private void Navigate()
+    {
+        Nav.NavigateTo($"/monitor/libraries/{Library.LibraryId}");
+    }
+
+}

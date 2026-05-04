@@ -6,13 +6,15 @@
 
 #region Usings
 
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Ingestion.Classification;
+using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Recon;
 using SaddleRAG.Ingestion.Symbols;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 #endregion
 
@@ -46,7 +48,8 @@ public sealed class RescrubServiceTests
                                                );
 
         Assert.True(result.ReconNeeded);
-        await chunkRepo.DidNotReceive().GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await chunkRepo.DidNotReceive()
+                       .GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -81,9 +84,10 @@ public sealed class RescrubServiceTests
                                                );
 
         Assert.True(result.DryRun);
-        Assert.Equal(1, result.Processed);
+        Assert.Equal(expected: 1, result.Processed);
         Assert.True(result.Changed > 0);
-        await chunkRepo.DidNotReceive().UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
+        await chunkRepo.DidNotReceive()
+                       .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
         await indexRepo.DidNotReceive().UpsertAsync(Arg.Any<LibraryIndex>(), Arg.Any<CancellationToken>());
     }
 
@@ -119,20 +123,25 @@ public sealed class RescrubServiceTests
                                                );
 
         Assert.False(result.DryRun);
-        Assert.Equal(1, result.Processed);
+        Assert.Equal(expected: 1, result.Processed);
         Assert.True(result.Changed > 0);
         Assert.True(result.IndexesBuilt);
 
-        await chunkRepo.Received(1).UpsertChunksAsync(Arg.Is<IReadOnlyList<DocChunk>>(list => list.Count == 1
-                                                                                             && list[0].ParserVersion == ParserVersionInfo.Current
-                                                                                             && list[0].Symbols.Count > 0
-                                                                                            ),
-                                                      Arg.Any<CancellationToken>()
-                                                     );
+        await chunkRepo.Received(requiredNumberOfCalls: 1)
+                       .UpsertChunksAsync(Arg.Is<IReadOnlyList<DocChunk>>(list => list.Count == 1 &&
+                                                                              list[0].ParserVersion ==
+                                                                              ParserVersionInfo.Current &&
+                                                                              list[0].Symbols.Count > 0
+                                                                         ),
+                                          Arg.Any<CancellationToken>()
+                                         );
 
-        await indexRepo.Received(1).UpsertAsync(Arg.Is<LibraryIndex>(idx => idx.Manifest.LastParserVersion == ParserVersionInfo.Current),
-                                                Arg.Any<CancellationToken>()
-                                               );
+        await indexRepo.Received(requiredNumberOfCalls: 1)
+                       .UpsertAsync(Arg.Is<LibraryIndex>(idx => idx.Manifest.LastParserVersion ==
+                                                                ParserVersionInfo.Current
+                                                        ),
+                                    Arg.Any<CancellationToken>()
+                                   );
     }
 
     [Fact]
@@ -185,10 +194,11 @@ public sealed class RescrubServiceTests
                                                 ct: TestContext.Current.CancellationToken
                                                );
 
-        Assert.Equal(1, result.Processed);
-        Assert.Equal(0, result.Changed);
+        Assert.Equal(expected: 1, result.Processed);
+        Assert.Equal(expected: 0, result.Changed);
         Assert.False(result.DidReclassify);
-        await chunkRepo.DidNotReceive().UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
+        await chunkRepo.DidNotReceive()
+                       .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
     }
 
     private static RescrubService MakeService()
@@ -199,11 +209,12 @@ public sealed class RescrubServiceTests
         return service;
     }
 
-    private static SaddleRAG.Ingestion.Classification.LlmClassifier MakeClassifier()
+    private static LlmClassifier MakeClassifier()
     {
-        var settings = Options.Create(new SaddleRAG.Ingestion.Embedding.OllamaSettings());
-        var result = new SaddleRAG.Ingestion.Classification.LlmClassifier(settings,
-                                                                        NullLogger<SaddleRAG.Ingestion.Classification.LlmClassifier>.Instance);
+        var settings = Options.Create(new OllamaSettings());
+        var result = new LlmClassifier(settings,
+                                       NullLogger<LlmClassifier>.Instance
+                                      );
         return result;
     }
 
@@ -222,7 +233,7 @@ public sealed class RescrubServiceTests
     }
 
     private static DocChunk MakeLegacyChunk(string content) =>
-        new()
+        new DocChunk
             {
                 Id = "lib/1.0/abc/0",
                 LibraryId = "lib",
@@ -281,8 +292,9 @@ public sealed class RescrubServiceTests
                                                 ct: TestContext.Current.CancellationToken
                                                );
 
-        await excludedRepo.Received(1).DeleteAsync("lib", "1.0", Arg.Any<CancellationToken>());
-        await excludedRepo.Received(1).UpsertManyAsync(Arg.Any<IEnumerable<ExcludedSymbol>>(), Arg.Any<CancellationToken>());
+        await excludedRepo.Received(requiredNumberOfCalls: 1).DeleteAsync("lib", "1.0", Arg.Any<CancellationToken>());
+        await excludedRepo.Received(requiredNumberOfCalls: 1)
+                          .UpsertManyAsync(Arg.Any<IEnumerable<ExcludedSymbol>>(), Arg.Any<CancellationToken>());
         Assert.True(result.ExcludedCount > 0);
     }
 
@@ -313,8 +325,10 @@ public sealed class RescrubServiceTests
                                                 ct: TestContext.Current.CancellationToken
                                                );
 
-        await excludedRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await excludedRepo.DidNotReceive().UpsertManyAsync(Arg.Any<IEnumerable<ExcludedSymbol>>(), Arg.Any<CancellationToken>());
+        await excludedRepo.DidNotReceive()
+                          .DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await excludedRepo.DidNotReceive()
+                          .UpsertManyAsync(Arg.Any<IEnumerable<ExcludedSymbol>>(), Arg.Any<CancellationToken>());
         Assert.True(result.ExcludedCount > 0);
     }
 
@@ -330,7 +344,7 @@ public sealed class RescrubServiceTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
 
         profileRepo.GetAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns(MakeProfile());
-        var noiseChunks = Enumerable.Range(0, 30)
+        var noiseChunks = Enumerable.Range(start: 0, count: 30)
                                     .Select(i => MakeLegacyChunk($"alpha{i} beta{i} gamma{i} delta{i} epsilon{i}."))
                                     .ToArray();
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns(noiseChunks);

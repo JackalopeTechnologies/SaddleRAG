@@ -19,10 +19,11 @@ public sealed class ScrapeJobThresholdsTests
     public void IsStaleRunningTrueWhenLastProgressOlderThanCutoff()
     {
         var now = DateTime.UtcNow;
-        var staleCutoff = now - TimeSpan.FromHours(4);
+        var staleCutoff = now - TimeSpan.FromHours(hours: 4);
         var job = MakeJob(ScrapeJobStatus.Running,
-                           createdAt: now - TimeSpan.FromDays(1),
-                           lastProgressAt: now - TimeSpan.FromDays(1));
+                          now - TimeSpan.FromDays(days: 1),
+                          now - TimeSpan.FromDays(days: 1)
+                         );
 
         Assert.True(ScrapeJobThresholds.IsStaleRunning(job, staleCutoff));
     }
@@ -31,10 +32,11 @@ public sealed class ScrapeJobThresholdsTests
     public void IsStaleRunningFalseWhenLastProgressRecentEnough()
     {
         var now = DateTime.UtcNow;
-        var staleCutoff = now - TimeSpan.FromHours(4);
+        var staleCutoff = now - TimeSpan.FromHours(hours: 4);
         var job = MakeJob(ScrapeJobStatus.Running,
-                           createdAt: now - TimeSpan.FromHours(8),
-                           lastProgressAt: now - TimeSpan.FromMinutes(30));
+                          now - TimeSpan.FromHours(hours: 8),
+                          now - TimeSpan.FromMinutes(minutes: 30)
+                         );
 
         Assert.False(ScrapeJobThresholds.IsStaleRunning(job, staleCutoff));
     }
@@ -43,10 +45,11 @@ public sealed class ScrapeJobThresholdsTests
     public void IsStaleRunningFallsBackToCreatedAtWhenLastProgressNull()
     {
         var now = DateTime.UtcNow;
-        var staleCutoff = now - TimeSpan.FromHours(4);
+        var staleCutoff = now - TimeSpan.FromHours(hours: 4);
         var job = MakeJob(ScrapeJobStatus.Running,
-                           createdAt: now - TimeSpan.FromDays(2),
-                           lastProgressAt: null);
+                          now - TimeSpan.FromDays(days: 2),
+                          lastProgressAt: null
+                         );
 
         Assert.True(ScrapeJobThresholds.IsStaleRunning(job, staleCutoff));
     }
@@ -55,18 +58,19 @@ public sealed class ScrapeJobThresholdsTests
     public void IsStaleRunningFalseForNonRunningStatus()
     {
         var now = DateTime.UtcNow;
-        var staleCutoff = now - TimeSpan.FromHours(4);
+        var staleCutoff = now - TimeSpan.FromHours(hours: 4);
         var job = MakeJob(ScrapeJobStatus.Cancelled,
-                           createdAt: now - TimeSpan.FromDays(7),
-                           lastProgressAt: now - TimeSpan.FromDays(7));
+                          now - TimeSpan.FromDays(days: 7),
+                          now - TimeSpan.FromDays(days: 7)
+                         );
 
         Assert.False(ScrapeJobThresholds.IsStaleRunning(job, staleCutoff));
     }
 
     private static ScrapeJobRecord MakeJob(ScrapeJobStatus status,
-                                            DateTime createdAt,
-                                            DateTime? lastProgressAt) =>
-        new()
+                                           DateTime createdAt,
+                                           DateTime? lastProgressAt) =>
+        new ScrapeJobRecord
             {
                 Id = "job",
                 Job = new ScrapeJob

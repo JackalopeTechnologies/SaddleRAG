@@ -1,0 +1,47 @@
+@* SaddleRAG.Monitor/Components/VersionList.razor *@
+@using SaddleRAG.Core.Models
+
+@if (Versions.Count == 0)
+{
+    <MudText Typo="Typo.body2">No versions indexed.</MudText>
+}
+else
+{
+    <MudTable Items="@Versions" Dense="true" Hover="true" T="LibraryVersionRecord">
+        <HeaderContent>
+            <MudTh>Version</MudTh>
+            <MudTh>Scraped</MudTh>
+            <MudTh>Pages</MudTh>
+            <MudTh>Chunks</MudTh>
+            <MudTh>Suspect</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                    @if (context.Version == CurrentVersion)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">current</MudChip>
+                    }
+                    <span style="font-family:monospace">@context.Version</span>
+                </MudStack>
+            </MudTd>
+            <MudTd>@context.ScrapedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudTd>
+            <MudTd>@context.PageCount</MudTd>
+            <MudTd>@context.ChunkCount</MudTd>
+            <MudTd>
+                <SuspectChip IsSuspect="@context.Suspect" Reasons="@context.SuspectReasons"/>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<LibraryVersionRecord> Versions { get; set; } = Array.Empty<LibraryVersionRecord>();
+
+    [Parameter]
+    public string? CurrentVersion { get; set; }
+
+}

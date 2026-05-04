@@ -8,12 +8,12 @@
 
 using System.Text;
 using System.Text.Json;
-using SaddleRAG.Core.Models;
-using SaddleRAG.Ingestion.Embedding;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models;
+using SaddleRAG.Core.Models;
+using SaddleRAG.Ingestion.Embedding;
 
 #endregion
 
@@ -25,13 +25,21 @@ namespace SaddleRAG.Ingestion.Recon;
 ///     path delegates recon to the calling LLM (Claude / GPT / etc.) and
 ///     never uses this; this class exists so the CLI can still ingest
 ///     libraries when used standalone.
-///
 ///     Confidence-gated: the caller (the CLI command) checks the result's
 ///     Confidence against OllamaSettings.ReconMinConfidence and refuses to
 ///     persist below the threshold without an explicit opt-in flag.
 /// </summary>
 public class CliReconFallback
 {
+    private record ReconParseResult(
+        IReadOnlyList<string> Languages,
+        CasingConventions Casing,
+        IReadOnlyList<string> Separators,
+        IReadOnlyList<string> CallableShapes,
+        IReadOnlyList<string> LikelySymbols,
+        string? CanonicalInventoryUrl,
+        float Confidence);
+
     public CliReconFallback(IOptions<OllamaSettings> settings,
                             ILogger<CliReconFallback> logger)
     {
@@ -41,8 +49,8 @@ public class CliReconFallback
     }
 
     private readonly OllamaApiClient mClient;
-    private readonly OllamaSettings mSettings;
     private readonly ILogger<CliReconFallback> mLogger;
+    private readonly OllamaSettings mSettings;
 
     /// <summary>
     ///     Verify the configured ReconModel is pulled and available locally.
@@ -51,11 +59,12 @@ public class CliReconFallback
     /// </summary>
     public async Task<bool> IsModelAvailableAsync(CancellationToken ct = default)
     {
-        bool available = false;
+        var available = false;
         try
         {
             var models = await mClient.ListLocalModelsAsync(ct);
-            available = models.Any(m => string.Equals(m.Name, mSettings.ReconModel, StringComparison.OrdinalIgnoreCase));
+            available = models.Any(m => string.Equals(m.Name, mSettings.ReconModel, StringComparison.OrdinalIgnoreCase)
+                                  );
         }
         catch(Exception ex)
         {
@@ -195,7 +204,14 @@ public class CliReconFallback
             // confidence gate will reject this, refusing to persist.
         }
 
-        var result = new ReconParseResult(languages, casing, separators, callables, likely, inventoryUrl, confidence);
+        var result = new ReconParseResult(languages,
+                                          casing,
+                                          separators,
+                                          callables,
+                                          likely,
+                                          inventoryUrl,
+                                          confidence
+                                         );
         return result;
     }
 
@@ -203,10 +219,13 @@ public class CliReconFallback
     {
         string[] result = [];
         if (root.TryGetProperty(key, out var prop) && prop.ValueKind == JsonValueKind.Array)
+        {
             result = prop.EnumerateArray()
                          .Select(v => v.GetString() ?? string.Empty)
                          .Where(s => !string.IsNullOrEmpty(s))
                          .ToArray();
+        }
+
         return result;
     }
 
@@ -214,6 +233,7 @@ public class CliReconFallback
     {
         var result = new CasingConventions();
         if (root.TryGetProperty(KeyCasing, out var casingProp) && casingProp.ValueKind == JsonValueKind.Object)
+        {
             result = new CasingConventions
                          {
                              Types = ReadOptionalString(casingProp, KeyTypes) ?? string.Empty,
@@ -222,6 +242,8 @@ public class CliReconFallback
                              Members = ReadOptionalString(casingProp, KeyMembers) ?? string.Empty,
                              Parameters = ReadOptionalString(casingProp, KeyParameters) ?? string.Empty
                          };
+        }
+
         return result;
     }
 
@@ -235,19 +257,11 @@ public class CliReconFallback
 
     private static float ReadConfidence(JsonElement root)
     {
-        float result = 0f;
+        var result = 0f;
         if (root.TryGetProperty(KeyConfidence, out var prop) && prop.ValueKind == JsonValueKind.Number)
             result = (float) prop.GetDouble();
-        return Math.Clamp(result, 0f, 1f);
+        return Math.Clamp(result, min: 0f, max: 1f);
     }
-
-    private record ReconParseResult(IReadOnlyList<string> Languages,
-                                    CasingConventions Casing,
-                                    IReadOnlyList<string> Separators,
-                                    IReadOnlyList<string> CallableShapes,
-                                    IReadOnlyList<string> LikelySymbols,
-                                    string? CanonicalInventoryUrl,
-                                    float Confidence);
 
     private const int MaxResponseChars = 8192;
     private const string SourceCliOllama = "cli-ollama";

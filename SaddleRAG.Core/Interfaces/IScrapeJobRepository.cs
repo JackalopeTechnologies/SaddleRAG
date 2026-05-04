@@ -35,7 +35,7 @@ public interface IScrapeJobRepository
     Task<IReadOnlyList<ScrapeJobRecord>> ListRecentAsync(int limit = 20, CancellationToken ct = default);
 
     /// <summary>
-    ///     List every job currently in <see cref="SaddleRAG.Core.Enums.ScrapeJobStatus.Running"/>
+    ///     List every job currently in <see cref="SaddleRAG.Core.Enums.ScrapeJobStatus.Running" />
     ///     across all libraries, sorted by CreatedAt descending. Used by
     ///     get_dashboard_index to surface orphan Running jobs that fall
     ///     outside the recent-jobs window.
@@ -56,7 +56,7 @@ public interface IScrapeJobRepository
     ///     Return the most-recently-created Queued or non-stale Running
     ///     job for (libraryId, version), or null if none exists. Stale
     ///     Running jobs (orphans whose effective progress timestamp is
-    ///     older than <see cref="ScrapeJobThresholds.StaleRunning"/>) are
+    ///     older than <see cref="ScrapeJobThresholds.StaleRunning" />) are
     ///     skipped so the start_ingest state machine can move forward
     ///     instead of getting wedged on a dead runner.
     /// </summary>

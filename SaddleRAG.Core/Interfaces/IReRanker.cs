@@ -1,31 +1,38 @@
-// IReRanker.cs
+// IReRanker.cs
+
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
-// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-SaddleRAG-Commercial
-// Available under AGPLv3 (see LICENSE) or a commercial license
-// (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
-
-#region Usings
-
-using SaddleRAG.Core.Models;
-
-#endregion
-
-#pragma warning disable STR0010 // Interface methods cannot validate parameters
-
-namespace SaddleRAG.Core.Interfaces;
-
-/// <summary>
-///     Cross-encoder re-ranking after initial vector search retrieval.
-///     Improves precision by jointly encoding query + chunk for relevance scoring.
-/// </summary>
-public interface IReRanker
-{
-    /// <summary>
-    ///     Re-rank candidate chunks by relevance to the query.
-    ///     Returns candidates in order of decreasing relevance.
-    /// </summary>
-    Task<IReadOnlyList<ReRankResult>> ReRankAsync(string query,
-                                                  IReadOnlyList<DocChunk> candidates,
-                                                  int maxResults,
-                                                  CancellationToken ct = default);
-}
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-SaddleRAG-Commercial
+
+// Available under AGPLv3 (see LICENSE) or a commercial license
+
+// (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
+
+
+#region Usings
+
+using SaddleRAG.Core.Models;
+
+#endregion
+
+
+#pragma warning disable STR0010 // Interface methods cannot validate parameters
+
+
+namespace SaddleRAG.Core.Interfaces;
+
+/// <summary>
+///     Cross-encoder re-ranking after initial vector search retrieval.
+///     Improves precision by jointly encoding query + chunk for relevance scoring.
+/// </summary>
+public interface IReRanker
+
+{
+    /// <summary>
+    ///     Re-rank candidate chunks by relevance to the query.
+    ///     Returns candidates in order of decreasing relevance.
+    /// </summary>
+    Task<IReadOnlyList<ReRankResult>> ReRankAsync(string query,
+                                                  IReadOnlyList<DocChunk> candidates,
+                                                  int maxResults,
+                                                  CancellationToken ct = default);
+}

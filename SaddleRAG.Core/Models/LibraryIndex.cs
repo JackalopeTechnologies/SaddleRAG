@@ -34,7 +34,7 @@ public record LibraryIndex
     ///     sharded <c>bm25Shards</c> collection; load via
     ///     <c>IBm25ShardRepository</c>.
     /// </summary>
-    public Bm25Stats Bm25 { get; init; } = new();
+    public Bm25Stats Bm25 { get; init; } = new Bm25Stats();
 
     /// <summary>
     ///     Set of every identifier-shaped token appearing inside any code
@@ -47,5 +47,5 @@ public record LibraryIndex
     ///     Versioning metadata: parser/profile/classifier versions that were
     ///     current when this index was last built.
     /// </summary>
-    public LibraryManifest Manifest { get; init; } = new();
+    public LibraryManifest Manifest { get; init; } = new LibraryManifest();
 }

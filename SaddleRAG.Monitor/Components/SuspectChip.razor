@@ -1,0 +1,49 @@
+@* SaddleRAG.Monitor/Components/SuspectChip.razor *@
+
+@if (IsSuspect)
+{
+    <MudTooltip Arrow="true" Placement="Placement.Top">
+        <ChildContent>
+            <MudChip T="string" Size="@Size" Color="Color.Warning" Icon="@Icons.Material.Filled.Warning">
+                suspect
+            </MudChip>
+        </ChildContent>
+        <TooltipContent>
+            @if (Reasons.Count == 0)
+            {
+                <MudText Typo="Typo.caption">Marked suspect (no reasons recorded)</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Class="mb-1">Reasons:</MudText>
+                <MudList T="string" Dense="true">
+                    @foreach (var r in Reasons)
+                    {
+                        <MudListItem Icon="@Icons.Material.Filled.FiberManualRecord"
+                                     IconSize="Size.Small">@r</MudListItem>
+                    }
+                </MudList>
+            }
+        </TooltipContent>
+    </MudTooltip>
+}
+else
+{
+    <MudChip T="string" Size="@Size" Color="Color.Success" Icon="@Icons.Material.Filled.CheckCircle">
+        healthy
+    </MudChip>
+}
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public bool IsSuspect { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<string> Reasons { get; set; } = Array.Empty<string>();
+
+    [Parameter]
+    public Size Size { get; set; } = Size.Small;
+
+}

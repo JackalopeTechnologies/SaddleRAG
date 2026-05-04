@@ -1,0 +1,37 @@
+@* SaddleRAG.Monitor/Components/HostnameDistribution.razor *@
+@using SaddleRAG.Core.Models
+
+<MudPaper Class="pa-3 mb-2" Elevation="0" Outlined="true">
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Hostnames</MudText>
+    @if (Buckets.Count == 0)
+    {
+        <MudText Typo="Typo.caption">No pages indexed.</MudText>
+    }
+    else
+    {
+        <MudTable Items="@Buckets" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Host</MudTh>
+                <MudTh Style="width:100px">Chunks</MudTh>
+                <MudTh>Share</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd Style="font-family:monospace">@context.Host</MudTd>
+                <MudTd>@context.Count</MudTd>
+                <MudTd><MudProgressLinear Value="@SharePct(context.Count)" Color="Color.Primary"/></MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<HostBucket> Buckets { get; set; } = Array.Empty<HostBucket>();
+
+    private int Total => Buckets.Sum(b => b.Count);
+
+    private double SharePct(int n) => Total == 0 ? 0 : (double) n / Total * 100.0;
+
+}

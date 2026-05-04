@@ -9,9 +9,9 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Database.Repositories;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -20,13 +20,12 @@ namespace SaddleRAG.Mcp.Tools;
 /// <summary>
 ///     MCP tools that let a calling LLM review and refine the symbol
 ///     extractor's per-library decisions:
-///       — list_excluded_symbols: see what was rejected, with sample
-///         sentences pulled from the corpus.
-///       — add_to_likely_symbols: promote a token (extractor will keep it
-///         even when it lacks structural signal).
-///       — add_to_stoplist: demote a token (extractor will reject it
-///         regardless of signal).
-///
+///     — list_excluded_symbols: see what was rejected, with sample
+///     sentences pulled from the corpus.
+///     — add_to_likely_symbols: promote a token (extractor will keep it
+///     even when it lacks structural signal).
+///     — add_to_stoplist: demote a token (extractor will reject it
+///     regardless of signal).
 ///     All three are optional. The rescrub_library tool's Hints field
 ///     suggests using them when the rejection count looks suspicious.
 /// </summary>
@@ -43,19 +42,19 @@ public static class SymbolManagementTools
     [Description("Return the per-(library, version) tokens that the symbol extractor " +
                  "rejected during the last rescrub, with the reason and a few sample " +
                  "sentences. Use to triage which rejections are correct (noise) and " +
-                 "which to override via add_to_likely_symbols.")]
+                 "which to override via add_to_likely_symbols."
+                )]
     public static async Task<string> ListExcludedSymbols(RepositoryFactory repositoryFactory,
-                                                          [Description("Library identifier")]
-                                                          string library,
-                                                          [Description("Library version")]
-                                                          string version,
-                                                          [Description("Optional reason filter (GlobalStoplist, LibraryStoplist, Unit, BelowMinLength, LikelyAbbreviation, NoStructureSignal).")]
-                                                          SymbolRejectionReason? reason = null,
-                                                          [Description("Maximum entries to return. Default 50.")]
-                                                          int limit = DefaultListLimit,
-                                                          [Description("Optional database profile name")]
-                                                          string? profile = null,
-                                                          CancellationToken ct = default)
+                                                         [Description("Library identifier")] string library,
+                                                         [Description("Library version")] string version,
+                                                         [Description("Optional reason filter (GlobalStoplist, LibraryStoplist, Unit, BelowMinLength, LikelyAbbreviation, NoStructureSignal)."
+                                                                     )]
+                                                         SymbolRejectionReason? reason = null,
+                                                         [Description("Maximum entries to return. Default 50.")]
+                                                         int limit = DefaultListLimit,
+                                                         [Description("Optional database profile name")]
+                                                         string? profile = null,
+                                                         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(library);
@@ -68,7 +67,8 @@ public static class SymbolManagementTools
         if (libraryProfile == null)
         {
             result = JsonSerializer.Serialize(new { ReconNeeded = true, Library = library, Version = version },
-                                              smJsonOptions);
+                                              smJsonOptions
+                                             );
         }
         else
         {
@@ -82,14 +82,18 @@ public static class SymbolManagementTools
                                                       TotalExcluded = total,
                                                       Returned = items.Count,
                                                       Items = items.Select(i => new
-                                                                                    {
-                                                                                        i.Name,
-                                                                                        Reason = i.Reason.ToString(),
-                                                                                        i.ChunkCount,
-                                                                                        i.SampleSentences
-                                                                                    })
-                                                  }, smJsonOptions);
+                                                                               {
+                                                                                   i.Name,
+                                                                                   Reason = i.Reason.ToString(),
+                                                                                   i.ChunkCount,
+                                                                                   i.SampleSentences
+                                                                               }
+                                                                          )
+                                                  },
+                                              smJsonOptions
+                                             );
         }
+
         return result;
     }
 
@@ -104,17 +108,15 @@ public static class SymbolManagementTools
                  "Promote one or more tokens to LibraryProfile.LikelySymbols so the " +
                  "extractor keeps them even without other structural signal. Auto-removes " +
                  "any case-equivalent variant from LibraryProfile.Stoplist (last call wins). " +
-                 "Returns a summary of what changed plus a hint to call rescrub_library.")]
+                 "Returns a summary of what changed plus a hint to call rescrub_library."
+                )]
     public static async Task<string> AddToLikelySymbols(RepositoryFactory repositoryFactory,
-                                                         [Description("Library identifier")]
-                                                         string library,
-                                                         [Description("Library version")]
-                                                         string version,
-                                                         [Description("Tokens to promote.")]
-                                                         IReadOnlyList<string> names,
-                                                         [Description("Optional database profile name")]
-                                                         string? profile = null,
-                                                         CancellationToken ct = default)
+                                                        [Description("Library identifier")] string library,
+                                                        [Description("Library version")] string version,
+                                                        [Description("Tokens to promote.")] IReadOnlyList<string> names,
+                                                        [Description("Optional database profile name")]
+                                                        string? profile = null,
+                                                        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(library);
@@ -130,13 +132,15 @@ public static class SymbolManagementTools
         if (libraryProfile == null)
         {
             result = JsonSerializer.Serialize(new { ReconNeeded = true, Library = library, Version = version },
-                                              smJsonOptions);
+                                              smJsonOptions
+                                             );
         }
         else
         {
             var nameSet = new HashSet<string>(names, StringComparer.Ordinal);
             var alreadyInLikely = libraryProfile.LikelySymbols.Where(nameSet.Contains).ToList();
-            var promoted = nameSet.Where(n => !libraryProfile.LikelySymbols.Contains(n, StringComparer.Ordinal)).ToList();
+            var promoted = nameSet.Where(n => !libraryProfile.LikelySymbols.Contains(n, StringComparer.Ordinal))
+                                  .ToList();
 
             var newLikely = libraryProfile.LikelySymbols.Concat(promoted).ToList();
             var newStoplist = libraryProfile.Stoplist
@@ -164,8 +168,11 @@ public static class SymbolManagementTools
                                                       AlreadyInLikelySymbols = alreadyInLikely,
                                                       RemovedFromStoplist = removedFromStoplist,
                                                       Hints = new[] { "Call rescrub_library to apply the changes." }
-                                                  }, smJsonOptions);
+                                                  },
+                                              smJsonOptions
+                                             );
         }
+
         return result;
     }
 
@@ -182,17 +189,15 @@ public static class SymbolManagementTools
                  "rejects them regardless of structural signal. Case-insensitive — adding " +
                  "'foo' blocks 'Foo', 'FOO', etc. Auto-removes case-equivalent entries " +
                  "from LibraryProfile.LikelySymbols (last call wins). Returns a summary " +
-                 "of what changed plus a hint to call rescrub_library.")]
+                 "of what changed plus a hint to call rescrub_library."
+                )]
     public static async Task<string> AddToStoplist(RepositoryFactory repositoryFactory,
-                                                    [Description("Library identifier")]
-                                                    string library,
-                                                    [Description("Library version")]
-                                                    string version,
-                                                    [Description("Tokens to demote.")]
-                                                    IReadOnlyList<string> names,
-                                                    [Description("Optional database profile name")]
-                                                    string? profile = null,
-                                                    CancellationToken ct = default)
+                                                   [Description("Library identifier")] string library,
+                                                   [Description("Library version")] string version,
+                                                   [Description("Tokens to demote.")] IReadOnlyList<string> names,
+                                                   [Description("Optional database profile name")]
+                                                   string? profile = null,
+                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(library);
@@ -208,7 +213,8 @@ public static class SymbolManagementTools
         if (libraryProfile == null)
         {
             result = JsonSerializer.Serialize(new { ReconNeeded = true, Library = library, Version = version },
-                                              smJsonOptions);
+                                              smJsonOptions
+                                             );
         }
         else
         {
@@ -216,7 +222,8 @@ public static class SymbolManagementTools
             var alreadyInStoplist = libraryProfile.Stoplist
                                                   .Where(s => nameSet.Contains(s, StringComparer.OrdinalIgnoreCase))
                                                   .ToList();
-            var demoted = nameSet.Where(n => !libraryProfile.Stoplist.Contains(n, StringComparer.OrdinalIgnoreCase)).ToList();
+            var demoted = nameSet.Where(n => !libraryProfile.Stoplist.Contains(n, StringComparer.OrdinalIgnoreCase))
+                                 .ToList();
 
             var newStoplist = libraryProfile.Stoplist.Concat(demoted).ToList();
             var newLikely = libraryProfile.LikelySymbols
@@ -244,16 +251,19 @@ public static class SymbolManagementTools
                                                       AlreadyInStoplist = alreadyInStoplist,
                                                       RemovedFromLikelySymbols = removedFromLikely,
                                                       Hints = new[] { "Call rescrub_library to apply the changes." }
-                                                  }, smJsonOptions);
+                                                  },
+                                              smJsonOptions
+                                             );
         }
+
         return result;
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new()
+    private const int DefaultListLimit = 50;
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions
                                                                       {
                                                                           WriteIndented = true,
                                                                           Converters = { new JsonStringEnumConverter() }
                                                                       };
-
-    private const int DefaultListLimit = 50;
 }

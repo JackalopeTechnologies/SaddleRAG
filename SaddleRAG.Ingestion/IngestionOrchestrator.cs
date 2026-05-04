@@ -7,16 +7,17 @@
 #region Usings
 
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Suspect;
-using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -41,6 +42,8 @@ public class IngestionOrchestrator
                                  ILibraryIndexRepository libraryIndexRepository,
                                  IBm25ShardRepository bm25ShardRepository,
                                  SuspectDetector suspectDetector,
+                                 IScrapeAuditWriter auditWriter,
+                                 IMonitorBroadcaster broadcaster,
                                  ILogger<IngestionOrchestrator> logger)
     {
         mCrawler = crawler;
@@ -55,22 +58,27 @@ public class IngestionOrchestrator
         mLibraryIndexRepository = libraryIndexRepository;
         mBm25ShardRepository = bm25ShardRepository;
         mSuspectDetector = suspectDetector;
+        mAuditWriter = auditWriter;
+        mBroadcaster = broadcaster;
         mLogger = logger;
     }
 
+    private readonly IScrapeAuditWriter mAuditWriter;
+    private readonly IBm25ShardRepository mBm25ShardRepository;
+    private readonly IMonitorBroadcaster mBroadcaster;
+
     private readonly CategoryAwareChunker mChunker;
     private readonly IChunkRepository mChunkRepository;
-    private readonly ILibraryProfileRepository mLibraryProfileRepository;
-    private readonly ILibraryIndexRepository mLibraryIndexRepository;
-    private readonly IBm25ShardRepository mBm25ShardRepository;
-    private readonly SuspectDetector mSuspectDetector;
 
     private readonly PageCrawler mCrawler;
     private readonly IEmbeddingProvider mEmbeddingProvider;
+    private readonly ILibraryIndexRepository mLibraryIndexRepository;
+    private readonly ILibraryProfileRepository mLibraryProfileRepository;
     private readonly ILibraryRepository mLibraryRepository;
     private readonly LlmClassifier mLlmClassifier;
     private readonly ILogger<IngestionOrchestrator> mLogger;
     private readonly IPageRepository mPageRepository;
+    private readonly SuspectDetector mSuspectDetector;
     private readonly IVectorSearchProvider mVectorSearch;
 
     /// <summary>
@@ -130,6 +138,15 @@ public class IngestionOrchestrator
                            };
         progress.PipelineState = nameof(ScrapeJobStatus.Running);
 
+        var auditCtx = new AuditContext
+                           {
+                               JobId = progress.Id,
+                               LibraryId = job.LibraryId,
+                               Version = job.Version
+                           };
+
+        mBroadcaster.RecordJobStarted(progress.Id, job.LibraryId, job.Version, job.RootUrl ?? string.Empty);
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // Launch all five stages
@@ -152,6 +169,7 @@ public class IngestionOrchestrator
         var embedTask = RunEmbedStageAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
         var indexTask = RunIndexStageAsync(profile,
                                            job,
+                                           auditCtx,
                                            embedToIndex.Reader,
                                            progress,
                                            onProgress,
@@ -162,12 +180,18 @@ public class IngestionOrchestrator
         {
             await Task.WhenAll(crawlTask, classifyTask, chunkTask, embedTask, indexTask);
         }
+        catch(OperationCanceledException)
+        {
+            mBroadcaster.RecordJobCancelled(progress.Id);
+            throw;
+        }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
             mLogger.LogError(ex, "Pipeline failed for {LibraryId} v{Version}", job.LibraryId, job.Version);
             progress.PipelineState = nameof(ScrapeJobStatus.Failed);
             progress.ErrorMessage = ex.Message;
             onProgress?.Invoke(progress);
+            mBroadcaster.RecordJobFailed(progress.Id, ex.Message);
             throw;
         }
 
@@ -180,6 +204,7 @@ public class IngestionOrchestrator
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
         onProgress?.Invoke(progress);
+        mBroadcaster.RecordJobCompleted(progress.Id, progress.PagesCompleted);
 
         mLogger.LogInformation("Streaming ingestion complete for {LibraryId} v{Version}: {Pages} pages, {Chunks} chunks searchable",
                                job.LibraryId,
@@ -188,6 +213,73 @@ public class IngestionOrchestrator
                                progress.ChunksCompleted
                               );
     }
+
+    #region Crawl stage
+
+    private async Task RunCrawlStageAsync(ScrapeJob job,
+                                          ChannelWriter<PageRecord> output,
+                                          IReadOnlySet<string>? resumeUrls,
+                                          ScrapeJobRecord progress,
+                                          Action<ScrapeJobRecord>? onProgress,
+                                          CancellationTokenSource cts)
+    {
+        try
+        {
+            await mCrawler.CrawlAsync(job,
+                                      output,
+                                      progress.Id,
+                                      resumeUrls,
+                                      pageCount =>
+                                      {
+                                          progress.PagesFetched = pageCount;
+                                          onProgress?.Invoke(progress);
+                                      },
+                                      queueCount => { progress.PagesQueued = queueCount; },
+                                      () =>
+                                      {
+                                          progress.IncrementErrorCount();
+                                          onProgress?.Invoke(progress);
+                                      },
+                                      cts.Token
+                                     );
+        }
+        catch(OperationCanceledException)
+        {
+            output.TryComplete();
+            throw;
+        }
+        catch(Exception ex)
+        {
+            mLogger.LogError(ex, "Crawl stage fatal error");
+            output.TryComplete(ex);
+            await cts.CancelAsync();
+            throw;
+        }
+    }
+
+    #endregion
+
+    private static string TruncateForEmbedding(string text, int maxChars)
+    {
+        string result = text.Length > maxChars ? text[..maxChars] : text;
+        return result;
+    }
+
+    private const int SuspectSampleTitleLimit = 5;
+
+    private const int PageChannelCapacity = 50;
+    private const int ChunkChannelCapacity = 20;
+    private const int EmbedBatchSize = 32;
+
+    private const int IndexRebuildInterval = 100;
+
+    // Safety limit for embedding context window (nomic-embed-text: 2048 tokens)
+    // Use 6000 chars as hard cap (~2000 tokens at ~3 chars/token)
+    private const int MaxEmbedChars = 6000;
+
+    private const string SinglePageStatusIndexed = "Indexed";
+    private const string SinglePageStatusEmpty = "Empty";
+    private const string SinglePageStatusFailed = "Failed";
 
     #region Single-page top-up
 
@@ -237,7 +329,7 @@ public class IngestionOrchestrator
                                                                       string url,
                                                                       CancellationToken ct)
     {
-        var classified = await ClassifySinglePageAsync(page, libraryHint: libraryId);
+        var classified = await ClassifySinglePageAsync(page, libraryId);
         var chunks = mChunker.Chunk(classified);
 
         SinglePageIngestResult result;
@@ -253,17 +345,23 @@ public class IngestionOrchestrator
                          };
         }
         else
-            result = await PersistSinglePageChunksAsync(classified, chunks.ToList(), libraryId, version, url, ct);
+            result = await PersistSinglePageChunksAsync(classified,
+                                                        chunks.ToList(),
+                                                        libraryId,
+                                                        version,
+                                                        url,
+                                                        ct
+                                                       );
 
         return result;
     }
 
     private async Task<SinglePageIngestResult> PersistSinglePageChunksAsync(PageRecord classified,
-                                                                             List<DocChunk> chunks,
-                                                                             string libraryId,
-                                                                             string version,
-                                                                             string url,
-                                                                             CancellationToken ct)
+                                                                            List<DocChunk> chunks,
+                                                                            string libraryId,
+                                                                            string version,
+                                                                            string url,
+                                                                            CancellationToken ct)
     {
         var embedded = await EmbedSinglePageChunksAsync(chunks, ct);
         await mChunkRepository.UpsertChunksAsync(embedded, ct);
@@ -339,7 +437,7 @@ public class IngestionOrchestrator
     /// <summary>
     ///     Build the sharded BM25 inverted index over the chunks just
     ///     persisted by the embed/index stage, then upsert the matching
-    ///     <see cref="LibraryIndex"/> with the inline stats.
+    ///     <see cref="LibraryIndex" /> with the inline stats.
     ///     If a prior index exists (e.g. from a previous rescrub), its
     ///     <c>CodeFenceSymbols</c> and <c>Manifest</c> fields are preserved
     ///     so a re-scrape doesn't blow away symbol-extraction state until
@@ -383,50 +481,6 @@ public class IngestionOrchestrator
                                build.Stats.ShardCount,
                                build.Stats.AverageDocLength
                               );
-    }
-
-    #endregion
-
-    #region Crawl stage
-
-    private async Task RunCrawlStageAsync(ScrapeJob job,
-                                          ChannelWriter<PageRecord> output,
-                                          IReadOnlySet<string>? resumeUrls,
-                                          ScrapeJobRecord progress,
-                                          Action<ScrapeJobRecord>? onProgress,
-                                          CancellationTokenSource cts)
-    {
-        try
-        {
-            await mCrawler.CrawlAsync(job,
-                                      output,
-                                      resumeUrls,
-                                      pageCount =>
-                                      {
-                                          progress.PagesFetched = pageCount;
-                                          onProgress?.Invoke(progress);
-                                      },
-                                      queueCount => { progress.PagesQueued = queueCount; },
-                                      () =>
-                                      {
-                                          progress.IncrementErrorCount();
-                                          onProgress?.Invoke(progress);
-                                      },
-                                      cts.Token
-                                     );
-        }
-        catch(OperationCanceledException)
-        {
-            output.TryComplete();
-            throw;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogError(ex, "Crawl stage fatal error");
-            output.TryComplete(ex);
-            await cts.CancelAsync();
-            throw;
-        }
     }
 
     #endregion
@@ -476,7 +530,8 @@ public class IngestionOrchestrator
     {
         var languageMix = await mChunkRepository.GetLanguageMixAsync(job.LibraryId, job.Version, ct);
         var hostnameDist = await mChunkRepository.GetHostnameDistributionAsync(job.LibraryId, job.Version, ct);
-        var sampleTitles = await mChunkRepository.GetSampleTitlesAsync(job.LibraryId, job.Version, SuspectSampleTitleLimit, ct);
+        var sampleTitles =
+            await mChunkRepository.GetSampleTitlesAsync(job.LibraryId, job.Version, SuspectSampleTitleLimit, ct);
 
         var profile = await mLibraryProfileRepository.GetAsync(job.LibraryId, job.Version, ct);
         var declaredLanguages = profile?.Languages ?? Array.Empty<string>();
@@ -486,13 +541,14 @@ public class IngestionOrchestrator
         var reasons = await mSuspectDetector.EvaluateAsync(job.LibraryId,
                                                            job.Version,
                                                            job.RootUrl,
-                                                           pageCount: progress.PagesCompleted,
-                                                           distinctHostCount: hostnameDist.Count,
-                                                           distinctLinkTargets: int.MaxValue,
-                                                           languageMix: languageMix,
-                                                           declaredLanguages: declaredLanguages,
-                                                           sampleTitles: sampleTitles,
-                                                           ct);
+                                                           progress.PagesCompleted,
+                                                           hostnameDist.Count,
+                                                           int.MaxValue,
+                                                           languageMix,
+                                                           declaredLanguages,
+                                                           sampleTitles,
+                                                           ct
+                                                          );
 
         if (reasons.Count > 0)
             await mLibraryRepository.SetSuspectAsync(job.LibraryId, job.Version, reasons, ct);
@@ -501,28 +557,6 @@ public class IngestionOrchestrator
     }
 
     #endregion
-
-    private static string TruncateForEmbedding(string text, int maxChars)
-    {
-        string result = text.Length > maxChars ? text[..maxChars] : text;
-        return result;
-    }
-
-    private const int SuspectSampleTitleLimit = 5;
-
-    private const int PageChannelCapacity = 50;
-    private const int ChunkChannelCapacity = 20;
-    private const int EmbedBatchSize = 32;
-
-    private const int IndexRebuildInterval = 100;
-
-    // Safety limit for embedding context window (nomic-embed-text: 2048 tokens)
-    // Use 6000 chars as hard cap (~2000 tokens at ~3 chars/token)
-    private const int MaxEmbedChars = 6000;
-
-    private const string SinglePageStatusIndexed = "Indexed";
-    private const string SinglePageStatusEmpty = "Empty";
-    private const string SinglePageStatusFailed = "Failed";
 
     #region Classify stage
 
@@ -541,6 +575,7 @@ public class IngestionOrchestrator
                 await output.WriteAsync(classified, cts.Token);
                 progress.PagesClassified++;
                 onProgress?.Invoke(progress);
+                mBroadcaster.RecordPageClassified(progress.Id);
             }
         }
         catch(OperationCanceledException)
@@ -632,6 +667,8 @@ public class IngestionOrchestrator
                 await output.WriteAsync(chunks.ToArray(), ct);
                 progress.ChunksGenerated += chunks.Count;
                 onProgress?.Invoke(progress);
+                for(var ci = 0; ci < chunks.Count; ci++)
+                    mBroadcaster.RecordChunkGenerated(progress.Id);
             }
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
@@ -715,6 +752,8 @@ public class IngestionOrchestrator
             await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
             progress.ChunksEmbedded += embeddedChunks.Length;
             onProgress?.Invoke(progress);
+            for(var ei = 0; ei < embeddedChunks.Length; ei++)
+                mBroadcaster.RecordChunkEmbedded(progress.Id);
 
             await output.WriteAsync(embeddedChunks, ct);
 
@@ -749,6 +788,7 @@ public class IngestionOrchestrator
 
     private async Task RunIndexStageAsync(string? profile,
                                           ScrapeJob job,
+                                          AuditContext auditCtx,
                                           ChannelReader<DocChunk[]> input,
                                           ScrapeJobRecord progress,
                                           Action<ScrapeJobRecord>? onProgress,
@@ -756,6 +796,9 @@ public class IngestionOrchestrator
     {
         var pendingChunks = new List<DocChunk>();
         var indexedPageUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pageChunkCounts =
+            new Dictionary<string, (int ChunkCount, DocCategory Category)>(StringComparer.OrdinalIgnoreCase);
+        var pageMetadata = new Dictionary<string, (int Depth, string? ParentUrl)>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
@@ -764,9 +807,8 @@ public class IngestionOrchestrator
                 pendingChunks.AddRange(embeddedChunks);
                 progress.ChunksCompleted += embeddedChunks.Length;
 
-                // Track unique page URLs that have been indexed
-                foreach(var chunk in embeddedChunks)
-                    indexedPageUrls.Add(chunk.PageUrl);
+                // Track unique page URLs and accumulate per-page chunk counts
+                AccumulatePageChunkCounts(embeddedChunks, indexedPageUrls, pageChunkCounts, pageMetadata);
 
                 if (pendingChunks.Count >= IndexRebuildInterval)
                 {
@@ -784,6 +826,26 @@ public class IngestionOrchestrator
                 progress.PagesCompleted = indexedPageUrls.Count;
                 onProgress?.Invoke(progress);
             }
+
+            // Emit one audit record per page that completed the full pipeline
+            foreach((var pageUrl, (var chunkCount, var category)) in pageChunkCounts)
+            {
+                var host = new Uri(pageUrl).Host;
+                pageMetadata.TryGetValue(pageUrl, out var meta);
+                mAuditWriter.RecordIndexed(auditCtx,
+                                           pageUrl,
+                                           meta.ParentUrl,
+                                           host,
+                                           meta.Depth,
+                                           new AuditPageOutcome
+                                               {
+                                                   FetchStatus = null,
+                                                   Category = category.ToString(),
+                                                   ChunkCount = chunkCount
+                                               }
+                                          );
+                mBroadcaster.RecordPageCompleted(auditCtx.JobId);
+            }
         }
         catch(OperationCanceledException)
         {
@@ -794,6 +856,23 @@ public class IngestionOrchestrator
             mLogger.LogError(ex, "Index stage fatal error");
             await cts.CancelAsync();
             throw;
+        }
+    }
+
+    private static void AccumulatePageChunkCounts(DocChunk[] chunks,
+                                                  HashSet<string> indexedPageUrls,
+                                                  Dictionary<string, (int ChunkCount, DocCategory Category)>
+                                                      pageChunkCounts,
+                                                  Dictionary<string, (int Depth, string? ParentUrl)> pageMetadata)
+    {
+        foreach(var chunk in chunks)
+        {
+            indexedPageUrls.Add(chunk.PageUrl);
+            if (pageChunkCounts.TryGetValue(chunk.PageUrl, out var existing))
+                pageChunkCounts[chunk.PageUrl] = (existing.ChunkCount + 1, chunk.Category);
+            else
+                pageChunkCounts[chunk.PageUrl] = (1, chunk.Category);
+            pageMetadata.TryAdd(chunk.PageUrl, (chunk.Depth, chunk.ParentUrl));
         }
     }
 

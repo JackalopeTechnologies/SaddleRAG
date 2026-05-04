@@ -23,7 +23,7 @@ namespace SaddleRAG.Ingestion.Crawling;
 ///     the working path. This filter prunes by prefix instead.
 /// </summary>
 /// <remarks>
-///     One instance per host. <see cref="CrawlBudget"/> holds the dictionary
+///     One instance per host. <see cref="CrawlBudget" /> holds the dictionary
 ///     keyed by host and routes lookups through the matching filter.
 /// </remarks>
 public sealed class HostScopeFilter
@@ -33,17 +33,17 @@ public sealed class HostScopeFilter
         mGatedPrefixes = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
     }
 
-    private readonly ConcurrentDictionary<string, byte> mGatedPrefixes;
-
     /// <summary>
     ///     Snapshot of currently gated path prefixes for this host.
     ///     Useful for diagnostics and tests.
     /// </summary>
     public IReadOnlyCollection<string> GatedPrefixes => mGatedPrefixes.Keys.ToArray();
 
+    private readonly ConcurrentDictionary<string, byte> mGatedPrefixes;
+
     /// <summary>
-    ///     Mark <paramref name="uri"/>'s first path segment as gated for this host.
-    ///     Subsequent calls to <see cref="IsGated"/> for any URL sharing that
+    ///     Mark <paramref name="uri" />'s first path segment as gated for this host.
+    ///     Subsequent calls to <see cref="IsGated" /> for any URL sharing that
     ///     first segment return true.
     /// </summary>
     public void GatePrefixOf(Uri uri)
@@ -55,7 +55,7 @@ public sealed class HostScopeFilter
     }
 
     /// <summary>
-    ///     Returns true if <paramref name="uri"/>'s first path segment has
+    ///     Returns true if <paramref name="uri" />'s first path segment has
     ///     been gated by a prior 403 on this host.
     /// </summary>
     public bool IsGated(Uri uri)
@@ -78,7 +78,7 @@ public sealed class HostScopeFilter
         ArgumentNullException.ThrowIfNull(uri);
 
         string path = uri.AbsolutePath;
-        string result = "/";
+        var result = "/";
 
         if (path.Length > 1)
         {

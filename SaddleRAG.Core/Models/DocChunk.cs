@@ -100,4 +100,14 @@ public record DocChunk
     ///     data reads cleanly without a destructive migration.
     /// </summary>
     public int ParserVersion { get; init; } = 1;
+
+    /// <summary>
+    ///     Crawl depth of the source page (0 = root).
+    /// </summary>
+    public int Depth { get; init; }
+
+    /// <summary>
+    ///     URL of the page that linked to the source page, or null for the root.
+    /// </summary>
+    public string? ParentUrl { get; init; }
 }

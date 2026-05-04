@@ -1,0 +1,82 @@
+@* SaddleRAG.Monitor/Pages/PerformancePage.razor *@
+@page "/monitor/performance"
+@rendermode InteractiveServer
+@using SaddleRAG.Core.Models.Monitor
+@inherits PerformancePageBase
+
+<MudText Typo="Typo.h4" Class="mb-3">Query performance</MudText>
+
+@if (Snapshot is null)
+{
+    <MudProgressCircular Indeterminate="true"/>
+}
+else
+{
+    <MudText Typo="Typo.caption" Class="mb-3">
+        Since process start: @Snapshot.ProcessStartedUtc.ToString("yyyy-MM-dd HH:mm 'UTC'")
+        (uptime @((DateTime.UtcNow - Snapshot.ProcessStartedUtc).ToString(@"hh\:mm\:ss")))
+    </MudText>
+
+    <MudText Typo="Typo.h6" Class="mb-2">By operation</MudText>
+    @if (Snapshot.PerOperation.Count == 0)
+    {
+        <MudText Typo="Typo.caption">No queries recorded yet.</MudText>
+    }
+    else
+    {
+        <MudTable Items="@Snapshot.PerOperation" Dense="true" Hover="true" T="QueryOperationStats">
+            <HeaderContent>
+                <MudTh>Operation</MudTh>
+                <MudTh>Count</MudTh>
+                <MudTh>Failures</MudTh>
+                <MudTh>Avg ms</MudTh>
+                <MudTh>p50</MudTh>
+                <MudTh>p95</MudTh>
+                <MudTh>Max</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Operation</MudTd>
+                <MudTd>@context.Count</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.FailureCount > 0 ? Color.Error : Color.Success)">
+                        @context.FailureCount
+                    </MudChip>
+                </MudTd>
+                <MudTd>@context.AvgMs.ToString("F1")</MudTd>
+                <MudTd>@context.P50Ms.ToString("F1")</MudTd>
+                <MudTd>@context.P95Ms.ToString("F1")</MudTd>
+                <MudTd>@context.MaxMs.ToString("F1")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+
+    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Recent samples (newest first)</MudText>
+    @if (Snapshot.RecentSamples.Count == 0)
+    {
+        <MudText Typo="Typo.caption">No samples yet.</MudText>
+    }
+    else
+    {
+        <MudTable Items="@Snapshot.RecentSamples.Reverse()" Dense="true" Hover="true" T="QuerySample">
+            <HeaderContent>
+                <MudTh>Time</MudTh>
+                <MudTh>Op</MudTh>
+                <MudTh>Ms</MudTh>
+                <MudTh>Result</MudTh>
+                <MudTh>Note</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd Style="font-family:monospace; font-size:.7rem">@context.At.ToString("HH:mm:ss.fff")</MudTd>
+                <MudTd>@context.Operation</MudTd>
+                <MudTd>
+                    <MudText Typo="Typo.body2" Color="@(context.Success ? Color.Default : Color.Error)">
+                        @context.DurationMs.ToString("F1")
+                    </MudText>
+                </MudTd>
+                <MudTd>@(context.ResultCount?.ToString() ?? "—")</MudTd>
+                <MudTd>@(context.Note ?? string.Empty)</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+}

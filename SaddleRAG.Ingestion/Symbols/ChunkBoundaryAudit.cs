@@ -18,7 +18,6 @@ namespace SaddleRAG.Ingestion.Symbols;
 ///     A real cut means chunk N ends with <c>Foo.</c> AND chunk N+1 (in the
 ///     same page, sequentially) starts with <c>Bar</c>, AND <c>Foo.Bar</c>
 ///     appears as a dotted identifier somewhere else in the corpus.
-///
 ///     This rules out the dominant false-positive of a naive trailing-period
 ///     check: most chunks ending with <c>Identifier.</c> are just normal
 ///     sentence-ends ("...the axis is disabled."), not chunker bugs. By
@@ -40,7 +39,7 @@ public static class ChunkBoundaryAudit
 
     /// <summary>
     ///     Per-issue detail for the same audit CountIssues runs. Yields each
-    ///     corpus-confirmed cut as a <see cref="BoundaryIssue"/> with prev/
+    ///     corpus-confirmed cut as a <see cref="BoundaryIssue" /> with prev/
     ///     next chunk IDs, joined identifier, and surrounding context.
     /// </summary>
     public static IEnumerable<BoundaryIssue> EnumerateIssues(IReadOnlyList<DocChunk> chunks)
@@ -81,11 +80,11 @@ public static class ChunkBoundaryAudit
             var trimmedStart = next.Content.TrimStart();
             var nextFirst = FirstWord(trimmedStart);
             var hasContent = !string.IsNullOrEmpty(prevLast) && !string.IsNullOrEmpty(nextFirst);
-            var startsLetterOnBothSides = hasContent
-                                       && char.IsLetter(prevLast[0])
-                                       && char.IsLetter(nextFirst[0]);
+            var startsLetterOnBothSides =
+                hasContent && char.IsLetter(prevLast[index: 0]) && char.IsLetter(nextFirst[index: 0]);
             var joined = startsLetterOnBothSides ? $"{prevLast}.{nextFirst}" : null;
             if (joined != null && dottedIdentifiers.Contains(joined))
+            {
                 result = new BoundaryIssue
                              {
                                  PrevChunkId = prev.Id,
@@ -95,7 +94,9 @@ public static class ChunkBoundaryAudit
                                  PrevTail = TailSnippet(prev.Content, ContextSnippetLength),
                                  NextHead = HeadSnippet(next.Content, ContextSnippetLength)
                              };
+            }
         }
+
         return result;
     }
 
@@ -103,7 +104,8 @@ public static class ChunkBoundaryAudit
     {
         BoundaryIssue? result = null;
         var leading = chunk.Content.TrimStart();
-        if (leading.Length > 0 && leading[0] == Period)
+        if (leading.Length > 0 && leading[index: 0] == Period)
+        {
             result = new BoundaryIssue
                          {
                              PrevChunkId = LeadingDotPrevPlaceholder,
@@ -113,6 +115,8 @@ public static class ChunkBoundaryAudit
                              PrevTail = string.Empty,
                              NextHead = HeadSnippet(chunk.Content, ContextSnippetLength)
                          };
+        }
+
         return result;
     }
 
@@ -143,6 +147,7 @@ public static class ChunkBoundaryAudit
                 AddPairwiseSegments(match.Value, result);
             }
         }
+
         return result;
     }
 
@@ -158,7 +163,8 @@ public static class ChunkBoundaryAudit
             .GroupBy(c => c.PageUrl)
             .Select(g => g.OrderBy(c => ParseChunkOrder(c.Id).Main)
                           .ThenBy(c => ParseChunkOrder(c.Id).Sub)
-                          .ToList());
+                          .ToList()
+                   );
 
     /// <summary>
     ///     Chunk IDs end with <c>{index}</c> or <c>{index}-{subIndex}</c>.
@@ -166,9 +172,9 @@ public static class ChunkBoundaryAudit
     /// </summary>
     private static (int Main, int Sub) ParseChunkOrder(string chunkId)
     {
-        var lastSlash = chunkId.LastIndexOf('/');
+        var lastSlash = chunkId.LastIndexOf(value: '/');
         var tail = lastSlash >= 0 ? chunkId[(lastSlash + 1)..] : chunkId;
-        var parts = tail.Split('-');
+        var parts = tail.Split(separator: '-');
         var main = parts.Length > 0 && int.TryParse(parts[0], out var m) ? m : 0;
         var sub = parts.Length > 1 && int.TryParse(parts[1], out var s) ? s : 0;
         return (main, sub);
@@ -195,18 +201,16 @@ public static class ChunkBoundaryAudit
         return result;
     }
 
-    // Matches dotted identifier paths: Foo.Bar, Foo.Bar.Baz. Each segment
-    // must start with a letter or underscore and use only word characters.
-    // Matches WITHIN code-fence blocks and prose alike — we want any
-    // appearance of a dotted form to count toward "this is a real path".
-    private static readonly Regex smDottedIdentifierRegex = new(
-        @"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b",
-        RegexOptions.Compiled
-    );
-
     private const char Period = '.';
     private const char Underscore = '_';
     private const int ContextSnippetLength = 80;
     private const string LeadingDotPlaceholder = "(leading-dot)";
     private const string LeadingDotPrevPlaceholder = "(none)";
+
+    // Matches dotted identifier paths: Foo.Bar, Foo.Bar.Baz. Each segment
+    // must start with a letter or underscore and use only word characters.
+    // Matches WITHIN code-fence blocks and prose alike — we want any
+    // appearance of a dotted form to count toward "this is a real path".
+    private static readonly Regex smDottedIdentifierRegex =
+        new Regex(@"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", RegexOptions.Compiled);
 }

@@ -9,6 +9,11 @@
 using System.CommandLine;
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Playwright;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -17,18 +22,16 @@ using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
+using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Ecosystems.Common;
 using SaddleRAG.Ingestion.Ecosystems.Npm;
 using SaddleRAG.Ingestion.Ecosystems.NuGet;
 using SaddleRAG.Ingestion.Ecosystems.Pip;
 using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Ingestion.Recon;
 using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Ingestion.Suspect;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Microsoft.Playwright;
+using SaddleRAG.Ingestion.Symbols;
 
 #endregion
 
@@ -67,7 +70,8 @@ const string LibraryIdDescription = "Library identifier";
 const string DryrunCommandName = "dryrun";
 const string DryrunCommandDescription = "Dry-run a scrape — fetch pages but store nothing";
 const string ReclassifyCommandName = "reclassify";
-const string ReclassifyCommandDescription = "Run the LLM classifier over existing pages still marked Unclassified, without re-scraping. Updates page records and chunk categories in MongoDB.";
+const string ReclassifyCommandDescription =
+    "Run the LLM classifier over existing pages still marked Unclassified, without re-scraping. Updates page records and chunk categories in MongoDB.";
 const string ReclassifyLibraryIdDescription = "Library to reclassify (omit for all libraries)";
 const string AllOptionName = "--all";
 const string ReclassifyAllDescription = "Reclassify ALL pages, even ones already classified";
@@ -96,6 +100,7 @@ const string QueuedStatus = "queued";
 const string FailedStatus = "failed";
 
 #endregion
+
 // Build configuration
 var configuration = new ConfigurationBuilder()
                     .AddJsonFile(AppSettingsFile, optional: true)
@@ -110,11 +115,14 @@ services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.Secti
 services.AddSingleton<OllamaBootstrapper>();
 services.AddSingleton<GitHubRepoScraper>();
 services.AddSingleton<PageCrawler>();
+services.AddSingleton<IScrapeAuditWriter>(sp =>
+                                              new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>())
+                                         );
 services.AddSingleton<LlmClassifier>();
-services.AddSingleton<SaddleRAG.Ingestion.Symbols.SymbolExtractor>();
-services.AddSingleton<SaddleRAG.Ingestion.Recon.LibraryProfileService>();
-services.AddSingleton<SaddleRAG.Ingestion.Recon.CliReconFallback>();
-services.AddSingleton<SaddleRAG.Ingestion.Recon.RescrubService>();
+services.AddSingleton<SymbolExtractor>();
+services.AddSingleton<LibraryProfileService>();
+services.AddSingleton<CliReconFallback>();
+services.AddSingleton<RescrubService>();
 services.AddSingleton<CategoryAwareChunker>();
 services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
 services.AddSingleton<IVectorSearchProvider, InMemoryBruteForceVectorSearch>();
@@ -247,9 +255,11 @@ listCommand.SetHandler(async () =>
                            else
                            {
                                foreach(var lib in libraries)
+                               {
                                    Console
                                        .WriteLine($"  {lib.Id} — {lib.Name} (current: {lib.CurrentVersion}, versions: {string.Join(", ", lib.AllVersions)})"
                                                  );
+                               }
                            }
                        }
                       );
@@ -311,7 +321,11 @@ dryrunCommand.SetHandler(async (rootUrl,
                                            };
 
                              var crawler = provider.GetRequiredService<PageCrawler>();
-                             var report = await crawler.DryRunAsync(job);
+                             var report = await crawler.DryRunAsync(job,
+                                                                    DryrunCommandName,
+                                                                    DryrunCommandName,
+                                                                    Guid.NewGuid().ToString("N")
+                                                                   );
 
                              Console.WriteLine();
                              Console.WriteLine($"=== Dry Run Report ({report.ElapsedTime.TotalSeconds:F1}s) ===");
@@ -323,9 +337,11 @@ dryrunCommand.SetHandler(async (rootUrl,
                              Console.WriteLine($"Fetch errors: {report.FetchErrors}");
                              Console.WriteLine($"Pages still in queue at end: {report.PagesRemainingInQueue}");
                              if (report.HitMaxPagesLimit)
+                             {
                                  Console
                                      .WriteLine($"** HIT MaxPages limit ({maxPages}) — actual crawl would have {report.TotalPages + report.PagesRemainingInQueue}+ pages **"
                                                );
+                             }
 
                              Console.WriteLine();
                              Console.WriteLine("Pages by host:");
@@ -445,9 +461,11 @@ reclassifyCommand.SetHandler(async (libraryId, allPages) =>
                                          }
 
                                          if (processed % 10 == 0)
+                                         {
                                              Console
                                                  .WriteLine($"  {processed}/{targetPages.Count} processed, {totalReclassified} reclassified so far"
                                                            );
+                                         }
                                      }
 
                                      totalProcessed += processed;
@@ -605,9 +623,11 @@ profileListCommand.SetHandler(() =>
                                   Console.WriteLine();
 
                                   if (settings.Profiles.Count == 0)
+                                  {
                                       Console
                                           .WriteLine("No profiles defined. Using direct ConnectionString/DatabaseName."
                                                     );
+                                  }
                                   else
                                   {
                                       foreach((var name, var profile) in settings.Profiles)
@@ -666,8 +686,10 @@ scanCommand.SetHandler(async (path, profile) =>
                                Console.WriteLine();
                                Console.WriteLine($"Queued for scraping ({queuedPackages.Count}):");
                                foreach(var pkg in queuedPackages)
+                               {
                                    Console
                                        .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} -> {pkg.DocUrl}");
+                               }
                            }
 
                            var failedPackages = report.Packages
@@ -679,9 +701,11 @@ scanCommand.SetHandler(async (path, profile) =>
                                Console.WriteLine();
                                Console.WriteLine($"Failed ({failedPackages.Count}):");
                                foreach(var pkg in failedPackages)
+                               {
                                    Console
                                        .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} — {pkg.ErrorMessage}"
                                                  );
+                               }
                            }
                        },
                        scanPathOption,

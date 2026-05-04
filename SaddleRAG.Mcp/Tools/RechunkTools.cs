@@ -8,12 +8,12 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion.Recon;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -38,18 +38,22 @@ public static class RechunkTools
                 )]
     public static async Task<string> RechunkLibrary(RepositoryFactory repositoryFactory,
                                                     RechunkService rechunkService,
+                                                    [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                     IBackgroundJobRunner runner,
                                                     [Description("Library identifier (e.g. 'aerotech-aeroscript')")]
                                                     string library,
                                                     [Description("Library version (e.g. '1.0')")]
                                                     string version,
-                                                    [Description("If true, reports what would change without writing to MongoDB or touching the vector index.")]
+                                                    [Description("If true, reports what would change without writing to MongoDB or touching the vector index."
+                                                                )]
                                                     bool dryRun = false,
-                                                    [Description("Skip the chunk-boundary audit. Default false; the audit is the primary signal that the new chunker code did its job.")]
+                                                    [Description("Skip the chunk-boundary audit. Default false; the audit is the primary signal that the new chunker code did its job."
+                                                                )]
                                                     bool skipBoundaryAudit = false,
                                                     [Description("Optional cap for spot-checking large libraries.")]
                                                     int? maxPages = null,
-                                                    [Description("Optional database profile name (use list_profiles to discover)")]
+                                                    [Description("Optional database profile name (use list_profiles to discover)"
+                                                                )]
                                                     string? profile = null,
                                                     CancellationToken ct = default)
     {
@@ -66,7 +70,8 @@ public static class RechunkTools
                               MaxPages = maxPages
                           };
 
-        var inputJson = JsonSerializer.Serialize(new { library, version, dryRun, skipBoundaryAudit, maxPages, profile });
+        var inputJson =
+            JsonSerializer.Serialize(new { library, version, dryRun, skipBoundaryAudit, maxPages, profile });
         var jobRecord = new BackgroundJobRecord
                             {
                                 Id = Guid.NewGuid().ToString(),
@@ -83,25 +88,28 @@ public static class RechunkTools
                                             {
                                                 var pageRepo = repositoryFactory.GetPageRepository(profile);
                                                 var chunkRepo = repositoryFactory.GetChunkRepository(profile);
-                                                var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
+                                                var profileRepo =
+                                                    repositoryFactory.GetLibraryProfileRepository(profile);
                                                 var result = await rechunkService.RechunkAsync(profile,
-                                                                                               pageRepo,
-                                                                                               chunkRepo,
-                                                                                               profileRepo,
-                                                                                               library,
-                                                                                               version,
-                                                                                               options,
-                                                                                               onProgress,
-                                                                                               jobCt);
+                                                                      pageRepo,
+                                                                      chunkRepo,
+                                                                      profileRepo,
+                                                                      library,
+                                                                      version,
+                                                                      options,
+                                                                      onProgress,
+                                                                      jobCt
+                                                                 );
                                                 record.ResultJson = JsonSerializer.Serialize(result, smJsonOptions);
                                             },
-                                            ct);
+                                            ct
+                                           );
 
         var response = new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) };
         return JsonSerializer.Serialize(response, smJsonOptions);
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
-
     private const string ItemsLabelChunks = "chunks";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

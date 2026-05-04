@@ -12,13 +12,30 @@ namespace SaddleRAG.Ingestion.Crawling;
 ///     a single page even when the rest of the docs path is open; a short
 ///     pause and a re-fetch usually succeeds.
 ///     The crawl handles these as "problem children": each attempt waits
-///     <see cref="ComputeRetryDelay"/> before re-issuing, attempts run on
+///     <see cref="ComputeRetryDelay" /> before re-issuing, attempts run on
 ///     a single dedicated retry worker (so they're serialized), and the
-///     worker waits <see cref="MinDelayBetweenRetriesMs"/> between every
+///     worker waits <see cref="MinDelayBetweenRetriesMs" /> between every
 ///     retry it processes — even successful ones — so we don't burst.
 /// </summary>
 public static class RetryPolicy
 {
+    /// <summary>
+    ///     Compute the wait before retry <paramref name="attemptIndex" />.
+    ///     <paramref name="attemptIndex" /> is 0 for the first retry, 1 for
+    ///     the second, and so on. Formula:
+    ///     <c>min(InitialRetryDelayMs * 2^attemptIndex, MaxRetryDelayMs)</c>.
+    /// </summary>
+    public static TimeSpan ComputeRetryDelay(int attemptIndex)
+    {
+        if (attemptIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(attemptIndex), attemptIndex, "attemptIndex must be >= 0");
+
+        long ms = (long) InitialRetryDelayMs << attemptIndex;
+        long capped = Math.Min(ms, MaxRetryDelayMs);
+        var result = TimeSpan.FromMilliseconds(capped);
+        return result;
+    }
+
     /// <summary>
     ///     Maximum number of retry attempts after the initial fetch failure.
     ///     With <c>MaxRetryAttempts = 2</c> a page is tried at most three
@@ -28,7 +45,7 @@ public static class RetryPolicy
 
     /// <summary>
     ///     Initial backoff before the first retry (attempt index 0).
-    ///     Doubles per attempt index up to <see cref="MaxRetryDelayMs"/>.
+    ///     Doubles per attempt index up to <see cref="MaxRetryDelayMs" />.
     /// </summary>
     public const int InitialRetryDelayMs = 1000;
 
@@ -44,21 +61,4 @@ public static class RetryPolicy
     ///     trickle pace regardless of how many retries are queued.
     /// </summary>
     public const int MinDelayBetweenRetriesMs = 1000;
-
-    /// <summary>
-    ///     Compute the wait before retry <paramref name="attemptIndex"/>.
-    ///     <paramref name="attemptIndex"/> is 0 for the first retry, 1 for
-    ///     the second, and so on. Formula:
-    ///     <c>min(InitialRetryDelayMs * 2^attemptIndex, MaxRetryDelayMs)</c>.
-    /// </summary>
-    public static TimeSpan ComputeRetryDelay(int attemptIndex)
-    {
-        if (attemptIndex < 0)
-            throw new ArgumentOutOfRangeException(nameof(attemptIndex), attemptIndex, "attemptIndex must be >= 0");
-
-        long ms = (long) InitialRetryDelayMs << attemptIndex;
-        long capped = Math.Min(ms, MaxRetryDelayMs);
-        var result = TimeSpan.FromMilliseconds(capped);
-        return result;
-    }
 }

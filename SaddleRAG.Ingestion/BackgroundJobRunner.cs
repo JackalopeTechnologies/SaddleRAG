@@ -6,12 +6,12 @@
 
 #region Usings
 
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -34,13 +34,14 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         mLogger = logger;
     }
 
-    private readonly RepositoryFactory mRepositoryFactory;
     private readonly CancellationToken mAppStoppingToken;
     private readonly ILogger<BackgroundJobRunner> mLogger;
 
+    private readonly RepositoryFactory mRepositoryFactory;
+
     /// <summary>
     ///     Persist the job record, kick off background execution, and return the
-    ///     job id immediately. The caller supplies the <paramref name="execute"/>
+    ///     job id immediately. The caller supplies the <paramref name="execute" />
     ///     delegate; the runner handles status transitions and error capture.
     /// </summary>
     /// <param name="jobRecord">
@@ -54,11 +55,10 @@ public class BackgroundJobRunner : IBackgroundJobRunner
     ///     not report incremental progress.
     /// </param>
     /// <param name="ct">Caller cancellation token used only for the initial upsert.</param>
-    /// <returns>The job id from <paramref name="jobRecord"/>.</returns>
-    public async Task<string> QueueAsync(
-        BackgroundJobRecord jobRecord,
-        Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute,
-        CancellationToken ct = default)
+    /// <returns>The job id from <paramref name="jobRecord" />.</returns>
+    public async Task<string> QueueAsync(BackgroundJobRecord jobRecord,
+                                         Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute,
+                                         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(jobRecord);
         ArgumentNullException.ThrowIfNull(execute);
@@ -72,9 +72,8 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         return jobRecord.Id;
     }
 
-    private async Task RunJobAsync(
-        BackgroundJobRecord jobRecord,
-        Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute)
+    private async Task RunJobAsync(BackgroundJobRecord jobRecord,
+                                   Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute)
     {
         var jobRepo = mRepositoryFactory.GetBackgroundJobRepository(jobRecord.Profile);
 
@@ -83,21 +82,20 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         jobRecord.PipelineState = PipelineStateRunning;
         await jobRepo.UpsertAsync(jobRecord);
 
-        mLogger.LogInformation(
-            "Running background job {JobId} ({JobType}) for {LibraryId}/{Version}",
-            jobRecord.Id,
-            jobRecord.JobType,
-            jobRecord.LibraryId,
-            jobRecord.Version
-        );
+        mLogger.LogInformation("Running background job {JobId} ({JobType}) for {LibraryId}/{Version}",
+                               jobRecord.Id,
+                               jobRecord.JobType,
+                               jobRecord.LibraryId,
+                               jobRecord.Version
+                              );
 
         Action<int, int> onProgress = (processed, total) =>
-        {
-            jobRecord.ItemsProcessed = processed;
-            jobRecord.ItemsTotal = total;
-            jobRecord.LastProgressAt = DateTime.UtcNow;
-            jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
-        };
+                                      {
+                                          jobRecord.ItemsProcessed = processed;
+                                          jobRecord.ItemsTotal = total;
+                                          jobRecord.LastProgressAt = DateTime.UtcNow;
+                                          jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
+                                      };
 
         try
         {
@@ -108,19 +106,17 @@ public class BackgroundJobRunner : IBackgroundJobRunner
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
 
-            mLogger.LogInformation(
-                "Background job {JobId} ({JobType}) completed",
-                jobRecord.Id,
-                jobRecord.JobType
-            );
+            mLogger.LogInformation("Background job {JobId} ({JobType}) completed",
+                                   jobRecord.Id,
+                                   jobRecord.JobType
+                                  );
         }
-        catch (OperationCanceledException)
+        catch(OperationCanceledException)
         {
-            mLogger.LogInformation(
-                "Background job {JobId} ({JobType}) was cancelled",
-                jobRecord.Id,
-                jobRecord.JobType
-            );
+            mLogger.LogInformation("Background job {JobId} ({JobType}) was cancelled",
+                                   jobRecord.Id,
+                                   jobRecord.JobType
+                                  );
 
             jobRecord.Status = ScrapeJobStatus.Cancelled;
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);
@@ -128,7 +124,7 @@ public class BackgroundJobRunner : IBackgroundJobRunner
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
         }
-        catch (Exception ex)
+        catch(Exception ex)
         {
             mLogger.LogError(ex, "Background job {JobId} ({JobType}) failed", jobRecord.Id, jobRecord.JobType);
 

@@ -8,11 +8,11 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using SaddleRAG.Core.Enums;
-using SaddleRAG.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
+using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Models;
 
 #endregion
 
@@ -38,8 +38,8 @@ public class OllamaBootstrapper
     }
 
     private readonly ILogger<OllamaBootstrapper> mLogger;
-    private readonly OllamaSettings mSettings;
     private readonly RankingSettings mRankingSettings;
+    private readonly OllamaSettings mSettings;
 
     /// <summary>
     ///     Full bootstrap sequence: install → start → pull models.
@@ -110,7 +110,8 @@ public class OllamaBootstrapper
     {
         string? result = null;
 
-        string[] pathDirs = Environment.GetEnvironmentVariable(PathEnvironmentVariable)?.Split(Path.PathSeparator) ?? [];
+        string[] pathDirs = Environment.GetEnvironmentVariable(PathEnvironmentVariable)?.Split(Path.PathSeparator) ??
+                                [];
         foreach(string dir in pathDirs)
         {
             if (result == null)
@@ -206,9 +207,11 @@ public class OllamaBootstrapper
 
     private static void RefreshPathEnvironment()
     {
-        string machinePath = Environment.GetEnvironmentVariable(PathEnvironmentVariable, EnvironmentVariableTarget.Machine) ??
-                             string.Empty;
-        string userPath = Environment.GetEnvironmentVariable(PathEnvironmentVariable, EnvironmentVariableTarget.User) ?? string.Empty;
+        string machinePath =
+            Environment.GetEnvironmentVariable(PathEnvironmentVariable, EnvironmentVariableTarget.Machine) ??
+            string.Empty;
+        string userPath = Environment.GetEnvironmentVariable(PathEnvironmentVariable, EnvironmentVariableTarget.User) ??
+                          string.Empty;
         Environment.SetEnvironmentVariable(PathEnvironmentVariable, $"{machinePath};{userPath}");
     }
 
@@ -365,12 +368,16 @@ public class OllamaBootstrapper
     {
         var strategy = mSettings.ReRankingEnabled ? mRankingSettings.ReRankerStrategy : ReRankerStrategy.Off;
         var model = strategy switch
-        {
-            ReRankerStrategy.Off => null,
-            ReRankerStrategy.Llm => string.IsNullOrEmpty(mSettings.ReRankingModel) ? null : mSettings.ReRankingModel,
-            ReRankerStrategy.CrossEncoder => string.IsNullOrEmpty(mSettings.CrossEncoderModel) ? null : mSettings.CrossEncoderModel,
-            var _ => null
-        };
+            {
+                ReRankerStrategy.Off => null,
+                ReRankerStrategy.Llm => string.IsNullOrEmpty(mSettings.ReRankingModel)
+                                            ? null
+                                            : mSettings.ReRankingModel,
+                ReRankerStrategy.CrossEncoder => string.IsNullOrEmpty(mSettings.CrossEncoderModel)
+                                                     ? null
+                                                     : mSettings.CrossEncoderModel,
+                var _ => null
+            };
         return model;
     }
 

@@ -6,10 +6,10 @@
 
 #region Usings
 
+using Microsoft.Extensions.Logging.Abstractions;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Recon;
-using Microsoft.Extensions.Logging.Abstractions;
 
 #endregion
 
@@ -22,21 +22,21 @@ public sealed class LibraryProfileServiceTests
     {
         var profile = LibraryProfileService.Build("aerotech-aeroscript",
                                                   "2025.3",
-                                                  ["AeroScript"],
+                                                      ["AeroScript"],
                                                   new CasingConventions { Types = "PascalCase" },
-                                                  ["."],
-                                                  ["Foo()"],
-                                                  ["MoveLinear", "AxisStatus"],
+                                                      ["."],
+                                                      ["Foo()"],
+                                                      ["MoveLinear", "AxisStatus"],
                                                   canonicalInventoryUrl: null,
                                                   confidence: 0.85f,
-                                                  source: "calling-llm"
+                                                  "calling-llm"
                                                  );
 
         Assert.Equal("aerotech-aeroscript/2025.3", profile.Id);
         Assert.Equal("aerotech-aeroscript", profile.LibraryId);
         Assert.Equal("2025.3", profile.Version);
         Assert.Equal(LibraryProfile.CurrentSchemaVersion, profile.SchemaVersion);
-        Assert.Equal(0.85f, profile.Confidence);
+        Assert.Equal(expected: 0.85f, profile.Confidence);
         Assert.Equal("calling-llm", profile.Source);
         Assert.True((DateTime.UtcNow - profile.CreatedUtc).TotalSeconds < 5);
     }
@@ -46,14 +46,14 @@ public sealed class LibraryProfileServiceTests
     {
         var profile = LibraryProfileService.Build("aerotech-aeroscript",
                                                   "2025.3",
-                                                  ["AeroScript"],
+                                                      ["AeroScript"],
                                                   new CasingConventions { Types = "PascalCase" },
-                                                  ["."],
-                                                  ["Foo()"],
-                                                  ["MoveLinear"],
+                                                      ["."],
+                                                      ["Foo()"],
+                                                      ["MoveLinear"],
                                                   canonicalInventoryUrl: null,
                                                   confidence: 0.85f,
-                                                  source: "calling-llm"
+                                                  "calling-llm"
                                                  );
 
         Assert.NotNull(profile.Stoplist);
@@ -63,23 +63,23 @@ public sealed class LibraryProfileServiceTests
     [Fact]
     public void CurrentSchemaVersionIsTwoAfterStoplistAddition()
     {
-        Assert.Equal(2, LibraryProfile.CurrentSchemaVersion);
+        Assert.Equal(expected: 2, LibraryProfile.CurrentSchemaVersion);
     }
 
     [Fact]
     public void BuildThrowsOnEmptyLibraryId()
     {
         Assert.Throws<ArgumentException>(() =>
-                                             LibraryProfileService.Build(libraryId: string.Empty,
+                                             LibraryProfileService.Build(string.Empty,
                                                                          "2025.3",
-                                                                         [],
+                                                                             [],
                                                                          new CasingConventions(),
-                                                                         [],
-                                                                         [],
-                                                                         [],
+                                                                             [],
+                                                                             [],
+                                                                             [],
                                                                          canonicalInventoryUrl: null,
                                                                          confidence: 0.5f,
-                                                                         source: "calling-llm"
+                                                                         "calling-llm"
                                                                         )
                                         );
     }
@@ -87,8 +87,8 @@ public sealed class LibraryProfileServiceTests
     [Fact]
     public void ComputeHashIsStableAcrossEquivalentProfiles()
     {
-        var a = MakeProfile(["a", "b"], ["MoveLinear", "AxisStatus"], confidence: 0.5f, source: "src1");
-        var b = MakeProfile(["b", "a"], ["AxisStatus", "MoveLinear"], confidence: 0.9f, source: "src2");
+        var a = MakeProfile(["a", "b"], ["MoveLinear", "AxisStatus"], confidence: 0.5f, "src1");
+        var b = MakeProfile(["b", "a"], ["AxisStatus", "MoveLinear"], confidence: 0.9f, "src2");
 
         var hashA = LibraryProfileService.ComputeHash(a);
         var hashB = LibraryProfileService.ComputeHash(b);
@@ -99,8 +99,8 @@ public sealed class LibraryProfileServiceTests
     [Fact]
     public void ComputeHashChangesWhenStructuralContentChanges()
     {
-        var a = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 0.5f, source: "src");
-        var b = MakeProfile(["AeroScript"], ["MoveLinear", "AxisStatus"], confidence: 0.5f, source: "src");
+        var a = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 0.5f, "src");
+        var b = MakeProfile(["AeroScript"], ["MoveLinear", "AxisStatus"], confidence: 0.5f, "src");
 
         var hashA = LibraryProfileService.ComputeHash(a);
         var hashB = LibraryProfileService.ComputeHash(b);
@@ -113,12 +113,13 @@ public sealed class LibraryProfileServiceTests
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
-        var profile = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 0.7f, source: "calling-llm");
+        var profile = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 0.7f, "calling-llm");
 
         var result = await service.SaveAsync(repo, profile, TestContext.Current.CancellationToken);
 
         Assert.Equal(profile.Id, result.Id);
-        await repo.Received(1).UpsertAsync(Arg.Any<LibraryProfile>(), Arg.Any<CancellationToken>());
+        await repo.Received(requiredNumberOfCalls: 1)
+                  .UpsertAsync(Arg.Any<LibraryProfile>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -126,9 +127,13 @@ public sealed class LibraryProfileServiceTests
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
-        var bad = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 1.5f, source: "calling-llm");
+        var bad = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 1.5f, "calling-llm");
 
-        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveAsync(repo, bad, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SaveAsync(repo,
+                                                                            bad,
+                                                                            TestContext.Current.CancellationToken
+                                                                           )
+                                                   );
         await repo.DidNotReceive().UpsertAsync(Arg.Any<LibraryProfile>(), Arg.Any<CancellationToken>());
     }
 
@@ -138,7 +143,7 @@ public sealed class LibraryProfileServiceTests
         var repo = Substitute.For<ILibraryProfileRepository>();
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
 
-        var built = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 0.7f, source: "calling-llm");
+        var built = MakeProfile(["AeroScript"], ["MoveLinear"], confidence: 0.7f, "calling-llm");
         var withWrongId = built with { Id = "wrong-id" };
 
         var saved = await service.SaveAsync(repo, withWrongId, TestContext.Current.CancellationToken);
@@ -150,28 +155,30 @@ public sealed class LibraryProfileServiceTests
     public async Task SaveCarriesForwardStoplistFromPriorVersionWhenEmpty()
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
-        var priorProfile = MakeProfileWithStoplist(version: "1.0", stoplist: ["along", "data"]);
+        var priorProfile = MakeProfileWithStoplist("1.0", ["along", "data"]);
         repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { priorProfile });
 
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
-        var newProfile = MakeProfileWithStoplist(version: "1.1", stoplist: []);
+        var newProfile = MakeProfileWithStoplist("1.1", []);
 
         var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
 
         Assert.Equal(new[] { "along", "data" }, saved.Stoplist);
-        await repo.Received(1).UpsertAsync(Arg.Is<LibraryProfile>(p => p.Stoplist.SequenceEqual(new[] { "along", "data" })),
-                                           Arg.Any<CancellationToken>());
+        await repo.Received(requiredNumberOfCalls: 1)
+                  .UpsertAsync(Arg.Is<LibraryProfile>(p => p.Stoplist.SequenceEqual(new[] { "along", "data" })),
+                               Arg.Any<CancellationToken>()
+                              );
     }
 
     [Fact]
     public async Task SaveDoesNotOverrideNonEmptyStoplist()
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
-        var priorProfile = MakeProfileWithStoplist(version: "1.0", stoplist: ["along", "data"]);
+        var priorProfile = MakeProfileWithStoplist("1.0", ["along", "data"]);
         repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { priorProfile });
 
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
-        var newProfile = MakeProfileWithStoplist(version: "1.1", stoplist: ["enumerator"]);
+        var newProfile = MakeProfileWithStoplist("1.1", ["enumerator"]);
 
         var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
 
@@ -185,7 +192,7 @@ public sealed class LibraryProfileServiceTests
         repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryProfile>());
 
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
-        var newProfile = MakeProfileWithStoplist(version: "1.0", stoplist: []);
+        var newProfile = MakeProfileWithStoplist("1.0", []);
 
         var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
 
@@ -201,8 +208,8 @@ public sealed class LibraryProfileServiceTests
                                                  "2025.3",
                                                  languages,
                                                  new CasingConventions { Types = "PascalCase" },
-                                                 ["."],
-                                                 ["Foo()"],
+                                                     ["."],
+                                                     ["Foo()"],
                                                  likely,
                                                  canonicalInventoryUrl: null,
                                                  confidence,
@@ -212,7 +219,7 @@ public sealed class LibraryProfileServiceTests
     }
 
     private static LibraryProfile MakeProfileWithStoplist(string version, IReadOnlyList<string> stoplist) =>
-        new()
+        new LibraryProfile
             {
                 Id = $"aerotech-aeroscript/{version}",
                 LibraryId = "aerotech-aeroscript",

@@ -25,7 +25,7 @@ public class BackgroundJobRecord
     public required string Id { get; init; }
 
     /// <summary>
-    ///     Discriminator for the operation type. Use <see cref="BackgroundJobTypes"/> constants.
+    ///     Discriminator for the operation type. Use <see cref="BackgroundJobTypes" /> constants.
     /// </summary>
     public required string JobType { get; init; }
 
@@ -36,17 +36,17 @@ public class BackgroundJobRecord
 
     /// <summary>
     ///     Library being operated on. Null for job types that are not library-scoped
-    ///     (e.g. <see cref="BackgroundJobTypes.DryRunScrape"/> and
-    ///     <see cref="BackgroundJobTypes.IndexProjectDependencies"/>).
+    ///     (e.g. <see cref="BackgroundJobTypes.DryRunScrape" /> and
+    ///     <see cref="BackgroundJobTypes.IndexProjectDependencies" />).
     /// </summary>
     public string? LibraryId { get; init; }
 
     /// <summary>
     ///     Library version being operated on. Null for job types that are not
-    ///     version-scoped (e.g. <see cref="BackgroundJobTypes.RenameLibrary"/>,
-    ///     <see cref="BackgroundJobTypes.DeleteLibrary"/>,
-    ///     <see cref="BackgroundJobTypes.DryRunScrape"/>, and
-    ///     <see cref="BackgroundJobTypes.IndexProjectDependencies"/>).
+    ///     version-scoped (e.g. <see cref="BackgroundJobTypes.RenameLibrary" />,
+    ///     <see cref="BackgroundJobTypes.DeleteLibrary" />,
+    ///     <see cref="BackgroundJobTypes.DryRunScrape" />, and
+    ///     <see cref="BackgroundJobTypes.IndexProjectDependencies" />).
     /// </summary>
     public string? Version { get; init; }
 
@@ -84,14 +84,14 @@ public class BackgroundJobRecord
     public string? ItemsLabel { get; set; }
 
     /// <summary>
-    ///     Error message populated when <see cref="Status"/> is
-    ///     <see cref="ScrapeJobStatus.Failed"/>.
+    ///     Error message populated when <see cref="Status" /> is
+    ///     <see cref="ScrapeJobStatus.Failed" />.
     /// </summary>
     public string? ErrorMessage { get; set; }
 
     /// <summary>
-    ///     JSON-serialized result, populated when <see cref="Status"/> reaches
-    ///     <see cref="ScrapeJobStatus.Completed"/>. Shape varies by job type.
+    ///     JSON-serialized result, populated when <see cref="Status" /> reaches
+    ///     <see cref="ScrapeJobStatus.Completed" />. Shape varies by job type.
     /// </summary>
     public string? ResultJson { get; set; }
 
@@ -101,7 +101,7 @@ public class BackgroundJobRecord
     public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 
     /// <summary>
-    ///     When the job transitioned to <see cref="ScrapeJobStatus.Running"/> (UTC).
+    ///     When the job transitioned to <see cref="ScrapeJobStatus.Running" /> (UTC).
     /// </summary>
     public DateTime? StartedAt { get; set; }
 
@@ -120,4 +120,3 @@ public class BackgroundJobRecord
     /// </summary>
     public DateTime? CancelledAt { get; set; }
 }
-

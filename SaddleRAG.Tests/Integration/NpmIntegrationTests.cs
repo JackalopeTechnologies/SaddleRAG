@@ -6,10 +6,10 @@
 
 #region Usings
 
-using SaddleRAG.Ingestion.Ecosystems.Common;
-using SaddleRAG.Ingestion.Ecosystems.Npm;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SaddleRAG.Ingestion.Ecosystems.Common;
+using SaddleRAG.Ingestion.Ecosystems.Npm;
 
 #endregion
 

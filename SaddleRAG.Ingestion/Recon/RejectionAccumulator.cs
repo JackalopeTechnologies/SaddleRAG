@@ -18,17 +18,24 @@ namespace SaddleRAG.Ingestion.Recon;
 ///     Aggregates per-chunk RejectedToken reports across a rescrub pass
 ///     into a list of ExcludedSymbol entries ready to upsert. For each
 ///     token name:
-///       — Records the first reason seen (extractor reasons are
-///         deterministic from the token shape, so conflicts are rare).
-///       — Increments ChunkCount on every report.
-///       — Captures up to three sample snippets, one per third of the
-///         chunk stream (so spread-out noise produces spread-out samples).
-///
+///     — Records the first reason seen (extractor reasons are
+///     deterministic from the token shape, so conflicts are rare).
+///     — Increments ChunkCount on every report.
+///     — Captures up to three sample snippets, one per third of the
+///     chunk stream (so spread-out noise produces spread-out samples).
 ///     Use by RescrubService: construct once with the total chunk count,
 ///     call Record per (chunk, rejectedToken), then Build at the end.
 /// </summary>
 public sealed class RejectionAccumulator
 {
+    private sealed class AccumulatorEntry
+    {
+        public required string Name { get; init; }
+        public required SymbolRejectionReason Reason { get; init; }
+        public required string?[] Samples { get; init; }
+        public int ChunkCount { get; set; }
+    }
+
     public RejectionAccumulator(string libraryId, string version, int totalChunks)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
@@ -41,13 +48,15 @@ public sealed class RejectionAccumulator
         mTotalChunks = totalChunks;
     }
 
+    private readonly Dictionary<string, AccumulatorEntry> mEntries =
+        new Dictionary<string, AccumulatorEntry>(StringComparer.Ordinal);
+
     private readonly string mLibraryId;
-    private readonly string mVersion;
     private readonly int mTotalChunks;
-    private readonly Dictionary<string, AccumulatorEntry> mEntries = new(StringComparer.Ordinal);
+    private readonly string mVersion;
 
     /// <summary>
-    ///     Record one rejection observation. <paramref name="chunkIndex"/>
+    ///     Record one rejection observation. <paramref name="chunkIndex" />
     ///     is the position of the chunk in the rescrub iteration order;
     ///     used to bucket the sample by corpus third.
     /// </summary>
@@ -73,28 +82,33 @@ public sealed class RejectionAccumulator
         var nowUtc = DateTime.UtcNow;
         var result = mEntries.Values.Select(entry => new ExcludedSymbol
                                                          {
-                                                             Id = ExcludedSymbol.MakeId(mLibraryId, mVersion, entry.Name),
+                                                             Id = ExcludedSymbol.MakeId(mLibraryId,
+                                                                      mVersion,
+                                                                      entry.Name
+                                                                 ),
                                                              LibraryId = mLibraryId,
                                                              Version = mVersion,
                                                              Name = entry.Name,
                                                              Reason = entry.Reason,
                                                              SampleSentences = entry.Samples
-                                                                                    .OfType<string>()
-                                                                                    .ToList(),
+                                                                 .OfType<string>()
+                                                                 .ToList(),
                                                              ChunkCount = entry.ChunkCount,
                                                              CapturedUtc = nowUtc
-                                                         })
-                              .ToList();
+                                                         }
+                                           )
+                             .ToList();
         return result;
     }
 
-    private AccumulatorEntry NewEntry(RejectedToken token) => new()
-                                                                  {
-                                                                      Name = token.Name,
-                                                                      Reason = token.Reason,
-                                                                      Samples = new string?[ThirdsBuckets],
-                                                                      ChunkCount = 0
-                                                                  };
+    private AccumulatorEntry NewEntry(RejectedToken token) =>
+        new AccumulatorEntry
+            {
+                Name = token.Name,
+                Reason = token.Reason,
+                Samples = new string?[ThirdsBuckets],
+                ChunkCount = 0
+            };
 
     private void TryCaptureSample(AccumulatorEntry entry, int chunkIndex, string chunkContent, string tokenName)
     {
@@ -111,17 +125,9 @@ public sealed class RejectionAccumulator
     private int ResolveBucket(int chunkIndex)
     {
         var third = mTotalChunks / ThirdsBuckets;
-        var safeThird = Math.Max(third, 1);
+        var safeThird = Math.Max(third, val2: 1);
         var bucket = Math.Min(chunkIndex / safeThird, ThirdsBuckets - 1);
         return bucket;
-    }
-
-    private sealed class AccumulatorEntry
-    {
-        public required string Name { get; init; }
-        public required SymbolRejectionReason Reason { get; init; }
-        public required string?[] Samples { get; init; }
-        public int ChunkCount { get; set; }
     }
 
     private const int ThirdsBuckets = 3;

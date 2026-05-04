@@ -1,0 +1,46 @@
+@* SaddleRAG.Monitor/Pages/LandingPage.razor *@
+@page "/monitor"
+@rendermode InteractiveServer
+@inherits LandingPageBase
+
+<MudText Typo="Typo.h4" Class="mb-4">SaddleRAG Monitor</MudText>
+
+@if (ActiveJobSnapshots.Count > 0)
+{
+    <MudText Typo="Typo.h6" Class="mb-2">Active Jobs</MudText>
+    @foreach(var job in ActiveJobSnapshots)
+    {
+        <JobCardStrip Job="@job"
+                      OnCancel="@(() => CancelJob(job.JobId))"/>
+    }
+
+    <MudDivider Class="my-4"/>
+}
+
+<MudText Typo="Typo.h6" Class="mb-2">Libraries</MudText>
+@if (Libraries.Count == 0 && ActiveJobSnapshots.Count == 0)
+{
+    <MudPaper Class="pa-6 text-center" Elevation="0" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Large" Color="Color.Primary"/>
+        <MudText Typo="Typo.h6" Class="mt-2">No libraries indexed yet</MudText>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Run <code>start_ingest</code> via Claude Code to scrape a library's documentation.
+            See the
+            <MudLink Href="https://github.com/JackalopeTechnologies/SaddleRAG#getting-started" Target="_blank">getting-started guide</MudLink>.
+        </MudText>
+        <MudText Typo="Typo.caption">
+            Tip: <code>recon_library</code> first to build a profile, then <code>scrape_docs</code> to ingest.
+        </MudText>
+    </MudPaper>
+}
+else
+{
+    <MudGrid>
+        @foreach(var lib in Libraries)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <LibraryCard Library="@lib"/>
+            </MudItem>
+        }
+    </MudGrid>
+}

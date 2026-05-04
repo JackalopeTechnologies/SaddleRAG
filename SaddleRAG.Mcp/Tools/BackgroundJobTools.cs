@@ -8,9 +8,9 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -32,14 +32,16 @@ public static class BackgroundJobTools
                  "Status values: Queued, Running (ItemsProcessed/ItemsTotal show progress where applicable), " +
                  "Completed (Result contains the full output), Failed (check ErrorMessage), Cancelled. " +
                  "Poll at 10–30s intervals. " +
-                 "Job id comes from the tool that queued the operation.")]
-    public static async Task<string> GetJobStatus(
-        RepositoryFactory repositoryFactory,
-        [Description("Job id returned by the tool that queued the operation.")]
-        string jobId,
-        [Description("Optional database profile name (use list_profiles to discover).")]
-        string? profile = null,
-        CancellationToken ct = default)
+                 "Job id comes from the tool that queued the operation."
+                )]
+    public static async Task<string> GetJobStatus(RepositoryFactory repositoryFactory,
+                                                  [Description("Job id returned by the tool that queued the operation."
+                                                              )]
+                                                  string jobId,
+                                                  [Description("Optional database profile name (use list_profiles to discover)."
+                                                              )]
+                                                  string? profile = null,
+                                                  CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(jobId);
@@ -49,9 +51,7 @@ public static class BackgroundJobTools
 
         string result;
         if (job is null)
-        {
             result = $"No background job found with id '{jobId}'.";
-        }
         else
         {
             object? parsedResult = null;
@@ -64,7 +64,7 @@ public static class BackgroundJobTools
                     parsedResult = JsonSerializer.Deserialize<JsonElement>(job.ResultJson, smJsonOptions);
                     boundaryHint = ComputeBoundaryHint(job.JobType, parsedResult);
                 }
-                catch (JsonException)
+                catch(JsonException)
                 {
                     parsedResult = null;
                 }
@@ -103,21 +103,22 @@ public static class BackgroundJobTools
         string? hint = null;
         if (jobType == BackgroundJobTypes.Rechunk && parsedResult is JsonElement root)
         {
-            if (root.TryGetProperty(ResultJsonKeyBoundaryIssues, out var boundaryIssuesEl)
-                && root.TryGetProperty(ResultJsonKeyProcessed, out var processedEl)
-                && boundaryIssuesEl.TryGetInt32(out int boundaryIssues)
-                && processedEl.TryGetInt32(out int processed)
-                && processed > 0)
+            if (root.TryGetProperty(ResultJsonKeyBoundaryIssues, out var boundaryIssuesEl) &&
+                root.TryGetProperty(ResultJsonKeyProcessed, out var processedEl) &&
+                boundaryIssuesEl.TryGetInt32(out int boundaryIssues) &&
+                processedEl.TryGetInt32(out int processed) &&
+                processed > 0)
             {
                 double pct = PercentMultiplier * boundaryIssues / processed;
                 hint = pct switch
-                {
-                    >= BoundaryThresholdHigh => BoundaryHintRecommended,
-                    >= BoundaryThresholdMedium => BoundaryHintMayHelp,
-                    _ => null
-                };
+                    {
+                        >= BoundaryThresholdHigh => BoundaryHintRecommended,
+                        >= BoundaryThresholdMedium => BoundaryHintMayHelp,
+                        var _ => null
+                    };
             }
         }
+
         return hint;
     }
 
@@ -127,18 +128,20 @@ public static class BackgroundJobTools
                  "Filter by jobType to narrow results. " +
                  "Use get_job_status(jobId) to poll a specific job. " +
                  "Does NOT list scrape_docs or rescrub_library jobs — " +
-                 "use list_scrape_jobs and list_rescrub_jobs for those.")]
-    public static async Task<string> ListJobs(
-        RepositoryFactory repositoryFactory,
-        [Description("Optional job type filter (e.g. 'rechunk', 'rename_library', 'delete_version', " +
-                     "'delete_library', 'dryrun_scrape', 'index_project_dependencies', 'submit_url_correction'). " +
-                     "Omit to list all types.")]
-        string? jobType = null,
-        [Description("Maximum number of jobs to return. Defaults to 20.")]
-        int limit = 20,
-        [Description("Optional database profile name (use list_profiles to discover).")]
-        string? profile = null,
-        CancellationToken ct = default)
+                 "use list_scrape_jobs and list_rescrub_jobs for those."
+                )]
+    public static async Task<string> ListJobs(RepositoryFactory repositoryFactory,
+                                              [Description("Optional job type filter (e.g. 'rechunk', 'rename_library', 'delete_version', " +
+                                                           "'delete_library', 'dryrun_scrape', 'index_project_dependencies', 'submit_url_correction'). " +
+                                                           "Omit to list all types."
+                                                          )]
+                                              string? jobType = null,
+                                              [Description("Maximum number of jobs to return. Defaults to 20.")]
+                                              int limit = 20,
+                                              [Description("Optional database profile name (use list_profiles to discover)."
+                                                          )]
+                                              string? profile = null,
+                                              CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
 
@@ -157,12 +160,11 @@ public static class BackgroundJobTools
                                              j.ItemsLabel,
                                              j.CreatedAt,
                                              j.CompletedAt
-                                         });
+                                         }
+                               );
 
         return JsonSerializer.Serialize(items, smJsonOptions);
     }
-
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
 
     private const string ResultJsonKeyBoundaryIssues = "BoundaryIssues";
     private const string ResultJsonKeyProcessed = "Processed";
@@ -171,4 +173,6 @@ public static class BackgroundJobTools
     private const double BoundaryThresholdMedium = 5.0;
     private const string BoundaryHintRecommended = "rechunk_library recommended";
     private const string BoundaryHintMayHelp = "rechunk_library may help";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

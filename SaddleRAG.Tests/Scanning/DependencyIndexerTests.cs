@@ -6,14 +6,14 @@
 
 #region Usings
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Scanning;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 #endregion
 

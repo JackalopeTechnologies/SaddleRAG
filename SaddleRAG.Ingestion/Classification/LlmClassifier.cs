@@ -8,13 +8,13 @@
 
 using System.Text;
 using System.Text.Json;
-using SaddleRAG.Core.Enums;
-using SaddleRAG.Core.Models;
-using SaddleRAG.Ingestion.Embedding;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models;
+using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Models;
+using SaddleRAG.Ingestion.Embedding;
 
 #endregion
 
@@ -37,15 +37,6 @@ public class LlmClassifier
     private readonly OllamaApiClient mClient;
     private readonly ILogger<LlmClassifier> mLogger;
     private readonly OllamaSettings mSettings;
-
-    /// <summary>
-    ///     Version string used by LibraryManifest.LastClassifierVersion to
-    ///     detect when reclassification is needed during rescrub. Combines
-    ///     the configured classification model with a manually-bumped prompt
-    ///     version. Bump <see cref="PromptVersion" /> whenever the prompt
-    ///     template changes meaningfully.
-    /// </summary>
-    public const string PromptVersion = "v1";
 
     /// <summary>
     ///     Returns the current classifier version for this instance, used
@@ -174,6 +165,15 @@ public class LlmClassifier
 
         return (category, confidence);
     }
+
+    /// <summary>
+    ///     Version string used by LibraryManifest.LastClassifierVersion to
+    ///     detect when reclassification is needed during rescrub. Combines
+    ///     the configured classification model with a manually-bumped prompt
+    ///     version. Bump <see cref="PromptVersion" /> whenever the prompt
+    ///     template changes meaningfully.
+    /// </summary>
+    public const string PromptVersion = "v1";
 
     private const int MaxPreviewChars = 500;
     private const int MaxResponseChars = 4096;

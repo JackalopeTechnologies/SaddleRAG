@@ -46,14 +46,20 @@ public sealed class SuspectDetector
         if (declaredLanguages.Count > 0)
         {
             bool anyDeclaredAboveThreshold = declaredLanguages.Any(d =>
-                languageMix.GetValueOrDefault(d.ToLowerInvariant(), 0.0) >= LanguageMatchThreshold);
+                                                                       languageMix
+                                                                           .GetValueOrDefault(d.ToLowerInvariant(),
+                                                                                    defaultValue: 0.0
+                                                                               ) >=
+                                                                       LanguageMatchThreshold
+                                                                  );
             if (!anyDeclaredAboveThreshold)
                 reasons.Add(SuspectReason.LanguageMismatch);
         }
 
-        bool isGitHubRoot = Uri.TryCreate(rootUrl, UriKind.Absolute, out var u)
-                            && u.Host.Equals(GitHubHost, StringComparison.OrdinalIgnoreCase);
-        bool readmeOnly = isGitHubRoot && sampleTitles.Count > 0 &&
+        bool isGitHubRoot = Uri.TryCreate(rootUrl, UriKind.Absolute, out var u) &&
+                            u.Host.Equals(GitHubHost, StringComparison.OrdinalIgnoreCase);
+        bool readmeOnly = isGitHubRoot &&
+                          sampleTitles.Count > 0 &&
                           sampleTitles.All(t => t.Contains(ReadmeMarker, StringComparison.OrdinalIgnoreCase));
         if (readmeOnly)
             reasons.Add(SuspectReason.ReadmeOnly);
