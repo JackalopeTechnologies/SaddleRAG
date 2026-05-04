@@ -24,16 +24,21 @@ public sealed class MonitorDataService
     /// <summary>
     ///     Initializes a new instance of <see cref="MonitorDataService" />.
     /// </summary>
-    public MonitorDataService(ILibraryRepository libraries, IChunkRepository chunks)
+    public MonitorDataService(ILibraryRepository libraries,
+                              IChunkRepository chunks,
+                              ILibraryProfileRepository profiles)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(chunks);
+        ArgumentNullException.ThrowIfNull(profiles);
         mLibraries = libraries;
         mChunks = chunks;
+        mProfiles = profiles;
     }
 
     private readonly ILibraryRepository mLibraries;
     private readonly IChunkRepository mChunks;
+    private readonly ILibraryProfileRepository mProfiles;
 
     /// <summary>
     ///     Returns a summary row for every library, including counts from the current version record.
@@ -111,5 +116,17 @@ public sealed class MonitorDataService
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Returns the recon profile for a library version, or <c>null</c> when not present.
+    /// </summary>
+    public Task<LibraryProfile?> GetLibraryProfileAsync(string libraryId,
+                                                        string version,
+                                                        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        return mProfiles.GetAsync(libraryId, version, ct);
     }
 }

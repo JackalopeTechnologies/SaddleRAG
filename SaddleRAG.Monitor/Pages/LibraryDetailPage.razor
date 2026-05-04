@@ -63,6 +63,9 @@ else
                 </MudItem>
             </MudGrid>
         </MudTabPanel>
+        <MudTabPanel Text="Profile">
+            <ProfileView Profile="@Profile"/>
+        </MudTabPanel>
         <MudTabPanel Text="Audit">
             <MudButton Variant="Variant.Text"
                        Href="@($"/monitor/audits/{LatestJobId}")"

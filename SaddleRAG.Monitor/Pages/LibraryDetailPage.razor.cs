@@ -7,6 +7,7 @@
 #region Usings
 
 using Microsoft.AspNetCore.Components;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -22,11 +23,16 @@ public abstract class LibraryDetailPageBase : ComponentBase
     private MonitorDataService? DataService { get; set; }
 
     protected LibraryDetailData? Detail { get; private set; }
+    protected LibraryProfile? Profile { get; private set; }
     protected string? LatestJobId { get; private set; }
 
     protected override async Task OnParametersSetAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
         Detail = await DataService.GetLibraryDetailAsync(LibraryId);
+        if (Detail is not null)
+        {
+            Profile = await DataService.GetLibraryProfileAsync(LibraryId, Detail.Version);
+        }
     }
 }

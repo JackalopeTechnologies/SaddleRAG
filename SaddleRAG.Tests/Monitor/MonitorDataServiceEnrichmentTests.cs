@@ -44,7 +44,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 AllVersions = new List<string> { "1" }
                             });
 
-        var svc = new MonitorDataService(repo, new FakeChunkRepository());
+        var svc = new MonitorDataService(repo, new FakeChunkRepository(), new FakeLibraryProfileRepository());
         var summaries = await svc.GetLibrarySummariesAsync(TestContext.Current.CancellationToken);
 
         var ids = summaries.Select(s => s.LibraryId).ToList();
@@ -80,7 +80,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    SuspectReasons = new[] { "low confidence", "thin docs" }
                                });
 
-        var svc = new MonitorDataService(libRepo, new FakeChunkRepository());
+        var svc = new MonitorDataService(libRepo, new FakeChunkRepository(), new FakeLibraryProfileRepository());
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
         Assert.NotNull(detail);
@@ -133,7 +133,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                        ["unfenced"] = 0.4
                                    });
 
-        var svc = new MonitorDataService(libRepo, chunkRepo);
+        var svc = new MonitorDataService(libRepo, chunkRepo, new FakeLibraryProfileRepository());
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
         Assert.NotNull(detail);
@@ -148,5 +148,58 @@ public sealed class MonitorDataServiceEnrichmentTests
         Assert.Equal(2, detail.LanguageMix.Count);
         Assert.Equal(0.6, detail.LanguageMix["csharp"], 3);
         Assert.Equal(0.4, detail.LanguageMix["unfenced"], 3);
+    }
+
+    [Fact]
+    public async Task GetLibraryProfileAsyncReturnsProfileWhenPresent()
+    {
+        var libRepo = new FakeLibraryRepository();
+        var chunkRepo = new FakeChunkRepository();
+        var profileRepo = new FakeLibraryProfileRepository();
+
+        var profile = new LibraryProfile
+                          {
+                              Id = "alpha/1",
+                              LibraryId = "alpha",
+                              Version = "1",
+                              Languages = new[] { "C#" },
+                              Separators = new[] { ".", "::" },
+                              CallableShapes = new[] { "Foo()", "Foo<T>()" },
+                              LikelySymbols = new[] { "Console", "WriteLine" },
+                              Confidence = 0.85f,
+                              Source = "calling-llm",
+                              CreatedUtc = DateTime.UtcNow,
+                              Casing = new CasingConventions
+                                           {
+                                               Types = "PascalCase",
+                                               Methods = "PascalCase",
+                                               Constants = "SCREAMING_SNAKE",
+                                               Members = "PascalCase",
+                                               Parameters = "camelCase"
+                                           }
+                          };
+        profileRepo.SetProfile(profile);
+
+        var svc = new MonitorDataService(libRepo, chunkRepo, profileRepo);
+
+        var loaded = await svc.GetLibraryProfileAsync("alpha", "1", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal("alpha", loaded.LibraryId);
+        Assert.Equal(new[] { "C#" }, loaded.Languages);
+        Assert.Equal(new[] { "Console", "WriteLine" }, loaded.LikelySymbols);
+        Assert.Equal("PascalCase", loaded.Casing.Types);
+        Assert.Equal("camelCase", loaded.Casing.Parameters);
+        Assert.Equal(0.85f, loaded.Confidence);
+    }
+
+    [Fact]
+    public async Task GetLibraryProfileAsyncReturnsNullWhenAbsent()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository());
+        var loaded = await svc.GetLibraryProfileAsync("missing", "1", TestContext.Current.CancellationToken);
+        Assert.Null(loaded);
     }
 }
