@@ -7,7 +7,7 @@
 namespace SaddleRAG.Monitor.Pages;
 
 /// <summary>
-///     Minimal summary shown in library card grid.
+///     Minimal summary shown in the library card grid.
 /// </summary>
 public sealed record LibrarySummaryItem
 {
@@ -16,5 +16,7 @@ public sealed record LibrarySummaryItem
     public required int ChunkCount { get; init; }
     public required int PageCount { get; init; }
     public required bool IsSuspect { get; init; }
+    public IReadOnlyList<string> SuspectReasons { get; init; } = Array.Empty<string>();
+    public DateTime? LastScrapedAt { get; init; }
     public string? Hint { get; init; }
 }

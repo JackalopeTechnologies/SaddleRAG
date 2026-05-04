@@ -50,6 +50,8 @@ public sealed class MonitorDataService
                                               ChunkCount = ver?.ChunkCount ?? 0,
                                               PageCount = ver?.PageCount ?? 0,
                                               IsSuspect = ver?.Suspect ?? false,
+                                              SuspectReasons = ver?.SuspectReasons ?? Array.Empty<string>(),
+                                              LastScrapedAt = ver?.ScrapedAt,
                                               Hint = lib.Hint
                                           }
                        )
@@ -79,7 +81,13 @@ public sealed class MonitorDataService
                              ChunkCount = verRecord?.ChunkCount ?? 0,
                              PageCount = verRecord?.PageCount ?? 0,
                              IsSuspect = verRecord?.Suspect ?? false,
-                             Hint = lib.Hint
+                             Hint = lib.Hint,
+                             SuspectReasons = verRecord?.SuspectReasons ?? Array.Empty<string>(),
+                             LastScrapedAt = verRecord?.ScrapedAt,
+                             LastSuspectEvaluatedAt = verRecord?.LastSuspectEvaluatedAt,
+                             BoundaryIssuePct = verRecord?.BoundaryIssuePct ?? 0.0,
+                             EmbeddingProviderId = verRecord?.EmbeddingProviderId,
+                             EmbeddingModelName = verRecord?.EmbeddingModelName
                          };
         }
 
