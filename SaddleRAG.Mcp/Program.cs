@@ -195,6 +195,9 @@ builder.Services.AddSingleton<MonitorBroadcaster>();
 builder.Services.AddSingleton<IMonitorBroadcaster>(sp =>
                                                        sp.GetRequiredService<MonitorBroadcaster>()
                                                   );
+builder.Services.AddSingleton<IMonitorEvents>(sp =>
+                                                  sp.GetRequiredService<MonitorBroadcaster>()
+                                             );
 
 
 // HTTP clients for package registry APIs
@@ -286,6 +289,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddSignalR();
 builder.Services.AddMudServices();
 builder.Services.AddHostedService<MonitorTickService>();
+builder.Services.AddHostedService<MonitorLifecycleRelay>();
 builder.Services.AddSingleton<MonitorDataService>();
 
 var monitorPort = builder.Configuration.GetValue<int?>(KestrelHttpPortKey) ?? DefaultMonitorPort;
