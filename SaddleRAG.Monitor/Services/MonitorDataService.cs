@@ -24,12 +24,16 @@ public sealed class MonitorDataService
     /// <summary>
     ///     Initializes a new instance of <see cref="MonitorDataService" />.
     /// </summary>
-    public MonitorDataService(ILibraryRepository libraries)
+    public MonitorDataService(ILibraryRepository libraries, IChunkRepository chunks)
     {
+        ArgumentNullException.ThrowIfNull(libraries);
+        ArgumentNullException.ThrowIfNull(chunks);
         mLibraries = libraries;
+        mChunks = chunks;
     }
 
     private readonly ILibraryRepository mLibraries;
+    private readonly IChunkRepository mChunks;
 
     /// <summary>
     ///     Returns a summary row for every library, including counts from the current version record.
@@ -74,6 +78,19 @@ public sealed class MonitorDataService
             var verRecord = string.IsNullOrEmpty(version)
                                 ? null
                                 : await mLibraries.GetVersionAsync(lib.Id, version, ct);
+
+            IReadOnlyList<HostBucket> hosts = Array.Empty<HostBucket>();
+            IReadOnlyDictionary<string, double> langs = new Dictionary<string, double>();
+            if (!string.IsNullOrEmpty(version))
+            {
+                var hostMap = await mChunks.GetHostnameDistributionAsync(lib.Id, version, ct);
+                hosts = hostMap.Select(kv => new HostBucket(kv.Key, kv.Value))
+                               .OrderByDescending(b => b.Count)
+                               .ThenBy(b => b.Host, StringComparer.OrdinalIgnoreCase)
+                               .ToList();
+                langs = await mChunks.GetLanguageMixAsync(lib.Id, version, ct);
+            }
+
             result = new LibraryDetailData
                          {
                              LibraryId = lib.Id,
@@ -87,7 +104,9 @@ public sealed class MonitorDataService
                              LastSuspectEvaluatedAt = verRecord?.LastSuspectEvaluatedAt,
                              BoundaryIssuePct = verRecord?.BoundaryIssuePct,
                              EmbeddingProviderId = verRecord?.EmbeddingProviderId,
-                             EmbeddingModelName = verRecord?.EmbeddingModelName
+                             EmbeddingModelName = verRecord?.EmbeddingModelName,
+                             HostnameDistribution = hosts,
+                             LanguageMix = langs
                          };
         }
 
