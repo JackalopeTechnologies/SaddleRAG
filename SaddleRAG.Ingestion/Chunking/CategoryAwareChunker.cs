@@ -134,15 +134,15 @@ public class CategoryAwareChunker
     {
         var minBreak = pos + (maxChars / 2);
         var result = -1;
-        for (int j = pos + take - 1; j > minBreak && result < 0; j--)
+        for(int j = pos + take - 1; j > minBreak && result < 0; j--)
         {
             var c = content[j];
             var isHardBreak = c == '\n' || c == '!' || c == '?';
-            var isSentencePeriod = c == '.'
-                                && (j + 1 >= content.Length || char.IsWhiteSpace(content[j + 1]));
+            var isSentencePeriod = c == '.' && (j + 1 >= content.Length || char.IsWhiteSpace(content[j + 1]));
             if (isHardBreak || isSentencePeriod)
                 result = j;
         }
+
         return result;
     }
 
@@ -224,7 +224,9 @@ public class CategoryAwareChunker
                             Category = page.Category,
                             Content = content.Trim(),
                             SectionPath = sectionPath,
-                            ParserVersion = ParserVersionInfo.Current
+                            ParserVersion = ParserVersionInfo.Current,
+                            Depth = page.Depth,
+                            ParentUrl = page.ParentUrl
                         };
         return chunk;
     }
@@ -304,7 +306,7 @@ public class CategoryAwareChunker
     // Empty profile used when caller does not supply one. The extractor still
     // produces useful Symbols[] via shape-based rules (declared form, internal
     // structure, callable shape) — just without the LikelySymbols boost.
-    private static readonly LibraryProfile smEmptyProfile = new()
+    private static readonly LibraryProfile smEmptyProfile = new LibraryProfile
                                                                 {
                                                                     Id = "default/default",
                                                                     LibraryId = "default",

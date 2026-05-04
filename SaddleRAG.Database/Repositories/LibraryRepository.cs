@@ -6,9 +6,9 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Driver;
 
 #endregion
 
@@ -25,8 +25,6 @@ public class LibraryRepository : ILibraryRepository
     }
 
     private readonly SaddleRagDbContext mContext;
-
-    private const string ScrapeJobLibraryIdPath = "Job.LibraryId";
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<LibraryRecord>> GetAllLibrariesAsync(CancellationToken ct = default)
@@ -76,6 +74,20 @@ public class LibraryRepository : ILibraryRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionRecord>> GetVersionsAsync(string libraryId,
+                                                                            CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+
+        var filter = Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, libraryId);
+        var results = await mContext.LibraryVersions
+                                    .Find(filter)
+                                    .SortByDescending(v => v.ScrapedAt)
+                                    .ToListAsync(ct);
+        return results;
+    }
+
+    /// <inheritdoc />
     public async Task UpsertVersionAsync(LibraryVersionRecord versionRecord, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(versionRecord);
@@ -95,10 +107,12 @@ public class LibraryRepository : ILibraryRepository
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        var versionFilter = Builders<LibraryVersionRecord>.Filter.And(
-            Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, libraryId),
-            Builders<LibraryVersionRecord>.Filter.Eq(v => v.Version, version)
-        );
+        var versionFilter =
+            Builders<LibraryVersionRecord>.Filter.And(Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId,
+                                                               libraryId
+                                                          ),
+                                                      Builders<LibraryVersionRecord>.Filter.Eq(v => v.Version, version)
+                                                     );
         var versionsDeleted = (await mContext.LibraryVersions.DeleteManyAsync(versionFilter, ct)).DeletedCount;
 
         var remaining = await mContext.LibraryVersions
@@ -106,7 +120,7 @@ public class LibraryRepository : ILibraryRepository
                                       .SortByDescending(v => v.ScrapedAt)
                                       .ToListAsync(ct);
 
-        bool libraryRowDeleted = false;
+        var libraryRowDeleted = false;
         string? repointedTo = null;
 
         if (remaining.Count == 0)
@@ -120,7 +134,7 @@ public class LibraryRepository : ILibraryRepository
             var library = await GetLibraryAsync(libraryId, ct);
             if (library != null && library.CurrentVersion == version)
             {
-                var newCurrent = remaining[0].Version;
+                var newCurrent = remaining[index: 0].Version;
                 library.CurrentVersion = newCurrent;
                 await UpsertLibraryAsync(library, ct);
                 repointedTo = newCurrent;
@@ -141,7 +155,7 @@ public class LibraryRepository : ILibraryRepository
                                      .ToListAsync(ct);
 
         long total = 0;
-        foreach (var v in versions)
+        foreach(var v in versions)
         {
             var result = await DeleteVersionAsync(libraryId, v.Version, ct);
             total += result.VersionsDeleted;
@@ -163,12 +177,12 @@ public class LibraryRepository : ILibraryRepository
 
         var existing = await GetLibraryAsync(oldId, ct);
         if (existing == null)
-            result = new RenameLibraryResponse(RenameLibraryOutcome.NotFound, null);
+            result = new RenameLibraryResponse(RenameLibraryOutcome.NotFound, Counts: null);
         else
         {
             var collision = await GetLibraryAsync(newId, ct);
             if (collision != null)
-                result = new RenameLibraryResponse(RenameLibraryOutcome.Collision, null);
+                result = new RenameLibraryResponse(RenameLibraryOutcome.Collision, Counts: null);
             else
             {
                 var counts = await ApplyRenameAsync(oldId, newId, ct);
@@ -180,20 +194,25 @@ public class LibraryRepository : ILibraryRepository
     }
 
     /// <inheritdoc />
-    public async Task SetSuspectAsync(string libraryId, string version, IReadOnlyList<string> reasons, CancellationToken ct = default)
+    public async Task SetSuspectAsync(string libraryId,
+                                      string version,
+                                      IReadOnlyList<string> reasons,
+                                      CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentNullException.ThrowIfNull(reasons);
 
-        var filter = Builders<LibraryVersionRecord>.Filter.And(
-            Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, libraryId),
-            Builders<LibraryVersionRecord>.Filter.Eq(v => v.Version, version)
-        );
+        var filter =
+            Builders<LibraryVersionRecord>.Filter.And(Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId,
+                                                               libraryId
+                                                          ),
+                                                      Builders<LibraryVersionRecord>.Filter.Eq(v => v.Version, version)
+                                                     );
         var update = Builders<LibraryVersionRecord>.Update
-            .Set(v => v.Suspect, true)
-            .Set(v => v.SuspectReasons, reasons)
-            .Set(v => v.LastSuspectEvaluatedAt, DateTime.UtcNow);
+                                                   .Set(v => v.Suspect, value: true)
+                                                   .Set(v => v.SuspectReasons, reasons)
+                                                   .Set(v => v.LastSuspectEvaluatedAt, DateTime.UtcNow);
         await mContext.LibraryVersions.UpdateOneAsync(filter, update, cancellationToken: ct);
     }
 
@@ -203,14 +222,16 @@ public class LibraryRepository : ILibraryRepository
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        var filter = Builders<LibraryVersionRecord>.Filter.And(
-            Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, libraryId),
-            Builders<LibraryVersionRecord>.Filter.Eq(v => v.Version, version)
-        );
+        var filter =
+            Builders<LibraryVersionRecord>.Filter.And(Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId,
+                                                               libraryId
+                                                          ),
+                                                      Builders<LibraryVersionRecord>.Filter.Eq(v => v.Version, version)
+                                                     );
         var update = Builders<LibraryVersionRecord>.Update
-            .Set(v => v.Suspect, false)
-            .Set(v => v.SuspectReasons, Array.Empty<string>())
-            .Set(v => v.LastSuspectEvaluatedAt, DateTime.UtcNow);
+                                                   .Set(v => v.Suspect, value: false)
+                                                   .Set(v => v.SuspectReasons, Array.Empty<string>())
+                                                   .Set(v => v.LastSuspectEvaluatedAt, DateTime.UtcNow);
         await mContext.LibraryVersions.UpdateOneAsync(filter, update, cancellationToken: ct);
     }
 
@@ -234,7 +255,8 @@ public class LibraryRepository : ILibraryRepository
 
         var profileFilter = Builders<LibraryProfile>.Filter.Eq(p => p.LibraryId, oldId);
         var profileUpdate = Builders<LibraryProfile>.Update.Set(p => p.LibraryId, newId);
-        var profileRes = await mContext.LibraryProfiles.UpdateManyAsync(profileFilter, profileUpdate, cancellationToken: ct);
+        var profileRes =
+            await mContext.LibraryProfiles.UpdateManyAsync(profileFilter, profileUpdate, cancellationToken: ct);
 
         var indexFilter = Builders<LibraryIndex>.Filter.Eq(i => i.LibraryId, oldId);
         var indexUpdate = Builders<LibraryIndex>.Update.Set(i => i.LibraryId, newId);
@@ -260,7 +282,10 @@ public class LibraryRepository : ILibraryRepository
                                              indexRes.ModifiedCount,
                                              shardRes.ModifiedCount,
                                              exRes.ModifiedCount,
-                                             jobRes.ModifiedCount);
+                                             jobRes.ModifiedCount
+                                            );
         return result;
     }
+
+    private const string ScrapeJobLibraryIdPath = "Job.LibraryId";
 }

@@ -1,0 +1,84 @@
+@* SaddleRAG.Monitor/Components/AuditSummaryPanel.razor *@
+
+@if (Summary is null)
+{
+    <MudText Typo="Typo.body2">No audit recorded yet for this library version.</MudText>
+}
+else
+{
+    <MudGrid>
+        <MudItem xs="12">
+            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2" Class="mb-3">
+                <MudChip T="string">Considered: @Summary.TotalConsidered</MudChip>
+                <MudChip T="string" Color="Color.Success">Indexed: @Summary.IndexedCount</MudChip>
+                <MudChip T="string" Color="Color.Info">Fetched: @Summary.FetchedCount</MudChip>
+                <MudChip T="string" Color="Color.Warning">Skipped: @Summary.SkippedCount</MudChip>
+                <MudChip T="string" Color="Color.Error">Failed: @Summary.FailedCount</MudChip>
+            </MudStack>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Top skip reasons</MudText>
+            @if (TopSkipReasons.Count == 0)
+            {
+                <MudText Typo="Typo.caption">(none)</MudText>
+            }
+            else
+            {
+                <MudTable Items="@TopSkipReasons" Dense="true" T="KeyValuePair<AuditSkipReason, int>">
+                    <RowTemplate>
+                        <MudTd>@context.Key</MudTd>
+                        <MudTd Style="width:80px">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Top hosts</MudText>
+            @if (TopHosts.Count == 0)
+            {
+                <MudText Typo="Typo.caption">(none)</MudText>
+            }
+            else
+            {
+                <MudTable Items="@TopHosts" Dense="true" T="KeyValuePair<string, int>">
+                    <RowTemplate>
+                        <MudTd Style="font-family:monospace">@context.Key</MudTd>
+                        <MudTd Style="width:80px">@context.Value</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudItem>
+        <MudItem xs="12">
+            <MudButton Variant="Variant.Text" Color="Color.Primary"
+                       Href="@($"/monitor/audits/{JobId}")"
+                       Disabled="@string.IsNullOrEmpty(JobId)">View full audit</MudButton>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+
+    [Parameter]
+    public AuditSummary? Summary { get; set; }
+
+    [Parameter]
+    public string? JobId { get; set; }
+
+    private const int TopN = 5;
+
+    private IReadOnlyList<KeyValuePair<AuditSkipReason, int>> TopSkipReasons =>
+        Summary is null
+            ? Array.Empty<KeyValuePair<AuditSkipReason, int>>()
+            : Summary.SkipReasonCounts.OrderByDescending(kv => kv.Value)
+                                      .Take(TopN)
+                                      .ToList();
+
+    private IReadOnlyList<KeyValuePair<string, int>> TopHosts =>
+        Summary is null
+            ? Array.Empty<KeyValuePair<string, int>>()
+            : Summary.HostCounts.OrderByDescending(kv => kv.Value)
+                                .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                                .Take(TopN)
+                                .ToList();
+
+}

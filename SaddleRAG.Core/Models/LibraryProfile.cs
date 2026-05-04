@@ -45,7 +45,7 @@ public record LibraryProfile
     /// <summary>
     ///     Per-category casing conventions used by this library's docs.
     /// </summary>
-    public CasingConventions Casing { get; init; } = new();
+    public CasingConventions Casing { get; init; } = new CasingConventions();
 
     /// <summary>
     ///     Token-joining symbols valid for this library — for example

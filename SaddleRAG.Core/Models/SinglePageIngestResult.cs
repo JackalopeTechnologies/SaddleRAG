@@ -35,18 +35,18 @@ public sealed record SinglePageIngestResult
 
     /// <summary>
     ///     Number of chunks produced and persisted. Populated only when
-    ///     <see cref="Status"/> is <c>Indexed</c>.
+    ///     <see cref="Status" /> is <c>Indexed</c>.
     /// </summary>
     public int ChunksAdded { get; init; }
 
     /// <summary>
     ///     Resolved doc category, e.g. <c>HowTo</c>, <c>ApiReference</c>.
-    ///     Populated only when <see cref="Status"/> is <c>Indexed</c>.
+    ///     Populated only when <see cref="Status" /> is <c>Indexed</c>.
     /// </summary>
     public string? Category { get; init; }
 
     /// <summary>
-    ///     Human-readable reason. Populated when <see cref="Status"/> is
+    ///     Human-readable reason. Populated when <see cref="Status" /> is
     ///     <c>Failed</c> or <c>Empty</c> to explain what went wrong.
     /// </summary>
     public string? Reason { get; init; }

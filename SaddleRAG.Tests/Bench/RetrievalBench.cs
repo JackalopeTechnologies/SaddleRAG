@@ -19,39 +19,45 @@ namespace SaddleRAG.Tests.Bench;
 ///     ranking strategy. The full ranker integration (vector + BM25 +
 ///     rerank) requires the live MongoDB and Ollama services so this
 ///     harness ships in two layers:
-///
 ///     1. The query-shape gate is exercised here against the fixture —
-///        every identifier-shaped query is verified to classify as
-///        identifier-shaped, every prose query as prose. This is the
-///        gate that decides whether the LLM reranker runs at search
-///        time.
-///
+///     every identifier-shaped query is verified to classify as
+///     identifier-shaped, every prose query as prose. This is the
+///     gate that decides whether the LLM reranker runs at search
+///     time.
 ///     2. The full ranking-strategy comparison (vector-only / hybrid /
-///        hybrid+gating / hybrid+Llm) is intended to run against a real
-///        SaddleRAG instance via search_docs MCP calls. Hookup of the
-///        MCP-driven runner is a follow-up — the fixture and gate
-///        verification land now so the infrastructure is in place when
-///        someone wants to extend it.
+///     hybrid+gating / hybrid+Llm) is intended to run against a real
+///     SaddleRAG instance via search_docs MCP calls. Hookup of the
+///     MCP-driven runner is a follow-up — the fixture and gate
+///     verification land now so the infrastructure is in place when
+///     someone wants to extend it.
 /// </summary>
 public sealed class RetrievalBench
 {
+    private record BenchFixture(IReadOnlyList<BenchQuery> Queries);
+
+    private record BenchQuery(string Name, string Query, string Shape, IReadOnlyList<string> RelevantChunkIds);
+
     [Fact]
     public void FixtureContainsAtLeastFifteenQueries()
     {
         var queries = LoadQueries();
 
         Assert.True(queries.Count >= MinQueryCount,
-                    $"BenchQueries.json must contain at least {MinQueryCount} queries; found {queries.Count}");
+                    $"BenchQueries.json must contain at least {MinQueryCount} queries; found {queries.Count}"
+                   );
     }
 
     [Fact]
     public void FixtureMixesIdentifierAndProseShapes()
     {
         var queries = LoadQueries();
-        var identifierCount = queries.Count(q => string.Equals(q.Shape, ShapeIdentifier, StringComparison.OrdinalIgnoreCase));
+        var identifierCount =
+            queries.Count(q => string.Equals(q.Shape, ShapeIdentifier, StringComparison.OrdinalIgnoreCase));
         var proseCount = queries.Count(q => string.Equals(q.Shape, ShapeProse, StringComparison.OrdinalIgnoreCase));
 
-        Assert.True(identifierCount >= MinShapeCount, $"Need at least {MinShapeCount} identifier queries; got {identifierCount}");
+        Assert.True(identifierCount >= MinShapeCount,
+                    $"Need at least {MinShapeCount} identifier queries; got {identifierCount}"
+                   );
         Assert.True(proseCount >= MinShapeCount, $"Need at least {MinShapeCount} prose queries; got {proseCount}");
     }
 
@@ -66,11 +72,13 @@ public sealed class RetrievalBench
             var classified = QueryShapeClassifier.IsIdentifierShaped(entry.Query);
             var expectedIdentifier = string.Equals(entry.Shape, ShapeIdentifier, StringComparison.OrdinalIgnoreCase);
             if (classified != expectedIdentifier)
-                mismatches.Add($"{entry.Name}: expected {entry.Shape}, classified as {(classified ? ShapeIdentifier : ShapeProse)}");
+                mismatches.Add($"{entry.Name}: expected {entry.Shape}, classified as {(classified ? ShapeIdentifier : ShapeProse)}"
+                              );
         }
 
         Assert.True(mismatches.Count == 0,
-                    $"QueryShapeClassifier disagrees with bench fixture on {mismatches.Count} queries:\n{string.Join("\n", mismatches)}");
+                    $"QueryShapeClassifier disagrees with bench fixture on {mismatches.Count} queries:\n{string.Join("\n", mismatches)}"
+                   );
     }
 
     private static IReadOnlyList<BenchQuery> LoadQueries()
@@ -82,16 +90,12 @@ public sealed class RetrievalBench
         return doc.Queries;
     }
 
-    private record BenchFixture(IReadOnlyList<BenchQuery> Queries);
-
-    private record BenchQuery(string Name, string Query, string Shape, IReadOnlyList<string> RelevantChunkIds);
-
     private const int MinQueryCount = 15;
     private const int MinShapeCount = 5;
     private const string ShapeIdentifier = "identifier";
     private const string ShapeProse = "prose";
 
-    private static readonly JsonSerializerOptions smJsonOptions = new()
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions
                                                                       {
                                                                           PropertyNameCaseInsensitive = true
                                                                       };

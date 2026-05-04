@@ -9,12 +9,12 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using SaddleRAG.Core.Interfaces;
-using SaddleRAG.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models;
+using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 
 #endregion
 
@@ -27,7 +27,6 @@ namespace SaddleRAG.Ingestion.Embedding;
 ///     independently. Produces continuous floats instead of the legacy
 ///     OllamaReRanker's 5-bucket plateau, and the per-pair scoring
 ///     pattern matches how cross-encoders are actually trained.
-///
 ///     Latency: roughly 50-200ms per (query, document) pair. For a
 ///     typical maxResults=5 with candidateMultiplier=2 (10 candidates)
 ///     that's ~0.5-2s total — slower than vector-only or hybrid alone,
@@ -149,15 +148,12 @@ public class CrossEncoderReRanker : IReRanker
         return score;
     }
 
-    // Matches floats like "0.85", "0.0", ".97", "1", "1.0".
-    // Captures the first plausible relevance score the model returns.
-    private static readonly Regex smFloatRegex = new(
-        @"\d*\.\d+|\d+(?:\.\d+)?",
-        RegexOptions.Compiled
-    );
-
     private const int MaxResponseChars = 256;
     private const int MaxDocumentChars = 2000;
     private const float MinScore = 0f;
     private const float MaxScore = 1f;
+
+    // Matches floats like "0.85", "0.0", ".97", "1", "1.0".
+    // Captures the first plausible relevance score the model returns.
+    private static readonly Regex smFloatRegex = new Regex(@"\d*\.\d+|\d+(?:\.\d+)?", RegexOptions.Compiled);
 }

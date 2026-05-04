@@ -34,5 +34,5 @@ public record CorpusContext
     ///     Empty context used during the initial ingest pass before the
     ///     library_indexes are built.
     /// </summary>
-    public static CorpusContext Empty { get; } = new();
+    public static CorpusContext Empty { get; } = new CorpusContext();
 }

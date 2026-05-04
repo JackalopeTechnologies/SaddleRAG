@@ -68,10 +68,10 @@ public sealed class CodeFenceScannerTests
     public void DedupesAcrossMultipleChunks()
     {
         var contents = new[]
-        {
-            "```\nMoveLinear(0);\n```",
-            "```\nMoveLinear(1);\n```"
-        };
+                           {
+                               "```\nMoveLinear(0);\n```",
+                               "```\nMoveLinear(1);\n```"
+                           };
 
         var symbols = CodeFenceScanner.ScanContents(contents);
 

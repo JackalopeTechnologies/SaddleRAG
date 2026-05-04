@@ -8,11 +8,11 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -27,9 +27,6 @@ namespace SaddleRAG.Mcp.Tools;
 [McpServerToolType]
 public static class MutationTools
 {
-    private const string PreservedForAudit = "preserved for audit";
-    private const string NotFoundStatus = "NotFound";
-
     [McpServerTool(Name = "rename_library")]
     [Description("Rename a library across every collection that stores LibraryId. " +
                  "Defaults to dryRun=true — preview the per-collection update counts " +
@@ -38,6 +35,7 @@ public static class MutationTools
                  "Errors with Outcome=Collision if the new id already exists; never silently merges libraries."
                 )]
     public static async Task<string> RenameLibrary(RepositoryFactory repositoryFactory,
+                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                    IBackgroundJobRunner runner,
                                                    [Description("Current library identifier")]
                                                    string library,
@@ -67,20 +65,23 @@ public static class MutationTools
             result = JsonSerializer.Serialize(response, smJsonOptions);
         }
         else
-        {
-            result = await QueueRenameLibraryJobAsync(library, newId, repositoryFactory, runner, profile, ct);
-        }
+            result = await QueueRenameLibraryJobAsync(library,
+                                                      newId,
+                                                      repositoryFactory,
+                                                      runner,
+                                                      profile,
+                                                      ct
+                                                     );
 
         return result;
     }
 
-    private static async Task<string> QueueRenameLibraryJobAsync(
-        string library,
-        string newId,
-        RepositoryFactory repositoryFactory,
-        IBackgroundJobRunner runner,
-        string? profile,
-        CancellationToken ct)
+    private static async Task<string> QueueRenameLibraryJobAsync(string library,
+                                                                 string newId,
+                                                                 RepositoryFactory repositoryFactory,
+                                                                 IBackgroundJobRunner runner,
+                                                                 string? profile,
+                                                                 CancellationToken ct)
     {
         var inputJson = JsonSerializer.Serialize(new { library, newId, profile });
         var jobRecord = new BackgroundJobRecord
@@ -97,52 +98,57 @@ public static class MutationTools
                                             {
                                                 var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
                                                 var renameResult = await libraryRepo.RenameAsync(library, newId, jobCt);
-                                                record.ResultJson = JsonSerializer.Serialize(
-                                                    new
-                                                    {
-                                                        DryRun = false,
-                                                        Outcome = renameResult.Outcome.ToString(),
-                                                        Counts = renameResult.Counts
-                                                    },
-                                                    smJsonOptions);
+                                                record.ResultJson = JsonSerializer.Serialize(new
+                                                             {
+                                                                 DryRun = false,
+                                                                 Outcome = renameResult.Outcome.ToString(),
+                                                                 renameResult.Counts
+                                                             },
+                                                         smJsonOptions
+                                                    );
                                             },
-                                            ct);
+                                            ct
+                                           );
 
         return JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) }, smJsonOptions);
     }
 
     private static async Task<(RenameLibraryOutcome outcome, RenameLibraryResult? counts)> PreviewRenameAsync(
-        RepositoryFactory factory, string? profile, string oldId, string newId, CancellationToken ct)
+        RepositoryFactory factory,
+        string? profile,
+        string oldId,
+        string newId,
+        CancellationToken ct)
     {
         var libraryRepo = factory.GetLibraryRepository(profile);
         var existing = await libraryRepo.GetLibraryAsync(oldId, ct);
         var collision = await libraryRepo.GetLibraryAsync(newId, ct);
 
-        (RenameLibraryOutcome outcome, RenameLibraryResult? counts) result = existing switch
-        {
-            null => (RenameLibraryOutcome.NotFound, null),
-            _ when collision != null => (RenameLibraryOutcome.Collision, null),
-            _ => MakeSuccessResult(existing)
-        };
+        var result = existing switch
+            {
+                null => (RenameLibraryOutcome.NotFound, null),
+                var _ when collision != null => (RenameLibraryOutcome.Collision, null),
+                var _ => MakeSuccessResult(existing)
+            };
 
         return result;
     }
 
-    private static (RenameLibraryOutcome outcome, RenameLibraryResult counts) MakeSuccessResult(
-        LibraryRecord existing) =>
-    (
-        RenameLibraryOutcome.Renamed,
-        new RenameLibraryResult(
-            Libraries: 1,
-            Versions: existing.AllVersions.Count,
-            Chunks: 0,
-            Pages: 0,
-            Profiles: 0,
-            Indexes: 0,
-            Bm25Shards: 0,
-            ExcludedSymbols: 0,
-            ScrapeJobs: 0)
-    );
+    private static (RenameLibraryOutcome outcome, RenameLibraryResult counts)
+        MakeSuccessResult(LibraryRecord existing) =>
+        (
+            RenameLibraryOutcome.Renamed,
+            new RenameLibraryResult(Libraries: 1,
+                                    existing.AllVersions.Count,
+                                    Chunks: 0,
+                                    Pages: 0,
+                                    Profiles: 0,
+                                    Indexes: 0,
+                                    Bm25Shards: 0,
+                                    ExcludedSymbols: 0,
+                                    ScrapeJobs: 0
+                                   )
+        );
 
     [McpServerTool(Name = "delete_version")]
     [Description("Hard-delete one (library, version): chunks, pages, profile, indexes, " +
@@ -152,11 +158,10 @@ public static class MutationTools
                  "immediately; poll get_job_status for the outcome."
                 )]
     public static async Task<string> DeleteVersion(RepositoryFactory repositoryFactory,
+                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                    IBackgroundJobRunner runner,
-                                                   [Description("Library identifier")]
-                                                   string library,
-                                                   [Description("Version to delete")]
-                                                   string version,
+                                                   [Description("Library identifier")] string library,
+                                                   [Description("Version to delete")] string version,
                                                    [Description("If true (default), preview without writing.")]
                                                    bool dryRun = true,
                                                    [Description("Optional database profile name")]
@@ -178,10 +183,11 @@ public static class MutationTools
             var chunks = await chunkRepo.GetChunkCountAsync(library, version, ct);
             var pages = await pageRepo.GetPageCountAsync(library, version, ct);
             var lib = await libraryRepo.GetLibraryAsync(library, ct);
-            bool wouldDeleteLibraryRow = lib != null && lib.AllVersions.Count == 1 && lib.AllVersions[0] == version;
+            bool wouldDeleteLibraryRow =
+                lib != null && lib.AllVersions.Count == 1 && lib.AllVersions[index: 0] == version;
             string? wouldRepointTo = lib != null && lib.CurrentVersion == version && lib.AllVersions.Count > 1
-                ? lib.AllVersions.First(v => v != version)
-                : null;
+                                         ? lib.AllVersions.First(v => v != version)
+                                         : null;
 
             var preview = new
                               {
@@ -203,20 +209,23 @@ public static class MutationTools
             result = JsonSerializer.Serialize(preview, smJsonOptions);
         }
         else
-        {
-            result = await QueueDeleteVersionJobAsync(library, version, repositoryFactory, runner, profile, ct);
-        }
+            result = await QueueDeleteVersionJobAsync(library,
+                                                      version,
+                                                      repositoryFactory,
+                                                      runner,
+                                                      profile,
+                                                      ct
+                                                     );
 
         return result;
     }
 
-    private static async Task<string> QueueDeleteVersionJobAsync(
-        string library,
-        string version,
-        RepositoryFactory repositoryFactory,
-        IBackgroundJobRunner runner,
-        string? profile,
-        CancellationToken ct)
+    private static async Task<string> QueueDeleteVersionJobAsync(string library,
+                                                                 string version,
+                                                                 RepositoryFactory repositoryFactory,
+                                                                 IBackgroundJobRunner runner,
+                                                                 string? profile,
+                                                                 CancellationToken ct)
     {
         var inputJson = JsonSerializer.Serialize(new { library, version, profile });
         var jobRecord = new BackgroundJobRecord
@@ -234,11 +243,15 @@ public static class MutationTools
                                             {
                                                 var chunkRepo = repositoryFactory.GetChunkRepository(profile);
                                                 var pageRepo = repositoryFactory.GetPageRepository(profile);
-                                                var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
+                                                var profileRepo =
+                                                    repositoryFactory.GetLibraryProfileRepository(profile);
                                                 var indexRepo = repositoryFactory.GetLibraryIndexRepository(profile);
                                                 var bm25Repo = repositoryFactory.GetBm25ShardRepository(profile);
-                                                var excludedRepo = repositoryFactory.GetExcludedSymbolsRepository(profile);
+                                                var excludedRepo =
+                                                    repositoryFactory.GetExcludedSymbolsRepository(profile);
                                                 var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
+                                                var scrapeAuditRepo =
+                                                    repositoryFactory.GetScrapeAuditRepository(profile);
 
                                                 var chunks = await chunkRepo.DeleteChunksAsync(library, version, jobCt);
                                                 var pages = await pageRepo.DeleteAsync(library, version, jobCt);
@@ -246,28 +259,37 @@ public static class MutationTools
                                                 var indexes = await indexRepo.DeleteAsync(library, version, jobCt);
                                                 var shards = await bm25Repo.DeleteAsync(library, version, jobCt);
                                                 var excluded = await excludedRepo.DeleteAsync(library, version, jobCt);
-                                                var versionResult = await libraryRepo.DeleteVersionAsync(library, version, jobCt);
+                                                var versionResult =
+                                                    await libraryRepo.DeleteVersionAsync(library, version, jobCt);
+                                                var audit =
+                                                    await scrapeAuditRepo.DeleteByLibraryVersionAsync(library,
+                                                             version,
+                                                             jobCt
+                                                        );
 
-                                                record.ResultJson = JsonSerializer.Serialize(
-                                                    new
-                                                    {
-                                                        DryRun = false,
-                                                        Deleted = new
-                                                                      {
-                                                                          Versions = versionResult.VersionsDeleted,
-                                                                          Chunks = chunks,
-                                                                          Pages = pages,
-                                                                          Profiles = profiles,
-                                                                          Indexes = indexes,
-                                                                          Bm25Shards = shards,
-                                                                          ExcludedSymbols = excluded
-                                                                      },
-                                                        versionResult.LibraryRowDeleted,
-                                                        versionResult.CurrentVersionRepointedTo
-                                                    },
-                                                    smJsonOptions);
+                                                record.ResultJson = JsonSerializer.Serialize(new
+                                                             {
+                                                                 DryRun = false,
+                                                                 Deleted = new
+                                                                               {
+                                                                                   Versions = versionResult
+                                                                                       .VersionsDeleted,
+                                                                                   Chunks = chunks,
+                                                                                   Pages = pages,
+                                                                                   Profiles = profiles,
+                                                                                   Indexes = indexes,
+                                                                                   Bm25Shards = shards,
+                                                                                   ExcludedSymbols = excluded,
+                                                                                   AuditEntries = audit
+                                                                               },
+                                                                 versionResult.LibraryRowDeleted,
+                                                                 versionResult.CurrentVersionRepointedTo
+                                                             },
+                                                         smJsonOptions
+                                                    );
                                             },
-                                            ct);
+                                            ct
+                                           );
 
         return JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) }, smJsonOptions);
     }
@@ -279,9 +301,9 @@ public static class MutationTools
                  "dryRun=false returns { JobId, Status: 'Queued' } immediately; poll get_job_status for the outcome."
                 )]
     public static async Task<string> DeleteLibrary(RepositoryFactory repositoryFactory,
+                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                    IBackgroundJobRunner runner,
-                                                   [Description("Library identifier")]
-                                                   string library,
+                                                   [Description("Library identifier")] string library,
                                                    [Description("If true (default), preview without writing.")]
                                                    bool dryRun = true,
                                                    [Description("Optional database profile name")]
@@ -296,25 +318,27 @@ public static class MutationTools
         var lib = await libraryRepo.GetLibraryAsync(library, ct);
 
         string result = lib switch
-        {
-            null => JsonSerializer.Serialize(new { Status = NotFoundStatus, Library = library }, smJsonOptions),
-            _ when dryRun => await GetDeleteLibraryDryRunResultAsync(library,
-                                                                     lib,
-                                                                     repositoryFactory.GetChunkRepository(profile),
-                                                                     repositoryFactory.GetPageRepository(profile),
-                                                                     ct),
-            _ => await QueueDeleteLibraryJobAsync(library, repositoryFactory, runner, profile, ct)
-        };
+            {
+                null => JsonSerializer.Serialize(new { Status = NotFoundStatus, Library = library }, smJsonOptions),
+                var _ when dryRun => await GetDeleteLibraryDryRunResultAsync(library,
+                                                                             lib,
+                                                                             repositoryFactory
+                                                                                 .GetChunkRepository(profile),
+                                                                             repositoryFactory.GetPageRepository(profile
+                                                                                 ),
+                                                                             ct
+                                                                            ),
+                var _ => await QueueDeleteLibraryJobAsync(library, repositoryFactory, runner, profile, ct)
+            };
 
         return result;
     }
 
-    private static async Task<string> QueueDeleteLibraryJobAsync(
-        string library,
-        RepositoryFactory repositoryFactory,
-        IBackgroundJobRunner runner,
-        string? profile,
-        CancellationToken ct)
+    private static async Task<string> QueueDeleteLibraryJobAsync(string library,
+                                                                 RepositoryFactory repositoryFactory,
+                                                                 IBackgroundJobRunner runner,
+                                                                 string? profile,
+                                                                 CancellationToken ct)
     {
         var inputJson = JsonSerializer.Serialize(new { library, profile });
         var jobRecord = new BackgroundJobRecord
@@ -333,30 +357,44 @@ public static class MutationTools
                                                 var libRecord = await libRepo.GetLibraryAsync(library, jobCt);
                                                 if (libRecord != null)
                                                 {
-                                                    record.ResultJson = await GetDeleteLibraryApplyResultAsync(
-                                                        library,
-                                                        libRecord,
-                                                        repositoryFactory.GetChunkRepository(profile),
-                                                        repositoryFactory.GetPageRepository(profile),
-                                                        repositoryFactory.GetLibraryProfileRepository(profile),
-                                                        repositoryFactory.GetLibraryIndexRepository(profile),
-                                                        repositoryFactory.GetBm25ShardRepository(profile),
-                                                        repositoryFactory.GetExcludedSymbolsRepository(profile),
-                                                        libRepo,
-                                                        jobCt);
+                                                    record.ResultJson = await GetDeleteLibraryApplyResultAsync(library,
+                                                                                 libRecord,
+                                                                                 repositoryFactory
+                                                                                     .GetChunkRepository(profile),
+                                                                                 repositoryFactory
+                                                                                     .GetPageRepository(profile),
+                                                                                 repositoryFactory
+                                                                                     .GetLibraryProfileRepository(profile
+                                                                                         ),
+                                                                                 repositoryFactory
+                                                                                     .GetLibraryIndexRepository(profile
+                                                                                         ),
+                                                                                 repositoryFactory
+                                                                                     .GetBm25ShardRepository(profile),
+                                                                                 repositoryFactory
+                                                                                     .GetExcludedSymbolsRepository(profile
+                                                                                         ),
+                                                                                 libRepo,
+                                                                                 jobCt
+                                                                            );
                                                 }
                                             },
-                                            ct);
+                                            ct
+                                           );
 
         return JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) }, smJsonOptions);
     }
 
     private static async Task<string> GetDeleteLibraryDryRunResultAsync(
-        string library, LibraryRecord lib, IChunkRepository chunkRepo, IPageRepository pageRepo, CancellationToken ct)
+        string library,
+        LibraryRecord lib,
+        IChunkRepository chunkRepo,
+        IPageRepository pageRepo,
+        CancellationToken ct)
     {
         long totalChunks = 0;
         long totalPages = 0;
-        foreach (var v in lib.AllVersions)
+        foreach(var v in lib.AllVersions)
         {
             totalChunks += await chunkRepo.GetChunkCountAsync(library, v, ct);
             totalPages += await pageRepo.GetPageCountAsync(library, v, ct);
@@ -381,20 +419,19 @@ public static class MutationTools
         return JsonSerializer.Serialize(preview, smJsonOptions);
     }
 
-    private static async Task<string> GetDeleteLibraryApplyResultAsync(
-        string library,
-        LibraryRecord lib,
-        IChunkRepository chunkRepo,
-        IPageRepository pageRepo,
-        ILibraryProfileRepository profileRepo,
-        ILibraryIndexRepository indexRepo,
-        IBm25ShardRepository bm25Repo,
-        IExcludedSymbolsRepository excludedRepo,
-        ILibraryRepository libraryRepo,
-        CancellationToken ct)
+    private static async Task<string> GetDeleteLibraryApplyResultAsync(string library,
+                                                                       LibraryRecord lib,
+                                                                       IChunkRepository chunkRepo,
+                                                                       IPageRepository pageRepo,
+                                                                       ILibraryProfileRepository profileRepo,
+                                                                       ILibraryIndexRepository indexRepo,
+                                                                       IBm25ShardRepository bm25Repo,
+                                                                       IExcludedSymbolsRepository excludedRepo,
+                                                                       ILibraryRepository libraryRepo,
+                                                                       CancellationToken ct)
     {
         long chunks = 0, pages = 0, profiles = 0, indexes = 0, shards = 0, excluded = 0;
-        foreach (var v in lib.AllVersions)
+        foreach(var v in lib.AllVersions)
         {
             chunks += await chunkRepo.DeleteChunksAsync(library, v, ct);
             pages += await pageRepo.DeleteAsync(library, v, ct);
@@ -424,5 +461,8 @@ public static class MutationTools
         return JsonSerializer.Serialize(response, smJsonOptions);
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
+    private const string PreservedForAudit = "preserved for audit";
+    private const string NotFoundStatus = "NotFound";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

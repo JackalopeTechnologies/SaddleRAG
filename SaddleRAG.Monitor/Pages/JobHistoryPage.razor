@@ -1,0 +1,78 @@
+@* SaddleRAG.Monitor/Pages/JobHistoryPage.razor *@
+@page "/monitor/jobs"
+@rendermode InteractiveServer
+@using SaddleRAG.Monitor.Services
+@inherits JobHistoryPageBase
+
+<MudText Typo="Typo.h4" Class="mb-3">Jobs</MudText>
+
+<MudStack Row="true" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
+    <MudSelect T="string" Label="Status" @bind-Value="StatusFilter" Clearable="true"
+               Style="min-width:140px">
+        @foreach (var s in pmStatusChoices)
+        {
+            <MudSelectItem Value="@s">@s</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField T="string" Label="Library contains" @bind-Value="LibraryFilter" Immediate="true"/>
+    <MudSelect T="int" Label="Limit" @bind-Value="LimitChoice" Style="min-width:100px">
+        <MudSelectItem Value="50">50</MudSelectItem>
+        <MudSelectItem Value="100">100</MudSelectItem>
+        <MudSelectItem Value="500">500</MudSelectItem>
+    </MudSelect>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Apply</MudButton>
+</MudStack>
+
+<MudTable Items="@Rows" Dense="true" Hover="true" T="MonitorJobService.JobHistoryRow"
+          OnRowClick="OnRowClicked">
+    <HeaderContent>
+        <MudTh>Created</MudTh>
+        <MudTh>Library</MudTh>
+        <MudTh>Version</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Duration</MudTh>
+        <MudTh>Indexed</MudTh>
+        <MudTh>Errors</MudTh>
+        <MudTh>Job</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudTd>
+        <MudTd>@context.LibraryId</MudTd>
+        <MudTd>@context.Version</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">
+                @context.Status
+            </MudChip>
+        </MudTd>
+        <MudTd>@(context.Duration?.ToString(@"hh\:mm\:ss") ?? "—")</MudTd>
+        <MudTd>@context.IndexedPageCount</MudTd>
+        <MudTd>@context.ErrorCount</MudTd>
+        <MudTd Style="font-family:monospace; font-size:.7rem">@context.JobId</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No jobs match the current filters.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+
+    [Inject]
+    private NavigationManager Nav { get; set; } = default!;
+
+    private static Color StatusColor(string status) => status switch
+    {
+        "Running"   => Color.Info,
+        "Queued"    => Color.Default,
+        "Completed" => Color.Success,
+        "Failed"    => Color.Error,
+        "Cancelled" => Color.Warning,
+        var _       => Color.Default
+    };
+
+    private void OnRowClicked(TableRowClickEventArgs<MonitorJobService.JobHistoryRow> args)
+    {
+        if (args.Item is not null)
+            Nav.NavigateTo($"/monitor/jobs/{args.Item.JobId}");
+    }
+
+}

@@ -28,6 +28,12 @@
         <Property Id="REGISTER_CLAUDE_PLUGIN" Value="1" />
         <Property Id="CLAUDEPLUGINSTATUS" Secure="yes" />
 
+        <!-- Ollama keep-alive detection: CheckOllamaKeepAlive CA populates these -->
+        <!-- in the UI sequence so the Ollama dialog can show or hide a notice. -->
+        <Property Id="OLLAMA_KEEPALIVE_EXISTING" Secure="yes" />
+        <Property Id="OLLAMA_KEEPALIVE_WILL_SET" Value="0" Secure="yes" />
+        <Property Id="OLLAMA_KEEPALIVE_NOTICE" Secure="yes" />
+
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
             <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp">
@@ -75,6 +81,8 @@
         <Component Id="HelperScripts" Directory="MCPFOLDER" Guid="B3A1F2E4-9C7D-4E8B-A5F1-2D3E4F5A6B7C">
             <File Source="RegisterClaudePlugin.ps1" />
             <File Source="UnregisterClaudePlugin.ps1" />
+            <File Source="SetOllamaKeepAlive.ps1" />
+            <File Source="UnsetOllamaKeepAlive.ps1" />
         </Component>
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
@@ -114,6 +122,15 @@
         <CustomAction Id="LaunchOllamaDownload"
                       Script="jscript"
                       ScriptSourceFile="LaunchOllamaDownload.js"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <!-- UI-time CA: read system OLLAMA_KEEP_ALIVE so the Ollama dialog can -->
+        <!-- decide whether to show the "we will set OLLAMA_KEEP_ALIVE=-1" notice. -->
+        <!-- Sets properties OLLAMA_KEEPALIVE_EXISTING and OLLAMA_KEEPALIVE_WILL_SET. -->
+        <CustomAction Id="CheckOllamaKeepAlive"
+                      Script="jscript"
+                      ScriptSourceFile="CheckOllamaKeepAlive.js"
                       Execute="immediate"
                       Return="ignore" />
 
@@ -158,6 +175,38 @@
                       Return="ignore"
                       Impersonate="yes" />
 
+        <!-- Set OLLAMA_KEEP_ALIVE=-1 system-wide on install, but only if it isn't -->
+        <!-- already set. The script writes a registry marker so uninstall knows -->
+        <!-- whether we set it. Impersonate="no" so it runs elevated and can -->
+        <!-- write to the Machine env scope. -->
+        <SetProperty Id="SetOllamaKeepAlive"
+                     Before="SetOllamaKeepAlive"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]SetOllamaKeepAlive.ps1&quot;" />
+
+        <CustomAction Id="SetOllamaKeepAlive"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="no" />
+
+        <!-- Conditionally remove OLLAMA_KEEP_ALIVE on uninstall. Removes only if -->
+        <!-- our marker is present AND the current value still matches what we set, -->
+        <!-- so user changes after install are respected. Always cleans up the -->
+        <!-- marker registry key so we don't leave breadcrumbs. -->
+        <SetProperty Id="UnsetOllamaKeepAlive"
+                     Before="UnsetOllamaKeepAlive"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]UnsetOllamaKeepAlive.ps1&quot;" />
+
+        <CustomAction Id="UnsetOllamaKeepAlive"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="no" />
+
         <!-- Prewarm OS file cache + validate the binary by running it once with the prewarm flag. -->
         <!-- This forces all 215 MB of self-contained runtime into the page cache so SCM's 30s start -->
         <!-- timeout doesn't kill the service on first cold-disk launch. Return is "check" so a real -->
@@ -196,10 +245,18 @@
         <InstallExecuteSequence>
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterClaudePlugin" After="PatchAppSettings" Condition="NOT Installed AND REGISTER_CLAUDE_PLUGIN = &quot;1&quot;" />
+            <Custom Action="SetOllamaKeepAlive" After="RegisterClaudePlugin" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="UnsetOllamaKeepAlive" Before="UnregisterClaudePlugin" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="UnregisterClaudePlugin" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="PrewarmService" Before="StartAndMonitorService" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="StartAndMonitorService" Before="StartServices" Condition="NOT Installed OR REINSTALL" />
         </InstallExecuteSequence>
+
+        <!-- Run CheckOllamaKeepAlive in the UI sequence so the Ollama dialog -->
+        <!-- can hide its keep-alive notice when the user already has a value. -->
+        <InstallUISequence>
+            <Custom Action="CheckOllamaKeepAlive" After="CostFinalize" />
+        </InstallUISequence>
 
         <!-- UI -->
         <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="MCPFOLDER" />
@@ -219,6 +276,8 @@
             <ProgressText Action="PatchAppSettings" Message="Writing configuration..." />
             <ProgressText Action="RegisterClaudePlugin" Message="Registering Claude Code plugin..." />
             <ProgressText Action="UnregisterClaudePlugin" Message="Removing Claude Code plugin registration..." />
+            <ProgressText Action="SetOllamaKeepAlive" Message="Configuring Ollama keep-alive..." />
+            <ProgressText Action="UnsetOllamaKeepAlive" Message="Removing Ollama keep-alive setting..." />
             <ProgressText Action="PrewarmService" Message="Warming up runtime, please wait (this takes 15-30 seconds)..." />
             <ProgressText Action="StartAndMonitorService" Message="Starting SaddleRAG service..." />
 
@@ -324,9 +383,18 @@
                 <Control Id="StatusText" Type="Edit" X="25" Y="164" Width="320" Height="18"
                          Disabled="yes" Property="OLLAMASTATUS" />
 
-                <Control Id="InfoText" Type="Text" X="25" Y="188" Width="320" Height="30"
+                <Control Id="InfoText" Type="Text" X="25" Y="188" Width="320" Height="14"
                          Transparent="yes" NoPrefix="yes"
-                         Text="Not installed? Download Ollama for free from https://ollama.com. Install it, then click Test Connection to verify." />
+                         Text="Don't have Ollama? Download it for free from https://ollama.com." />
+
+                <!-- Keep-alive notice. Text comes from the OLLAMA_KEEPALIVE_NOTICE -->
+                <!-- property, which CheckOllamaKeepAlive populates with either   -->
+                <!-- the message or an empty string. WiX 5 does not allow show/   -->
+                <!-- hide Conditions as child elements of Control, so we toggle   -->
+                <!-- visibility by toggling the rendered text instead.            -->
+                <Control Id="KeepAliveText" Type="Text" X="25" Y="204" Width="320" Height="22"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="[OLLAMA_KEEPALIVE_NOTICE]" />
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">

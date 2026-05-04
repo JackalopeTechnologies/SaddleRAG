@@ -8,13 +8,13 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
-using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Crawling;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -36,9 +36,17 @@ public static class IngestionTools
                  "the URL patterns are correct and the crawl scope is reasonable."
                 )]
     public static async Task<string> DryRunScrape(PageCrawler crawler,
+                                                  [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                   IBackgroundJobRunner runner,
+                                                  RepositoryFactory repositoryFactory,
                                                   [Description("Root URL to begin crawling from")]
                                                   string rootUrl,
+                                                  [Description("Library identifier — used to key the audit log for this dry run"
+                                                              )]
+                                                  string library,
+                                                  [Description("Library version — used to key the audit log for this dry run"
+                                                              )]
+                                                  string version,
                                                   [Description("Allowed URL patterns (regex). Defaults to the rootUrl host."
                                                               )]
                                                   string[]? allowedUrlPatterns = null,
@@ -53,19 +61,24 @@ public static class IngestionTools
                                                   [Description("Max depth for pages on a different host entirely; 0 disables off-site crawling"
                                                               )]
                                                   int offSiteDepth = 1,
+                                                  [Description("Optional database profile name")]
+                                                  string? profile = null,
                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(crawler);
         ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(rootUrl);
+        ArgumentException.ThrowIfNullOrEmpty(library);
+        ArgumentException.ThrowIfNullOrEmpty(version);
 
         var allowed = allowedUrlPatterns ?? [new Uri(rootUrl).Host];
 
         var job = new ScrapeJob
                       {
                           RootUrl = rootUrl,
-                          LibraryId = DryRunLibraryId,
-                          Version = DryRunVersion,
+                          LibraryId = library,
+                          Version = version,
                           LibraryHint = DryRunHint,
                           AllowedUrlPatterns = allowed,
                           ExcludedUrlPatterns = excludedUrlPatterns ?? [],
@@ -75,11 +88,23 @@ public static class IngestionTools
                           OffSiteDepth = offSiteDepth
                       };
 
-        var inputJson = JsonSerializer.Serialize(new { rootUrl, maxPages, fetchDelayMs, sameHostDepth, offSiteDepth });
+        var inputJson = JsonSerializer.Serialize(new
+                                                     {
+                                                         rootUrl,
+                                                         library,
+                                                         version,
+                                                         maxPages,
+                                                         fetchDelayMs,
+                                                         sameHostDepth,
+                                                         offSiteDepth
+                                                     }
+                                                );
         var jobRecord = new BackgroundJobRecord
                             {
                                 Id = Guid.NewGuid().ToString(),
                                 JobType = BackgroundJobTypes.DryRunScrape,
+                                LibraryId = library,
+                                Version = version,
                                 InputJson = inputJson,
                                 ItemsLabel = ItemsLabelPages
                             };
@@ -87,10 +112,19 @@ public static class IngestionTools
         var jobId = await runner.QueueAsync(jobRecord,
                                             async (record, onProgress, jobCt) =>
                                             {
-                                                var report = await crawler.DryRunAsync(job, onProgress, jobCt);
+                                                var auditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
+                                                await auditRepo.DeleteByLibraryVersionAsync(library, version, jobCt);
+                                                var report = await crawler.DryRunAsync(job,
+                                                                      library,
+                                                                      version,
+                                                                      record.Id,
+                                                                      onProgress,
+                                                                      jobCt
+                                                                 );
                                                 record.ResultJson = JsonSerializer.Serialize(report, smJsonOptions);
                                             },
-                                            ct);
+                                            ct
+                                           );
 
         var response = new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) };
         return JsonSerializer.Serialize(response, smJsonOptions);
@@ -193,11 +227,11 @@ public static class IngestionTools
                  "Poll at reasonable intervals (10–30s); the job id comes from rescrub_library."
                 )]
     public static async Task<string> GetRescrubStatus(RepositoryFactory repositoryFactory,
-                                                       [Description("Job id returned from rescrub_library")]
-                                                       string jobId,
-                                                       [Description("Optional database profile name")]
-                                                       string? profile = null,
-                                                       CancellationToken ct = default)
+                                                      [Description("Job id returned from rescrub_library")]
+                                                      string jobId,
+                                                      [Description("Optional database profile name")]
+                                                      string? profile = null,
+                                                      CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(jobId);
@@ -227,7 +261,7 @@ public static class IngestionTools
                                    job.CompletedAt,
                                    job.LastProgressAt,
                                    BoundaryHint = boundaryHint,
-                                   Result = job.Result
+                                   job.Result
                                };
 
             result = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
@@ -243,11 +277,11 @@ public static class IngestionTools
                  "Completed jobs include a BoundaryHint to act on before calling search_docs."
                 )]
     public static async Task<string> ListRescrubJobs(RepositoryFactory repositoryFactory,
-                                                      [Description("Maximum jobs to return (default 20)")]
-                                                      int limit = 20,
-                                                      [Description("Optional database profile name")]
-                                                      string? profile = null,
-                                                      CancellationToken ct = default)
+                                                     [Description("Maximum jobs to return (default 20)")]
+                                                     int limit = 20,
+                                                     [Description("Optional database profile name")]
+                                                     string? profile = null,
+                                                     CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
 
@@ -273,22 +307,17 @@ public static class IngestionTools
         return json;
     }
 
-    private static object? ResolveBoundaryHint(SaddleRAG.Core.Models.RescrubResult result)
+    private static object? ResolveBoundaryHint(RescrubResult result)
     {
         var pct = result.Processed > 0 ? 100.0 * result.BoundaryIssues / result.Processed : 0.0;
         string? hint = pct switch
-        {
-            >= BoundaryHintRecommendThreshold => BoundaryHintRecommend,
-            >= BoundaryHintMayHelpThreshold => BoundaryHintMayHelp,
-            _ => null
-        };
+            {
+                >= BoundaryHintRecommendThreshold => BoundaryHintRecommend,
+                >= BoundaryHintMayHelpThreshold => BoundaryHintMayHelp,
+                var _ => null
+            };
         return new { pct, hint };
     }
-
-    private const double BoundaryHintMayHelpThreshold = 5.0;
-    private const double BoundaryHintRecommendThreshold = 10.0;
-    private const string BoundaryHintMayHelp = "rechunk_library may help";
-    private const string BoundaryHintRecommend = "rechunk_library recommended";
 
     [McpServerTool(Name = "reload_profile")]
     [Description("Reload the in-memory vector index from MongoDB for a profile. " +
@@ -306,11 +335,14 @@ public static class IngestionTools
         return $"Reloaded vector index for profile '{profile ?? "(default)"}'.";
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
+    private const double BoundaryHintMayHelpThreshold = 5.0;
+    private const double BoundaryHintRecommendThreshold = 10.0;
+    private const string BoundaryHintMayHelp = "rechunk_library may help";
+    private const string BoundaryHintRecommend = "rechunk_library recommended";
 
     private const int DefaultDryRunMaxPages = 200;
-    private const string DryRunLibraryId = "dryrun";
-    private const string DryRunVersion = "dryrun";
     private const string DryRunHint = "Dry run";
     private const string ItemsLabelPages = "pages";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

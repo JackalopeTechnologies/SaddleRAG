@@ -8,10 +8,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Recon;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -37,8 +37,7 @@ public static class ReconTools
                  "submit_library_profile with the resulting JSON. Returns immediately " +
                  "with no LLM work on the server side."
                 )]
-    public static string ReconLibrary([Description("Root URL of the docs site to characterize")]
-                                      string url,
+    public static string ReconLibrary([Description("Root URL of the docs site to characterize")] string url,
                                       [Description("Library identifier the profile will apply to")]
                                       string library,
                                       [Description("Library version the profile will apply to")]
@@ -77,7 +76,8 @@ public static class ReconTools
                                                           string library,
                                                           [Description("Library version the profile applies to")]
                                                           string version,
-                                                          [Description("JSON payload matching the schema returned by recon_library")]
+                                                          [Description("JSON payload matching the schema returned by recon_library"
+                                                                      )]
                                                           string profileJson,
                                                           [Description("Optional database profile name")]
                                                           string? profile = null,
@@ -142,10 +142,13 @@ public static class ReconTools
     {
         string[] result = [];
         if (root.TryGetProperty(key, out var prop) && prop.ValueKind == JsonValueKind.Array)
+        {
             result = prop.EnumerateArray()
                          .Select(v => v.GetString() ?? string.Empty)
                          .Where(s => !string.IsNullOrEmpty(s))
                          .ToArray();
+        }
+
         return result;
     }
 
@@ -153,6 +156,7 @@ public static class ReconTools
     {
         var result = new CasingConventions();
         if (root.TryGetProperty(KeyCasing, out var casingProp) && casingProp.ValueKind == JsonValueKind.Object)
+        {
             result = new CasingConventions
                          {
                              Types = ReadOptionalString(casingProp, KeyTypes) ?? string.Empty,
@@ -161,6 +165,8 @@ public static class ReconTools
                              Members = ReadOptionalString(casingProp, KeyMembers) ?? string.Empty,
                              Parameters = ReadOptionalString(casingProp, KeyParameters) ?? string.Empty
                          };
+        }
+
         return result;
     }
 
@@ -177,10 +183,8 @@ public static class ReconTools
         float result = DefaultSubmittedConfidence;
         if (root.TryGetProperty(KeyConfidence, out var prop) && prop.ValueKind == JsonValueKind.Number)
             result = (float) prop.GetDouble();
-        return Math.Clamp(result, 0f, 1f);
+        return Math.Clamp(result, min: 0f, max: 1f);
     }
-
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
 
     private const string ProfileSavedMessage =
         "Profile saved. Call start_ingest again to advance — it should now report READY_TO_SCRAPE or READY.";
@@ -206,15 +210,15 @@ public static class ReconTools
     private const string SubmitProfileToolName = "submit_library_profile";
 
     private const string ReconInstructions = """
-        Browse the URL and (when useful) one or two sample pages to characterize this docs site.
-        Identify the documentation language(s), the casing conventions used for types / methods /
-        constants / members / parameters, the token separators that appear in qualified names
-        (".", "::", "->", ":"), recognized callable shapes ("Foo()", "Foo<T>()"), and 5-30
-        plausible top-level type / function / parameter names. The likelySymbols list is a soft
-        hint — if you miss real symbols, the corpus-context rules will recover them, so optimize
-        for precision (avoid junk like "Each" or "When" picked from prose) over recall.
-        Self-rate your confidence in [0,1]. Return the JSON object as input to submit_library_profile.
-        """;
+                                             Browse the URL and (when useful) one or two sample pages to characterize this docs site.
+                                             Identify the documentation language(s), the casing conventions used for types / methods /
+                                             constants / members / parameters, the token separators that appear in qualified names
+                                             (".", "::", "->", ":"), recognized callable shapes ("Foo()", "Foo<T>()"), and 5-30
+                                             plausible top-level type / function / parameter names. The likelySymbols list is a soft
+                                             hint — if you miss real symbols, the corpus-context rules will recover them, so optimize
+                                             for precision (avoid junk like "Each" or "When" picked from prose) over recall.
+                                             Self-rate your confidence in [0,1]. Return the JSON object as input to submit_library_profile.
+                                             """;
 
     private const string JsonExample = """
                                        {
@@ -235,19 +239,21 @@ public static class ReconTools
                                        }
                                        """;
 
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
+
     private static readonly string[] smReconHints =
-    {
-        "Look for an enum index page (e.g. *-Enums.htm) — set canonicalInventoryUrl if found.",
-        "If the docs cover multiple languages, list them all in languages[] in order of prominence.",
-        "Aerotech-style docs use \".\" separators in qualified names like AxisFault.Disabled.",
-        "Python docs are PascalCase types and snake_case functions — note that mismatch.",
-        "Skip prose words (Each, When, Represents, Values, For, Use) — they are not symbols."
-    };
+        {
+            "Look for an enum index page (e.g. *-Enums.htm) — set canonicalInventoryUrl if found.",
+            "If the docs cover multiple languages, list them all in languages[] in order of prominence.",
+            "Aerotech-style docs use \".\" separators in qualified names like AxisFault.Disabled.",
+            "Python docs are PascalCase types and snake_case functions — note that mismatch.",
+            "Skip prose words (Each, When, Represents, Values, For, Use) — they are not symbols."
+        };
 
     private static readonly string[] smSamplePages =
-    {
-        "The root URL itself",
-        "Any \"types\" / \"enums\" / \"reference\" landing page linked from root",
-        "One sample API reference page so you see what a typical symbol shape looks like"
-    };
+        {
+            "The root URL itself",
+            "Any \"types\" / \"enums\" / \"reference\" landing page linked from root",
+            "One sample API reference page so you see what a typical symbol shape looks like"
+        };
 }

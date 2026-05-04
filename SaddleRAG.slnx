@@ -10,5 +10,6 @@
   <Project Path="SaddleRAG.Database/SaddleRAG.Database.csproj" />
   <Project Path="SaddleRAG.Ingestion/SaddleRAG.Ingestion.csproj" />
   <Project Path="SaddleRAG.Mcp/SaddleRAG.Mcp.csproj" />
+  <Project Path="SaddleRAG.Monitor/SaddleRAG.Monitor.csproj" />
   <Project Path="SaddleRAG.Tests/SaddleRAG.Tests.csproj" />
 </Solution>

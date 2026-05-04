@@ -1,0 +1,30 @@
+@* SaddleRAG.Monitor/Components/ErrorList.razor *@
+
+@if (Errors.Count == 0)
+{
+    <MudText Typo="Typo.caption">No errors.</MudText>
+}
+else
+{
+    <MudPaper Outlined="true" Style="max-height:240px; overflow:auto">
+        <MudList T="string" Dense="true">
+            @foreach (var e in Errors.Reverse())
+            {
+                <MudListItem Icon="@Icons.Material.Filled.ErrorOutline" IconColor="Color.Error">
+                    <MudStack Row="true" Spacing="2">
+                        <span style="font-family:monospace; opacity:.6">@e.At.ToString("HH:mm:ss")</span>
+                        <span>@e.Message</span>
+                    </MudStack>
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+}
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<RecentError> Errors { get; set; } = Array.Empty<RecentError>();
+
+}

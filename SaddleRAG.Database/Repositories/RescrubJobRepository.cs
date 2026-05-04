@@ -6,9 +6,9 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Driver;
 
 #endregion
 
@@ -44,20 +44,20 @@ public class RescrubJobRepository : IRescrubJobRepository
         ArgumentException.ThrowIfNullOrEmpty(id);
 
         var result = await mContext.RescrubJobs
-                                    .Find(j => j.Id == id)
-                                    .FirstOrDefaultAsync(ct);
+                                   .Find(j => j.Id == id)
+                                   .FirstOrDefaultAsync(ct);
         return result;
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<RescrubJobRecord>> ListRecentAsync(int limit = 20,
-                                                                        CancellationToken ct = default)
+                                                                       CancellationToken ct = default)
     {
         var results = await mContext.RescrubJobs
-                                     .Find(FilterDefinition<RescrubJobRecord>.Empty)
-                                     .SortByDescending(j => j.CreatedAt)
-                                     .Limit(limit)
-                                     .ToListAsync(ct);
+                                    .Find(FilterDefinition<RescrubJobRecord>.Empty)
+                                    .SortByDescending(j => j.CreatedAt)
+                                    .Limit(limit)
+                                    .ToListAsync(ct);
         return results;
     }
 }

@@ -6,9 +6,9 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using MongoDB.Driver;
 
 #endregion
 
@@ -44,25 +44,25 @@ public class BackgroundJobRepository : IBackgroundJobRepository
         ArgumentException.ThrowIfNullOrEmpty(id);
 
         var result = await mContext.BackgroundJobs
-                                    .Find(j => j.Id == id)
-                                    .FirstOrDefaultAsync(ct);
+                                   .Find(j => j.Id == id)
+                                   .FirstOrDefaultAsync(ct);
         return result;
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<BackgroundJobRecord>> ListRecentAsync(string? jobType = null,
-                                                                           int limit = 20,
-                                                                           CancellationToken ct = default)
+                                                                          int limit = 20,
+                                                                          CancellationToken ct = default)
     {
         var filter = jobType is null
-            ? FilterDefinition<BackgroundJobRecord>.Empty
-            : Builders<BackgroundJobRecord>.Filter.Eq(j => j.JobType, jobType);
+                         ? FilterDefinition<BackgroundJobRecord>.Empty
+                         : Builders<BackgroundJobRecord>.Filter.Eq(j => j.JobType, jobType);
 
         var results = await mContext.BackgroundJobs
-                                     .Find(filter)
-                                     .SortByDescending(j => j.CreatedAt)
-                                     .Limit(limit)
-                                     .ToListAsync(ct);
+                                    .Find(filter)
+                                    .SortByDescending(j => j.CreatedAt)
+                                    .Limit(limit)
+                                    .ToListAsync(ct);
         return results;
     }
 }

@@ -8,13 +8,13 @@ namespace SaddleRAG.Core.Models;
 
 /// <summary>
 ///     One partition of a (library, version)'s BM25 inverted index. Terms
-///     are partitioned across shards by <see cref="ShardIndex"/> using a
+///     are partitioned across shards by <see cref="ShardIndex" /> using a
 ///     stable hash function; the writer decides at persist-time whether to
-///     keep each term's postings inline in <see cref="InlineTerms"/> or
-///     spill to GridFS via <see cref="ExternalTerms"/>. If the shard
+///     keep each term's postings inline in <see cref="InlineTerms" /> or
+///     spill to GridFS via <see cref="ExternalTerms" />. If the shard
 ///     itself would still exceed the 16MB Mongo document limit after
 ///     per-term spill, the entire shard is uploaded to GridFS and only
-///     <see cref="ShardGridFsRef"/> is populated.
+///     <see cref="ShardGridFsRef" /> is populated.
 /// </summary>
 public record Bm25Shard
 {
@@ -58,7 +58,7 @@ public record Bm25Shard
     ///     GridFS file id (as string) holding the entire shard payload
     ///     when the shard could not be persisted inline even after
     ///     per-term spill. Null in the common case. When set,
-    ///     <see cref="InlineTerms"/> and <see cref="ExternalTerms"/> are
+    ///     <see cref="InlineTerms" /> and <see cref="ExternalTerms" /> are
     ///     empty and the reader fetches everything from GridFS.
     /// </summary>
     public string? ShardGridFsRef { get; init; }

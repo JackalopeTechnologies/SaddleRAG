@@ -8,29 +8,28 @@
 
 using System.IO.Compression;
 using System.Text.Json;
-using SaddleRAG.Core.Interfaces;
-using SaddleRAG.Core.Models;
+using System.Text.Json.Serialization;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
+using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 
 #endregion
 
 namespace SaddleRAG.Database.Repositories;
 
 /// <summary>
-///     MongoDB-backed implementation of <see cref="IBm25ShardRepository"/>.
+///     MongoDB-backed implementation of <see cref="IBm25ShardRepository" />.
 ///     Persists sharded BM25 postings with two levels of overflow defense:
-///
-///       1. Per-term spill: any term whose postings list serializes above
-///          <see cref="PerTermSpillThresholdBytes"/> is uploaded to GridFS
-///          and replaced with a file-id reference in the shard document.
-///       2. Per-shard spill: if a shard document still serializes above
-///          <see cref="PerShardSpillThresholdBytes"/> after per-term spill
-///          (very unusual — would require thousands of medium-frequency
-///          terms in one shard), the entire shard payload is uploaded to
-///          GridFS and the document keeps only the file id.
-///
+///     1. Per-term spill: any term whose postings list serializes above
+///     <see cref="PerTermSpillThresholdBytes" /> is uploaded to GridFS
+///     and replaced with a file-id reference in the shard document.
+///     2. Per-shard spill: if a shard document still serializes above
+///     <see cref="PerShardSpillThresholdBytes" /> after per-term spill
+///     (very unusual — would require thousands of medium-frequency
+///     terms in one shard), the entire shard payload is uploaded to
+///     GridFS and the document keeps only the file id.
 ///     Spilled payloads are stored under a deterministic GridFS filename
 ///     keyed by (libraryId, version, shard, term?) so re-writes overwrite
 ///     prior content rather than accumulate orphans, and so a delete of
@@ -119,27 +118,6 @@ public class Bm25ShardRepository : IBm25ShardRepository
         return result;
     }
 
-    private async Task<IReadOnlyList<Bm25Posting>> ResolveFromShardSpillAsync(string shardFileId,
-                                                                              string term,
-                                                                              CancellationToken ct)
-    {
-        var allTerms = await DownloadShardPayloadAsync(shardFileId, ct);
-        var result = allTerms.TryGetValue(term, out var found) ? found : [];
-        return result;
-    }
-
-    private async Task<IReadOnlyList<Bm25Posting>> ResolveFromInlineOrTermSpillAsync(Bm25Shard shard,
-                                                                                     string term,
-                                                                                     CancellationToken ct)
-    {
-        IReadOnlyList<Bm25Posting>? result = null;
-        if (shard.InlineTerms.TryGetValue(term, out var inline))
-            result = inline;
-        if (result == null && shard.ExternalTerms.TryGetValue(term, out var fileId))
-            result = await DownloadTermPayloadAsync(fileId, ct);
-        return result ?? Array.Empty<Bm25Posting>();
-    }
-
     /// <inheritdoc />
     public async Task<long> DeleteAsync(string libraryId,
                                         string version,
@@ -157,6 +135,27 @@ public class Bm25ShardRepository : IBm25ShardRepository
             await DeleteSpilledPayloadsAsync(shard, bucket, ct);
 
         return result.DeletedCount;
+    }
+
+    private async Task<IReadOnlyList<Bm25Posting>> ResolveFromShardSpillAsync(string shardFileId,
+                                                                              string term,
+                                                                              CancellationToken ct)
+    {
+        var allTerms = await DownloadShardPayloadAsync(shardFileId, ct);
+        var result = allTerms.TryGetValue(term, out var found) ? found : [];
+        return result;
+    }
+
+    private async Task<IReadOnlyList<Bm25Posting>> ResolveFromInlineOrTermSpillAsync(Bm25Shard shard,
+        string term,
+        CancellationToken ct)
+    {
+        IReadOnlyList<Bm25Posting>? result = null;
+        if (shard.InlineTerms.TryGetValue(term, out var inline))
+            result = inline;
+        if (result == null && shard.ExternalTerms.TryGetValue(term, out var fileId))
+            result = await DownloadTermPayloadAsync(fileId, ct);
+        return result ?? Array.Empty<Bm25Posting>();
     }
 
     /// <summary>
@@ -306,16 +305,23 @@ public class Bm25ShardRepository : IBm25ShardRepository
     private static byte[] SerializePostingsDictionary(IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>> dict) =>
         Compress(JsonSerializer.SerializeToUtf8Bytes(dict, smJsonOptions));
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>> DeserializePostingsDictionary(byte[] bytes) =>
+    private static IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>>
+        DeserializePostingsDictionary(byte[] bytes) =>
         JsonSerializer.Deserialize<Dictionary<string, List<Bm25Posting>>>(Decompress(bytes), smJsonOptions)
-            ?.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<Bm25Posting>) kv.Value, StringComparer.Ordinal)
-        ?? new Dictionary<string, IReadOnlyList<Bm25Posting>>();
+                      ?.ToDictionary(kv => kv.Key,
+                                     kv => (IReadOnlyList<Bm25Posting>) kv.Value,
+                                     StringComparer.Ordinal
+                                    ) ??
+        new Dictionary<string, IReadOnlyList<Bm25Posting>>();
 
     private static byte[] Compress(byte[] bytes)
     {
         using var output = new MemoryStream();
         using(var gzip = new GZipStream(output, CompressionLevel.Fastest))
-            gzip.Write(bytes, 0, bytes.Length);
+        {
+            gzip.Write(bytes, offset: 0, bytes.Length);
+        }
+
         return output.ToArray();
     }
 
@@ -360,13 +366,6 @@ public class Bm25ShardRepository : IBm25ShardRepository
         return result;
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new()
-                                                                      {
-                                                                          IncludeFields = false,
-                                                                          DefaultIgnoreCondition =
-                                                                              System.Text.Json.Serialization.JsonIgnoreCondition.Never
-                                                                      };
-
     // 1 MB per term — terms with postings larger than this spill to GridFS.
     private const int PerTermSpillThresholdBytes = 1 * 1024 * 1024;
 
@@ -374,4 +373,11 @@ public class Bm25ShardRepository : IBm25ShardRepository
     private const int PerShardSpillThresholdBytes = 14 * 1024 * 1024;
 
     private const int PerPostingOverheadBytes = 12;
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions
+                                                                      {
+                                                                          IncludeFields = false,
+                                                                          DefaultIgnoreCondition =
+                                                                              JsonIgnoreCondition.Never
+                                                                      };
 }

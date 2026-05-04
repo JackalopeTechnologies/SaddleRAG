@@ -96,6 +96,77 @@ if ($RemoveFiles -and -not [string]::IsNullOrWhiteSpace($existingInstallDirector
     }
 }
 
+# Conditionally remove OLLAMA_KEEP_ALIVE if (and only if) install-service.ps1
+# set it during install AND the value still matches what we set. Always
+# clears the marker registry value so we leave nothing behind.
+$ollamaEnvVar           = 'OLLAMA_KEEP_ALIVE'
+$ollamaOurValue         = '-1'
+$ollamaRegPath          = 'HKLM:\Software\Jackalope Technologies\SaddleRAG'
+$ollamaParentRegPath    = 'HKLM:\Software\Jackalope Technologies'
+$ollamaMarker           = 'OllamaKeepAliveSetByUs'
+
+$ollamaMarkerValue = $null
+
+if (Test-Path -LiteralPath $ollamaRegPath)
+{
+    $prop = Get-ItemProperty -LiteralPath $ollamaRegPath -Name $ollamaMarker -ErrorAction SilentlyContinue
+
+    if ($null -ne $prop)
+    {
+        $ollamaMarkerValue = $prop.$ollamaMarker
+    }
+}
+
+if ($ollamaMarkerValue -eq 1)
+{
+    $ollamaCurrent = [Environment]::GetEnvironmentVariable($ollamaEnvVar, 'Machine')
+
+    if ($ollamaCurrent -eq $ollamaOurValue)
+    {
+        if ($PSCmdlet.ShouldProcess($ollamaEnvVar, 'Remove system environment variable'))
+        {
+            [Environment]::SetEnvironmentVariable($ollamaEnvVar, $null, 'Machine')
+            Write-Output "OllamaKeepAlive: removed (was '$ollamaOurValue')"
+        }
+    }
+    else
+    {
+        Write-Output "OllamaKeepAlive: current value '$ollamaCurrent' does not match what we set; leaving alone"
+    }
+
+    Remove-ItemProperty -LiteralPath $ollamaRegPath -Name $ollamaMarker -ErrorAction SilentlyContinue
+}
+else
+{
+    Write-Output 'OllamaKeepAlive: marker not present; leaving env var alone'
+}
+
+# Drop the SaddleRAG and Jackalope Technologies registry keys if they are
+# now empty (so we leave no breadcrumbs from this install).
+if (Test-Path -LiteralPath $ollamaRegPath)
+{
+    $remainingValues  = (Get-Item -LiteralPath $ollamaRegPath).Property
+    $remainingSubkeys = Get-ChildItem -LiteralPath $ollamaRegPath -ErrorAction SilentlyContinue
+
+    if (($null -eq $remainingValues -or $remainingValues.Count -eq 0) -and
+        ($null -eq $remainingSubkeys -or $remainingSubkeys.Count -eq 0))
+    {
+        Remove-Item -LiteralPath $ollamaRegPath -ErrorAction SilentlyContinue
+    }
+}
+
+if (Test-Path -LiteralPath $ollamaParentRegPath)
+{
+    $parentRemainingValues  = (Get-Item -LiteralPath $ollamaParentRegPath).Property
+    $parentRemainingSubkeys = Get-ChildItem -LiteralPath $ollamaParentRegPath -ErrorAction SilentlyContinue
+
+    if (($null -eq $parentRemainingValues -or $parentRemainingValues.Count -eq 0) -and
+        ($null -eq $parentRemainingSubkeys -or $parentRemainingSubkeys.Count -eq 0))
+    {
+        Remove-Item -LiteralPath $ollamaParentRegPath -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Output "ServiceName: $ServiceName"
 Write-Output 'Status: Removed'
 

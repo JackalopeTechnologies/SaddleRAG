@@ -47,7 +47,8 @@ public static class CodeFenceScanner
 
     private static void CollectIdentifiersFromBlock(string blockContent, HashSet<string> output)
     {
-        foreach(Match identifier in smIdentifierRegex.Matches(blockContent).Where(m => m.Value.Length >= MinIdentifierLength))
+        foreach(var identifier in smIdentifierRegex.Matches(blockContent)
+                                                   .Where(m => m.Value.Length >= MinIdentifierLength))
             AddIdentifierAndLeaves(identifier.Value, output);
     }
 
@@ -67,29 +68,26 @@ public static class CodeFenceScanner
             output.Add(segment);
     }
 
+    private const int FenceGroupIndex = 1;
+    private const int MinIdentifierLength = 2;
+
     // Captures the body of a triple-backtick fence (handles optional language tag).
-    private static readonly Regex smTripleBacktickRegex = new(
-        @"```[^\r\n]*\r?\n(.*?)```",
-        RegexOptions.Compiled | RegexOptions.Singleline
-    );
+    private static readonly Regex smTripleBacktickRegex =
+        new Regex(@"```[^\r\n]*\r?\n(.*?)```", RegexOptions.Compiled | RegexOptions.Singleline);
 
     // Captures the body of an HTML <pre><code>...</code></pre> block.
-    private static readonly Regex smPreCodeRegex = new(
-        @"<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>",
-        RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase
-    );
+    private static readonly Regex smPreCodeRegex = new Regex(@"<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>",
+                                                             RegexOptions.Compiled |
+                                                             RegexOptions.Singleline |
+                                                             RegexOptions.IgnoreCase
+                                                            );
 
     // Matches identifier-shaped tokens (PascalCase, camelCase, snake_case,
     // dotted, ::-joined, ->-joined). Mirrors IdentifierTokenizer's regex
     // but is rooted in code-block content so it does not need callable-
     // shape lookahead.
-    private static readonly Regex smIdentifierRegex = new(
-        @"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*",
-        RegexOptions.Compiled
-    );
+    private static readonly Regex smIdentifierRegex =
+        new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*", RegexOptions.Compiled);
 
     private static readonly string[] smSegmentSeparators = { ".", "::", "->" };
-
-    private const int FenceGroupIndex = 1;
-    private const int MinIdentifierLength = 2;
 }

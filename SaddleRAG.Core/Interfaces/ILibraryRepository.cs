@@ -40,6 +40,11 @@ public interface ILibraryRepository
     Task<LibraryVersionRecord?> GetVersionAsync(string libraryId, string version, CancellationToken ct = default);
 
     /// <summary>
+    ///     Get all indexed versions for a library, sorted descending by ScrapedAt.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionRecord>> GetVersionsAsync(string libraryId, CancellationToken ct = default);
+
+    /// <summary>
     ///     Store version metadata after a scrape completes.
     /// </summary>
     Task UpsertVersionAsync(LibraryVersionRecord versionRecord, CancellationToken ct = default);
@@ -68,7 +73,10 @@ public interface ILibraryRepository
     /// <summary>
     ///     Mark a library version as suspect, recording the reasons and evaluation timestamp.
     /// </summary>
-    Task SetSuspectAsync(string libraryId, string version, IReadOnlyList<string> reasons, CancellationToken ct = default);
+    Task SetSuspectAsync(string libraryId,
+                         string version,
+                         IReadOnlyList<string> reasons,
+                         CancellationToken ct = default);
 
     /// <summary>
     ///     Clear the suspect flag on a library version, resetting reasons and updating the evaluation timestamp.

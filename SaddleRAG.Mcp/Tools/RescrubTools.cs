@@ -8,10 +8,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -42,23 +42,27 @@ public static class RescrubTools
                  "will contain RECON_NEEDED — call recon_library and submit_library_profile first."
                 )]
     public static async Task<string> RescrubLibrary(RescrubJobRunner runner,
-                                                     [Description("Library identifier (e.g. 'aerotech-aeroscript')")]
-                                                     string library,
-                                                     [Description("Library version (e.g. '2025.3')")]
-                                                     string version,
-                                                     [Description("If true, reports what would change without writing to MongoDB.")]
-                                                     bool dryRun = false,
-                                                     [Description("Force reclassification even when auto-detect would skip it. Omit to auto-decide from manifest history.")]
-                                                     bool? reclassify = null,
-                                                     [Description("Skip the pre-flight chunk-boundary audit (typically only used for tests).")]
-                                                     bool skipBoundaryAudit = false,
-                                                     [Description("If true (default), rebuild CodeFenceSymbols and Manifest.")]
-                                                     bool rebuildIndexes = true,
-                                                     [Description("Optional cap for spot-checking large libraries.")]
-                                                     int? maxChunks = null,
-                                                     [Description("Optional database profile name")]
-                                                     string? profile = null,
-                                                     CancellationToken ct = default)
+                                                    [Description("Library identifier (e.g. 'aerotech-aeroscript')")]
+                                                    string library,
+                                                    [Description("Library version (e.g. '2025.3')")]
+                                                    string version,
+                                                    [Description("If true, reports what would change without writing to MongoDB."
+                                                                )]
+                                                    bool dryRun = false,
+                                                    [Description("Force reclassification even when auto-detect would skip it. Omit to auto-decide from manifest history."
+                                                                )]
+                                                    bool? reclassify = null,
+                                                    [Description("Skip the pre-flight chunk-boundary audit (typically only used for tests)."
+                                                                )]
+                                                    bool skipBoundaryAudit = false,
+                                                    [Description("If true (default), rebuild CodeFenceSymbols and Manifest."
+                                                                )]
+                                                    bool rebuildIndexes = true,
+                                                    [Description("Optional cap for spot-checking large libraries.")]
+                                                    int? maxChunks = null,
+                                                    [Description("Optional database profile name")]
+                                                    string? profile = null,
+                                                    CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentException.ThrowIfNullOrEmpty(library);
@@ -79,5 +83,5 @@ public static class RescrubTools
         return JsonSerializer.Serialize(response, smJsonOptions);
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

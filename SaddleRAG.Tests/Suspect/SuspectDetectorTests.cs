@@ -4,7 +4,11 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
 using SaddleRAG.Ingestion.Suspect;
+
+#endregion
 
 namespace SaddleRAG.Tests.Suspect;
 
@@ -14,12 +18,17 @@ public sealed class SuspectDetectorTests
     public async Task OnePagerFlagsBelowThreshold()
     {
         var d = new SuspectDetector();
-        var reasons = await d.EvaluateAsync("lib", "1.0", "https://example.com",
-            pageCount: 2, distinctHostCount: 1, distinctLinkTargets: 50,
-            languageMix: new Dictionary<string, double> { ["csharp"] = 1.0 },
-            declaredLanguages: new[] { "csharp" },
-            sampleTitles: new[] { "About" },
-            ct: TestContext.Current.CancellationToken);
+        var reasons = await d.EvaluateAsync("lib",
+                                            "1.0",
+                                            "https://example.com",
+                                            pageCount: 2,
+                                            distinctHostCount: 1,
+                                            distinctLinkTargets: 50,
+                                            new Dictionary<string, double> { ["csharp"] = 1.0 },
+                                            new[] { "csharp" },
+                                            new[] { "About" },
+                                            TestContext.Current.CancellationToken
+                                           );
 
         Assert.Contains(SuspectReason.OnePager, reasons);
     }
@@ -28,12 +37,17 @@ public sealed class SuspectDetectorTests
     public async Task LanguageMismatchFlagsWhenNoDeclaredLanguageAboveThreshold()
     {
         var d = new SuspectDetector();
-        var reasons = await d.EvaluateAsync("lib", "1.0", "https://example.com",
-            pageCount: 100, distinctHostCount: 1, distinctLinkTargets: 50,
-            languageMix: new Dictionary<string, double> { ["go"] = 0.5, ["ruby"] = 0.5 },
-            declaredLanguages: new[] { "csharp" },
-            sampleTitles: new[] { "Some doc" },
-            ct: TestContext.Current.CancellationToken);
+        var reasons = await d.EvaluateAsync("lib",
+                                            "1.0",
+                                            "https://example.com",
+                                            pageCount: 100,
+                                            distinctHostCount: 1,
+                                            distinctLinkTargets: 50,
+                                            new Dictionary<string, double> { ["go"] = 0.5, ["ruby"] = 0.5 },
+                                            new[] { "csharp" },
+                                            new[] { "Some doc" },
+                                            TestContext.Current.CancellationToken
+                                           );
 
         Assert.Contains(SuspectReason.LanguageMismatch, reasons);
     }
@@ -42,12 +56,17 @@ public sealed class SuspectDetectorTests
     public async Task HealthyLibraryNoReasons()
     {
         var d = new SuspectDetector();
-        var reasons = await d.EvaluateAsync("lib", "1.0", "https://docs.example.com",
-            pageCount: 500, distinctHostCount: 3, distinctLinkTargets: 1000,
-            languageMix: new Dictionary<string, double> { ["csharp"] = 0.9 },
-            declaredLanguages: new[] { "csharp" },
-            sampleTitles: new[] { "Tutorial", "Reference" },
-            ct: TestContext.Current.CancellationToken);
+        var reasons = await d.EvaluateAsync("lib",
+                                            "1.0",
+                                            "https://docs.example.com",
+                                            pageCount: 500,
+                                            distinctHostCount: 3,
+                                            distinctLinkTargets: 1000,
+                                            new Dictionary<string, double> { ["csharp"] = 0.9 },
+                                            new[] { "csharp" },
+                                            new[] { "Tutorial", "Reference" },
+                                            TestContext.Current.CancellationToken
+                                           );
 
         Assert.Empty(reasons);
     }
@@ -56,12 +75,17 @@ public sealed class SuspectDetectorTests
     public async Task ReadmeOnlyFlagsGitHubRootWithReadmeTitles()
     {
         var d = new SuspectDetector();
-        var reasons = await d.EvaluateAsync("lib", "1.0", "https://github.com/foo/bar",
-            pageCount: 1, distinctHostCount: 1, distinctLinkTargets: 50,
-            languageMix: new Dictionary<string, double> { ["csharp"] = 1.0 },
-            declaredLanguages: new[] { "csharp" },
-            sampleTitles: new[] { "README - foo/bar" },
-            ct: TestContext.Current.CancellationToken);
+        var reasons = await d.EvaluateAsync("lib",
+                                            "1.0",
+                                            "https://github.com/foo/bar",
+                                            pageCount: 1,
+                                            distinctHostCount: 1,
+                                            distinctLinkTargets: 50,
+                                            new Dictionary<string, double> { ["csharp"] = 1.0 },
+                                            new[] { "csharp" },
+                                            new[] { "README - foo/bar" },
+                                            TestContext.Current.CancellationToken
+                                           );
 
         Assert.Contains(SuspectReason.ReadmeOnly, reasons);
     }
@@ -70,12 +94,17 @@ public sealed class SuspectDetectorTests
     public async Task SparseLinkGraphFlagsBelowThreshold()
     {
         var d = new SuspectDetector();
-        var reasons = await d.EvaluateAsync("lib", "1.0", "https://docs.example.com",
-            pageCount: 100, distinctHostCount: 2, distinctLinkTargets: 5,
-            languageMix: new Dictionary<string, double> { ["csharp"] = 0.9 },
-            declaredLanguages: new[] { "csharp" },
-            sampleTitles: new[] { "Tutorial" },
-            ct: TestContext.Current.CancellationToken);
+        var reasons = await d.EvaluateAsync("lib",
+                                            "1.0",
+                                            "https://docs.example.com",
+                                            pageCount: 100,
+                                            distinctHostCount: 2,
+                                            distinctLinkTargets: 5,
+                                            new Dictionary<string, double> { ["csharp"] = 0.9 },
+                                            new[] { "csharp" },
+                                            new[] { "Tutorial" },
+                                            TestContext.Current.CancellationToken
+                                           );
 
         Assert.Contains(SuspectReason.SparseLinkGraph, reasons);
     }
@@ -92,24 +121,28 @@ public sealed class SuspectDetectorTests
     public async Task MongoDbDriverCanonicalBugFlagsLanguageMismatch()
     {
         var d = new SuspectDetector();
-        var reasons = await d.EvaluateAsync(
-            libraryId: "mongodb.driver",
-            version: "3.4.0",
-            rootUrl: "https://www.mongodb.com/docs/drivers/",
-            pageCount: 1018,
-            distinctHostCount: 4,
-            distinctLinkTargets: 800,
-            languageMix: new Dictionary<string, double>
-                             {
-                                 ["go"] = 0.40,
-                                 ["ruby"] = 0.30,
-                                 ["python"] = 0.20,
-                                 ["javascript"] = 0.05,
-                                 ["csharp"] = 0.05
-                             },
-            declaredLanguages: new[] { "csharp" },
-            sampleTitles: new[] { "MongoDB Go Driver", "MongoDB Ruby Driver", "MongoDB Python Driver" },
-            ct: TestContext.Current.CancellationToken);
+        var reasons = await d.EvaluateAsync("mongodb.driver",
+                                            "3.4.0",
+                                            "https://www.mongodb.com/docs/drivers/",
+                                            pageCount: 1018,
+                                            distinctHostCount: 4,
+                                            distinctLinkTargets: 800,
+                                            new Dictionary<string, double>
+                                                {
+                                                    ["go"] = 0.40,
+                                                    ["ruby"] = 0.30,
+                                                    ["python"] = 0.20,
+                                                    ["javascript"] = 0.05,
+                                                    ["csharp"] = 0.05
+                                                },
+                                            new[] { "csharp" },
+                                            new[]
+                                                {
+                                                    "MongoDB Go Driver", "MongoDB Ruby Driver",
+                                                    "MongoDB Python Driver"
+                                                },
+                                            TestContext.Current.CancellationToken
+                                           );
 
         Assert.Contains(SuspectReason.LanguageMismatch, reasons);
 

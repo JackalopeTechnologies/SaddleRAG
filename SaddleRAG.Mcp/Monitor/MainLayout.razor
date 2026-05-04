@@ -1,0 +1,32 @@
+@* SaddleRAG.Mcp/Monitor/MainLayout.razor *@
+@inherits MainLayoutBase
+
+<MudThemeProvider Theme="@WyomingTheme.Create()"/>
+<MudPopoverProvider/>
+<MudSnackbarProvider/>
+<MudDialogProvider/>
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Primary">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
+                       OnClick="@ToggleDrawer"/>
+        <MudText Typo="Typo.h6" Class="ml-2">SaddleRAG Monitor</MudText>
+        <MudSpacer/>
+        <MudLink Href="/monitor" Color="Color.Inherit" Class="mx-2">Libraries</MudLink>
+        <MudLink Href="/monitor/jobs" Color="Color.Inherit" Class="mx-2">Jobs</MudLink>
+        <MudLink Href="/monitor/performance" Color="Color.Inherit" Class="mx-2">Performance</MudLink>
+    </MudAppBar>
+    <MudDrawer @bind-Open="DrawerOpen" Elevation="1" Variant="DrawerVariant.Mini"
+               OpenMiniOnHover="true">
+        <MudNavMenu>
+            <MudNavLink Href="/monitor" Icon="@Icons.Material.Filled.LibraryBooks">Libraries</MudNavLink>
+            <MudNavLink Href="/monitor/jobs" Icon="@Icons.Material.Filled.History">Jobs</MudNavLink>
+            <MudNavLink Href="/monitor/performance" Icon="@Icons.Material.Filled.Speed">Performance</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.False" Class="pa-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>

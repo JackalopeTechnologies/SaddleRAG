@@ -41,31 +41,20 @@ public static class QueryShapeClassifier
         return result;
     }
 
-    private static readonly Regex smDottedPathRegex = new(
-        @"\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]+\b",
-        RegexOptions.Compiled
-    );
+    private static readonly Regex smDottedPathRegex =
+        new Regex(@"\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]+\b", RegexOptions.Compiled);
 
-    private static readonly Regex smDoubleColonRegex = new(
-        @"\b[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]+\b",
-        RegexOptions.Compiled
-    );
+    private static readonly Regex smDoubleColonRegex =
+        new Regex(@"\b[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]+\b", RegexOptions.Compiled);
 
     // Callable shape: an identifier immediately followed by '('.
-    private static readonly Regex smCallableRegex = new(
-        @"\b[A-Za-z_][A-Za-z0-9_]*\(",
-        RegexOptions.Compiled
-    );
+    private static readonly Regex smCallableRegex = new Regex(@"\b[A-Za-z_][A-Za-z0-9_]*\(", RegexOptions.Compiled);
 
     // CamelCase / PascalCase: at least one mid-word capital, no separators.
-    private static readonly Regex smCamelCaseRegex = new(
-        @"\b[A-Za-z]+[a-z]+[A-Z][A-Za-z0-9]*\b",
-        RegexOptions.Compiled
-    );
+    private static readonly Regex smCamelCaseRegex =
+        new Regex(@"\b[A-Za-z]+[a-z]+[A-Z][A-Za-z0-9]*\b", RegexOptions.Compiled);
 
     // snake_case: contains underscore between identifier chars.
-    private static readonly Regex smSnakeCaseRegex = new(
-        @"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b",
-        RegexOptions.Compiled
-    );
+    private static readonly Regex smSnakeCaseRegex =
+        new Regex(@"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b", RegexOptions.Compiled);
 }

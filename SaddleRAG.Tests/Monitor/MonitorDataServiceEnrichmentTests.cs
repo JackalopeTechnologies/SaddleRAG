@@ -1,0 +1,498 @@
+// MonitorDataServiceEnrichmentTests.cs
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-SaddleRAG-Commercial
+// Available under AGPLv3 (see LICENSE) or a commercial license
+// (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
+
+#region Usings
+
+using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Monitor.Services;
+
+#endregion
+
+namespace SaddleRAG.Tests.Monitor;
+
+public sealed class MonitorDataServiceEnrichmentTests
+{
+    [Fact]
+    public async Task GetLibrarySummariesAsyncSortsAlphabeticallyCaseInsensitive()
+    {
+        var repo = new FakeLibraryRepository();
+        repo.AddLibrary(new LibraryRecord
+                            {
+                                Id = "zeta",
+                                Name = "zeta",
+                                Hint = string.Empty,
+                                CurrentVersion = "1",
+                                AllVersions = new List<string> { "1" }
+                            });
+        repo.AddLibrary(new LibraryRecord
+                            {
+                                Id = "Alpha",
+                                Name = "Alpha",
+                                Hint = string.Empty,
+                                CurrentVersion = "1",
+                                AllVersions = new List<string> { "1" }
+                            });
+        repo.AddLibrary(new LibraryRecord
+                            {
+                                Id = "mongodb.driver",
+                                Name = "mongodb.driver",
+                                Hint = string.Empty,
+                                CurrentVersion = "1",
+                                AllVersions = new List<string> { "1" }
+                            });
+
+        var svc = new MonitorDataService(repo,
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var summaries = await svc.GetLibrarySummariesAsync(TestContext.Current.CancellationToken);
+
+        var ids = summaries.Select(s => s.LibraryId).ToList();
+        Assert.Equal(new[] { "Alpha", "mongodb.driver", "zeta" }, ids);
+    }
+
+    [Fact]
+    public async Task GetLibraryDetailAsyncCarriesSuspectReasonsAndScrapedAt()
+    {
+        var scraped = new DateTime(2026, 4, 28, 12, 0, 0, DateTimeKind.Utc);
+        var libRepo = new FakeLibraryRepository();
+        libRepo.AddLibrary(new LibraryRecord
+                               {
+                                   Id = "alpha",
+                                   Name = "alpha",
+                                   Hint = "hello",
+                                   CurrentVersion = "1",
+                                   AllVersions = new List<string> { "1" }
+                               });
+        libRepo.AddVersion(new LibraryVersionRecord
+                               {
+                                   Id = "alpha/1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   ScrapedAt = scraped,
+                                   PageCount = 10,
+                                   ChunkCount = 100,
+                                   EmbeddingProviderId = "ollama",
+                                   EmbeddingModelName = "nomic-embed-text",
+                                   EmbeddingDimensions = 768,
+                                   BoundaryIssuePct = 2.5,
+                                   Suspect = true,
+                                   SuspectReasons = new[] { "low confidence", "thin docs" }
+                               });
+
+        var svc = new MonitorDataService(libRepo,
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(detail);
+        Assert.True(detail.IsSuspect);
+        Assert.Equal(new[] { "low confidence", "thin docs" }, detail.SuspectReasons);
+        Assert.Equal(scraped, detail.LastScrapedAt);
+        Assert.Equal(2.5, detail.BoundaryIssuePct);
+        Assert.Equal("nomic-embed-text", detail.EmbeddingModelName);
+    }
+
+    [Fact]
+    public async Task GetLibraryDetailAsyncReturnsHostnameDistributionAndLanguageMix()
+    {
+        var libRepo = new FakeLibraryRepository();
+        libRepo.AddLibrary(new LibraryRecord
+                               {
+                                   Id = "alpha",
+                                   Name = "alpha",
+                                   Hint = string.Empty,
+                                   CurrentVersion = "1",
+                                   AllVersions = new List<string> { "1" }
+                               });
+        libRepo.AddVersion(new LibraryVersionRecord
+                               {
+                                   Id = "alpha/1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   ScrapedAt = DateTime.UtcNow,
+                                   PageCount = 6,
+                                   ChunkCount = 60,
+                                   EmbeddingProviderId = "ollama",
+                                   EmbeddingModelName = "nomic-embed-text",
+                                   EmbeddingDimensions = 768
+                               });
+
+        var chunkRepo = new FakeChunkRepository();
+        chunkRepo.SetHosts("alpha",
+                           "1",
+                           new Dictionary<string, int>
+                               {
+                                   ["docs.aerotech.com"] = 20,
+                                   ["help.aerotech.com"] = 30,
+                                   ["learn.aerotech.com"] = 10
+                               });
+        chunkRepo.SetLanguages("alpha",
+                               "1",
+                               new Dictionary<string, double>
+                                   {
+                                       ["csharp"] = 0.6,
+                                       ["unfenced"] = 0.4
+                                   });
+
+        var svc = new MonitorDataService(libRepo,
+                                         chunkRepo,
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(detail);
+        Assert.Equal(3, detail.HostnameDistribution.Count);
+        Assert.Equal("help.aerotech.com", detail.HostnameDistribution[0].Host);
+        Assert.Equal(30, detail.HostnameDistribution[0].Count);
+        Assert.Equal("docs.aerotech.com", detail.HostnameDistribution[1].Host);
+        Assert.Equal(20, detail.HostnameDistribution[1].Count);
+        Assert.Equal("learn.aerotech.com", detail.HostnameDistribution[2].Host);
+        Assert.Equal(10, detail.HostnameDistribution[2].Count);
+
+        Assert.Equal(2, detail.LanguageMix.Count);
+        Assert.Equal(0.6, detail.LanguageMix["csharp"], 3);
+        Assert.Equal(0.4, detail.LanguageMix["unfenced"], 3);
+    }
+
+    [Fact]
+    public async Task GetLibraryProfileAsyncReturnsProfileWhenPresent()
+    {
+        var libRepo = new FakeLibraryRepository();
+        var chunkRepo = new FakeChunkRepository();
+        var profileRepo = new FakeLibraryProfileRepository();
+
+        var profile = new LibraryProfile
+                          {
+                              Id = "alpha/1",
+                              LibraryId = "alpha",
+                              Version = "1",
+                              Languages = new[] { "C#" },
+                              Separators = new[] { ".", "::" },
+                              CallableShapes = new[] { "Foo()", "Foo<T>()" },
+                              LikelySymbols = new[] { "Console", "WriteLine" },
+                              Confidence = 0.85f,
+                              Source = "calling-llm",
+                              CreatedUtc = DateTime.UtcNow,
+                              Casing = new CasingConventions
+                                           {
+                                               Types = "PascalCase",
+                                               Methods = "PascalCase",
+                                               Constants = "SCREAMING_SNAKE",
+                                               Members = "PascalCase",
+                                               Parameters = "camelCase"
+                                           }
+                          };
+        profileRepo.SetProfile(profile);
+
+        var svc = new MonitorDataService(libRepo,
+                                         chunkRepo,
+                                         profileRepo,
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+
+        var loaded = await svc.GetLibraryProfileAsync("alpha", "1", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(loaded);
+        Assert.Equal("alpha", loaded.LibraryId);
+        Assert.Equal(new[] { "C#" }, loaded.Languages);
+        Assert.Equal(new[] { "Console", "WriteLine" }, loaded.LikelySymbols);
+        Assert.Equal("PascalCase", loaded.Casing.Types);
+        Assert.Equal("camelCase", loaded.Casing.Parameters);
+        Assert.Equal(0.85f, loaded.Confidence);
+    }
+
+    [Fact]
+    public async Task GetLibraryProfileAsyncReturnsNullWhenAbsent()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var loaded = await svc.GetLibraryProfileAsync("missing", "1", TestContext.Current.CancellationToken);
+        Assert.Null(loaded);
+    }
+
+    [Fact]
+    public async Task GetVersionsAsyncReturnsVersionsSortedDescendingByScrapedAt()
+    {
+        var libRepo = new FakeLibraryRepository();
+        libRepo.AddLibrary(new LibraryRecord
+                               {
+                                   Id = "alpha",
+                                   CurrentVersion = "2",
+                                   Hint = string.Empty,
+                                   Name = "alpha",
+                                   AllVersions = new List<string> { "1", "2" }
+                               });
+        var older = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var newer = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc);
+        libRepo.AddVersion(new LibraryVersionRecord
+                               {
+                                   Id = "alpha/1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   ScrapedAt = older,
+                                   PageCount = 5,
+                                   ChunkCount = 50,
+                                   EmbeddingProviderId = "ollama",
+                                   EmbeddingModelName = "nomic-embed-text",
+                                   EmbeddingDimensions = 768
+                               });
+        libRepo.AddVersion(new LibraryVersionRecord
+                               {
+                                   Id = "alpha/2",
+                                   LibraryId = "alpha",
+                                   Version = "2",
+                                   ScrapedAt = newer,
+                                   PageCount = 7,
+                                   ChunkCount = 70,
+                                   EmbeddingProviderId = "ollama",
+                                   EmbeddingModelName = "nomic-embed-text",
+                                   EmbeddingDimensions = 768
+                               });
+
+        var svc = new MonitorDataService(libRepo,
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var versions = await svc.GetVersionsAsync("alpha", TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, versions.Count);
+        Assert.Equal("2", versions[0].Version);
+        Assert.Equal("1", versions[1].Version);
+    }
+
+    [Fact]
+    public async Task GetVersionsAsyncReturnsEmptyWhenLibraryHasNoVersions()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var versions = await svc.GetVersionsAsync("missing", TestContext.Current.CancellationToken);
+        Assert.Empty(versions);
+    }
+
+    [Fact]
+    public async Task GetLatestJobIdAsyncReturnsMostRecentMatchingJob()
+    {
+        var jobRepo = new FakeScrapeJobRepository();
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "old-job",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "alpha",
+                                          Version = "1",
+                                          RootUrl = "https://x/",
+                                          LibraryHint = "alpha",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            CreatedAt = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc)
+                        });
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "new-job",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "alpha",
+                                          Version = "1",
+                                          RootUrl = "https://x/",
+                                          LibraryHint = "alpha",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            CreatedAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc)
+                        });
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "other-library",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "beta",
+                                          Version = "1",
+                                          RootUrl = "https://y/",
+                                          LibraryHint = "beta",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            CreatedAt = new DateTime(2026, 5, 1, 12, 0, 0, DateTimeKind.Utc)
+                        });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         jobRepo,
+                                         new FakeScrapeAuditRepository());
+        var jobId = await svc.GetLatestJobIdAsync("alpha", "1", TestContext.Current.CancellationToken);
+
+        Assert.Equal("new-job", jobId);
+    }
+
+    [Fact]
+    public async Task GetLatestJobIdAsyncReturnsNullWhenNoMatch()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var jobId = await svc.GetLatestJobIdAsync("missing", "1", TestContext.Current.CancellationToken);
+        Assert.Null(jobId);
+    }
+
+    [Fact]
+    public async Task GetAuditSummaryAsyncReturnsSummaryWhenPresent()
+    {
+        var auditRepo = new FakeScrapeAuditRepository();
+        auditRepo.SetSummary("job-1",
+                             new AuditSummary
+                                 {
+                                     JobId = "job-1",
+                                     TotalConsidered = 100,
+                                     IndexedCount = 50,
+                                     FetchedCount = 60,
+                                     FailedCount = 5,
+                                     SkippedCount = 35,
+                                     SkipReasonCounts = new Dictionary<AuditSkipReason, int>
+                                                            {
+                                                                [AuditSkipReason.PatternExclude] = 20,
+                                                                [AuditSkipReason.AlreadyVisited] = 15
+                                                            },
+                                     HostCounts = new Dictionary<string, int>
+                                                      {
+                                                          ["docs.x.com"] = 80,
+                                                          ["help.x.com"] = 20
+                                                      }
+                                 });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         auditRepo);
+        var summary = await svc.GetAuditSummaryAsync("job-1", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(summary);
+        Assert.Equal(100, summary.TotalConsidered);
+        Assert.Equal(50, summary.IndexedCount);
+        Assert.Equal(2, summary.SkipReasonCounts.Count);
+    }
+
+    [Fact]
+    public async Task GetAuditSummaryAsyncReturnsNullWhenAuditMissing()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var summary = await svc.GetAuditSummaryAsync("missing-job", TestContext.Current.CancellationToken);
+        Assert.Null(summary);
+    }
+
+    [Fact]
+    public async Task GetJobInfoAsyncReturnsInfoWhenJobExists()
+    {
+        var jobRepo = new FakeScrapeJobRepository();
+        jobRepo.Add(new ScrapeJobRecord
+                        {
+                            Id = "job-1",
+                            Job = new ScrapeJob
+                                      {
+                                          LibraryId = "alpha",
+                                          Version = "1",
+                                          RootUrl = "https://x/",
+                                          LibraryHint = "alpha",
+                                          AllowedUrlPatterns = Array.Empty<string>()
+                                      },
+                            Status = ScrapeJobStatus.Running,
+                            StartedAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc),
+                            CreatedAt = new DateTime(2026, 4, 1, 11, 59, 0, DateTimeKind.Utc)
+                        });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         jobRepo,
+                                         new FakeScrapeAuditRepository());
+        var info = await svc.GetJobInfoAsync("job-1", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(info);
+        Assert.Equal("job-1", info.JobId);
+        Assert.Equal("alpha", info.LibraryId);
+        Assert.Equal("1", info.Version);
+        Assert.Equal("Running", info.Status);
+        Assert.Equal(new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc), info.StartedAt);
+    }
+
+    [Fact]
+    public async Task GetJobInfoAsyncReturnsNullWhenJobMissing()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         new FakeScrapeAuditRepository());
+        var info = await svc.GetJobInfoAsync("missing", TestContext.Current.CancellationToken);
+        Assert.Null(info);
+    }
+
+    [Fact]
+    public async Task GetTerminalFeedsAsyncProjectsAuditEntriesIntoFeeds()
+    {
+        var auditRepo = new FakeScrapeAuditRepository();
+        auditRepo.AddEntry(new ScrapeAuditLogEntry
+                               {
+                                   Id = "e1",
+                                   JobId = "job-1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   Url = "https://docs.x/page-a",
+                                   Host = "docs.x",
+                                   Depth = 1,
+                                   DiscoveredAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc),
+                                   Status = AuditStatus.Fetched
+                               });
+        auditRepo.AddEntry(new ScrapeAuditLogEntry
+                               {
+                                   Id = "e2",
+                                   JobId = "job-1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   Url = "https://docs.x/page-b",
+                                   Host = "docs.x",
+                                   Depth = 1,
+                                   DiscoveredAt = new DateTime(2026, 4, 1, 12, 0, 1, DateTimeKind.Utc),
+                                   Status = AuditStatus.Skipped,
+                                   SkipReason = AuditSkipReason.PatternExclude
+                               });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         auditRepo);
+        var (fetches, rejects) = await svc.GetTerminalFeedsAsync("job-1",
+                                                                 50,
+                                                                 TestContext.Current.CancellationToken);
+
+        Assert.Single(fetches);
+        Assert.Equal("https://docs.x/page-a", fetches[0].Url);
+        Assert.Equal(new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc), fetches[0].At);
+        Assert.Single(rejects);
+        Assert.Equal("https://docs.x/page-b", rejects[0].Url);
+        Assert.Equal("PatternExclude", rejects[0].Reason);
+    }
+}

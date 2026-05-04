@@ -1,0 +1,27 @@
+@* SaddleRAG.Monitor/Components/LanguageMix.razor *@
+<MudPaper Class="pa-3 mb-2" Elevation="0" Outlined="true">
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Language / Category Mix</MudText>
+    @if (Mix.Count == 0)
+    {
+        <MudText Typo="Typo.caption">No chunks classified yet.</MudText>
+    }
+    else
+    {
+        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+            @foreach (var kv in Mix.OrderByDescending(p => p.Value))
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default">
+                    @kv.Key: @((kv.Value * 100.0).ToString("F0"))%
+                </MudChip>
+            }
+        </MudStack>
+    }
+</MudPaper>
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyDictionary<string, double> Mix { get; set; } = new Dictionary<string, double>();
+
+}

@@ -40,7 +40,7 @@ public record ExtractedSymbols
     /// <summary>
     ///     Empty result. Used when content has no surviving candidates.
     /// </summary>
-    public static ExtractedSymbols Empty { get; } = new()
+    public static ExtractedSymbols Empty { get; } = new ExtractedSymbols
                                                         {
                                                             Symbols = Array.Empty<Symbol>()
                                                         };

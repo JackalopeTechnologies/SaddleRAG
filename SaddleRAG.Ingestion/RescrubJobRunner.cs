@@ -6,12 +6,12 @@
 
 #region Usings
 
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Recon;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -35,10 +35,11 @@ public class RescrubJobRunner
         mLogger = logger;
     }
 
-    private readonly RescrubService mService;
-    private readonly RepositoryFactory mRepositoryFactory;
     private readonly CancellationToken mAppStoppingToken;
     private readonly ILogger<RescrubJobRunner> mLogger;
+    private readonly RepositoryFactory mRepositoryFactory;
+
+    private readonly RescrubService mService;
 
     /// <summary>
     ///     Queue a rescrub job and kick off background execution.
@@ -97,25 +98,24 @@ public class RescrubJobRunner
             var excludedRepo = mRepositoryFactory.GetExcludedSymbolsRepository(jobRecord.Profile);
             var libraryRepo = mRepositoryFactory.GetLibraryRepository(jobRecord.Profile);
 
-            var result = await mService.RescrubAsync(
-                chunkRepo,
-                profileRepo,
-                indexRepo,
-                bm25ShardRepo,
-                excludedRepo,
-                libraryRepo,
-                jobRecord.LibraryId,
-                jobRecord.Version,
-                jobRecord.Options,
-                (processed, total) =>
-                {
-                    jobRecord.ChunksProcessed = processed;
-                    jobRecord.ChunksTotal = total;
-                    jobRecord.LastProgressAt = DateTime.UtcNow;
-                    jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
-                },
-                mAppStoppingToken
-            );
+            var result = await mService.RescrubAsync(chunkRepo,
+                                                     profileRepo,
+                                                     indexRepo,
+                                                     bm25ShardRepo,
+                                                     excludedRepo,
+                                                     libraryRepo,
+                                                     jobRecord.LibraryId,
+                                                     jobRecord.Version,
+                                                     jobRecord.Options,
+                                                     (processed, total) =>
+                                                     {
+                                                         jobRecord.ChunksProcessed = processed;
+                                                         jobRecord.ChunksTotal = total;
+                                                         jobRecord.LastProgressAt = DateTime.UtcNow;
+                                                         jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
+                                                     },
+                                                     mAppStoppingToken
+                                                    );
 
             jobRecord.Status = ScrapeJobStatus.Completed;
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
@@ -132,7 +132,7 @@ public class RescrubJobRunner
                                    result.Changed
                                   );
         }
-        catch (OperationCanceledException)
+        catch(OperationCanceledException)
         {
             mLogger.LogInformation("Rescrub job {JobId} was cancelled", jobRecord.Id);
 
@@ -142,7 +142,7 @@ public class RescrubJobRunner
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
         }
-        catch (Exception ex)
+        catch(Exception ex)
         {
             mLogger.LogError(ex, "Rescrub job {JobId} failed", jobRecord.Id);
 

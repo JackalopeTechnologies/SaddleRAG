@@ -117,8 +117,8 @@ public interface IChunkRepository
     ///     the code-language mix for a library version.
     /// </summary>
     Task<IReadOnlyDictionary<string, double>> GetLanguageMixAsync(string libraryId,
-                                                                   string version,
-                                                                   CancellationToken ct = default);
+                                                                  string version,
+                                                                  CancellationToken ct = default);
 
     /// <summary>
     ///     Returns the count of chunks per hostname extracted from PageUrl
@@ -127,16 +127,16 @@ public interface IChunkRepository
     ///     get_library_health to detect multi-host ingestions.
     /// </summary>
     Task<IReadOnlyDictionary<string, int>> GetHostnameDistributionAsync(string libraryId,
-                                                                         string version,
-                                                                         CancellationToken ct = default);
+                                                                        string version,
+                                                                        CancellationToken ct = default);
 
     /// <summary>
-    ///     Returns up to <paramref name="limit"/> distinct PageTitle values
+    ///     Returns up to <paramref name="limit" /> distinct PageTitle values
     ///     from chunks in the (libraryId, version). Used by get_library_health
     ///     to provide a quick qualitative sample without loading full content.
     /// </summary>
     Task<IReadOnlyList<string>> GetSampleTitlesAsync(string libraryId,
-                                                      string version,
-                                                      int limit,
-                                                      CancellationToken ct = default);
+                                                     string version,
+                                                     int limit,
+                                                     CancellationToken ct = default);
 }

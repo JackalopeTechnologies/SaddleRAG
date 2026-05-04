@@ -1,0 +1,33 @@
+@* SaddleRAG.Monitor/Components/JobCardStrip.razor *@
+
+<MudCard Class="mb-2">
+    <MudCardContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudText Typo="Typo.subtitle1">@Job.JobId</MudText>
+            <MudProgressLinear Value="@ProgressPct" Color="Color.Primary" Class="flex-1"/>
+            <MudText Typo="Typo.body2">
+                @Job.Counters.PagesCompleted / @Job.Counters.PagesQueued pages
+            </MudText>
+            <MudButton Size="Size.Small" Color="Color.Error" OnClick="OnCancel">Cancel</MudButton>
+        </MudStack>
+        @if (!string.IsNullOrEmpty(Job.CurrentHost))
+        {
+            <MudText Typo="Typo.caption" Class="mt-1">Current host: @Job.CurrentHost</MudText>
+        }
+    </MudCardContent>
+</MudCard>
+
+@code {
+
+    [Parameter]
+    [EditorRequired]
+    public JobTickSnapshot Job { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private double ProgressPct => Job.Counters.PagesQueued == 0
+                                      ? 0
+                                      : (double) Job.Counters.PagesCompleted / Job.Counters.PagesQueued * 100.0;
+
+}

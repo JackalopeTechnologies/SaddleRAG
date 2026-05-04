@@ -8,9 +8,9 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Ingestion;
-using ModelContextProtocol.Server;
 
 #endregion
 
@@ -22,12 +22,6 @@ namespace SaddleRAG.Mcp.Tools;
 [McpServerToolType]
 public static class CancellationTools
 {
-    private const string SignalledMessage = "Pipeline cancellation signalled. Job will transition to Cancelled.";
-    private const string OrphanCleanedUpMessage = "Job had no active runner; DB row marked Cancelled directly.";
-    private const string AlreadyTerminalMessage = "Job is already Completed, Failed, or Cancelled. No action taken.";
-    private const string NotFoundMessage = "No scrape job found with that id.";
-    private const string UnknownOutcomeMessage = "Unknown outcome.";
-
     [McpServerTool(Name = "cancel_scrape")]
     [Description("Cancel a running scrape job. Signals the pipeline cancellation token " +
                  "for active jobs, or marks the DB row Cancelled directly for orphaned " +
@@ -51,17 +45,23 @@ public static class CancellationTools
                                JobId = jobId,
                                Outcome = outcome.ToString(),
                                Message = outcome switch
-                                             {
-                                                 CancelScrapeOutcome.Signalled => SignalledMessage,
-                                                 CancelScrapeOutcome.OrphanCleanedUp => OrphanCleanedUpMessage,
-                                                 CancelScrapeOutcome.AlreadyTerminal => AlreadyTerminalMessage,
-                                                 CancelScrapeOutcome.NotFound => NotFoundMessage,
-                                                 _ => UnknownOutcomeMessage
-                                             }
+                                   {
+                                       CancelScrapeOutcome.Signalled => SignalledMessage,
+                                       CancelScrapeOutcome.OrphanCleanedUp => OrphanCleanedUpMessage,
+                                       CancelScrapeOutcome.AlreadyTerminal => AlreadyTerminalMessage,
+                                       CancelScrapeOutcome.NotFound => NotFoundMessage,
+                                       var _ => UnknownOutcomeMessage
+                                   }
                            };
         var json = JsonSerializer.Serialize(response, smJsonOptions);
         return json;
     }
 
-    private static readonly JsonSerializerOptions smJsonOptions = new() { WriteIndented = true };
+    private const string SignalledMessage = "Pipeline cancellation signalled. Job will transition to Cancelled.";
+    private const string OrphanCleanedUpMessage = "Job had no active runner; DB row marked Cancelled directly.";
+    private const string AlreadyTerminalMessage = "Job is already Completed, Failed, or Cancelled. No action taken.";
+    private const string NotFoundMessage = "No scrape job found with that id.";
+    private const string UnknownOutcomeMessage = "Unknown outcome.";
+
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

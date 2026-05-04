@@ -67,6 +67,6 @@ public sealed class RetryPolicyTests
     [Fact]
     public void MaxRetryAttemptsAllowsTwoRetries()
     {
-        Assert.Equal(2, RetryPolicy.MaxRetryAttempts);
+        Assert.Equal(expected: 2, RetryPolicy.MaxRetryAttempts);
     }
 }

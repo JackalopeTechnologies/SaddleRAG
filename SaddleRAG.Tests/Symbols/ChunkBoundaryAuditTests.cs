@@ -24,14 +24,14 @@ public sealed class ChunkBoundaryAuditTests
         // identifier of the form "configured.Disabled" exists anywhere in
         // the corpus, so this is NOT a chunker cut.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 0, "The motor is correctly configured."),
-            MakeChunk("page-a", 1, "Disabled axes will not respond to motion commands.")
-        };
+                         {
+                             MakeChunk("page-a", index: 0, "The motor is correctly configured."),
+                             MakeChunk("page-a", index: 1, "Disabled axes will not respond to motion commands.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(0, count);
+        Assert.Equal(expected: 0, count);
     }
 
     [Fact]
@@ -42,15 +42,15 @@ public sealed class ChunkBoundaryAuditTests
         // confirming the join is a known dotted identifier. The chunker cut
         // it in half.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 0, "Refer to the AxisFault."),
-            MakeChunk("page-a", 1, "Disabled state is the cleared latch."),
-            MakeChunk("page-b", 0, "Set AxisFault.Disabled to acknowledge the latch.")
-        };
+                         {
+                             MakeChunk("page-a", index: 0, "Refer to the AxisFault."),
+                             MakeChunk("page-a", index: 1, "Disabled state is the cleared latch."),
+                             MakeChunk("page-b", index: 0, "Set AxisFault.Disabled to acknowledge the latch.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(1, count);
+        Assert.Equal(expected: 1, count);
     }
 
     [Fact]
@@ -59,15 +59,15 @@ public sealed class ChunkBoundaryAuditTests
         // Corpus contains "Foo.Bar.Baz" so both "Foo.Bar" and "Bar.Baz" should
         // be recognized as cut targets via pairwise-segment expansion.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 0, "Use Foo.Bar."),
-            MakeChunk("page-a", 1, "Baz to do the thing."),
-            MakeChunk("page-b", 0, "The full path Foo.Bar.Baz is documented here.")
-        };
+                         {
+                             MakeChunk("page-a", index: 0, "Use Foo.Bar."),
+                             MakeChunk("page-a", index: 1, "Baz to do the thing."),
+                             MakeChunk("page-b", index: 0, "The full path Foo.Bar.Baz is documented here.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(1, count);
+        Assert.Equal(expected: 1, count);
     }
 
     [Fact]
@@ -77,14 +77,14 @@ public sealed class ChunkBoundaryAuditTests
         // there's a predecessor in the same page, so the period almost
         // certainly belongs to a Foo.Leaf identifier the chunker split.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 0, "Some content here"),
-            MakeChunk("page-a", 1, ".Disabled state is the cleared latch.")
-        };
+                         {
+                             MakeChunk("page-a", index: 0, "Some content here"),
+                             MakeChunk("page-a", index: 1, ".Disabled state is the cleared latch.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(1, count);
+        Assert.Equal(expected: 1, count);
     }
 
     [Fact]
@@ -95,14 +95,14 @@ public sealed class ChunkBoundaryAuditTests
         // Without a predecessor in the same page, leading-dot is content,
         // not a chunker cut, and must not be counted.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 0, ".NET API Guidelines for the Automation1 controller."),
-            MakeChunk("page-b", 0, ".gitignore syntax explained.")
-        };
+                         {
+                             MakeChunk("page-a", index: 0, ".NET API Guidelines for the Automation1 controller."),
+                             MakeChunk("page-b", index: 0, ".gitignore syntax explained.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(0, count);
+        Assert.Equal(expected: 0, count);
     }
 
     [Fact]
@@ -113,14 +113,14 @@ public sealed class ChunkBoundaryAuditTests
         // confirmation the audit should NOT count this — we have no
         // independent evidence that the join was a real identifier.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 0, "Refer to the AxisFault."),
-            MakeChunk("page-a", 1, "Disabled state is the cleared latch.")
-        };
+                         {
+                             MakeChunk("page-a", index: 0, "Refer to the AxisFault."),
+                             MakeChunk("page-a", index: 1, "Disabled state is the cleared latch.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(0, count);
+        Assert.Equal(expected: 0, count);
     }
 
     [Fact]
@@ -131,15 +131,15 @@ public sealed class ChunkBoundaryAuditTests
         // so even though "AxisFault.Disabled" appears elsewhere, the audit
         // must not count a cross-page false positive.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 0, "Refer to the AxisFault."),
-            MakeChunk("page-b", 0, "Disabled state is the cleared latch."),
-            MakeChunk("page-c", 0, "Set AxisFault.Disabled to acknowledge.")
-        };
+                         {
+                             MakeChunk("page-a", index: 0, "Refer to the AxisFault."),
+                             MakeChunk("page-b", index: 0, "Disabled state is the cleared latch."),
+                             MakeChunk("page-c", index: 0, "Set AxisFault.Disabled to acknowledge.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(0, count);
+        Assert.Equal(expected: 0, count);
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public sealed class ChunkBoundaryAuditTests
     {
         var count = ChunkBoundaryAudit.CountIssues(Array.Empty<DocChunk>());
 
-        Assert.Equal(0, count);
+        Assert.Equal(expected: 0, count);
     }
 
     [Fact]
@@ -157,28 +157,28 @@ public sealed class ChunkBoundaryAuditTests
         // numeric ordering so chunk 10 is treated as adjacent to chunk 9, not
         // chunk 1.
         var chunks = new[]
-        {
-            MakeChunk("page-a", 9, "Refer to the AxisFault."),
-            MakeChunk("page-a", 10, "Disabled state is the cleared latch."),
-            MakeChunk("page-a", 1, "Earlier content not relevant."),
-            MakeChunk("page-b", 0, "Set AxisFault.Disabled to acknowledge.")
-        };
+                         {
+                             MakeChunk("page-a", index: 9, "Refer to the AxisFault."),
+                             MakeChunk("page-a", index: 10, "Disabled state is the cleared latch."),
+                             MakeChunk("page-a", index: 1, "Earlier content not relevant."),
+                             MakeChunk("page-b", index: 0, "Set AxisFault.Disabled to acknowledge.")
+                         };
 
         var count = ChunkBoundaryAudit.CountIssues(chunks);
 
-        Assert.Equal(1, count);
+        Assert.Equal(expected: 1, count);
     }
 
     private static DocChunk MakeChunk(string pageSlug, int index, string content) =>
-        new()
-        {
-            Id = $"test-lib/1.0/{pageSlug}/{index}",
-            LibraryId = "test-lib",
-            Version = "1.0",
-            PageUrl = $"https://example.com/{pageSlug}",
-            PageTitle = pageSlug,
-            Category = DocCategory.HowTo,
-            Content = content,
-            SectionPath = pageSlug
-        };
+        new DocChunk
+            {
+                Id = $"test-lib/1.0/{pageSlug}/{index}",
+                LibraryId = "test-lib",
+                Version = "1.0",
+                PageUrl = $"https://example.com/{pageSlug}",
+                PageTitle = pageSlug,
+                Category = DocCategory.HowTo,
+                Content = content,
+                SectionPath = pageSlug
+            };
 }
