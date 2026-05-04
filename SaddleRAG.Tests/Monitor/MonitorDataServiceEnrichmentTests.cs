@@ -202,4 +202,61 @@ public sealed class MonitorDataServiceEnrichmentTests
         var loaded = await svc.GetLibraryProfileAsync("missing", "1", TestContext.Current.CancellationToken);
         Assert.Null(loaded);
     }
+
+    [Fact]
+    public async Task GetVersionsAsyncReturnsVersionsSortedDescendingByScrapedAt()
+    {
+        var libRepo = new FakeLibraryRepository();
+        libRepo.AddLibrary(new LibraryRecord
+                               {
+                                   Id = "alpha",
+                                   CurrentVersion = "2",
+                                   Hint = string.Empty,
+                                   Name = "alpha",
+                                   AllVersions = new List<string> { "1", "2" }
+                               });
+        var older = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var newer = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc);
+        libRepo.AddVersion(new LibraryVersionRecord
+                               {
+                                   Id = "alpha/1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   ScrapedAt = older,
+                                   PageCount = 5,
+                                   ChunkCount = 50,
+                                   EmbeddingProviderId = "ollama",
+                                   EmbeddingModelName = "nomic-embed-text",
+                                   EmbeddingDimensions = 768
+                               });
+        libRepo.AddVersion(new LibraryVersionRecord
+                               {
+                                   Id = "alpha/2",
+                                   LibraryId = "alpha",
+                                   Version = "2",
+                                   ScrapedAt = newer,
+                                   PageCount = 7,
+                                   ChunkCount = 70,
+                                   EmbeddingProviderId = "ollama",
+                                   EmbeddingModelName = "nomic-embed-text",
+                                   EmbeddingDimensions = 768
+                               });
+
+        var svc = new MonitorDataService(libRepo, new FakeChunkRepository(), new FakeLibraryProfileRepository());
+        var versions = await svc.GetVersionsAsync("alpha", TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, versions.Count);
+        Assert.Equal("2", versions[0].Version);
+        Assert.Equal("1", versions[1].Version);
+    }
+
+    [Fact]
+    public async Task GetVersionsAsyncReturnsEmptyWhenLibraryHasNoVersions()
+    {
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository());
+        var versions = await svc.GetVersionsAsync("missing", TestContext.Current.CancellationToken);
+        Assert.Empty(versions);
+    }
 }

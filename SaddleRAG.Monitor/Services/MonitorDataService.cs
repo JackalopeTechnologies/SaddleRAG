@@ -129,4 +129,14 @@ public sealed class MonitorDataService
         ArgumentException.ThrowIfNullOrEmpty(version);
         return mProfiles.GetAsync(libraryId, version, ct);
     }
+
+    /// <summary>
+    ///     Returns every indexed version for a library, sorted descending by ScrapedAt.
+    /// </summary>
+    public Task<IReadOnlyList<LibraryVersionRecord>> GetVersionsAsync(string libraryId,
+                                                                      CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        return mLibraries.GetVersionsAsync(libraryId, ct);
+    }
 }
