@@ -8,6 +8,7 @@
 
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Services;
 
@@ -18,13 +19,16 @@ namespace SaddleRAG.Monitor.Pages;
 public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
 {
     [Inject]
-    private NavigationManager? Nav { get; set; }
+    protected NavigationManager? Nav { get; set; }
 
     [Inject]
-    private MonitorWriteService? WriteService { get; set; }
+    protected MonitorWriteService? WriteService { get; set; }
 
     [Inject]
-    private MonitorDataService? DataService { get; set; }
+    protected MonitorDataService? DataService { get; set; }
+
+    [Inject]
+    protected IMonitorBroadcaster? Broadcaster { get; set; }
 
     protected List<JobTickSnapshot> ActiveJobSnapshots { get; } = [];
     protected List<LibrarySummaryItem> Libraries { get; } = [];
@@ -41,20 +45,37 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(Nav);
         ArgumentNullException.ThrowIfNull(DataService);
+        ArgumentNullException.ThrowIfNull(Broadcaster);
 
         var summaries = await DataService.GetLibrarySummariesAsync();
         Libraries.Clear();
         Libraries.AddRange(summaries);
+
+        RebuildFromIds(Broadcaster.GetActiveJobIds());
 
         mHub = new HubConnectionBuilder()
                .WithUrl(Nav.ToAbsoluteUri(HubPath))
                .WithAutomaticReconnect()
                .Build();
 
-        mHub.On<IReadOnlyList<string>>(ActiveJobsEvent, async _ => { await InvokeAsync(StateHasChanged); });
+        mHub.On<IReadOnlyList<string>>(ActiveJobsEvent, async ids =>
+        {
+            RebuildFromIds(ids);
+            await InvokeAsync(StateHasChanged);
+        });
 
         await mHub.StartAsync();
         await mHub.InvokeAsync(SubscribeLandingMethod);
+    }
+
+    public void RebuildFromIds(IReadOnlyList<string> ids)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+        ArgumentNullException.ThrowIfNull(Broadcaster);
+        ActiveJobSnapshots.Clear();
+        var snapshots = ids.Select(id => Broadcaster.GetJobSnapshot(id))
+                           .OfType<JobTickSnapshot>();
+        ActiveJobSnapshots.AddRange(snapshots);
     }
 
     protected async Task CancelJob(string jobId)
