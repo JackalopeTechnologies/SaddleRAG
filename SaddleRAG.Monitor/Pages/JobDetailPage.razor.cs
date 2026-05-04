@@ -34,6 +34,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     protected bool HubConnected { get; private set; } = true;
     protected JobInfo? Info { get; private set; }
     protected PipelineRates Rates { get; private set; } = PipelineRates.Zero;
+    protected List<RecentError> AllErrors { get; } = [];
 
     protected bool IsActive => Info is not null
                             && (Info.Status is "Queued" or "Running")
@@ -92,6 +93,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                               {
                                   CurrentTick = tick;
                                   Rates = mRates.Update(tick.Counters, tick.At);
+                                  IngestTick(tick);
                                   await InvokeAsync(StateHasChanged);
                               }
                              );
@@ -153,9 +155,19 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                 var tick = SnapshotToTick(snap);
                 CurrentTick = tick;
                 Rates = mRates.Update(tick.Counters, tick.At);
+                IngestTick(tick);
                 await InvokeAsync(StateHasChanged);
             }
         }
+    }
+
+    private void IngestTick(JobTickEvent tick)
+    {
+        ArgumentNullException.ThrowIfNull(tick);
+        foreach (var err in tick.ErrorsThisTick)
+            AllErrors.Add(err);
+        while (AllErrors.Count > MaxErrorsRetained)
+            AllErrors.RemoveAt(0);
     }
 
     private static JobTickEvent SnapshotToTick(JobTickSnapshot snap) =>
@@ -174,4 +186,5 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private const string JobTickMethod = "JobTick";
     private const string SubscribeJobMethod = "SubscribeJob";
     private const int FallbackPollSeconds = 3;
+    private const int MaxErrorsRetained = 200;
 }
