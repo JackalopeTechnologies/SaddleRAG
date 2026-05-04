@@ -62,7 +62,11 @@ jobs:
         run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:Version=${{ env.PackageVersion }}
 
       - name: Test
-        run: dotnet test SaddleRAG.slnx --configuration Release --no-build
+        # Integration tests (Mongo-backed repositories, Playwright-driven
+        # crawler scenarios) require services that aren't running on the
+        # GitHub-hosted runner. They're tagged [Trait("Category","Integration")]
+        # and run locally and on self-hosted runners that have those services.
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build --filter "Category!=Integration"
 
       - name: Publish
         run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ env.PackageVersion }}/publish -p:Version=${{ env.PackageVersion }}
