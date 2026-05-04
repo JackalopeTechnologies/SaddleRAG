@@ -33,6 +33,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     protected JobTickEvent? CurrentTick { get; private set; }
     protected bool HubConnected { get; private set; } = true;
     protected JobInfo? Info { get; private set; }
+    protected PipelineRates Rates { get; private set; } = PipelineRates.Zero;
 
     protected bool IsActive => Info is not null
                             && (Info.Status is "Queued" or "Running")
@@ -56,6 +57,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private CancellationTokenSource mFallbackCts = new CancellationTokenSource();
     private HubConnection? mHub;
     private System.Threading.Timer? mElapsedTimer;
+    private readonly RatesAccumulator mRates = new RatesAccumulator();
 
     public async ValueTask DisposeAsync()
     {
@@ -89,6 +91,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                               async tick =>
                               {
                                   CurrentTick = tick;
+                                  Rates = mRates.Update(tick.Counters, tick.At);
                                   await InvokeAsync(StateHasChanged);
                               }
                              );
@@ -147,7 +150,9 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
             var snap = await WriteService.GetJobSnapshotAsync(JobId, ct);
             if (snap is not null)
             {
-                CurrentTick = SnapshotToTick(snap);
+                var tick = SnapshotToTick(snap);
+                CurrentTick = tick;
+                Rates = mRates.Update(tick.Counters, tick.At);
                 await InvokeAsync(StateHasChanged);
             }
         }
