@@ -69,15 +69,29 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private HubConnection? mHub;
     private System.Threading.Timer? mElapsedTimer;
     private readonly RatesAccumulator mRates = new RatesAccumulator();
+    private bool mDisposed;
 
     public async ValueTask DisposeAsync()
     {
-        mFallbackCts.Cancel();
+        mDisposed = true;
+        TryCancelFallback();
         mFallbackCts.Dispose();
         if (mElapsedTimer is not null)
             await mElapsedTimer.DisposeAsync();
         if (mHub is not null)
             await mHub.DisposeAsync();
+    }
+
+    private void TryCancelFallback()
+    {
+        try
+        {
+            mFallbackCts.Cancel();
+        }
+        catch(ObjectDisposedException)
+        {
+            // Disposal raced with a hub event handler; safe to ignore.
+        }
     }
 
     protected async Task CancelClicked()
@@ -132,16 +146,22 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 
         mHub.Closed += async _ =>
                        {
-                           HubConnected = false;
-                           StartFallbackPolling();
-                           await InvokeAsync(StateHasChanged);
+                           if (!mDisposed)
+                           {
+                               HubConnected = false;
+                               StartFallbackPolling();
+                               await InvokeAsync(StateHasChanged);
+                           }
                        };
 
         mHub.Reconnected += async _ =>
                             {
-                                HubConnected = true;
-                                mFallbackCts.Cancel();
-                                await InvokeAsync(StateHasChanged);
+                                if (!mDisposed)
+                                {
+                                    HubConnected = true;
+                                    TryCancelFallback();
+                                    await InvokeAsync(StateHasChanged);
+                                }
                             };
 
         await mHub.StartAsync();
@@ -183,10 +203,13 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 
     private void StartFallbackPolling()
     {
-        mFallbackCts.Cancel();
-        mFallbackCts.Dispose();
-        mFallbackCts = new CancellationTokenSource();
-        _ = RunFallbackLoopAsync(mFallbackCts.Token);
+        if (!mDisposed)
+        {
+            TryCancelFallback();
+            mFallbackCts.Dispose();
+            mFallbackCts = new CancellationTokenSource();
+            _ = RunFallbackLoopAsync(mFallbackCts.Token);
+        }
     }
 
     private async Task RunFallbackLoopAsync(CancellationToken ct)
