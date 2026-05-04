@@ -8,6 +8,7 @@
 
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Monitor.Pages;
 
 #endregion
@@ -26,19 +27,27 @@ public sealed class MonitorDataService
     /// </summary>
     public MonitorDataService(ILibraryRepository libraries,
                               IChunkRepository chunks,
-                              ILibraryProfileRepository profiles)
+                              ILibraryProfileRepository profiles,
+                              IScrapeJobRepository jobs,
+                              IScrapeAuditRepository audit)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(chunks);
         ArgumentNullException.ThrowIfNull(profiles);
+        ArgumentNullException.ThrowIfNull(jobs);
+        ArgumentNullException.ThrowIfNull(audit);
         mLibraries = libraries;
         mChunks = chunks;
         mProfiles = profiles;
+        mJobs = jobs;
+        mAudit = audit;
     }
 
     private readonly ILibraryRepository mLibraries;
     private readonly IChunkRepository mChunks;
     private readonly ILibraryProfileRepository mProfiles;
+    private readonly IScrapeJobRepository mJobs;
+    private readonly IScrapeAuditRepository mAudit;
 
     /// <summary>
     ///     Returns a summary row for every library, including counts from the current version record.
@@ -139,4 +148,47 @@ public sealed class MonitorDataService
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         return mLibraries.GetVersionsAsync(libraryId, ct);
     }
+
+    /// <summary>
+    ///     Returns the most-recent job id that scraped (libraryId, version), or null when no job is recorded.
+    /// </summary>
+    public async Task<string?> GetLatestJobIdAsync(string libraryId,
+                                                   string version,
+                                                   CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        var recent = await mJobs.ListRecentAsync(RecentJobsScanLimit, ct);
+        var match = recent.Where(r => string.Equals(r.Job.LibraryId,
+                                                    libraryId,
+                                                    StringComparison.OrdinalIgnoreCase)
+                                   && string.Equals(r.Job.Version,
+                                                    version,
+                                                    StringComparison.OrdinalIgnoreCase))
+                          .OrderByDescending(r => r.CreatedAt)
+                          .FirstOrDefault();
+        return match?.Id;
+    }
+
+    /// <summary>
+    ///     Returns the audit summary for a job id, or null when the underlying audit data is missing
+    ///     and the repository surfaces that as an exception.
+    /// </summary>
+    public async Task<AuditSummary?> GetAuditSummaryAsync(string jobId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        AuditSummary? result = null;
+        try
+        {
+            result = await mAudit.SummarizeAsync(jobId, ct);
+        }
+        catch (Exception)
+        {
+            // Audit may not exist for this job; treat as absent.
+        }
+
+        return result;
+    }
+
+    private const int RecentJobsScanLimit = 100;
 }

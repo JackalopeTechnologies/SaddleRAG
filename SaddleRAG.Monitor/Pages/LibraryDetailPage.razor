@@ -67,11 +67,7 @@ else
             <ProfileView Profile="@Profile"/>
         </MudTabPanel>
         <MudTabPanel Text="Audit">
-            <MudButton Variant="Variant.Text"
-                       Href="@($"/monitor/audits/{LatestJobId}")"
-                       Disabled="@string.IsNullOrEmpty(LatestJobId)">
-                View Full Audit
-            </MudButton>
+            <AuditSummaryPanel Summary="@AuditSummary" JobId="@LatestJobId"/>
         </MudTabPanel>
         <MudTabPanel Text="Versions">
             <VersionList Versions="@Versions" CurrentVersion="@Detail.Version"/>
