@@ -25,53 +25,89 @@ else
             <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="CancelClicked">Cancel</MudButton>
         }
     </MudStack>
-    @if (!string.IsNullOrEmpty(Info.ErrorMessage))
+    @if (IsActive && !string.IsNullOrEmpty(Info.ErrorMessage))
     {
         <MudAlert Severity="Severity.Error" Class="mb-2">@Info.ErrorMessage</MudAlert>
     }
-}
 
-@if (!HubConnected)
-{
-    <MudAlert Severity="Severity.Warning" Class="mb-2">Live connection lost — polling for updates.</MudAlert>
-}
+    @if (!HubConnected)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-2">Live connection lost — polling for updates.</MudAlert>
+    }
 
-@if (CurrentTick is not null)
-{
-    <RatePipelineStrip Counters="@CurrentTick.Counters" Rates="@Rates"/>
+    @if (IsActive)
+    {
+        @if (CurrentTick is not null)
+        {
+            <RatePipelineStrip Counters="@CurrentTick.Counters" Rates="@Rates"/>
 
-    <MudGrid Class="mt-2">
-        <MudItem xs="12" md="6">
-            <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Fetches</MudText>
-            <MudList Dense="true" T="string">
-                @foreach(var f in CurrentTick.RecentFetches)
-                {
-                    <MudListItem>
-                        <MudText Style="font-family: monospace; font-size: 0.75rem">@f.Url</MudText>
-                    </MudListItem>
-                }
-            </MudList>
-        </MudItem>
-        <MudItem xs="12" md="6">
-            <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Rejects</MudText>
-            <MudList Dense="true" T="string">
-                @foreach(var r in CurrentTick.RecentRejects)
-                {
-                    <MudListItem>
-                        <MudStack Row="true">
-                            <MudText Style="font-family: monospace; font-size: 0.75rem">@r.Url</MudText>
-                            <MudChip T="string" Size="Size.Small">@r.Reason</MudChip>
-                        </MudStack>
-                    </MudListItem>
-                }
-            </MudList>
-        </MudItem>
-    </MudGrid>
+            <MudGrid Class="mt-2">
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Fetches</MudText>
+                    <MudList Dense="true" T="string">
+                        @foreach (var f in CurrentTick.RecentFetches)
+                        {
+                            <MudListItem>
+                                <MudText Style="font-family: monospace; font-size: 0.75rem">@f.Url</MudText>
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Rejects</MudText>
+                    <MudList Dense="true" T="string">
+                        @foreach (var r in CurrentTick.RecentRejects)
+                        {
+                            <MudListItem>
+                                <MudStack Row="true">
+                                    <MudText Style="font-family: monospace; font-size: 0.75rem">@r.Url</MudText>
+                                    <MudChip T="string" Size="Size.Small">@r.Reason</MudChip>
+                                </MudStack>
+                            </MudListItem>
+                        }
+                    </MudList>
+                </MudItem>
+            </MudGrid>
 
-    <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Errors</MudText>
-    <ErrorList Errors="@AllErrors"/>
-}
-else
-{
-    <MudText>Waiting for first tick…</MudText>
+            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Errors</MudText>
+            <ErrorList Errors="@AllErrors"/>
+        }
+        else
+        {
+            <MudText>Waiting for first tick…</MudText>
+        }
+    }
+    else
+    {
+        <MudAlert Severity="@TerminalSeverity" Class="mb-2">
+            Job @Info.Status. @(Info.ErrorMessage ?? string.Empty)
+        </MudAlert>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Fetched URLs (last @TerminalFetches.Count)</MudText>
+                <MudList T="string" Dense="true" Style="max-height:480px; overflow:auto">
+                    @foreach (var f in TerminalFetches)
+                    {
+                        <MudListItem>
+                            <span style="font-family:monospace; font-size:.75rem">@f.Url</span>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Skipped URLs (last @TerminalRejects.Count)</MudText>
+                <MudList T="string" Dense="true" Style="max-height:480px; overflow:auto">
+                    @foreach (var r in TerminalRejects)
+                    {
+                        <MudListItem>
+                            <MudStack Row="true">
+                                <span style="font-family:monospace; font-size:.75rem">@r.Url</span>
+                                <MudChip T="string" Size="Size.Small">@r.Reason</MudChip>
+                            </MudStack>
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudItem>
+        </MudGrid>
+    }
 }

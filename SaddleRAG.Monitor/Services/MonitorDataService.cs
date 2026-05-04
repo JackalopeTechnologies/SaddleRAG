@@ -9,6 +9,7 @@
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Pages;
 
 #endregion
@@ -213,6 +214,47 @@ public sealed class MonitorDataService
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Returns the most-recent successful fetches and skipped URLs from the audit log
+    ///     for a terminal-state job. Capped at <paramref name="limit" /> entries per side.
+    /// </summary>
+    public async Task<(IReadOnlyList<RecentFetch> Fetches, IReadOnlyList<RecentReject> Rejects)> GetTerminalFeedsAsync(
+        string jobId,
+        int limit = 50,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        var fetched = await mAudit.QueryAsync(jobId,
+                                              status: AuditStatus.Fetched,
+                                              skipReason: null,
+                                              host: null,
+                                              urlSubstring: null,
+                                              limit,
+                                              ct);
+        var skipped = await mAudit.QueryAsync(jobId,
+                                              status: AuditStatus.Skipped,
+                                              skipReason: null,
+                                              host: null,
+                                              urlSubstring: null,
+                                              limit,
+                                              ct);
+
+        var fetches = fetched.Select(e => new RecentFetch
+                                              {
+                                                  Url = e.Url,
+                                                  At = e.DiscoveredAt
+                                              })
+                             .ToList();
+        var rejects = skipped.Select(e => new RecentReject
+                                              {
+                                                  Url = e.Url,
+                                                  Reason = e.SkipReason?.ToString() ?? string.Empty,
+                                                  At = e.DiscoveredAt
+                                              })
+                             .ToList();
+        return (fetches, rejects);
     }
 
     private const int RecentJobsScanLimit = 100;

@@ -448,4 +448,51 @@ public sealed class MonitorDataServiceEnrichmentTests
         var info = await svc.GetJobInfoAsync("missing", TestContext.Current.CancellationToken);
         Assert.Null(info);
     }
+
+    [Fact]
+    public async Task GetTerminalFeedsAsyncProjectsAuditEntriesIntoFeeds()
+    {
+        var auditRepo = new FakeScrapeAuditRepository();
+        auditRepo.AddEntry(new ScrapeAuditLogEntry
+                               {
+                                   Id = "e1",
+                                   JobId = "job-1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   Url = "https://docs.x/page-a",
+                                   Host = "docs.x",
+                                   Depth = 1,
+                                   DiscoveredAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc),
+                                   Status = AuditStatus.Fetched
+                               });
+        auditRepo.AddEntry(new ScrapeAuditLogEntry
+                               {
+                                   Id = "e2",
+                                   JobId = "job-1",
+                                   LibraryId = "alpha",
+                                   Version = "1",
+                                   Url = "https://docs.x/page-b",
+                                   Host = "docs.x",
+                                   Depth = 1,
+                                   DiscoveredAt = new DateTime(2026, 4, 1, 12, 0, 1, DateTimeKind.Utc),
+                                   Status = AuditStatus.Skipped,
+                                   SkipReason = AuditSkipReason.PatternExclude
+                               });
+
+        var svc = new MonitorDataService(new FakeLibraryRepository(),
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         new FakeScrapeJobRepository(),
+                                         auditRepo);
+        var (fetches, rejects) = await svc.GetTerminalFeedsAsync("job-1",
+                                                                 50,
+                                                                 TestContext.Current.CancellationToken);
+
+        Assert.Single(fetches);
+        Assert.Equal("https://docs.x/page-a", fetches[0].Url);
+        Assert.Equal(new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc), fetches[0].At);
+        Assert.Single(rejects);
+        Assert.Equal("https://docs.x/page-b", rejects[0].Url);
+        Assert.Equal("PatternExclude", rejects[0].Reason);
+    }
 }

@@ -35,6 +35,8 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     protected JobInfo? Info { get; private set; }
     protected PipelineRates Rates { get; private set; } = PipelineRates.Zero;
     protected List<RecentError> AllErrors { get; } = [];
+    protected IReadOnlyList<RecentFetch> TerminalFetches { get; private set; } = Array.Empty<RecentFetch>();
+    protected IReadOnlyList<RecentReject> TerminalRejects { get; private set; } = Array.Empty<RecentReject>();
 
     protected bool IsActive => Info is not null
                             && (Info.Status is "Queued" or "Running")
@@ -44,6 +46,14 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                                     ? "—"
                                     : (Info.CompletedAt ?? DateTime.UtcNow).Subtract(Info.StartedAt.Value)
                                                                            .ToString(@"hh\:mm\:ss");
+
+    protected Severity TerminalSeverity => Info?.Status switch
+    {
+        "Completed" => Severity.Success,
+        "Failed"    => Severity.Error,
+        "Cancelled" => Severity.Warning,
+        var _       => Severity.Info
+    };
 
     protected static Color StatusColor(string status) => status switch
     {
@@ -98,6 +108,28 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                               }
                              );
 
+        mHub.On<JobCompletedEvent>(JobCompletedMethod,
+                                   async e =>
+                                   {
+                                       if (e.JobId == JobId)
+                                           await OnLifecycleTransitionAsync();
+                                   }
+                                  );
+        mHub.On<JobFailedEvent>(JobFailedMethod,
+                                async e =>
+                                {
+                                    if (e.JobId == JobId)
+                                        await OnLifecycleTransitionAsync();
+                                }
+                               );
+        mHub.On<JobCancelledEvent>(JobCancelledMethod,
+                                   async e =>
+                                   {
+                                       if (e.JobId == JobId)
+                                           await OnLifecycleTransitionAsync();
+                                   }
+                                  );
+
         mHub.Closed += async _ =>
                        {
                            HubConnected = false;
@@ -115,6 +147,9 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
         await mHub.StartAsync();
         await mHub.InvokeAsync(SubscribeJobMethod, JobId);
 
+        if (!IsActive)
+            await LoadTerminalFeedsAsync();
+
         if (IsActive)
         {
             mElapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged),
@@ -122,6 +157,28 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                                                        dueTime: TimeSpan.FromSeconds(1),
                                                        period: TimeSpan.FromSeconds(1));
         }
+    }
+
+    private async Task LoadTerminalFeedsAsync()
+    {
+        ArgumentNullException.ThrowIfNull(DataService);
+        var (fetches, rejects) = await DataService.GetTerminalFeedsAsync(JobId);
+        TerminalFetches = fetches;
+        TerminalRejects = rejects;
+    }
+
+    private async Task OnLifecycleTransitionAsync()
+    {
+        ArgumentNullException.ThrowIfNull(DataService);
+        Info = await DataService.GetJobInfoAsync(JobId);
+        await LoadTerminalFeedsAsync();
+        if (!IsActive && mElapsedTimer is not null)
+        {
+            await mElapsedTimer.DisposeAsync();
+            mElapsedTimer = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private void StartFallbackPolling()
@@ -184,6 +241,9 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 
     private const string HubPath = "/monitor/hub";
     private const string JobTickMethod = "JobTick";
+    private const string JobCompletedMethod = "JobCompleted";
+    private const string JobFailedMethod = "JobFailed";
+    private const string JobCancelledMethod = "JobCancelled";
     private const string SubscribeJobMethod = "SubscribeJob";
     private const int FallbackPollSeconds = 3;
     private const int MaxErrorsRetained = 200;
