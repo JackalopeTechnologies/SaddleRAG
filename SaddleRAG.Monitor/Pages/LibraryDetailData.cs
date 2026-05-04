@@ -4,6 +4,12 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
+using SaddleRAG.Core.Models;
+
+#endregion
+
 namespace SaddleRAG.Monitor.Pages;
 
 /// <summary>
@@ -23,4 +29,6 @@ public sealed record LibraryDetailData
     public double? BoundaryIssuePct { get; init; }
     public string? EmbeddingProviderId { get; init; }
     public string? EmbeddingModelName { get; init; }
+    public IReadOnlyList<HostBucket> HostnameDistribution { get; init; } = Array.Empty<HostBucket>();
+    public IReadOnlyDictionary<string, double> LanguageMix { get; init; } = new Dictionary<string, double>();
 }
