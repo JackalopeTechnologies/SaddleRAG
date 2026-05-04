@@ -31,6 +31,18 @@ public abstract class AuditInspectorPageBase : ComponentBase
     protected string? FilterHost { get; set; }
     protected string? FilterUrl { get; set; }
 
+    private readonly HashSet<string> mExpandedRows = [];
+
+    protected bool IsExpanded(string entryId) => mExpandedRows.Contains(entryId);
+
+    protected void ToggleExpanded(string entryId)
+    {
+        if (mExpandedRows.Contains(entryId))
+            mExpandedRows.Remove(entryId);
+        else
+            mExpandedRows.Add(entryId);
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         await LoadAsync();

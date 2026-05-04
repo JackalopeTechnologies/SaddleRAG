@@ -30,17 +30,50 @@
     <MudStack Row="true" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
         <MudChip T="string">Considered: @Summary.TotalConsidered</MudChip>
         <MudChip T="string" Color="Color.Success">Indexed: @Summary.IndexedCount</MudChip>
+        <MudChip T="string" Color="Color.Info">Fetched: @Summary.FetchedCount</MudChip>
         <MudChip T="string" Color="Color.Warning">Skipped: @Summary.SkippedCount</MudChip>
         <MudChip T="string" Color="Color.Error">Failed: @Summary.FailedCount</MudChip>
     </MudStack>
+
+    @if (Summary.SkipReasonCounts.Count > 0)
+    {
+        <MudPaper Outlined="true" Class="pa-3 mb-3">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Skip reasons</MudText>
+            @foreach (var bucket in Summary.SkipReasonCounts.OrderByDescending(kv => kv.Value))
+            {
+                double pct = Summary.SkippedCount == 0
+                    ? 0.0
+                    : (double) bucket.Value / Summary.SkippedCount * 100.0;
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-1">
+                    <MudText Typo="Typo.body2" Style="min-width: 160px">@bucket.Key</MudText>
+                    <MudProgressLinear Value="@pct" Color="Color.Warning" Class="flex-1"/>
+                    <MudText Typo="Typo.caption" Style="min-width: 80px; text-align: right">
+                        @bucket.Value (@pct.ToString("F0")%)
+                    </MudText>
+                </MudStack>
+            }
+        </MudPaper>
+    }
 }
 
-<MudTable Items="@Entries" Dense="true" Hover="true" LoadingProgressColor="Color.Primary">
+<MudTable Items="@Entries" Dense="true" Hover="true" T="ScrapeAuditLogEntry"
+          LoadingProgressColor="Color.Primary">
     <HeaderContent>
-        <MudTh>URL</MudTh><MudTh>Host</MudTh><MudTh>Depth</MudTh><MudTh>Status</MudTh><MudTh>Reason</MudTh>
+        <MudTh Style="width: 32px"></MudTh>
+        <MudTh>URL</MudTh>
+        <MudTh>Host</MudTh>
+        <MudTh>Depth</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Reason</MudTh>
+        <MudTh>Parent</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd Style="font-family: monospace; font-size: 0.72rem; max-width: 480px; overflow: hidden; text-overflow: ellipsis">
+        <MudTd>
+            <MudIconButton Size="Size.Small"
+                           Icon="@(IsExpanded(context.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                           OnClick="@(() => ToggleExpanded(context.Id))"/>
+        </MudTd>
+        <MudTd Style="font-family: monospace; font-size: 0.72rem; max-width: 380px; overflow: hidden; text-overflow: ellipsis">
             @context.Url
         </MudTd>
         <MudTd>@context.Host</MudTd>
@@ -51,7 +84,42 @@
             </MudChip>
         </MudTd>
         <MudTd>@context.SkipReason</MudTd>
+        <MudTd Style="font-family: monospace; font-size: 0.7rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis">
+            @(context.ParentUrl ?? "—")
+        </MudTd>
     </RowTemplate>
+    <ChildRowContent>
+        @if (IsExpanded(context.Id))
+        {
+            <MudTr>
+                <td colspan="7" style="background: #f7f3ed; padding: 0.75rem 1rem">
+                    <MudGrid>
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.body2"><strong>Skip detail:</strong> @(context.SkipDetail ?? "—")</MudText>
+                            <MudText Typo="Typo.body2"><strong>Discovered:</strong> @context.DiscoveredAt.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</MudText>
+                            <MudText Typo="Typo.body2"><strong>Parent:</strong> @(context.ParentUrl ?? "—")</MudText>
+                        </MudItem>
+                        <MudItem xs="12" md="6">
+                            @if (context.PageOutcome is not null)
+                            {
+                                <MudText Typo="Typo.body2"><strong>Fetch:</strong> @(context.PageOutcome.FetchStatus ?? "—")</MudText>
+                                <MudText Typo="Typo.body2"><strong>Category:</strong> @(context.PageOutcome.Category ?? "—")</MudText>
+                                <MudText Typo="Typo.body2"><strong>Chunks:</strong> @(context.PageOutcome.ChunkCount?.ToString() ?? "—")</MudText>
+                                @if (!string.IsNullOrWhiteSpace(context.PageOutcome.Error))
+                                {
+                                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-1">@context.PageOutcome.Error</MudAlert>
+                                }
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption">No fetch outcome recorded.</MudText>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                </td>
+            </MudTr>
+        }
+    </ChildRowContent>
     <NoRecordsContent>
         <MudText>No entries match the current filters.</MudText>
     </NoRecordsContent>
