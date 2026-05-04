@@ -74,6 +74,20 @@ public class LibraryRepository : ILibraryRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionRecord>> GetVersionsAsync(string libraryId,
+                                                                            CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+
+        var filter = Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, libraryId);
+        var results = await mContext.LibraryVersions
+                                    .Find(filter)
+                                    .SortByDescending(v => v.ScrapedAt)
+                                    .ToListAsync(ct);
+        return results;
+    }
+
+    /// <inheritdoc />
     public async Task UpsertVersionAsync(LibraryVersionRecord versionRecord, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(versionRecord);

@@ -71,6 +71,15 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
         return Task.FromResult(result);
     }
 
+    public Task<IReadOnlyList<LibraryVersionRecord>> GetVersionsAsync(string libraryId, CancellationToken ct = default)
+    {
+        var matches = mVersions.Values
+                               .Where(v => v.LibraryId == libraryId)
+                               .OrderByDescending(v => v.ScrapedAt)
+                               .ToList();
+        return Task.FromResult<IReadOnlyList<LibraryVersionRecord>>(matches);
+    }
+
     public Task UpsertVersionAsync(LibraryVersionRecord versionRecord, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(versionRecord);

@@ -40,6 +40,11 @@ public interface ILibraryRepository
     Task<LibraryVersionRecord?> GetVersionAsync(string libraryId, string version, CancellationToken ct = default);
 
     /// <summary>
+    ///     Get all indexed versions for a library, sorted descending by ScrapedAt.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionRecord>> GetVersionsAsync(string libraryId, CancellationToken ct = default);
+
+    /// <summary>
     ///     Store version metadata after a scrape completes.
     /// </summary>
     Task UpsertVersionAsync(LibraryVersionRecord versionRecord, CancellationToken ct = default);

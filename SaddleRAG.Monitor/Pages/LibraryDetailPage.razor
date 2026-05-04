@@ -74,7 +74,7 @@ else
             </MudButton>
         </MudTabPanel>
         <MudTabPanel Text="Versions">
-            <MudText>Version history coming soon.</MudText>
+            <VersionList Versions="@Versions" CurrentVersion="@Detail.Version"/>
         </MudTabPanel>
     </MudTabs>
 }
