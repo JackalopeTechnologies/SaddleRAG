@@ -291,6 +291,7 @@ builder.Services.AddMudServices();
 builder.Services.AddHostedService<MonitorTickService>();
 builder.Services.AddHostedService<MonitorLifecycleRelay>();
 builder.Services.AddSingleton<MonitorDataService>();
+builder.Services.AddSingleton<MonitorJobService>();
 
 var monitorPort = builder.Configuration.GetValue<int?>(KestrelHttpPortKey) ?? DefaultMonitorPort;
 builder.Services.AddHttpClient<MonitorWriteService>(client =>
