@@ -5,40 +5,53 @@
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
 #region Usings
+
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Services;
+
 #endregion
 
 namespace SaddleRAG.Monitor.Pages;
 
 public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
 {
-    [Inject] private NavigationManager?   Nav          { get; set; }
-    [Inject] private MonitorWriteService? WriteService { get; set; }
+    [Inject]
+    private NavigationManager? Nav { get; set; }
 
-    protected List<JobTickSnapshot>    ActiveJobSnapshots { get; } = [];
-    protected List<LibrarySummaryItem> Libraries          { get; } = [];
+    [Inject]
+    private MonitorWriteService? WriteService { get; set; }
+
+    [Inject]
+    private MonitorDataService? DataService { get; set; }
+
+    protected List<JobTickSnapshot> ActiveJobSnapshots { get; } = [];
+    protected List<LibrarySummaryItem> Libraries { get; } = [];
 
     private HubConnection? mHub;
 
-    private const string HubPath               = "/monitor/hub";
-    private const string ActiveJobsEvent       = "ActiveJobs";
-    private const string SubscribeLandingMethod = "SubscribeLanding";
+    public async ValueTask DisposeAsync()
+    {
+        if (mHub is not null)
+            await mHub.DisposeAsync();
+    }
 
     protected override async Task OnInitializedAsync()
     {
         ArgumentNullException.ThrowIfNull(Nav);
-        mHub = new HubConnectionBuilder()
-            .WithUrl(Nav.ToAbsoluteUri(HubPath))
-            .WithAutomaticReconnect()
-            .Build();
+        ArgumentNullException.ThrowIfNull(DataService);
 
-        mHub.On<IReadOnlyList<string>>(ActiveJobsEvent, async _ =>
-        {
-            await InvokeAsync(StateHasChanged);
-        });
+        var summaries = await DataService.GetLibrarySummariesAsync();
+        Libraries.Clear();
+        Libraries.AddRange(summaries);
+
+        mHub = new HubConnectionBuilder()
+               .WithUrl(Nav.ToAbsoluteUri(HubPath))
+               .WithAutomaticReconnect()
+               .Build();
+
+        mHub.On<IReadOnlyList<string>>(ActiveJobsEvent, async _ => { await InvokeAsync(StateHasChanged); });
 
         await mHub.StartAsync();
         await mHub.InvokeAsync(SubscribeLandingMethod);
@@ -50,9 +63,7 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         await WriteService.CancelJobAsync(jobId);
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        if (mHub is not null)
-            await mHub.DisposeAsync();
-    }
+    private const string HubPath = "/monitor/hub";
+    private const string ActiveJobsEvent = "ActiveJobs";
+    private const string SubscribeLandingMethod = "SubscribeLanding";
 }
