@@ -9,6 +9,9 @@ Scratch/
 playwright-tmp/
 .worktrees/
 .superpowers/
+# Scratch files for crafting commit messages and PR bodies at the repo root
+/msg.txt
+/pr-body.md
 
 # .vscode is partially tracked — see allow-list further down for which files we keep
 
