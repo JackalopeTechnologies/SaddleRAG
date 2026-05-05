@@ -59,6 +59,17 @@ public class PageCrawler
     }
 
     /// <summary>
+    ///     Mutable holder for the file extension a site uses (.html, .htm, .aspx)
+    ///     once a 404-recovery probe finds one that works. Shared by the real
+    ///     crawl and dry-run paths so both stop probing after the first hit and
+    ///     start preserving extensions on subsequent link normalization.
+    /// </summary>
+    private sealed class SiteExtensionState
+    {
+        public string? Value { get; set; }
+    }
+
+    /// <summary>
     ///     Per-crawl mutable state shared by parallel worker tasks.
     ///     One instance per <see cref="CrawlAsync" /> call.
     ///     Two channels back the priority queue: <see cref="InScopeEntries" />
@@ -91,7 +102,7 @@ public class PageCrawler
         /// </summary>
         public ConcurrentBag<string> DroppedInScopeUrls { get; } = new ConcurrentBag<string>();
 
-        public string? SiteExtension { get; set; }
+        public SiteExtensionState ExtensionState { get; } = new();
 
         public int PageCount => Volatile.Read(ref mPageCount);
         public int InFlightCount => Volatile.Read(ref mInFlight);
@@ -252,6 +263,7 @@ public class PageCrawler
         var githubRepos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var samplePages = new List<DryRunPageEntry>();
         var errors = new List<DryRunFetchError>();
+        var extensionState = new SiteExtensionState();
 
         while (queue.Count > 0 && !ct.IsCancellationRequested)
         {
@@ -280,6 +292,7 @@ public class PageCrawler
                                               depthDist,
                                               pagesByHost,
                                               stats,
+                                              extensionState,
                                               ct
                                              );
                 int maxPages = job.MaxPages > 0 ? job.MaxPages : stats.TotalPages;
@@ -323,6 +336,7 @@ public class PageCrawler
                                                Dictionary<int, int> depthDist,
                                                Dictionary<string, int> pagesByHost,
                                                DryRunStats stats,
+                                               SiteExtensionState extensionState,
                                                CancellationToken ct)
     {
         var filterSkip = IsAllowed(url, job);
@@ -363,6 +377,7 @@ public class PageCrawler
                                                depthDist,
                                                pagesByHost,
                                                stats,
+                                               extensionState,
                                                ct
                                               );
                 break;
@@ -382,6 +397,7 @@ public class PageCrawler
                                                 Dictionary<int, int> depthDist,
                                                 Dictionary<string, int> pagesByHost,
                                                 DryRunStats stats,
+                                                SiteExtensionState extensionState,
                                                 CancellationToken ct)
     {
         bool inScope = IsInRootScope(url, rootScope);
@@ -425,6 +441,7 @@ public class PageCrawler
                                        pagesByHost,
                                        inScope,
                                        stats,
+                                       extensionState,
                                        ct
                                       );
         }
@@ -444,6 +461,7 @@ public class PageCrawler
                                             Dictionary<string, int> pagesByHost,
                                             bool inScope,
                                             DryRunStats stats,
+                                            SiteExtensionState extensionState,
                                             CancellationToken ct)
     {
         mLogger.LogDebug("[dry-run] Fetching {Url}", url);
@@ -451,7 +469,14 @@ public class PageCrawler
         var page = await browser.NewPageAsync();
         try
         {
-            var response = await NavigateAndPreparePageAsync(page, url, ct);
+            IResponse? response;
+            string fetchUrl;
+            (page, response, fetchUrl) = await FetchWithExtensionRecoveryAsync(url,
+                                                                               page,
+                                                                               browser,
+                                                                               extensionState,
+                                                                               ct
+                                                                              );
 
             switch(response)
             {
@@ -479,7 +504,7 @@ public class PageCrawler
                     break;
                 default:
                     await ProcessSuccessfulDryRunResponseAsync(page,
-                                                               url,
+                                                               fetchUrl,
                                                                entry,
                                                                job,
                                                                rootScope,
@@ -491,6 +516,7 @@ public class PageCrawler
                                                                depthDist,
                                                                pagesByHost,
                                                                stats,
+                                                               extensionState,
                                                                ct
                                                               );
                     break;
@@ -529,6 +555,7 @@ public class PageCrawler
                                                             Dictionary<int, int> depthDist,
                                                             Dictionary<string, int> pagesByHost,
                                                             DryRunStats stats,
+                                                            SiteExtensionState extensionState,
                                                             CancellationToken ct)
     {
         await ExpandCollapsibleNavigationAsync(page);
@@ -578,7 +605,8 @@ public class PageCrawler
                                rootScope,
                                entry,
                                (child, _) => queue.Enqueue(child),
-                               auditCtx: auditCtx
+                               extensionState.Value != null,
+                               auditCtx
                               );
 
         if (job.FetchDelayMs > 0)
@@ -1129,11 +1157,14 @@ public class PageCrawler
         var page = await browser.NewPageAsync();
         try
         {
-            string fetchUrl = url;
-            var response = await NavigateAndPreparePageAsync(page, fetchUrl, ctx.Token);
-
-            if (response != null && response.Status == HttpNotFound && ctx.SiteExtension == null)
-                (page, response, fetchUrl) = await RetryWithExtensionsAsync(url, page, browser, ctx, ctx.Token);
+            IResponse? response;
+            string fetchUrl;
+            (page, response, fetchUrl) = await FetchWithExtensionRecoveryAsync(url,
+                                                                               page,
+                                                                               browser,
+                                                                               ctx.ExtensionState,
+                                                                               ctx.Token
+                                                                              );
 
             await DispatchFetchOutcomeAsync(response,
                                             page,
@@ -1453,7 +1484,7 @@ public class PageCrawler
                                ctx.RootScope,
                                entry,
                                ctx.EnqueueChild,
-                               ctx.SiteExtension != null,
+                               ctx.ExtensionState.Value != null,
                                ctx.AuditCtx
                               );
 
@@ -2099,6 +2130,30 @@ public class PageCrawler
     }
 
     /// <summary>
+    ///     Navigate to <paramref name="url" />. On 404, when the site's
+    ///     extension hasn't been discovered yet, probe each known extension
+    ///     (.html, .htm, .aspx) and stop at the first that returns 200,
+    ///     recording it on <paramref name="extensionState" /> so subsequent
+    ///     link extraction keeps extensions on discovered URLs.
+    ///     Shared by the real crawl and dry-run paths so they can't drift.
+    /// </summary>
+    private async Task<(IPage Page, IResponse? Response, string FetchUrl)>
+        FetchWithExtensionRecoveryAsync(string url,
+                                        IPage page,
+                                        IBrowser browser,
+                                        SiteExtensionState extensionState,
+                                        CancellationToken ct)
+    {
+        string fetchUrl = url;
+        var response = await NavigateAndPreparePageAsync(page, fetchUrl, ct);
+
+        if (response != null && response.Status == HttpNotFound && extensionState.Value == null)
+            (page, response, fetchUrl) = await RetryWithExtensionsAsync(url, page, browser, extensionState, ct);
+
+        return (page, response, fetchUrl);
+    }
+
+    /// <summary>
     ///     Try each known extension (.html, .htm, .aspx) on a 404 URL.
     ///     Returns updated page, response, and fetch URL.
     /// </summary>
@@ -2106,7 +2161,7 @@ public class PageCrawler
         RetryWithExtensionsAsync(string url,
                                  IPage page,
                                  IBrowser browser,
-                                 CrawlContext ctx,
+                                 SiteExtensionState extensionState,
                                  CancellationToken ct)
     {
         string fetchUrl = url;
@@ -2122,7 +2177,7 @@ public class PageCrawler
 
             if (response != null && response.Ok)
             {
-                ctx.SiteExtension = ext;
+                extensionState.Value = ext;
                 fetchUrl = retryUrl;
                 mLogger.LogInformation("Site requires {Ext} extensions, switching to extension-preserving mode", ext);
                 break;
