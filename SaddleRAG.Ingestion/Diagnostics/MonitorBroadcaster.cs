@@ -54,9 +54,9 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
     public void RecordJobStarted(string jobId, string libraryId, string version, string rootUrl)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
-        ArgumentException.ThrowIfNullOrEmpty(libraryId);
-        ArgumentException.ThrowIfNullOrEmpty(version);
-        ArgumentException.ThrowIfNullOrEmpty(rootUrl);
+        ArgumentNullException.ThrowIfNull(libraryId);
+        ArgumentNullException.ThrowIfNull(version);
+        ArgumentNullException.ThrowIfNull(rootUrl);
         var state = new JobState
                         {
                             JobId = jobId,

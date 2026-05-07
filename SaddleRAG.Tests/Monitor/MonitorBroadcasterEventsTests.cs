@@ -138,4 +138,21 @@ public sealed class MonitorBroadcasterEventsTests
             Assert.Equal("chunks", captured.ItemsLabel);
         }
     }
+
+    [Fact]
+    public void RecordJobStartedAcceptsEmptyLibraryVersionRootUrl()
+    {
+        var broadcaster = new MonitorBroadcaster();
+        JobStartedEvent? captured = null;
+        broadcaster.JobStarted += e => captured = e;
+
+        broadcaster.RecordJobStarted("job-9", libraryId: string.Empty, version: string.Empty, rootUrl: string.Empty);
+
+        Assert.NotNull(captured);
+        if (captured is not null)
+        {
+            Assert.Equal("job-9", captured.JobId);
+            Assert.Equal(string.Empty, captured.LibraryId);
+        }
+    }
 }
