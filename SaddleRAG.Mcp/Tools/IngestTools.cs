@@ -121,13 +121,16 @@ public static class IngestTools
     {
         bool hasProfile = libraryProfile != null;
         bool hasChunks = chunkCount > 0;
+        IReadOnlyList<string> excludedPatterns = libraryProfile?.CrawlHints.ExcludedUrlPatterns ?? [];
 
         var response = (hasProfile, hasChunks, stale, force) switch
             {
                 (false, var _, var _, var _) => MakeReconNeeded(library, version, url),
-                (true, false, var _, var _) => MakeReadyToScrape(library, version, url, MessageReadyToScrapeFresh),
+                (true, false, var _, var _) =>
+                    MakeReadyToScrape(library, version, url, MessageReadyToScrapeFresh, excludedPatterns),
                 (true, true, true, var _) => MakeStale(library, version, url),
-                (true, true, false, true) => MakeReadyToScrape(library, version, url, MessageReadyToScrapeForce),
+                (true, true, false, true) =>
+                    MakeReadyToScrape(library, version, url, MessageReadyToScrapeForce, excludedPatterns),
                 (true, true, false, false) => MakeReady(library, version, url)
             };
 
@@ -169,7 +172,11 @@ public static class IngestTools
                                    }
             };
 
-    private static IngestStatusResponse MakeReadyToScrape(string library, string version, string url, string message) =>
+    internal static IngestStatusResponse MakeReadyToScrape(string library,
+                                                           string version,
+                                                           string url,
+                                                           string message,
+                                                           IReadOnlyList<string> excludedUrlPatterns) =>
         new IngestStatusResponse
             {
                 Status = IngestStatus.ReadyToScrape,
@@ -183,7 +190,8 @@ public static class IngestTools
                                        ["url"] = url,
                                        ["libraryId"] = library,
                                        ["version"] = version
-                                   }
+                                   },
+                RecommendedExcludedUrlPatterns = excludedUrlPatterns
             };
 
     private static IngestStatusResponse MakeStale(string library, string version, string url) =>
@@ -249,11 +257,16 @@ public static class IngestTools
         return result;
     }
 
+    private const string MessageExcludedPatternHint =
+        "If RecommendedExcludedUrlPatterns is non-empty, pass it as scrape_docs.excludedUrlPatterns.";
+
     private const string MessageReadyToScrapeFresh =
-        "Profile cached, no chunks indexed. Call scrape_docs (args in NextToolArgs) to begin ingestion.";
+        "Profile cached, no chunks indexed. Call scrape_docs (args in NextToolArgs) to begin ingestion. " +
+        MessageExcludedPatternHint;
 
     private const string MessageReadyToScrapeForce =
-        "force=true: index exists but caller requested re-ingest. Call scrape_docs (args in NextToolArgs) to refresh.";
+        "force=true: index exists but caller requested re-ingest. Call scrape_docs (args in NextToolArgs) to refresh. " +
+        MessageExcludedPatternHint;
 
     private const int UrlSuspectSampleTitleLimit = 5;
     private const int UrlSuspectSampleTitlesShown = 3;

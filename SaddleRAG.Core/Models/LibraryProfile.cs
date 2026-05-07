@@ -76,6 +76,15 @@ public record LibraryProfile
     public IReadOnlyList<string> Stoplist { get; init; } = [];
 
     /// <summary>
+    ///     Crawl-scope hints captured by recon — excluded URL patterns,
+    ///     expected hosts, free-form notes. Distinct from parser config:
+    ///     these influence which URLs scrape_docs enqueues, not how
+    ///     chunks are classified, so they are intentionally excluded
+    ///     from ComputeHash.
+    /// </summary>
+    public CrawlHints CrawlHints { get; init; } = new CrawlHints();
+
+    /// <summary>
     ///     URL of a canonical inventory page (for example an enum index
     ///     page) when recon spots one. Optional.
     /// </summary>
@@ -100,5 +109,5 @@ public record LibraryProfile
     /// <summary>
     ///     Current schema version emitted by this codebase.
     /// </summary>
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 }

@@ -27,6 +27,7 @@ public sealed class LibraryProfileServiceTests
                                                       ["."],
                                                       ["Foo()"],
                                                       ["MoveLinear", "AxisStatus"],
+                                                  new CrawlHints(),
                                                   canonicalInventoryUrl: null,
                                                   confidence: 0.85f,
                                                   "calling-llm"
@@ -51,6 +52,7 @@ public sealed class LibraryProfileServiceTests
                                                       ["."],
                                                       ["Foo()"],
                                                       ["MoveLinear"],
+                                                  new CrawlHints(),
                                                   canonicalInventoryUrl: null,
                                                   confidence: 0.85f,
                                                   "calling-llm"
@@ -61,9 +63,25 @@ public sealed class LibraryProfileServiceTests
     }
 
     [Fact]
-    public void CurrentSchemaVersionIsTwoAfterStoplistAddition()
+    public void LibraryProfileDefaultsCrawlHintsToEmpty()
     {
-        Assert.Equal(expected: 2, LibraryProfile.CurrentSchemaVersion);
+        var profile = new LibraryProfile
+                          {
+                              Id = "x/1",
+                              LibraryId = "x",
+                              Version = "1"
+                          };
+
+        Assert.NotNull(profile.CrawlHints);
+        Assert.Empty(profile.CrawlHints.ExcludedUrlPatterns);
+        Assert.Empty(profile.CrawlHints.ExpectedHosts);
+        Assert.Equal(string.Empty, profile.CrawlHints.Notes);
+    }
+
+    [Fact]
+    public void CurrentSchemaVersionIsThreeAfterCrawlHintsAddition()
+    {
+        Assert.Equal(expected: 3, LibraryProfile.CurrentSchemaVersion);
     }
 
     [Fact]
@@ -77,11 +95,40 @@ public sealed class LibraryProfileServiceTests
                                                                              [],
                                                                              [],
                                                                              [],
+                                                                         new CrawlHints(),
                                                                          canonicalInventoryUrl: null,
                                                                          confidence: 0.5f,
                                                                          "calling-llm"
                                                                         )
                                         );
+    }
+
+    [Fact]
+    public void BuildPersistsCrawlHints()
+    {
+        var hints = new CrawlHints
+                        {
+                            ExcludedUrlPatterns = ["/account/login"],
+                            ExpectedHosts = ["docs.example.com"],
+                            Notes = "API ref auth-walled"
+                        };
+
+        var profile = LibraryProfileService.Build("aerotech-aeroscript",
+                                                  "2025.3",
+                                                      ["AeroScript"],
+                                                  new CasingConventions { Types = "PascalCase" },
+                                                      ["."],
+                                                      ["Foo()"],
+                                                      ["MoveLinear"],
+                                                  hints,
+                                                  canonicalInventoryUrl: null,
+                                                  confidence: 0.85f,
+                                                  "calling-llm"
+                                                 );
+
+        Assert.Equal(new[] { "/account/login" }, profile.CrawlHints.ExcludedUrlPatterns);
+        Assert.Equal(new[] { "docs.example.com" }, profile.CrawlHints.ExpectedHosts);
+        Assert.Equal("API ref auth-walled", profile.CrawlHints.Notes);
     }
 
     [Fact]
@@ -199,6 +246,22 @@ public sealed class LibraryProfileServiceTests
         Assert.Empty(saved.Stoplist);
     }
 
+    [Fact]
+    public async Task SaveLeavesCrawlHintsEmptyWhenNoPriorVersionExists()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryProfile>());
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithCrawlHints("1.0", new CrawlHints());
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Empty(saved.CrawlHints.ExcludedUrlPatterns);
+        Assert.Empty(saved.CrawlHints.ExpectedHosts);
+        Assert.Equal(string.Empty, saved.CrawlHints.Notes);
+    }
+
     private static LibraryProfile MakeProfile(IReadOnlyList<string> languages,
                                               IReadOnlyList<string> likely,
                                               float confidence,
@@ -211,11 +274,52 @@ public sealed class LibraryProfileServiceTests
                                                      ["."],
                                                      ["Foo()"],
                                                  likely,
+                                                 new CrawlHints(),
                                                  canonicalInventoryUrl: null,
                                                  confidence,
                                                  source
                                                 );
         return result;
+    }
+
+    [Fact]
+    public async Task SaveCarriesForwardCrawlHintsFromPriorVersionWhenEmpty()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        var prior = MakeProfileWithCrawlHints("1.0",
+                                              new CrawlHints
+                                                  {
+                                                      ExcludedUrlPatterns = ["/account/login"],
+                                                      ExpectedHosts = ["docs.x.com"],
+                                                      Notes = "auth wall"
+                                                  });
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { prior });
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithCrawlHints("1.1", new CrawlHints());
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "/account/login" }, saved.CrawlHints.ExcludedUrlPatterns);
+        Assert.Equal(new[] { "docs.x.com" }, saved.CrawlHints.ExpectedHosts);
+        Assert.Equal("auth wall", saved.CrawlHints.Notes);
+    }
+
+    [Fact]
+    public async Task SaveDoesNotOverrideNonEmptyCrawlHints()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        var prior = MakeProfileWithCrawlHints("1.0",
+                                              new CrawlHints { ExcludedUrlPatterns = ["/old/path"] });
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { prior });
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithCrawlHints("1.1",
+                                                   new CrawlHints { ExcludedUrlPatterns = ["/new/path"] });
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "/new/path" }, saved.CrawlHints.ExcludedUrlPatterns);
     }
 
     private static LibraryProfile MakeProfileWithStoplist(string version, IReadOnlyList<string> stoplist) =>
@@ -226,5 +330,15 @@ public sealed class LibraryProfileServiceTests
                 Version = version,
                 Source = "test",
                 Stoplist = stoplist
+            };
+
+    private static LibraryProfile MakeProfileWithCrawlHints(string version, CrawlHints hints) =>
+        new LibraryProfile
+            {
+                Id = $"aerotech-aeroscript/{version}",
+                LibraryId = "aerotech-aeroscript",
+                Version = version,
+                Source = "test",
+                CrawlHints = hints
             };
 }
