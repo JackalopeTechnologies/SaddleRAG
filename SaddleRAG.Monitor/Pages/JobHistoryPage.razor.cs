@@ -71,6 +71,6 @@ public abstract class JobHistoryPageBase : ComponentBase
             statusEnum = parsed;
         }
 
-        Rows = await Jobs.ListAsync(statusEnum, LibraryFilter, LimitChoice);
+        Rows = await Jobs.ListAsync(statusEnum, null, LibraryFilter, LimitChoice);
     }
 }

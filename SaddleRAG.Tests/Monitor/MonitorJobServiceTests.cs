@@ -23,7 +23,9 @@ public sealed class MonitorJobServiceTests
         repo.Add(MakeJob("a", "alpha", "1", ScrapeJobStatus.Running, T(1)));
         repo.Add(MakeJob("b", "alpha", "1", ScrapeJobStatus.Completed, T(2)));
         repo.Add(MakeJob("c", "alpha", "1", ScrapeJobStatus.Failed, T(3)));
-        var svc = new MonitorJobService(repo);
+        var svc = new MonitorJobService(new UnifiedJobView(repo,
+                                                           new FakeBackgroundJobRepository(),
+                                                           new FakeRescrubJobRepository()));
 
         var rows = await svc.ListAsync(status: ScrapeJobStatus.Failed,
                                        ct: TestContext.Current.CancellationToken);
@@ -39,7 +41,9 @@ public sealed class MonitorJobServiceTests
         repo.Add(MakeJob("a", "MongoDB.Driver", "1", ScrapeJobStatus.Completed, T(1)));
         repo.Add(MakeJob("b", "AngleSharp",     "1", ScrapeJobStatus.Completed, T(2)));
         repo.Add(MakeJob("c", "mongodb.driver", "2", ScrapeJobStatus.Completed, T(3)));
-        var svc = new MonitorJobService(repo);
+        var svc = new MonitorJobService(new UnifiedJobView(repo,
+                                                           new FakeBackgroundJobRepository(),
+                                                           new FakeRescrubJobRepository()));
 
         var rows = await svc.ListAsync(libraryIdFilter: "mongo",
                                        ct: TestContext.Current.CancellationToken);
@@ -57,7 +61,9 @@ public sealed class MonitorJobServiceTests
             repo.Add(MakeJob($"job-{i}", "alpha", "1", ScrapeJobStatus.Completed, T(i)));
         }
 
-        var svc = new MonitorJobService(repo);
+        var svc = new MonitorJobService(new UnifiedJobView(repo,
+                                                           new FakeBackgroundJobRepository(),
+                                                           new FakeRescrubJobRepository()));
 
         var rows = await svc.ListAsync(limit: 3, ct: TestContext.Current.CancellationToken);
 
@@ -89,7 +95,9 @@ public sealed class MonitorJobServiceTests
                          ErrorCount = 1,
                          ErrorMessage = "boom"
                      });
-        var svc = new MonitorJobService(repo);
+        var svc = new MonitorJobService(new UnifiedJobView(repo,
+                                                           new FakeBackgroundJobRepository(),
+                                                           new FakeRescrubJobRepository()));
 
         var rows = await svc.ListAsync(ct: TestContext.Current.CancellationToken);
 
