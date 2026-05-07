@@ -9,5 +9,6 @@ namespace SaddleRAG.Core.Models.Monitor;
 public sealed record RecentError
 {
     public required string Message { get; init; }
+    public string? Url { get; init; }
     public DateTime At { get; init; }
 }

@@ -1,0 +1,62 @@
+@* SaddleRAG.Monitor/Components/TimeDisplay.razor *@
+@* Renders a UTC DateTime so the browser-side timezone.js script can *@
+@* swap it for the viewer's local time + UTC offset. The server-side  *@
+@* output is a UTC fallback for the brief moment before the script    *@
+@* runs (and for users with JavaScript disabled).                     *@
+
+@if (Utc is null)
+{
+    @Empty
+}
+else
+{
+    <span data-utc="@FormatIso(Utc.Value)"
+          data-fmt="@Format"
+          data-show-zone="@(ShowZone ? "true" : "false")">@Fallback(Utc.Value)</span>
+}
+
+@code {
+
+    [Parameter]
+    public DateTime? Utc { get; set; }
+
+    [Parameter]
+    public string Format { get; set; } = "yyyy-MM-dd HH:mm";
+
+    [Parameter]
+    public bool ShowZone { get; set; } = true;
+
+    [Parameter]
+    public string Empty { get; set; } = "—";
+
+    private static string FormatIso(DateTime value)
+    {
+        DateTime utc = value.Kind switch
+        {
+            DateTimeKind.Utc         => value,
+            DateTimeKind.Local       => value.ToUniversalTime(),
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+            var _                    => value
+        };
+        return utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private string Fallback(DateTime value)
+    {
+        DateTime utc = value.Kind switch
+        {
+            DateTimeKind.Utc         => value,
+            DateTimeKind.Local       => value.ToUniversalTime(),
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+            var _                    => value
+        };
+        string text = utc.ToString(Format, System.Globalization.CultureInfo.InvariantCulture);
+        if (ShowZone)
+        {
+            text = text + " UTC";
+        }
+
+        return text;
+    }
+
+}

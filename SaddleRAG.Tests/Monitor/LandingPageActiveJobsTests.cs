@@ -67,7 +67,7 @@ internal sealed class FakeBroadcaster : IMonitorBroadcaster
         throw new NotSupportedException("FakeBroadcaster: RecordFetch not supported in this test");
     public void RecordReject(string j, string u, string r) =>
         throw new NotSupportedException("FakeBroadcaster: RecordReject not supported in this test");
-    public void RecordError(string j, string m) =>
+    public void RecordError(string j, string m, string? u = null) =>
         throw new NotSupportedException("FakeBroadcaster: RecordError not supported in this test");
     public void RecordPageClassified(string j) =>
         throw new NotSupportedException("FakeBroadcaster: RecordPageClassified not supported in this test");
