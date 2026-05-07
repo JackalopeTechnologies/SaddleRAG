@@ -54,10 +54,6 @@ public sealed class MonitorJobService
         public int ErrorCount { get; init; }
         public string? ErrorMessage { get; init; }
 
-        // Backward-compat shim for Razor pages still referencing the old field name.
-        // Removed in Task 17 after the page is updated to use ItemsProcessed.
-        public int IndexedPageCount { get; init; }
-
         /// <summary>
         ///     Wall-clock duration since <see cref="StartedAt" />.
         /// </summary>
@@ -92,8 +88,7 @@ public sealed class MonitorJobService
                                         ItemsTotal       = r.ItemsTotal,
                                         ItemsLabel       = r.ItemsLabel,
                                         ErrorCount       = r.ErrorCount,
-                                        ErrorMessage     = r.ErrorMessage,
-                                        IndexedPageCount = r.ItemsProcessed
+                                        ErrorMessage     = r.ErrorMessage
                                     })
                    .ToList();
     }
