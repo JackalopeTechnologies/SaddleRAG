@@ -39,6 +39,7 @@ public static class IngestionTools
                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                   IBackgroundJobRunner runner,
                                                   RepositoryFactory repositoryFactory,
+                                                  IMonitorBroadcaster broadcaster,
                                                   [Description("Root URL to begin crawling from")]
                                                   string rootUrl,
                                                   [Description("Library identifier — used to key the audit log for this dry run"
@@ -68,6 +69,7 @@ public static class IngestionTools
         ArgumentNullException.ThrowIfNull(crawler);
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(broadcaster);
         ArgumentException.ThrowIfNullOrEmpty(rootUrl);
         ArgumentException.ThrowIfNullOrEmpty(library);
         ArgumentException.ThrowIfNullOrEmpty(version);
@@ -122,6 +124,7 @@ public static class IngestionTools
                                                                       jobCt
                                                                  );
                                                 record.ResultJson = JsonSerializer.Serialize(report, smJsonOptions);
+                                                broadcaster.BroadcastTick(record.Id);
                                             },
                                             ct
                                            );
