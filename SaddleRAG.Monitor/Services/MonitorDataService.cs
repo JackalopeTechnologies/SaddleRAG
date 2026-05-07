@@ -184,6 +184,7 @@ public sealed class MonitorDataService
             result = new JobInfo
                          {
                              JobId = row.JobId,
+                             Type = row.Type,
                              LibraryId = row.LibraryId ?? string.Empty,
                              Version = row.Version ?? string.Empty,
                              Status = row.Status.ToString(),
