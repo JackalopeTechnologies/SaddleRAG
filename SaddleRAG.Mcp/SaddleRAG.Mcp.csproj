@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <PackageReference Include="CodeStructure.Analyzers" Version="1.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.7" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.EventLog" Version="4.0.0" />
