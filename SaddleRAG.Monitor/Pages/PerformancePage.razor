@@ -13,7 +13,7 @@
 else
 {
     <MudText Typo="Typo.caption" Class="mb-3">
-        Since process start: @Snapshot.ProcessStartedUtc.ToString("yyyy-MM-dd HH:mm 'UTC'")
+        Since process start: <TimeDisplay Utc="@Snapshot.ProcessStartedUtc"/>
         (uptime @((DateTime.UtcNow - Snapshot.ProcessStartedUtc).ToString(@"hh\:mm\:ss")))
     </MudText>
 
@@ -67,7 +67,7 @@ else
                 <MudTh>Note</MudTh>
             </HeaderContent>
             <RowTemplate>
-                <MudTd Style="font-family:monospace; font-size:.7rem">@context.At.ToString("HH:mm:ss.fff")</MudTd>
+                <MudTd Style="font-family:monospace; font-size:.7rem"><TimeDisplay Utc="@context.At" Format="HH:mm:ss.fff" ShowZone="false"/></MudTd>
                 <MudTd>@context.Operation</MudTd>
                 <MudTd>
                     <MudText Typo="Typo.body2" Color="@(context.Success ? Color.Default : Color.Error)">

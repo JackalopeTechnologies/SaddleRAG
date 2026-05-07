@@ -96,7 +96,7 @@
                     <MudGrid>
                         <MudItem xs="12" md="6">
                             <MudText Typo="Typo.body2"><strong>Skip detail:</strong> @(context.SkipDetail ?? "—")</MudText>
-                            <MudText Typo="Typo.body2"><strong>Discovered:</strong> @context.DiscoveredAt.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</MudText>
+                            <MudText Typo="Typo.body2"><strong>Discovered:</strong> <TimeDisplay Utc="@context.DiscoveredAt" Format="yyyy-MM-dd HH:mm:ss"/></MudText>
                             <MudText Typo="Typo.body2"><strong>Parent:</strong> @(context.ParentUrl ?? "—")</MudText>
                         </MudItem>
                         <MudItem xs="12" md="6">
