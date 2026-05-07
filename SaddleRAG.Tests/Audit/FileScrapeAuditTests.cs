@@ -107,7 +107,7 @@ public sealed class FileScrapeAuditTests
         {
         }
 
-        public void RecordError(string jobId, string message)
+        public void RecordError(string jobId, string message, string? url = null)
         {
         }
 

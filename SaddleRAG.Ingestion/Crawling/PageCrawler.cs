@@ -1191,7 +1191,7 @@ public class PageCrawler
                                       exDepth,
                                       ex.Message
                                      );
-            mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message);
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message, url);
         }
         finally
         {
@@ -1223,7 +1223,7 @@ public class PageCrawler
                                       nullDepth,
                                       NoResponseError
                                      );
-            mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError);
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError, originalUrl);
         }
         else
             await DispatchKnownResponseAsync(response,
@@ -1266,7 +1266,7 @@ public class PageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status} rate limited"
                                          );
-                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} rate limited");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} rate limited", originalUrl);
                 break;
             }
             case true when HostRateLimiter.IsForbiddenStatus(response.Status) && inScope:
@@ -1282,7 +1282,7 @@ public class PageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status} gated"
                                          );
-                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} gated");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} gated", originalUrl);
                 break;
             }
             default:
@@ -1297,7 +1297,7 @@ public class PageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status}"
                                          );
-                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}", originalUrl);
                 break;
             }
         }
@@ -1343,7 +1343,7 @@ public class PageCrawler
                                       entry.InScopeDepth,
                                       $"HTTP {response.Status} forbidden (max retries)"
                                      );
-            mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} forbidden (max retries)");
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} forbidden (max retries)", originalUrl);
         }
     }
 
