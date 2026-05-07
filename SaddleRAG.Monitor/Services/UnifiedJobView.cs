@@ -73,26 +73,18 @@ public sealed class UnifiedJobView : IUnifiedJobView
     public async Task<JobRow?> GetAsync(string jobId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
+        var scrapeTask     = mScrape.GetAsync(jobId, ct);
+        var backgroundTask = mBackground.GetAsync(jobId, ct);
+        var rescrubTask    = mRescrub.GetAsync(jobId, ct);
+        await Task.WhenAll(scrapeTask, backgroundTask, rescrubTask);
+
         JobRow? result = null;
-
-        var scrape = await mScrape.GetAsync(jobId, ct);
-        if (scrape is not null)
-            result = ProjectScrape(scrape);
-
-        if (result is null)
-        {
-            var bg = await mBackground.GetAsync(jobId, ct);
-            if (bg is not null)
-                result = ProjectBackground(bg);
-        }
-
-        if (result is null)
-        {
-            var rs = await mRescrub.GetAsync(jobId, ct);
-            if (rs is not null)
-                result = ProjectRescrub(rs);
-        }
-
+        if (scrapeTask.Result is not null)
+            result = ProjectScrape(scrapeTask.Result);
+        else if (backgroundTask.Result is not null)
+            result = ProjectBackground(backgroundTask.Result);
+        else if (rescrubTask.Result is not null)
+            result = ProjectRescrub(rescrubTask.Result);
         return result;
     }
 
