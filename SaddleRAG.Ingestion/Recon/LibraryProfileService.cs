@@ -51,15 +51,17 @@ public class LibraryProfileService
         Validate(profile);
 
         var normalized = Normalize(profile);
-        var withCarryForward = await ApplyStoplistCarryForwardAsync(repository, normalized, ct);
+        var withStoplist = await ApplyStoplistCarryForwardAsync(repository, normalized, ct);
+        var withCarryForward = await ApplyCrawlHintsCarryForwardAsync(repository, withStoplist, ct);
 
         await repository.UpsertAsync(withCarryForward, ct);
-        mLogger.LogInformation("Saved library profile for {LibraryId}/{Version} (source={Source}, confidence={Confidence:F2}, stoplist={StoplistCount})",
+        mLogger.LogInformation("Saved library profile for {LibraryId}/{Version} (source={Source}, confidence={Confidence:F2}, stoplist={StoplistCount}, excludedPatterns={ExcludedCount})",
                                withCarryForward.LibraryId,
                                withCarryForward.Version,
                                withCarryForward.Source,
                                withCarryForward.Confidence,
-                               withCarryForward.Stoplist.Count
+                               withCarryForward.Stoplist.Count,
+                               withCarryForward.CrawlHints.ExcludedUrlPatterns.Count
                               );
         return withCarryForward;
     }
@@ -87,6 +89,36 @@ public class LibraryProfileService
                            .FirstOrDefault();
             if (prior != null)
                 result = profile with { Stoplist = prior.Stoplist };
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     If the incoming profile has empty ExcludedUrlPatterns and a
+    ///     prior profile for the same LibraryId (any other version) has a
+    ///     non-empty CrawlHints, copy that prior CrawlHints forward whole.
+    ///     Avoids forcing the LLM to re-discover auth walls and exclusion
+    ///     patterns on every version bump. Non-empty incoming
+    ///     ExcludedUrlPatterns is treated as the LLM having an opinion and
+    ///     is never overridden.
+    /// </summary>
+    private static async Task<LibraryProfile> ApplyCrawlHintsCarryForwardAsync(ILibraryProfileRepository repository,
+                                                                               LibraryProfile profile,
+                                                                               CancellationToken ct)
+    {
+        var result = profile;
+        if (profile.CrawlHints.ExcludedUrlPatterns.Count == 0)
+        {
+            var all = await repository.ListAllAsync(ct);
+            var prior = all.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
+                                       !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
+                                       p.CrawlHints.ExcludedUrlPatterns.Count > 0
+                                 )
+                           .OrderByDescending(p => p.CreatedUtc)
+                           .FirstOrDefault();
+            if (prior != null)
+                result = profile with { CrawlHints = prior.CrawlHints };
         }
 
         return result;
