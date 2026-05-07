@@ -6,6 +6,10 @@
 
 namespace SaddleRAG.Core.Models.Monitor;
 
+/// <summary>
+///     Live progress tick for a job that reports incremental counts
+///     (rechunk → chunks, dry-run → pages, deps-index → packages).
+/// </summary>
 public sealed record JobProgressEvent
 {
     public required string JobId { get; init; }
