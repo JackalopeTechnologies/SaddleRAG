@@ -266,6 +266,46 @@ public sealed class LibraryProfileServiceTests
         return result;
     }
 
+    [Fact]
+    public async Task SaveCarriesForwardCrawlHintsFromPriorVersionWhenEmpty()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        var prior = MakeProfileWithCrawlHints("1.0",
+                                              new CrawlHints
+                                                  {
+                                                      ExcludedUrlPatterns = ["/account/login"],
+                                                      ExpectedHosts = ["docs.x.com"],
+                                                      Notes = "auth wall"
+                                                  });
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { prior });
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithCrawlHints("1.1", new CrawlHints());
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "/account/login" }, saved.CrawlHints.ExcludedUrlPatterns);
+        Assert.Equal(new[] { "docs.x.com" }, saved.CrawlHints.ExpectedHosts);
+        Assert.Equal("auth wall", saved.CrawlHints.Notes);
+    }
+
+    [Fact]
+    public async Task SaveDoesNotOverrideNonEmptyCrawlHints()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        var prior = MakeProfileWithCrawlHints("1.0",
+                                              new CrawlHints { ExcludedUrlPatterns = ["/old/path"] });
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { prior });
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithCrawlHints("1.1",
+                                                   new CrawlHints { ExcludedUrlPatterns = ["/new/path"] });
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "/new/path" }, saved.CrawlHints.ExcludedUrlPatterns);
+    }
+
     private static LibraryProfile MakeProfileWithStoplist(string version, IReadOnlyList<string> stoplist) =>
         new LibraryProfile
             {
@@ -274,5 +314,15 @@ public sealed class LibraryProfileServiceTests
                 Version = version,
                 Source = "test",
                 Stoplist = stoplist
+            };
+
+    private static LibraryProfile MakeProfileWithCrawlHints(string version, CrawlHints hints) =>
+        new LibraryProfile
+            {
+                Id = $"aerotech-aeroscript/{version}",
+                LibraryId = "aerotech-aeroscript",
+                Version = version,
+                Source = "test",
+                CrawlHints = hints
             };
 }
