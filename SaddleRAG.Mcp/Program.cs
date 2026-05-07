@@ -303,6 +303,7 @@ builder.Services.AddSignalR();
 builder.Services.AddMudServices();
 builder.Services.AddHostedService<MonitorTickService>();
 builder.Services.AddHostedService<MonitorLifecycleRelay>();
+builder.Services.AddSingleton<IUnifiedJobView, UnifiedJobView>();
 builder.Services.AddSingleton<MonitorDataService>();
 builder.Services.AddSingleton<MonitorJobService>();
 
