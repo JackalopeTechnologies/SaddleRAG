@@ -78,13 +78,10 @@ public sealed class UnifiedJobView : IUnifiedJobView
         var rescrubTask    = mRescrub.GetAsync(jobId, ct);
         await Task.WhenAll(scrapeTask, backgroundTask, rescrubTask);
 
-        JobRow? result = null;
-        if (scrapeTask.Result is not null)
-            result = ProjectScrape(scrapeTask.Result);
-        else if (backgroundTask.Result is not null)
-            result = ProjectBackground(backgroundTask.Result);
-        else if (rescrubTask.Result is not null)
-            result = ProjectRescrub(rescrubTask.Result);
+        JobRow? result = scrapeTask.Result is not null    ? ProjectScrape(scrapeTask.Result)
+                       : backgroundTask.Result is not null ? ProjectBackground(backgroundTask.Result)
+                       : rescrubTask.Result is not null    ? ProjectRescrub(rescrubTask.Result)
+                       : null;
         return result;
     }
 
