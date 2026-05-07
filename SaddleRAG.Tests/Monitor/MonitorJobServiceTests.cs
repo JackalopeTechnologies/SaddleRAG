@@ -109,7 +109,7 @@ public sealed class MonitorJobServiceTests
         Assert.Equal("Completed", row.Status);
         Assert.Equal(started, row.StartedAt);
         Assert.Equal(completed, row.CompletedAt);
-        Assert.Equal(42, row.IndexedPageCount);
+        Assert.Equal(42, row.ItemsProcessed);
         Assert.Equal(1, row.ErrorCount);
         Assert.Equal("boom", row.ErrorMessage);
         Assert.Equal(TimeSpan.FromSeconds(5), row.Duration);
