@@ -29,7 +29,7 @@ public sealed class MonitorDataService
     public MonitorDataService(ILibraryRepository libraries,
                               IChunkRepository chunks,
                               ILibraryProfileRepository profiles,
-                              IScrapeJobRepository jobs,
+                              IUnifiedJobView jobs,
                               IScrapeAuditRepository audit)
     {
         ArgumentNullException.ThrowIfNull(libraries);
@@ -47,7 +47,7 @@ public sealed class MonitorDataService
     private readonly ILibraryRepository mLibraries;
     private readonly IChunkRepository mChunks;
     private readonly ILibraryProfileRepository mProfiles;
-    private readonly IScrapeJobRepository mJobs;
+    private readonly IUnifiedJobView mJobs;
     private readonly IScrapeAuditRepository mAudit;
 
     /// <summary>
@@ -159,16 +159,16 @@ public sealed class MonitorDataService
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
-        var recent = await mJobs.ListRecentAsync(RecentJobsScanLimit, ct);
-        var match = recent.Where(r => string.Equals(r.Job.LibraryId,
-                                                    libraryId,
-                                                    StringComparison.OrdinalIgnoreCase)
-                                   && string.Equals(r.Job.Version,
-                                                    version,
-                                                    StringComparison.OrdinalIgnoreCase))
-                          .OrderByDescending(r => r.CreatedAt)
-                          .FirstOrDefault();
-        return match?.Id;
+        var rows = await mJobs.ListAsync(statusFilter: null,
+                                         typeFilter: null,
+                                         libraryFilter: libraryId,
+                                         limit: RecentJobsScanLimit,
+                                         ct);
+        var match = rows.Where(r => string.Equals(r.LibraryId, libraryId, StringComparison.OrdinalIgnoreCase)
+                                 && string.Equals(r.Version, version, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(r => r.CreatedAt)
+                        .FirstOrDefault();
+        return match?.JobId;
     }
 
     /// <summary>
@@ -178,18 +178,18 @@ public sealed class MonitorDataService
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         JobInfo? result = null;
-        var rec = await mJobs.GetAsync(jobId, ct);
-        if (rec is not null)
+        var row = await mJobs.GetAsync(jobId, ct);
+        if (row is not null)
         {
             result = new JobInfo
                          {
-                             JobId = rec.Id,
-                             LibraryId = rec.Job.LibraryId,
-                             Version = rec.Job.Version,
-                             Status = rec.Status.ToString(),
-                             StartedAt = rec.StartedAt,
-                             CompletedAt = rec.CompletedAt,
-                             ErrorMessage = rec.ErrorMessage
+                             JobId = row.JobId,
+                             LibraryId = row.LibraryId ?? string.Empty,
+                             Version = row.Version ?? string.Empty,
+                             Status = row.Status.ToString(),
+                             StartedAt = row.StartedAt,
+                             CompletedAt = row.CompletedAt,
+                             ErrorMessage = row.ErrorMessage
                          };
         }
 
