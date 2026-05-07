@@ -113,6 +113,10 @@ public sealed class DryRunAuditTests
         {
         }
 
+        public void RecordJobProgress(string jobId, int processed, int total, string label)
+        {
+        }
+
         public void RecordSuspectFlag(string jobId, string libraryId, string version, IReadOnlyList<string> reasons)
         {
         }
