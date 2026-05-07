@@ -12,7 +12,7 @@ else
             {
                 <MudListItem Icon="@Icons.Material.Filled.ErrorOutline" IconColor="Color.Error">
                     <MudStack Row="true" Spacing="2">
-                        <span style="font-family:monospace; opacity:.6">@e.At.ToString("HH:mm:ss")</span>
+                        <span style="font-family:monospace; opacity:.6"><TimeDisplay Utc="@e.At" Format="HH:mm:ss" ShowZone="false"/></span>
                         <span>@e.Message</span>
                     </MudStack>
                 </MudListItem>

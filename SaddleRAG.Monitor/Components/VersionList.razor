@@ -25,7 +25,7 @@ else
                     <span style="font-family:monospace">@context.Version</span>
                 </MudStack>
             </MudTd>
-            <MudTd>@context.ScrapedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudTd>
+            <MudTd><TimeDisplay Utc="@context.ScrapedAt"/></MudTd>
             <MudTd>@context.PageCount</MudTd>
             <MudTd>@context.ChunkCount</MudTd>
             <MudTd>

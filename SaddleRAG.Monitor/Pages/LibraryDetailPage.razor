@@ -39,7 +39,7 @@ else
                         }
                         @if (Detail.LastScrapedAt is not null)
                         {
-                            <MudText>Last scraped: @Detail.LastScrapedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+                            <MudText>Last scraped: <TimeDisplay Utc="@Detail.LastScrapedAt"/></MudText>
                         }
                         @if (Detail.IsSuspect)
                         {
@@ -55,7 +55,7 @@ else
                                     </MudList>
                                     @if (Detail.LastSuspectEvaluatedAt is not null)
                                     {
-                                        <MudText Typo="Typo.caption">Evaluated @Detail.LastSuspectEvaluatedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+                                        <MudText Typo="Typo.caption">Evaluated <TimeDisplay Utc="@Detail.LastSuspectEvaluatedAt"/></MudText>
                                     }
                                 </MudAlert>
                             }
