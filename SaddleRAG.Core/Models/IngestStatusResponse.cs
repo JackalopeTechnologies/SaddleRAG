@@ -63,4 +63,13 @@ public record IngestStatusResponse
     /// </summary>
     public IReadOnlyDictionary<string, string> NextToolArgs { get; init; }
         = new Dictionary<string, string>();
+
+    /// <summary>
+    ///     URL patterns the crawler should exclude on the next scrape,
+    ///     sourced from LibraryProfile.CrawlHints.ExcludedUrlPatterns.
+    ///     Empty when no profile is cached or the profile recorded no
+    ///     hints. The calling LLM should pass these to scrape_docs as
+    ///     excludedUrlPatterns.
+    /// </summary>
+    public IReadOnlyList<string> RecommendedExcludedUrlPatterns { get; init; } = [];
 }
