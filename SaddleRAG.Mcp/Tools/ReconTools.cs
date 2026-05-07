@@ -120,6 +120,7 @@ public static class ReconTools
         var separators = ReadStringArray(root, KeySeparators);
         var callables = ReadStringArray(root, KeyCallableShapes);
         var likely = ReadStringArray(root, KeyLikelySymbols);
+        var crawlHints = ReadCrawlHints(root);
         var inventoryUrl = ReadOptionalString(root, KeyCanonicalInventoryUrl);
         var confidence = ReadConfidence(root);
         var source = ReadOptionalString(root, KeySource) ?? SourceCallingLlm;
@@ -131,6 +132,7 @@ public static class ReconTools
                                                  separators,
                                                  callables,
                                                  likely,
+                                                 crawlHints,
                                                  inventoryUrl,
                                                  confidence,
                                                  source
@@ -170,6 +172,22 @@ public static class ReconTools
         return result;
     }
 
+    private static CrawlHints ReadCrawlHints(JsonElement root)
+    {
+        var result = new CrawlHints();
+        if (root.TryGetProperty(KeyCrawlHints, out var hintsProp) && hintsProp.ValueKind == JsonValueKind.Object)
+        {
+            result = new CrawlHints
+                         {
+                             ExcludedUrlPatterns = ReadStringArray(hintsProp, KeyExcludedUrlPatterns),
+                             ExpectedHosts = ReadStringArray(hintsProp, KeyExpectedHosts),
+                             Notes = ReadOptionalString(hintsProp, KeyNotes) ?? string.Empty
+                         };
+        }
+
+        return result;
+    }
+
     private static string? ReadOptionalString(JsonElement root, string key)
     {
         string? result = null;
@@ -203,6 +221,10 @@ public static class ReconTools
     private const string KeySeparators = "separators";
     private const string KeyCallableShapes = "callableShapes";
     private const string KeyLikelySymbols = "likelySymbols";
+    private const string KeyCrawlHints = "crawlHints";
+    private const string KeyExcludedUrlPatterns = "excludedUrlPatterns";
+    private const string KeyExpectedHosts = "expectedHosts";
+    private const string KeyNotes = "notes";
     private const string KeyCanonicalInventoryUrl = "canonicalInventoryUrl";
     private const string KeyConfidence = "confidence";
     private const string KeySource = "source";
@@ -211,12 +233,26 @@ public static class ReconTools
 
     private const string ReconInstructions = """
                                              Browse the URL and (when useful) one or two sample pages to characterize this docs site.
-                                             Identify the documentation language(s), the casing conventions used for types / methods /
-                                             constants / members / parameters, the token separators that appear in qualified names
-                                             (".", "::", "->", ":"), recognized callable shapes ("Foo()", "Foo<T>()"), and 5-30
-                                             plausible top-level type / function / parameter names. The likelySymbols list is a soft
-                                             hint — if you miss real symbols, the corpus-context rules will recover them, so optimize
-                                             for precision (avoid junk like "Each" or "When" picked from prose) over recall.
+
+                                             PARSER CONFIG. Identify the documentation language(s), the casing conventions used for
+                                             types / methods / constants / members / parameters, the token separators that appear in
+                                             qualified names (".", "::", "->", ":"), recognized callable shapes ("Foo()", "Foo<T>()"),
+                                             and 5-30 plausible top-level type / function / parameter names. The likelySymbols list
+                                             is a soft hint — if you miss real symbols, the corpus-context rules will recover them,
+                                             so optimize for precision (avoid junk like "Each" or "When" picked from prose) over recall.
+
+                                             CRAWL HINTS. While you are browsing, also note any URL patterns the crawler should skip
+                                             — auth walls (login redirects, /account/* paths), search/filter combinatorial URLs,
+                                             marketing pages reachable from the docs root. Record them in crawlHints.excludedUrlPatterns
+                                             as regex-friendly substrings (e.g. "/account/login"). If you can identify the host(s)
+                                             that legitimately serve docs (often distinct from the marketing site), list them in
+                                             expectedHosts. Use crawlHints.notes for anything else worth carrying forward.
+
+                                             OPTIONAL DRYRUN. If the site looks complex (multiple subdomains, auth walls visible from
+                                             sample pages, deep navigation, very large link counts per page), call dryrun_scrape first
+                                             to preview crawl scope before submitting the profile. Sites that look simple do not need
+                                             this step.
+
                                              Self-rate your confidence in [0,1]. Return the JSON object as input to submit_library_profile.
                                              """;
 
@@ -233,6 +269,11 @@ public static class ReconTools
                                          "separators": [".", "::"],
                                          "callableShapes": ["Foo()", "Foo<T>()"],
                                          "likelySymbols": ["..."],
+                                         "crawlHints": {
+                                           "excludedUrlPatterns": ["/account/login"],
+                                           "expectedHosts": ["docs.example.com"],
+                                           "notes": ""
+                                         },
                                          "canonicalInventoryUrl": null,
                                          "confidence": 0.0,
                                          "source": "calling-llm"
@@ -247,7 +288,9 @@ public static class ReconTools
             "If the docs cover multiple languages, list them all in languages[] in order of prominence.",
             "Aerotech-style docs use \".\" separators in qualified names like AxisFault.Disabled.",
             "Python docs are PascalCase types and snake_case functions — note that mismatch.",
-            "Skip prose words (Each, When, Represents, Values, For, Use) — they are not symbols."
+            "Skip prose words (Each, When, Represents, Values, For, Use) — they are not symbols.",
+            "Auth walls (login redirects, /account/* paths) and versioned URLs (?v=24.1) are crawl-scope concerns — note them in crawlHints.excludedUrlPatterns, do not try to capture them as docs.",
+            "Use dryrun_scrape if the site looks complex; the report's PagesRemainingInQueue is a leading indicator of scope problems."
         };
 
     private static readonly string[] smSamplePages =

@@ -46,4 +46,37 @@ public sealed class IngestStatusResponseTests
         Assert.Contains("\"StatusName\":\"UrlSuspect\"", json);
         Assert.Contains("\"Status\":", json);
     }
+
+    [Fact]
+    public void RecommendedExcludedUrlPatternsDefaultsToEmpty()
+    {
+        var response = new IngestStatusResponse
+                           {
+                               Status = IngestStatus.ReadyToScrape,
+                               LibraryId = "foo",
+                               Version = "1.0",
+                               Url = "https://example.com"
+                           };
+
+        Assert.NotNull(response.RecommendedExcludedUrlPatterns);
+        Assert.Empty(response.RecommendedExcludedUrlPatterns);
+    }
+
+    [Fact]
+    public void RecommendedExcludedUrlPatternsSerializesToJsonArray()
+    {
+        var response = new IngestStatusResponse
+                           {
+                               Status = IngestStatus.ReadyToScrape,
+                               LibraryId = "foo",
+                               Version = "1.0",
+                               Url = "https://example.com",
+                               RecommendedExcludedUrlPatterns = ["/account/login", "/account/register"]
+                           };
+
+        var json = JsonSerializer.Serialize(response);
+
+        Assert.Contains("\"RecommendedExcludedUrlPatterns\":[\"/account/login\",\"/account/register\"]",
+                        json);
+    }
 }
