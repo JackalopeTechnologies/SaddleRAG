@@ -83,6 +83,8 @@ internal sealed class FakeBroadcaster : IMonitorBroadcaster
         throw new NotSupportedException("FakeBroadcaster: RecordJobFailed not supported in this test");
     public void RecordJobCancelled(string j) =>
         throw new NotSupportedException("FakeBroadcaster: RecordJobCancelled not supported in this test");
+    public void RecordJobProgress(string j, int p, int t, string l) =>
+        throw new NotSupportedException("FakeBroadcaster: RecordJobProgress not supported in this test");
     public void RecordSuspectFlag(string j, string l, string v, IReadOnlyList<string> r) =>
         throw new NotSupportedException("FakeBroadcaster: RecordSuspectFlag not supported in this test");
     public void Subscribe(string j, Func<JobTickEvent, Task> h) =>

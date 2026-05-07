@@ -119,4 +119,23 @@ public sealed class MonitorBroadcasterEventsTests
         var ex = Record.Exception(() => bcast.RecordJobFailed("job-1", "boom"));
         Assert.Null(ex);
     }
+
+    [Fact]
+    public void RecordJobProgressFiresJobProgressEvent()
+    {
+        var broadcaster = new MonitorBroadcaster();
+        JobProgressEvent? captured = null;
+        broadcaster.JobProgress += e => captured = e;
+
+        broadcaster.RecordJobProgress("job-7", processed: 17, total: 42, label: "chunks");
+
+        Assert.NotNull(captured);
+        if (captured is not null)
+        {
+            Assert.Equal("job-7", captured.JobId);
+            Assert.Equal(17, captured.ItemsProcessed);
+            Assert.Equal(42, captured.ItemsTotal);
+            Assert.Equal("chunks", captured.ItemsLabel);
+        }
+    }
 }
