@@ -69,6 +69,20 @@ public sealed class BackgroundJobRunnerBroadcasterTests
         broadcaster.DidNotReceive().RecordJobCompleted(Arg.Any<string>(), Arg.Any<int>());
     }
 
+    [Fact]
+    public async Task CancelledJobEmitsCancelledTerminalEvent()
+    {
+        var (runner, broadcaster, _) = MakeRunner();
+
+        var record = MakeRecord(BackgroundJobTypes.Rechunk);
+        await runner.QueueAsync(record, (_, _, _) => throw new OperationCanceledException("test cancel"));
+        await WaitForCompletion(record, broadcaster);
+
+        broadcaster.Received(1).RecordJobCancelled(record.Id);
+        broadcaster.DidNotReceive().RecordJobCompleted(Arg.Any<string>(), Arg.Any<int>());
+        broadcaster.DidNotReceive().RecordJobFailed(Arg.Any<string>(), Arg.Any<string>());
+    }
+
     private static (BackgroundJobRunner runner,
                     IMonitorBroadcaster broadcaster,
                     FakeBackgroundJobRepository jobRepo) MakeRunner()
