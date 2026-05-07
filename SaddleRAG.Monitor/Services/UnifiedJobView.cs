@@ -46,7 +46,7 @@ public sealed class UnifiedJobView : IUnifiedJobView
                                                        int limit,
                                                        CancellationToken ct = default)
     {
-        var fetchLimit   = Math.Max(limit * 2, limit);
+        var fetchLimit   = limit * 2;
         var scrapeTask   = mScrape.ListRecentAsync(fetchLimit, ct);
         var backgroundTask = mBackground.ListRecentAsync(jobType: null, fetchLimit, ct);
         var rescrubTask  = mRescrub.ListRecentAsync(fetchLimit, ct);
