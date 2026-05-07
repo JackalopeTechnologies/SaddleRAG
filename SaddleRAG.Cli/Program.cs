@@ -60,6 +60,7 @@ const string AllowedOptionDescription = "Allowed URL patterns (regex)";
 const string ExcludedOptionName = "--excluded";
 const string ExcludedOptionDescription = "Excluded URL patterns (regex)";
 const string MaxPagesOptionName = "--max-pages";
+const string MaxPagesOptionDescription = "Max pages to crawl (0 = unlimited)";
 const string DelayOptionName = "--delay";
 const string DelayOptionDescription = "Delay between fetches in ms";
 const string ListCommandName = "list";
@@ -175,550 +176,563 @@ var rootCommand = new RootCommand(RootCommandDescription);
 
 // ingest command
 var ingestCommand = new Command(IngestCommandName, IngestCommandDescription);
-var rootUrlOption = new Option<string>(RootUrlOptionName, RootUrlOptionDescription) { IsRequired = true };
-var libraryIdOption = new Option<string>(LibraryIdOptionName, UniqueLibraryIdDescription) { IsRequired = true };
-var versionOption = new Option<string>(VersionOptionName, VersionStringDescription) { IsRequired = true };
-var hintOption = new Option<string>(HintOptionName, HintOptionDescription) { IsRequired = true };
-var allowedOption = new Option<string[]>(AllowedOptionName, AllowedOptionDescription)
-                        { IsRequired = true, AllowMultipleArgumentsPerToken = true };
-var excludedOption = new Option<string[]>(ExcludedOptionName, ExcludedOptionDescription)
-                         { AllowMultipleArgumentsPerToken = true };
-var maxPagesOption = new Option<int>(MaxPagesOptionName, () => 0, "Max pages to crawl (0 = unlimited)");
-var delayOption = new Option<int>(DelayOptionName, () => ScrapeJob.DefaultFetchDelayMs, DelayOptionDescription);
+var rootUrlOption = new Option<string>(RootUrlOptionName)
+    { Description = RootUrlOptionDescription, Required = true };
+var libraryIdOption = new Option<string>(LibraryIdOptionName)
+    { Description = UniqueLibraryIdDescription, Required = true };
+var versionOption = new Option<string>(VersionOptionName)
+    { Description = VersionStringDescription, Required = true };
+var hintOption = new Option<string>(HintOptionName)
+    { Description = HintOptionDescription, Required = true };
+var allowedOption = new Option<string[]>(AllowedOptionName)
+    { Description = AllowedOptionDescription, Required = true, AllowMultipleArgumentsPerToken = true };
+var excludedOption = new Option<string[]>(ExcludedOptionName)
+    { Description = ExcludedOptionDescription, AllowMultipleArgumentsPerToken = true };
+var maxPagesOption = new Option<int>(MaxPagesOptionName)
+    { Description = MaxPagesOptionDescription, DefaultValueFactory = _ => 0 };
+var delayOption = new Option<int>(DelayOptionName)
+    { Description = DelayOptionDescription, DefaultValueFactory = _ => ScrapeJob.DefaultFetchDelayMs };
 
-ingestCommand.AddOption(rootUrlOption);
-ingestCommand.AddOption(libraryIdOption);
-ingestCommand.AddOption(versionOption);
-ingestCommand.AddOption(hintOption);
-ingestCommand.AddOption(allowedOption);
-ingestCommand.AddOption(excludedOption);
-ingestCommand.AddOption(maxPagesOption);
-ingestCommand.AddOption(delayOption);
+ingestCommand.Options.Add(rootUrlOption);
+ingestCommand.Options.Add(libraryIdOption);
+ingestCommand.Options.Add(versionOption);
+ingestCommand.Options.Add(hintOption);
+ingestCommand.Options.Add(allowedOption);
+ingestCommand.Options.Add(excludedOption);
+ingestCommand.Options.Add(maxPagesOption);
+ingestCommand.Options.Add(delayOption);
 
-ingestCommand.SetHandler(async (rootUrl,
-                                libraryId,
-                                version,
-                                hint,
-                                allowed,
-                                excluded,
-                                maxPages,
-                                delay) =>
-                         {
-                             // Bootstrap Ollama: install if missing, start if stopped, pull required models
-                             var bootstrapper = provider.GetRequiredService<OllamaBootstrapper>();
-                             await bootstrapper.BootstrapAsync();
+ingestCommand.SetAction(async (parseResult, ct) =>
+                        {
+                            var rootUrl = parseResult.GetValue(rootUrlOption) ??
+                                          throw new InvalidOperationException($"Required option '{RootUrlOptionName}' missing");
+                            var libraryId = parseResult.GetValue(libraryIdOption) ??
+                                            throw new InvalidOperationException($"Required option '{LibraryIdOptionName}' missing");
+                            var version = parseResult.GetValue(versionOption) ??
+                                          throw new InvalidOperationException($"Required option '{VersionOptionName}' missing");
+                            var hint = parseResult.GetValue(hintOption) ??
+                                       throw new InvalidOperationException($"Required option '{HintOptionName}' missing");
+                            var allowed = parseResult.GetValue(allowedOption) ??
+                                          throw new InvalidOperationException($"Required option '{AllowedOptionName}' missing");
+                            var excluded = parseResult.GetValue(excludedOption);
+                            var maxPages = parseResult.GetValue(maxPagesOption);
+                            var delay = parseResult.GetValue(delayOption);
 
-                             var job = new ScrapeJob
-                                           {
-                                               RootUrl = rootUrl,
-                                               LibraryId = libraryId,
-                                               Version = version,
-                                               LibraryHint = hint,
-                                               AllowedUrlPatterns = allowed,
-                                               ExcludedUrlPatterns = excluded ?? [],
-                                               MaxPages = maxPages,
-                                               FetchDelayMs = delay
-                                           };
+                            // Bootstrap Ollama: install if missing, start if stopped, pull required models
+                            var bootstrapper = provider.GetRequiredService<OllamaBootstrapper>();
+                            await bootstrapper.BootstrapAsync();
 
-                             var orchestrator = provider.GetRequiredService<IngestionOrchestrator>();
-                             await orchestrator.IngestAsync(job,
-                                                            onProgress: progress =>
-                                                                        {
-                                                                            Console
-                                                                                .Write($"\rQueued: {progress.PagesQueued} | Crawled: {progress.PagesFetched} | " +
-                                                                                         $"Classified: {progress.PagesClassified} | Chunks: {progress.ChunksGenerated} | " +
-                                                                                         $"Searchable: {progress.ChunksCompleted} chunks ({progress.PagesCompleted} pages)"
-                                                                                    );
-                                                                        }
-                                                           );
-                             Console.WriteLine();
-                         },
-                         rootUrlOption,
-                         libraryIdOption,
-                         versionOption,
-                         hintOption,
-                         allowedOption,
-                         excludedOption,
-                         maxPagesOption,
-                         delayOption
-                        );
+                            var job = new ScrapeJob
+                                          {
+                                              RootUrl = rootUrl,
+                                              LibraryId = libraryId,
+                                              Version = version,
+                                              LibraryHint = hint,
+                                              AllowedUrlPatterns = allowed,
+                                              ExcludedUrlPatterns = excluded ?? [],
+                                              MaxPages = maxPages,
+                                              FetchDelayMs = delay
+                                          };
+
+                            var orchestrator = provider.GetRequiredService<IngestionOrchestrator>();
+                            await orchestrator.IngestAsync(job,
+                                                           onProgress: progress =>
+                                                                       {
+                                                                           Console
+                                                                               .Write($"\rQueued: {progress.PagesQueued} | Crawled: {progress.PagesFetched} | " +
+                                                                                        $"Classified: {progress.PagesClassified} | Chunks: {progress.ChunksGenerated} | " +
+                                                                                        $"Searchable: {progress.ChunksCompleted} chunks ({progress.PagesCompleted} pages)"
+                                                                                   );
+                                                                       }
+                                                          );
+                            Console.WriteLine();
+                            return 0;
+                        });
 
 // list command
 var listCommand = new Command(ListCommandName, ListAllLibrariesDescription);
-listCommand.SetHandler(async () =>
-                       {
-                           var repo = provider.GetRequiredService<ILibraryRepository>();
-                           var libraries = await repo.GetAllLibrariesAsync();
+listCommand.SetAction(async (parseResult, ct) =>
+                      {
+                          var repo = provider.GetRequiredService<ILibraryRepository>();
+                          var libraries = await repo.GetAllLibrariesAsync();
 
-                           if (libraries.Count == 0)
-                               Console.WriteLine("No libraries ingested yet.");
-                           else
-                           {
-                               foreach(var lib in libraries)
-                               {
-                                   Console
-                                       .WriteLine($"  {lib.Id} — {lib.Name} (current: {lib.CurrentVersion}, versions: {string.Join(", ", lib.AllVersions)})"
-                                                 );
-                               }
-                           }
-                       }
-                      );
+                          if (libraries.Count == 0)
+                              Console.WriteLine("No libraries ingested yet.");
+                          else
+                          {
+                              foreach(var lib in libraries)
+                              {
+                                  Console
+                                      .WriteLine($"  {lib.Id} — {lib.Name} (current: {lib.CurrentVersion}, versions: {string.Join(", ", lib.AllVersions)})"
+                                                );
+                              }
+                          }
+                          return 0;
+                      });
 
 // status command
 var statusCommand = new Command(StatusCommandName, StatusCommandDescription);
-var statusLibOption = new Option<string>(LibraryIdOptionName, LibraryIdDescription) { IsRequired = true };
-statusCommand.AddOption(statusLibOption);
-statusCommand.SetHandler(async libraryId =>
-                         {
-                             var libRepo = provider.GetRequiredService<ILibraryRepository>();
-                             var pageRepo = provider.GetRequiredService<IPageRepository>();
-                             var chunkRepo = provider.GetRequiredService<IChunkRepository>();
+var statusLibOption = new Option<string>(LibraryIdOptionName)
+    { Description = LibraryIdDescription, Required = true };
+statusCommand.Options.Add(statusLibOption);
+statusCommand.SetAction(async (parseResult, ct) =>
+                        {
+                            var libraryId = parseResult.GetValue(statusLibOption) ??
+                                            throw new InvalidOperationException($"Required option '{LibraryIdOptionName}' missing");
+                            var libRepo = provider.GetRequiredService<ILibraryRepository>();
+                            var pageRepo = provider.GetRequiredService<IPageRepository>();
+                            var chunkRepo = provider.GetRequiredService<IChunkRepository>();
 
-                             var lib = await libRepo.GetLibraryAsync(libraryId);
-                             if (lib == null)
-                                 Console.WriteLine($"Library '{libraryId}' not found.");
-                             else
-                             {
-                                 Console.WriteLine($"Library: {lib.Name} ({lib.Id})");
-                                 Console.WriteLine($"Current Version: {lib.CurrentVersion}");
-                                 Console.WriteLine($"All Versions: {string.Join(", ", lib.AllVersions)}");
+                            var lib = await libRepo.GetLibraryAsync(libraryId);
+                            if (lib == null)
+                                Console.WriteLine($"Library '{libraryId}' not found.");
+                            else
+                            {
+                                Console.WriteLine($"Library: {lib.Name} ({lib.Id})");
+                                Console.WriteLine($"Current Version: {lib.CurrentVersion}");
+                                Console.WriteLine($"All Versions: {string.Join(", ", lib.AllVersions)}");
 
-                                 foreach(var ver in lib.AllVersions)
-                                 {
-                                     int pages = await pageRepo.GetPageCountAsync(libraryId, ver);
-                                     int chunks = await chunkRepo.GetChunkCountAsync(libraryId, ver);
-                                     Console.WriteLine($"  v{ver}: {pages} pages, {chunks} chunks");
-                                 }
-                             }
-                         },
-                         statusLibOption
-                        );
+                                foreach(var ver in lib.AllVersions)
+                                {
+                                    int pages = await pageRepo.GetPageCountAsync(libraryId, ver);
+                                    int chunks = await chunkRepo.GetChunkCountAsync(libraryId, ver);
+                                    Console.WriteLine($"  v{ver}: {pages} pages, {chunks} chunks");
+                                }
+                            }
+                            return 0;
+                        });
 
 // dryrun command
 var dryrunCommand = new Command(DryrunCommandName, DryrunCommandDescription);
-dryrunCommand.AddOption(rootUrlOption);
-dryrunCommand.AddOption(allowedOption);
-dryrunCommand.AddOption(excludedOption);
-dryrunCommand.AddOption(maxPagesOption);
-dryrunCommand.AddOption(delayOption);
+dryrunCommand.Options.Add(rootUrlOption);
+dryrunCommand.Options.Add(allowedOption);
+dryrunCommand.Options.Add(excludedOption);
+dryrunCommand.Options.Add(maxPagesOption);
+dryrunCommand.Options.Add(delayOption);
 
-dryrunCommand.SetHandler(async (rootUrl,
-                                allowed,
-                                excluded,
-                                maxPages,
-                                delay) =>
-                         {
-                             var job = new ScrapeJob
-                                           {
-                                               RootUrl = rootUrl,
-                                               LibraryId = "dryrun",
-                                               Version = "dryrun",
-                                               LibraryHint = "Dry run",
-                                               AllowedUrlPatterns = allowed,
-                                               ExcludedUrlPatterns = excluded ?? [],
-                                               MaxPages = maxPages,
-                                               FetchDelayMs = delay
-                                           };
+dryrunCommand.SetAction(async (parseResult, ct) =>
+                        {
+                            var rootUrl = parseResult.GetValue(rootUrlOption) ??
+                                          throw new InvalidOperationException($"Required option '{RootUrlOptionName}' missing");
+                            var allowed = parseResult.GetValue(allowedOption) ??
+                                          throw new InvalidOperationException($"Required option '{AllowedOptionName}' missing");
+                            var excluded = parseResult.GetValue(excludedOption);
+                            var maxPages = parseResult.GetValue(maxPagesOption);
+                            var delay = parseResult.GetValue(delayOption);
 
-                             var crawler = provider.GetRequiredService<PageCrawler>();
-                             var report = await crawler.DryRunAsync(job,
-                                                                    DryrunCommandName,
-                                                                    DryrunCommandName,
-                                                                    Guid.NewGuid().ToString("N")
-                                                                   );
+                            var job = new ScrapeJob
+                                          {
+                                              RootUrl = rootUrl,
+                                              LibraryId = "dryrun",
+                                              Version = "dryrun",
+                                              LibraryHint = "Dry run",
+                                              AllowedUrlPatterns = allowed,
+                                              ExcludedUrlPatterns = excluded ?? [],
+                                              MaxPages = maxPages,
+                                              FetchDelayMs = delay
+                                          };
 
-                             Console.WriteLine();
-                             Console.WriteLine($"=== Dry Run Report ({report.ElapsedTime.TotalSeconds:F1}s) ===");
-                             Console.WriteLine($"Total pages fetched: {report.TotalPages}");
-                             Console.WriteLine($"  In-scope:    {report.InScopePages}");
-                             Console.WriteLine($"  Out-of-scope: {report.OutOfScopePages}");
-                             Console.WriteLine($"Skipped (filtered): {report.FilteredSkips}");
-                             Console.WriteLine($"Skipped (depth limit): {report.DepthLimitedSkips}");
-                             Console.WriteLine($"Fetch errors: {report.FetchErrors}");
-                             Console.WriteLine($"Pages still in queue at end: {report.PagesRemainingInQueue}");
-                             if (report.HitMaxPagesLimit)
-                             {
-                                 Console
-                                     .WriteLine($"** HIT MaxPages limit ({maxPages}) — actual crawl would have {report.TotalPages + report.PagesRemainingInQueue}+ pages **"
-                                               );
-                             }
+                            var crawler = provider.GetRequiredService<PageCrawler>();
+                            var report = await crawler.DryRunAsync(job,
+                                                                   DryrunCommandName,
+                                                                   DryrunCommandName,
+                                                                   Guid.NewGuid().ToString("N")
+                                                                  );
 
-                             Console.WriteLine();
-                             Console.WriteLine("Pages by host:");
-                             foreach((var host, var count) in report.PagesByHost.OrderByDescending(kv => kv.Value))
-                                 Console.WriteLine($"  {host}: {count}");
+                            Console.WriteLine();
+                            Console.WriteLine($"=== Dry Run Report ({report.ElapsedTime.TotalSeconds:F1}s) ===");
+                            Console.WriteLine($"Total pages fetched: {report.TotalPages}");
+                            Console.WriteLine($"  In-scope:    {report.InScopePages}");
+                            Console.WriteLine($"  Out-of-scope: {report.OutOfScopePages}");
+                            Console.WriteLine($"Skipped (filtered): {report.FilteredSkips}");
+                            Console.WriteLine($"Skipped (depth limit): {report.DepthLimitedSkips}");
+                            Console.WriteLine($"Fetch errors: {report.FetchErrors}");
+                            Console.WriteLine($"Pages still in queue at end: {report.PagesRemainingInQueue}");
+                            if (report.HitMaxPagesLimit)
+                            {
+                                Console
+                                    .WriteLine($"** HIT MaxPages limit ({maxPages}) — actual crawl would have {report.TotalPages + report.PagesRemainingInQueue}+ pages **"
+                                              );
+                            }
 
-                             Console.WriteLine();
-                             Console.WriteLine("Out-of-scope depth distribution:");
-                             foreach((var depth, var count) in report.DepthDistribution.OrderBy(kv => kv.Key))
-                                 Console.WriteLine($"  depth {depth}: {count}");
+                            Console.WriteLine();
+                            Console.WriteLine("Pages by host:");
+                            foreach((var host, var count) in report.PagesByHost.OrderByDescending(kv => kv.Value))
+                                Console.WriteLine($"  {host}: {count}");
 
-                             if (report.GitHubReposToClone.Count > 0)
-                             {
-                                 Console.WriteLine();
-                                 Console
-                                     .WriteLine($"GitHub repos that would be cloned ({report.GitHubReposToClone.Count}):"
-                                               );
-                                 foreach(var repo in report.GitHubReposToClone)
-                                     Console.WriteLine($"  {repo}");
-                             }
+                            Console.WriteLine();
+                            Console.WriteLine("Out-of-scope depth distribution:");
+                            foreach((var depth, var count) in report.DepthDistribution.OrderBy(kv => kv.Key))
+                                Console.WriteLine($"  depth {depth}: {count}");
 
-                             if (report.Errors.Count > 0)
-                             {
-                                 Console.WriteLine();
-                                 Console.WriteLine($"Fetch errors ({report.Errors.Count}):");
-                                 var grouped = report.Errors.GroupBy(e => e.ErrorKind)
-                                                     .OrderByDescending(g => g.Count());
-                                 foreach(var group in grouped)
-                                 {
-                                     Console.WriteLine($"  [{group.Count()}] {group.Key}");
-                                     foreach(var err in group.Take(count: 5))
-                                         Console.WriteLine($"    {err.Url} — {err.Message}");
-                                     if (group.Count() > 5)
-                                         Console.WriteLine($"    ... and {group.Count() - 5} more");
-                                 }
-                             }
+                            if (report.GitHubReposToClone.Count > 0)
+                            {
+                                Console.WriteLine();
+                                Console
+                                    .WriteLine($"GitHub repos that would be cloned ({report.GitHubReposToClone.Count}):"
+                                              );
+                                foreach(var repo in report.GitHubReposToClone)
+                                    Console.WriteLine($"  {repo}");
+                            }
 
-                             if (report.SamplePendingUrls.Count > 0)
-                             {
-                                 Console.WriteLine();
-                                 Console
-                                     .WriteLine($"Sample URLs still in queue (first {report.SamplePendingUrls.Count}):"
-                                               );
-                                 foreach(var pending in report.SamplePendingUrls)
-                                     Console.WriteLine($"  {pending}");
-                             }
-                         },
-                         rootUrlOption,
-                         allowedOption,
-                         excludedOption,
-                         maxPagesOption,
-                         delayOption
-                        );
+                            if (report.Errors.Count > 0)
+                            {
+                                Console.WriteLine();
+                                Console.WriteLine($"Fetch errors ({report.Errors.Count}):");
+                                var grouped = report.Errors.GroupBy(e => e.ErrorKind)
+                                                    .OrderByDescending(g => g.Count());
+                                foreach(var group in grouped)
+                                {
+                                    Console.WriteLine($"  [{group.Count()}] {group.Key}");
+                                    foreach(var err in group.Take(count: 5))
+                                        Console.WriteLine($"    {err.Url} — {err.Message}");
+                                    if (group.Count() > 5)
+                                        Console.WriteLine($"    ... and {group.Count() - 5} more");
+                                }
+                            }
+
+                            if (report.SamplePendingUrls.Count > 0)
+                            {
+                                Console.WriteLine();
+                                Console
+                                    .WriteLine($"Sample URLs still in queue (first {report.SamplePendingUrls.Count}):"
+                                              );
+                                foreach(var pending in report.SamplePendingUrls)
+                                    Console.WriteLine($"  {pending}");
+                            }
+                            return 0;
+                        });
 
 // reclassify command — re-run LLM classifier over already-ingested pages
 var reclassifyCommand = new Command(ReclassifyCommandName,
                                     ReclassifyCommandDescription
                                    );
-var reclassifyLibOption = new Option<string?>(LibraryIdOptionName, ReclassifyLibraryIdDescription);
-var reclassifyAllOption = new Option<bool>(AllOptionName, () => false, ReclassifyAllDescription);
-reclassifyCommand.AddOption(reclassifyLibOption);
-reclassifyCommand.AddOption(reclassifyAllOption);
+var reclassifyLibOption = new Option<string?>(LibraryIdOptionName)
+    { Description = ReclassifyLibraryIdDescription };
+var reclassifyAllOption = new Option<bool>(AllOptionName)
+    { Description = ReclassifyAllDescription, DefaultValueFactory = _ => false };
+reclassifyCommand.Options.Add(reclassifyLibOption);
+reclassifyCommand.Options.Add(reclassifyAllOption);
 
-reclassifyCommand.SetHandler(async (libraryId, allPages) =>
-                             {
-                                 var bootstrapper = provider.GetRequiredService<OllamaBootstrapper>();
-                                 await bootstrapper.BootstrapAsync();
+reclassifyCommand.SetAction(async (parseResult, ct) =>
+                            {
+                                var libraryId = parseResult.GetValue(reclassifyLibOption);
+                                var allPages = parseResult.GetValue(reclassifyAllOption);
 
-                                 var libRepo = provider.GetRequiredService<ILibraryRepository>();
-                                 var pageRepo = provider.GetRequiredService<IPageRepository>();
-                                 var chunkRepo = provider.GetRequiredService<IChunkRepository>();
-                                 var llm = provider.GetRequiredService<LlmClassifier>();
+                                var bootstrapper = provider.GetRequiredService<OllamaBootstrapper>();
+                                await bootstrapper.BootstrapAsync();
 
-                                 var libraries = string.IsNullOrEmpty(libraryId)
-                                                     ? await libRepo.GetAllLibrariesAsync()
-                                                     : new List<LibraryRecord>
-                                                           {
-                                                               await libRepo.GetLibraryAsync(libraryId) ??
-                                                               throw new Exception($"Library '{libraryId}' not found")
-                                                           };
+                                var libRepo = provider.GetRequiredService<ILibraryRepository>();
+                                var pageRepo = provider.GetRequiredService<IPageRepository>();
+                                var chunkRepo = provider.GetRequiredService<IChunkRepository>();
+                                var llm = provider.GetRequiredService<LlmClassifier>();
 
-                                 var totalProcessed = 0;
-                                 var totalReclassified = 0;
+                                var libraries = string.IsNullOrEmpty(libraryId)
+                                                    ? await libRepo.GetAllLibrariesAsync()
+                                                    : new List<LibraryRecord>
+                                                          {
+                                                              await libRepo.GetLibraryAsync(libraryId) ??
+                                                              throw new Exception($"Library '{libraryId}' not found")
+                                                          };
 
-                                 foreach(var lib in libraries)
-                                 {
-                                     Console.WriteLine($"\nReclassifying {lib.Id} v{lib.CurrentVersion}...");
-                                     var pages = await pageRepo.GetPagesAsync(lib.Id, lib.CurrentVersion);
-                                     var targetPages = allPages
-                                                           ? pages.ToList()
-                                                           : pages.Where(p => p.Category == DocCategory.Unclassified)
-                                                                  .ToList();
+                                var totalProcessed = 0;
+                                var totalReclassified = 0;
 
-                                     Console
-                                         .WriteLine($"  {targetPages.Count} pages to process (of {pages.Count} total)");
+                                foreach(var lib in libraries)
+                                {
+                                    Console.WriteLine($"\nReclassifying {lib.Id} v{lib.CurrentVersion}...");
+                                    var pages = await pageRepo.GetPagesAsync(lib.Id, lib.CurrentVersion);
+                                    var targetPages = allPages
+                                                          ? pages.ToList()
+                                                          : pages.Where(p => p.Category == DocCategory.Unclassified)
+                                                                 .ToList();
 
-                                     var processed = 0;
-                                     foreach(var page in targetPages)
-                                     {
-                                         (var newCategory, var confidence) = await llm.ClassifyAsync(page, lib.Hint);
-                                         processed++;
+                                    Console
+                                        .WriteLine($"  {targetPages.Count} pages to process (of {pages.Count} total)");
 
-                                         if (newCategory != DocCategory.Unclassified &&
-                                             confidence > 0 &&
-                                             newCategory != page.Category)
-                                         {
-                                             var classified = page with { Category = newCategory };
-                                             await pageRepo.UpsertPageAsync(classified);
+                                    var processed = 0;
+                                    foreach(var page in targetPages)
+                                    {
+                                        (var newCategory, var confidence) = await llm.ClassifyAsync(page, lib.Hint);
+                                        processed++;
 
-                                             await chunkRepo.UpdateCategoryByPageUrlAsync(lib.Id,
-                                                      lib.CurrentVersion,
-                                                      page.Url,
-                                                      newCategory
-                                                 );
+                                        if (newCategory != DocCategory.Unclassified &&
+                                            confidence > 0 &&
+                                            newCategory != page.Category)
+                                        {
+                                            var classified = page with { Category = newCategory };
+                                            await pageRepo.UpsertPageAsync(classified);
 
-                                             totalReclassified++;
-                                         }
+                                            await chunkRepo.UpdateCategoryByPageUrlAsync(lib.Id,
+                                                     lib.CurrentVersion,
+                                                     page.Url,
+                                                     newCategory
+                                                );
 
-                                         if (processed % 10 == 0)
-                                         {
-                                             Console
-                                                 .WriteLine($"  {processed}/{targetPages.Count} processed, {totalReclassified} reclassified so far"
-                                                           );
-                                         }
-                                     }
+                                            totalReclassified++;
+                                        }
 
-                                     totalProcessed += processed;
-                                 }
+                                        if (processed % 10 == 0)
+                                        {
+                                            Console
+                                                .WriteLine($"  {processed}/{targetPages.Count} processed, {totalReclassified} reclassified so far"
+                                                          );
+                                        }
+                                    }
 
-                                 Console
-                                     .WriteLine($"\nDone. Processed {totalProcessed} pages, reclassified {totalReclassified}."
-                                               );
-                                 Console
-                                     .WriteLine("Pages and chunks updated in MongoDB. Restart MCP server (or call reload_profile) to refresh in-memory index."
-                                               );
-                             },
-                             reclassifyLibOption,
-                             reclassifyAllOption
-                            );
+                                    totalProcessed += processed;
+                                }
+
+                                Console
+                                    .WriteLine($"\nDone. Processed {totalProcessed} pages, reclassified {totalReclassified}."
+                                              );
+                                Console
+                                    .WriteLine("Pages and chunks updated in MongoDB. Restart MCP server (or call reload_profile) to refresh in-memory index."
+                                              );
+                                return 0;
+                            });
 
 // inspect command — load a single page, dump TOC/sidebar info
 var inspectCommand = new Command(InspectCommandName, InspectCommandDescription);
-var inspectUrlOption = new Option<string>(UrlOptionName, UrlOptionDescription) { IsRequired = true };
-inspectCommand.AddOption(inspectUrlOption);
-inspectCommand.SetHandler(async url =>
-                          {
-                              using var playwright = await Playwright.CreateAsync();
-                              await using var browser =
-                                  await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true }
-                                                                       );
-                              var page = await browser.NewPageAsync();
+var inspectUrlOption = new Option<string>(UrlOptionName)
+    { Description = UrlOptionDescription, Required = true };
+inspectCommand.Options.Add(inspectUrlOption);
+inspectCommand.SetAction(async (parseResult, ct) =>
+                         {
+                             var url = parseResult.GetValue(inspectUrlOption) ??
+                                       throw new InvalidOperationException($"Required option '{UrlOptionName}' missing");
+                             using var playwright = await Playwright.CreateAsync();
+                             await using var browser =
+                                 await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true }
+                                                                      );
+                             var page = await browser.NewPageAsync();
 
-                              Console.WriteLine($"Loading {url}...");
-                              await page.GotoAsync(url,
-                                                   new PageGotoOptions
-                                                       {
-                                                           WaitUntil = WaitUntilState.NetworkIdle,
-                                                           Timeout = 60000
-                                                       }
-                                                  );
+                             Console.WriteLine($"Loading {url}...");
+                             await page.GotoAsync(url,
+                                                  new PageGotoOptions
+                                                      {
+                                                          WaitUntil = WaitUntilState.NetworkIdle,
+                                                          Timeout = 60000
+                                                      }
+                                                 );
 
-                              // Extra wait for deferred JS (like TOC loaders)
-                              await Task.Delay(millisecondsDelay: 3000);
+                             // Extra wait for deferred JS (like TOC loaders)
+                             await Task.Delay(millisecondsDelay: 3000);
 
-                              var infoJson = await page.EvaluateAsync<string>(expression: """
-                                                                                  (() => {
-                                                                                      const result = {};
-                                                                                      result.totalLinks = document.querySelectorAll('a[href]').length;
-                                                                                      result.title = document.title;
+                             var infoJson = await page.EvaluateAsync<string>(expression: """
+                                                                                 (() => {
+                                                                                     const result = {};
+                                                                                     result.totalLinks = document.querySelectorAll('a[href]').length;
+                                                                                     result.title = document.title;
 
-                                                                                      const candidates = [
-                                                                                          'nav', 'aside',
-                                                                                          '[class*="sidebar" i]', '[class*="toc" i]', '[class*="tree" i]',
-                                                                                          '[id*="sidebar" i]', '[id*="toc" i]', '[id*="tree" i]', '[id*="nav" i]',
-                                                                                          '.left-nav', '.left-menu', '.doc-nav', '.help-nav'
-                                                                                      ];
-                                                                                      const sidebars = [];
-                                                                                      const seen = new Set();
-                                                                                      for (const sel of candidates) {
-                                                                                          try {
-                                                                                              const els = document.querySelectorAll(sel);
-                                                                                              for (const el of els) {
-                                                                                                  if (seen.has(el)) continue;
-                                                                                                  seen.add(el);
-                                                                                                  const linkCount = el.querySelectorAll('a[href]').length;
-                                                                                                  if (linkCount > 5) {
-                                                                                                      sidebars.push({
-                                                                                                          sel: sel,
-                                                                                                          tag: el.tagName,
-                                                                                                          id: el.id || '',
-                                                                                                          className: ((el.className || '') + '').substring(0, 120),
-                                                                                                          linkCount: linkCount,
-                                                                                                          samples: Array.from(el.querySelectorAll('a[href]')).slice(0, 3).map(function(a) { return a.href; })
-                                                                                                      });
-                                                                                                  }
-                                                                                              }
-                                                                                          } catch (e) {}
-                                                                                      }
-                                                                                      result.sidebars = sidebars;
+                                                                                     const candidates = [
+                                                                                         'nav', 'aside',
+                                                                                         '[class*="sidebar" i]', '[class*="toc" i]', '[class*="tree" i]',
+                                                                                         '[id*="sidebar" i]', '[id*="toc" i]', '[id*="tree" i]', '[id*="nav" i]',
+                                                                                         '.left-nav', '.left-menu', '.doc-nav', '.help-nav'
+                                                                                     ];
+                                                                                     const sidebars = [];
+                                                                                     const seen = new Set();
+                                                                                     for (const sel of candidates) {
+                                                                                         try {
+                                                                                             const els = document.querySelectorAll(sel);
+                                                                                             for (const el of els) {
+                                                                                                 if (seen.has(el)) continue;
+                                                                                                 seen.add(el);
+                                                                                                 const linkCount = el.querySelectorAll('a[href]').length;
+                                                                                                 if (linkCount > 5) {
+                                                                                                     sidebars.push({
+                                                                                                         sel: sel,
+                                                                                                         tag: el.tagName,
+                                                                                                         id: el.id || '',
+                                                                                                         className: ((el.className || '') + '').substring(0, 120),
+                                                                                                         linkCount: linkCount,
+                                                                                                         samples: Array.from(el.querySelectorAll('a[href]')).slice(0, 3).map(function(a) { return a.href; })
+                                                                                                     });
+                                                                                                 }
+                                                                                             }
+                                                                                         } catch (e) {}
+                                                                                     }
+                                                                                     result.sidebars = sidebars;
 
-                                                                                      result.collapsed = {
-                                                                                          ariaCollapsed: document.querySelectorAll('[aria-expanded="false"]').length,
-                                                                                          collapsedClass: document.querySelectorAll('.collapsed').length,
-                                                                                          hiddenClass: document.querySelectorAll('.hidden, .hide').length,
-                                                                                          treeNodes: document.querySelectorAll('[class*="tree-node" i], [class*="treenode" i]').length
-                                                                                      };
+                                                                                     result.collapsed = {
+                                                                                         ariaCollapsed: document.querySelectorAll('[aria-expanded="false"]').length,
+                                                                                         collapsedClass: document.querySelectorAll('.collapsed').length,
+                                                                                         hiddenClass: document.querySelectorAll('.hidden, .hide').length,
+                                                                                         treeNodes: document.querySelectorAll('[class*="tree-node" i], [class*="treenode" i]').length
+                                                                                     };
 
-                                                                                      const hosts = {};
-                                                                                      document.querySelectorAll('a[href]').forEach(function(a) {
-                                                                                          try {
-                                                                                              const u = new URL(a.href);
-                                                                                              hosts[u.host] = (hosts[u.host] || 0) + 1;
-                                                                                          } catch (e) {}
-                                                                                      });
-                                                                                      result.linksByHost = hosts;
+                                                                                     const hosts = {};
+                                                                                     document.querySelectorAll('a[href]').forEach(function(a) {
+                                                                                         try {
+                                                                                             const u = new URL(a.href);
+                                                                                             hosts[u.host] = (hosts[u.host] || 0) + 1;
+                                                                                         } catch (e) {}
+                                                                                     });
+                                                                                     result.linksByHost = hosts;
 
-                                                                                      return JSON.stringify(result);
-                                                                                  })()
-                                                                                  """
-                                                                             );
+                                                                                     return JSON.stringify(result);
+                                                                                 })()
+                                                                                 """
+                                                                            );
 
-                              Console.WriteLine();
-                              using var doc = JsonDocument.Parse(infoJson);
-                              var root = doc.RootElement;
+                             Console.WriteLine();
+                             using var doc = JsonDocument.Parse(infoJson);
+                             var root = doc.RootElement;
 
-                              Console.WriteLine($"Title: {root.GetProperty("title").GetString()}");
-                              Console.WriteLine($"Total links: {root.GetProperty("totalLinks").GetInt32()}");
-                              Console.WriteLine();
+                             Console.WriteLine($"Title: {root.GetProperty("title").GetString()}");
+                             Console.WriteLine($"Total links: {root.GetProperty("totalLinks").GetInt32()}");
+                             Console.WriteLine();
 
-                              Console.WriteLine("Collapsible markers:");
-                              var collapsed = root.GetProperty(CollapsedPropertyName);
-                              foreach(var prop in collapsed.EnumerateObject())
-                                  Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
-                              Console.WriteLine();
+                             Console.WriteLine("Collapsible markers:");
+                             var collapsed = root.GetProperty(CollapsedPropertyName);
+                             foreach(var prop in collapsed.EnumerateObject())
+                                 Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
+                             Console.WriteLine();
 
-                              Console.WriteLine("Sidebar candidates with >5 links:");
-                              foreach(var sb in root.GetProperty(SidebarsPropertyName).EnumerateArray())
-                              {
-                                  Console
-                                      .WriteLine($"  [{sb.GetProperty("linkCount").GetInt32()} links] {sb.GetProperty("tag").GetString()}" +
-                                                 (sb.GetProperty(IdPropertyName).GetString() is var id &&
-                                                  !string.IsNullOrEmpty(id)
-                                                      ? $"#{id}"
-                                                      : string.Empty) +
-                                                 (sb.GetProperty(ClassNamePropertyName).GetString() is var cls &&
-                                                  !string.IsNullOrEmpty(cls)
-                                                      ? $" .{cls.Replace(" ", ".")}"
-                                                      : string.Empty)
-                                                );
-                                  Console.WriteLine($"    selector hint: {sb.GetProperty("sel").GetString()}");
-                                  foreach(var sample in sb.GetProperty(SamplesPropertyName).EnumerateArray())
-                                      Console.WriteLine($"    sample: {sample.GetString()}");
-                              }
+                             Console.WriteLine("Sidebar candidates with >5 links:");
+                             foreach(var sb in root.GetProperty(SidebarsPropertyName).EnumerateArray())
+                             {
+                                 Console
+                                     .WriteLine($"  [{sb.GetProperty("linkCount").GetInt32()} links] {sb.GetProperty("tag").GetString()}" +
+                                                (sb.GetProperty(IdPropertyName).GetString() is var id &&
+                                                 !string.IsNullOrEmpty(id)
+                                                     ? $"#{id}"
+                                                     : string.Empty) +
+                                                (sb.GetProperty(ClassNamePropertyName).GetString() is var cls &&
+                                                 !string.IsNullOrEmpty(cls)
+                                                     ? $" .{cls.Replace(" ", ".")}"
+                                                     : string.Empty)
+                                               );
+                                 Console.WriteLine($"    selector hint: {sb.GetProperty("sel").GetString()}");
+                                 foreach(var sample in sb.GetProperty(SamplesPropertyName).EnumerateArray())
+                                     Console.WriteLine($"    sample: {sample.GetString()}");
+                             }
 
-                              Console.WriteLine();
+                             Console.WriteLine();
 
-                              Console.WriteLine("Links by host:");
-                              foreach(var prop in root.GetProperty(LinksByHostPropertyName).EnumerateObject())
-                                  Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
+                             Console.WriteLine("Links by host:");
+                             foreach(var prop in root.GetProperty(LinksByHostPropertyName).EnumerateObject())
+                                 Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
 
-                              await page.CloseAsync();
-                          },
-                          inspectUrlOption
-                         );
+                             await page.CloseAsync();
+                             return 0;
+                         });
 
 // profile command
 var profileCommand = new Command(ProfileCommandName, ProfileCommandDescription);
 
 var profileListCommand = new Command(ListCommandName, ListAvailableProfilesDescription);
-profileListCommand.SetHandler(() =>
-                              {
-                                  var settings = provider.GetRequiredService<IOptions<SaddleRagDbSettings>>().Value;
-                                  var activeOverride = Environment.GetEnvironmentVariable(MongoDbProfileEnvVar);
-                                  (var activeConn, var activeDb) = settings.Resolve();
+profileListCommand.SetAction(parseResult =>
+                             {
+                                 var settings = provider.GetRequiredService<IOptions<SaddleRagDbSettings>>().Value;
+                                 var activeOverride = Environment.GetEnvironmentVariable(MongoDbProfileEnvVar);
+                                 (var activeConn, var activeDb) = settings.Resolve();
 
-                                  Console.WriteLine($"Active: {activeOverride ?? settings.ActiveProfile ?? "(direct)"}"
+                                 Console.WriteLine($"Active: {activeOverride ?? settings.ActiveProfile ?? "(direct)"}"
+                                                  );
+                                 Console.WriteLine($"Connected to: {activeConn} / {activeDb}");
+                                 Console.WriteLine();
+
+                                 if (settings.Profiles.Count == 0)
+                                 {
+                                     Console
+                                         .WriteLine("No profiles defined. Using direct ConnectionString/DatabaseName."
                                                    );
-                                  Console.WriteLine($"Connected to: {activeConn} / {activeDb}");
-                                  Console.WriteLine();
+                                 }
+                                 else
+                                 {
+                                     foreach((var name, var profile) in settings.Profiles)
+                                     {
+                                         var isActive = name.Equals(activeOverride ?? settings.ActiveProfile,
+                                                                    StringComparison.OrdinalIgnoreCase
+                                                                   );
+                                         var marker = isActive ? ActiveMarker : string.Empty;
+                                         Console
+                                             .WriteLine($"  {name}: {profile.ConnectionString} / {profile.DatabaseName}{marker}"
+                                                       );
+                                         if (!string.IsNullOrEmpty(profile.Description))
+                                             Console.WriteLine($"    {profile.Description}");
+                                     }
+                                 }
 
-                                  if (settings.Profiles.Count == 0)
-                                  {
-                                      Console
-                                          .WriteLine("No profiles defined. Using direct ConnectionString/DatabaseName."
-                                                    );
-                                  }
-                                  else
-                                  {
-                                      foreach((var name, var profile) in settings.Profiles)
-                                      {
-                                          var isActive = name.Equals(activeOverride ?? settings.ActiveProfile,
-                                                                     StringComparison.OrdinalIgnoreCase
-                                                                    );
-                                          var marker = isActive ? ActiveMarker : string.Empty;
-                                          Console
-                                              .WriteLine($"  {name}: {profile.ConnectionString} / {profile.DatabaseName}{marker}"
-                                                        );
-                                          if (!string.IsNullOrEmpty(profile.Description))
-                                              Console.WriteLine($"    {profile.Description}");
-                                      }
-                                  }
+                                 Console.WriteLine();
+                                 Console.WriteLine("Switch profiles:");
+                                 Console.WriteLine("  Set SADDLERAG_MONGODB_PROFILE=company  (environment variable)");
+                                 Console.WriteLine("  Or edit ActiveProfile in appsettings.json");
+                                 return 0;
+                             });
 
-                                  Console.WriteLine();
-                                  Console.WriteLine("Switch profiles:");
-                                  Console.WriteLine("  Set SADDLERAG_MONGODB_PROFILE=company  (environment variable)");
-                                  Console.WriteLine("  Or edit ActiveProfile in appsettings.json");
-                              }
-                             );
-
-profileCommand.AddCommand(profileListCommand);
+profileCommand.Subcommands.Add(profileListCommand);
 
 // scan command — scan project dependencies and index documentation
 var scanCommand = new Command(ScanCommandName, ScanCommandDescription);
-var scanPathOption =
-    new Option<string>(PathOptionName, PathOptionDescription)
-        { IsRequired = true };
-var scanProfileOption = new Option<string?>(ProfileOptionName, ProfileOptionDescription);
-scanCommand.AddOption(scanPathOption);
-scanCommand.AddOption(scanProfileOption);
+var scanPathOption = new Option<string>(PathOptionName)
+    { Description = PathOptionDescription, Required = true };
+var scanProfileOption = new Option<string?>(ProfileOptionName)
+    { Description = ProfileOptionDescription };
+scanCommand.Options.Add(scanPathOption);
+scanCommand.Options.Add(scanProfileOption);
 
-scanCommand.SetHandler(async (path, profile) =>
-                       {
-                           var indexer = provider.GetRequiredService<DependencyIndexer>();
-                           var report = await indexer.IndexProjectAsync(path, profile, ct: CancellationToken.None);
+scanCommand.SetAction(async (parseResult, ct) =>
+                      {
+                          var path = parseResult.GetValue(scanPathOption) ??
+                                     throw new InvalidOperationException($"Required option '{PathOptionName}' missing");
+                          var profile = parseResult.GetValue(scanProfileOption);
 
-                           Console.WriteLine();
-                           Console.WriteLine("=== Dependency Scan Report ===");
-                           Console.WriteLine($"Project path:             {report.ProjectPath}");
-                           Console.WriteLine($"Total dependencies found:  {report.TotalDependencies}");
-                           Console.WriteLine($"Filtered out:              {report.FilteredOut}");
-                           Console.WriteLine($"Already cached:            {report.AlreadyCached}");
-                           Console.WriteLine($"Cached (different version): {report.CachedDifferentVersion}");
-                           Console.WriteLine($"Newly queued:              {report.NewlyQueued}");
-                           Console.WriteLine($"Resolution failed:         {report.ResolutionFailed}");
+                          var indexer = provider.GetRequiredService<DependencyIndexer>();
+                          var report = await indexer.IndexProjectAsync(path, profile, ct: ct);
 
-                           var queuedPackages = report.Packages
-                                                      .Where(p => p.Status == QueuedStatus)
-                                                      .ToList();
+                          Console.WriteLine();
+                          Console.WriteLine("=== Dependency Scan Report ===");
+                          Console.WriteLine($"Project path:             {report.ProjectPath}");
+                          Console.WriteLine($"Total dependencies found:  {report.TotalDependencies}");
+                          Console.WriteLine($"Filtered out:              {report.FilteredOut}");
+                          Console.WriteLine($"Already cached:            {report.AlreadyCached}");
+                          Console.WriteLine($"Cached (different version): {report.CachedDifferentVersion}");
+                          Console.WriteLine($"Newly queued:              {report.NewlyQueued}");
+                          Console.WriteLine($"Resolution failed:         {report.ResolutionFailed}");
 
-                           if (queuedPackages.Count > 0)
-                           {
-                               Console.WriteLine();
-                               Console.WriteLine($"Queued for scraping ({queuedPackages.Count}):");
-                               foreach(var pkg in queuedPackages)
-                               {
-                                   Console
-                                       .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} -> {pkg.DocUrl}");
-                               }
-                           }
+                          var queuedPackages = report.Packages
+                                                     .Where(p => p.Status == QueuedStatus)
+                                                     .ToList();
 
-                           var failedPackages = report.Packages
-                                                      .Where(p => p.Status == FailedStatus)
-                                                      .ToList();
+                          if (queuedPackages.Count > 0)
+                          {
+                              Console.WriteLine();
+                              Console.WriteLine($"Queued for scraping ({queuedPackages.Count}):");
+                              foreach(var pkg in queuedPackages)
+                              {
+                                  Console
+                                      .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} -> {pkg.DocUrl}");
+                              }
+                          }
 
-                           if (failedPackages.Count > 0)
-                           {
-                               Console.WriteLine();
-                               Console.WriteLine($"Failed ({failedPackages.Count}):");
-                               foreach(var pkg in failedPackages)
-                               {
-                                   Console
-                                       .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} — {pkg.ErrorMessage}"
-                                                 );
-                               }
-                           }
-                       },
-                       scanPathOption,
-                       scanProfileOption
-                      );
+                          var failedPackages = report.Packages
+                                                     .Where(p => p.Status == FailedStatus)
+                                                     .ToList();
 
-rootCommand.AddCommand(ingestCommand);
-rootCommand.AddCommand(dryrunCommand);
-rootCommand.AddCommand(inspectCommand);
-rootCommand.AddCommand(reclassifyCommand);
-rootCommand.AddCommand(scanCommand);
-rootCommand.AddCommand(listCommand);
-rootCommand.AddCommand(statusCommand);
-rootCommand.AddCommand(profileCommand);
+                          if (failedPackages.Count > 0)
+                          {
+                              Console.WriteLine();
+                              Console.WriteLine($"Failed ({failedPackages.Count}):");
+                              foreach(var pkg in failedPackages)
+                              {
+                                  Console
+                                      .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} — {pkg.ErrorMessage}"
+                                                );
+                              }
+                          }
+                          return 0;
+                      });
 
-return await rootCommand.InvokeAsync(args);
+rootCommand.Subcommands.Add(ingestCommand);
+rootCommand.Subcommands.Add(dryrunCommand);
+rootCommand.Subcommands.Add(inspectCommand);
+rootCommand.Subcommands.Add(reclassifyCommand);
+rootCommand.Subcommands.Add(scanCommand);
+rootCommand.Subcommands.Add(listCommand);
+rootCommand.Subcommands.Add(statusCommand);
+rootCommand.Subcommands.Add(profileCommand);
+
+return await rootCommand.Parse(args).InvokeAsync();
