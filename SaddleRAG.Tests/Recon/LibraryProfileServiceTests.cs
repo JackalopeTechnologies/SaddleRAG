@@ -61,9 +61,25 @@ public sealed class LibraryProfileServiceTests
     }
 
     [Fact]
-    public void CurrentSchemaVersionIsTwoAfterStoplistAddition()
+    public void LibraryProfileDefaultsCrawlHintsToEmpty()
     {
-        Assert.Equal(expected: 2, LibraryProfile.CurrentSchemaVersion);
+        var profile = new LibraryProfile
+                          {
+                              Id = "x/1",
+                              LibraryId = "x",
+                              Version = "1"
+                          };
+
+        Assert.NotNull(profile.CrawlHints);
+        Assert.Empty(profile.CrawlHints.ExcludedUrlPatterns);
+        Assert.Empty(profile.CrawlHints.ExpectedHosts);
+        Assert.Equal(string.Empty, profile.CrawlHints.Notes);
+    }
+
+    [Fact]
+    public void CurrentSchemaVersionIsThreeAfterCrawlHintsAddition()
+    {
+        Assert.Equal(expected: 3, LibraryProfile.CurrentSchemaVersion);
     }
 
     [Fact]
