@@ -221,11 +221,11 @@ public static class ReconTools
     private const string KeySeparators = "separators";
     private const string KeyCallableShapes = "callableShapes";
     private const string KeyLikelySymbols = "likelySymbols";
-    private const string KeyCanonicalInventoryUrl = "canonicalInventoryUrl";
     private const string KeyCrawlHints = "crawlHints";
     private const string KeyExcludedUrlPatterns = "excludedUrlPatterns";
     private const string KeyExpectedHosts = "expectedHosts";
     private const string KeyNotes = "notes";
+    private const string KeyCanonicalInventoryUrl = "canonicalInventoryUrl";
     private const string KeyConfidence = "confidence";
     private const string KeySource = "source";
 
