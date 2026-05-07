@@ -8,10 +8,62 @@
     <base href="/"/>
     <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet"/>
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet"/>
+    @* Reconnect modal styling. The standard Blazor Server template ships this
+       so users see when the SignalR circuit drops (e.g. overnight idle), and
+       can reload deliberately rather than staring at silently stale data. *@
+    <style>
+        #components-reconnect-modal {
+            display: none;
+        }
+        #components-reconnect-modal.components-reconnect-show,
+        #components-reconnect-modal.components-reconnect-failed,
+        #components-reconnect-modal.components-reconnect-rejected {
+            display: block;
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            background: #fffbe6;
+            border: 1px solid #d97706;
+            border-radius: 4px;
+            padding: 0.75rem 1rem;
+            font-family: Roboto, sans-serif;
+            font-size: 0.875rem;
+            color: #1f2937;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 9999;
+            max-width: 320px;
+        }
+        #components-reconnect-modal .reconnect-show-only,
+        #components-reconnect-modal .reconnect-failed-only,
+        #components-reconnect-modal .reconnect-rejected-only {
+            display: none;
+            margin: 0;
+        }
+        #components-reconnect-modal.components-reconnect-show .reconnect-show-only,
+        #components-reconnect-modal.components-reconnect-failed .reconnect-failed-only,
+        #components-reconnect-modal.components-reconnect-rejected .reconnect-rejected-only {
+            display: block;
+        }
+        #components-reconnect-modal a {
+            color: #b45309;
+            font-weight: 600;
+        }
+    </style>
     <HeadOutlet @rendermode="InteractiveServer"/>
 </head>
 <body>
 <Routes @rendermode="InteractiveServer"/>
+<div id="components-reconnect-modal">
+    <p class="reconnect-show-only">Reconnecting to the server…</p>
+    <p class="reconnect-failed-only">
+        Connection lost.
+        <a href="javascript:location.reload()">Reload</a>
+    </p>
+    <p class="reconnect-rejected-only">
+        Connection rejected.
+        <a href="javascript:location.reload()">Reload</a>
+    </p>
+</div>
 <script src="_framework/blazor.server.js"></script>
 <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 <script src="_content/SaddleRAG.Monitor/timezone.js"></script>
