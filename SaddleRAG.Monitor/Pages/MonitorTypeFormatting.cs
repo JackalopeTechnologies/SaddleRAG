@@ -26,6 +26,7 @@ internal static class MonitorTypeFormatting
         JobType.RenameLibrary            => Color.Warning,
         JobType.DeleteVersion            => Color.Warning,
         JobType.DeleteLibrary            => Color.Warning,
+        JobType.Unknown                  => Color.Default,
         var _                            => Color.Default
     };
 
@@ -40,6 +41,7 @@ internal static class MonitorTypeFormatting
         JobType.DeleteLibrary            => LabelDeleteLibrary,
         JobType.IndexProjectDependencies => LabelIndexDeps,
         JobType.SubmitUrlCorrection      => LabelUrlFix,
+        JobType.Unknown                  => LabelUnknown,
         var _                            => type.ToString()
     };
 
@@ -54,4 +56,5 @@ internal static class MonitorTypeFormatting
     private const string LabelDeleteLibrary = "Delete library";
     private const string LabelIndexDeps     = "Index deps";
     private const string LabelUrlFix        = "URL fix";
+    private const string LabelUnknown       = "(unknown)";
 }

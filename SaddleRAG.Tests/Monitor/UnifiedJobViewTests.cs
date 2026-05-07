@@ -206,6 +206,29 @@ public sealed class UnifiedJobViewTests
         Assert.Null(row.RenameToId);
     }
 
+    [Fact]
+    public async Task UnknownBackgroundJobTypeMapsToUnknown()
+    {
+        var bg = new FakeBackgroundJobRepository();
+        bg.Add(new BackgroundJobRecord
+                   {
+                       Id        = "b_unknown",
+                       JobType   = "future_unknown_type",
+                       LibraryId = "x",
+                       Version   = "1",
+                       InputJson = "{}",
+                       Status    = ScrapeJobStatus.Completed,
+                       CreatedAt = DateTime.UtcNow
+                   }
+              );
+
+        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var rows = await view.ListAsync(null, null, null, 10, TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(rows);
+        Assert.Equal(JobType.Unknown, row.Type);
+    }
+
     #region Helper methods
 
     private static ScrapeJobRecord MakeScrape(string id, DateTime createdAt,

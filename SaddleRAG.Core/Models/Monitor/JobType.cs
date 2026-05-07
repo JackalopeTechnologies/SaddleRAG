@@ -19,5 +19,6 @@ public enum JobType
     DeleteVersion,
     DeleteLibrary,
     IndexProjectDependencies,
-    SubmitUrlCorrection
+    SubmitUrlCorrection,
+    Unknown
 }
