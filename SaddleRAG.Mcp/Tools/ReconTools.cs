@@ -131,6 +131,7 @@ public static class ReconTools
                                                  separators,
                                                  callables,
                                                  likely,
+                                                 new CrawlHints(),
                                                  inventoryUrl,
                                                  confidence,
                                                  source

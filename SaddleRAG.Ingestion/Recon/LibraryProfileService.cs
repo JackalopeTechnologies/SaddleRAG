@@ -136,6 +136,7 @@ public class LibraryProfileService
                                        IReadOnlyList<string> separators,
                                        IReadOnlyList<string> callableShapes,
                                        IReadOnlyList<string> likelySymbols,
+                                       CrawlHints crawlHints,
                                        string? canonicalInventoryUrl,
                                        float confidence,
                                        string source)
@@ -147,6 +148,7 @@ public class LibraryProfileService
         ArgumentNullException.ThrowIfNull(separators);
         ArgumentNullException.ThrowIfNull(callableShapes);
         ArgumentNullException.ThrowIfNull(likelySymbols);
+        ArgumentNullException.ThrowIfNull(crawlHints);
         ArgumentException.ThrowIfNullOrEmpty(source);
 
         var result = new LibraryProfile
@@ -159,6 +161,7 @@ public class LibraryProfileService
                              Separators = separators,
                              CallableShapes = callableShapes,
                              LikelySymbols = likelySymbols,
+                             CrawlHints = crawlHints,
                              CanonicalInventoryUrl = canonicalInventoryUrl,
                              Confidence = confidence,
                              Source = source,

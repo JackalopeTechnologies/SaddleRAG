@@ -99,6 +99,7 @@ public class CliReconFallback
                                                   parsed.Separators,
                                                   parsed.CallableShapes,
                                                   parsed.LikelySymbols,
+                                                  new CrawlHints(),
                                                   parsed.CanonicalInventoryUrl,
                                                   parsed.Confidence,
                                                   SourceCliOllama

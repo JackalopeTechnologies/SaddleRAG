@@ -27,6 +27,7 @@ public sealed class LibraryProfileServiceTests
                                                       ["."],
                                                       ["Foo()"],
                                                       ["MoveLinear", "AxisStatus"],
+                                                  new CrawlHints(),
                                                   canonicalInventoryUrl: null,
                                                   confidence: 0.85f,
                                                   "calling-llm"
@@ -51,6 +52,7 @@ public sealed class LibraryProfileServiceTests
                                                       ["."],
                                                       ["Foo()"],
                                                       ["MoveLinear"],
+                                                  new CrawlHints(),
                                                   canonicalInventoryUrl: null,
                                                   confidence: 0.85f,
                                                   "calling-llm"
@@ -93,11 +95,40 @@ public sealed class LibraryProfileServiceTests
                                                                              [],
                                                                              [],
                                                                              [],
+                                                                         new CrawlHints(),
                                                                          canonicalInventoryUrl: null,
                                                                          confidence: 0.5f,
                                                                          "calling-llm"
                                                                         )
                                         );
+    }
+
+    [Fact]
+    public void BuildPersistsCrawlHints()
+    {
+        var hints = new CrawlHints
+                        {
+                            ExcludedUrlPatterns = ["/account/login"],
+                            ExpectedHosts = ["docs.example.com"],
+                            Notes = "API ref auth-walled"
+                        };
+
+        var profile = LibraryProfileService.Build("aerotech-aeroscript",
+                                                  "2025.3",
+                                                      ["AeroScript"],
+                                                  new CasingConventions { Types = "PascalCase" },
+                                                      ["."],
+                                                      ["Foo()"],
+                                                      ["MoveLinear"],
+                                                  hints,
+                                                  canonicalInventoryUrl: null,
+                                                  confidence: 0.85f,
+                                                  "calling-llm"
+                                                 );
+
+        Assert.Equal(new[] { "/account/login" }, profile.CrawlHints.ExcludedUrlPatterns);
+        Assert.Equal(new[] { "docs.example.com" }, profile.CrawlHints.ExpectedHosts);
+        Assert.Equal("API ref auth-walled", profile.CrawlHints.Notes);
     }
 
     [Fact]
@@ -227,6 +258,7 @@ public sealed class LibraryProfileServiceTests
                                                      ["."],
                                                      ["Foo()"],
                                                  likely,
+                                                 new CrawlHints(),
                                                  canonicalInventoryUrl: null,
                                                  confidence,
                                                  source
