@@ -38,6 +38,7 @@ public sealed class MonitorLifecycleRelay : IHostedService
     public Task StartAsync(CancellationToken ct)
     {
         mEvents.JobStarted        += OnJobStarted;
+        mEvents.JobProgress       += OnJobProgress;
         mEvents.JobCompleted      += OnJobCompleted;
         mEvents.JobFailed         += OnJobFailed;
         mEvents.JobCancelled      += OnJobCancelled;
@@ -49,6 +50,7 @@ public sealed class MonitorLifecycleRelay : IHostedService
     public Task StopAsync(CancellationToken ct)
     {
         mEvents.JobStarted        -= OnJobStarted;
+        mEvents.JobProgress       -= OnJobProgress;
         mEvents.JobCompleted      -= OnJobCompleted;
         mEvents.JobFailed         -= OnJobFailed;
         mEvents.JobCancelled      -= OnJobCancelled;
@@ -57,6 +59,7 @@ public sealed class MonitorLifecycleRelay : IHostedService
     }
 
     private void OnJobStarted(JobStartedEvent e) => Send(JobStartedMethod, e);
+    private void OnJobProgress(JobProgressEvent e) => Send(JobProgressMethod, e);
     private void OnJobCompleted(JobCompletedEvent e) => Send(JobCompletedMethod, e);
     private void OnJobFailed(JobFailedEvent e) => Send(JobFailedMethod, e);
     private void OnJobCancelled(JobCancelledEvent e) => Send(JobCancelledMethod, e);
@@ -68,6 +71,7 @@ public sealed class MonitorLifecycleRelay : IHostedService
     }
 
     private const string JobStartedMethod = "JobStarted";
+    private const string JobProgressMethod = "JobProgress";
     private const string JobCompletedMethod = "JobCompleted";
     private const string JobFailedMethod = "JobFailed";
     private const string JobCancelledMethod = "JobCancelled";
