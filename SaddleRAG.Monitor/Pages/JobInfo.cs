@@ -4,6 +4,12 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
+using SaddleRAG.Core.Models.Monitor;
+
+#endregion
+
 namespace SaddleRAG.Monitor.Pages;
 
 /// <summary>
@@ -12,6 +18,7 @@ namespace SaddleRAG.Monitor.Pages;
 public sealed record JobInfo
 {
     public required string JobId { get; init; }
+    public required JobType Type { get; init; }
     public required string LibraryId { get; init; }
     public required string Version { get; init; }
     public required string Status { get; init; }

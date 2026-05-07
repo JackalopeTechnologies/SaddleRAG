@@ -1,6 +1,8 @@
 @* SaddleRAG.Monitor/Pages/JobHistoryPage.razor *@
 @page "/monitor/jobs"
 @rendermode InteractiveServer
+@using SaddleRAG.Core.Models.Monitor
+@using SaddleRAG.Monitor.Pages
 @using SaddleRAG.Monitor.Services
 @inherits JobHistoryPageBase
 
@@ -12,6 +14,13 @@
         @foreach (var s in pmStatusChoices)
         {
             <MudSelectItem Value="@s">@s</MudSelectItem>
+        }
+    </MudSelect>
+    <MudSelect T="JobType?" Label="Type" @bind-Value="TypeFilter" Clearable="true"
+               Style="min-width:160px">
+        @foreach (var t in pmTypeChoices)
+        {
+            <MudSelectItem T="JobType?" Value="@((JobType?)t)">@MonitorTypeFormatting.TypeLabel(t)</MudSelectItem>
         }
     </MudSelect>
     <MudTextField T="string" Label="Library contains" @bind-Value="LibraryFilter" Immediate="true"/>
@@ -27,26 +36,28 @@
           OnRowClick="OnRowClicked">
     <HeaderContent>
         <MudTh>Created</MudTh>
-        <MudTh>Library</MudTh>
-        <MudTh>Version</MudTh>
+        <MudTh>Type</MudTh>
+        <MudTh>Target</MudTh>
         <MudTh>Status</MudTh>
+        <MudTh>Progress</MudTh>
         <MudTh>Duration</MudTh>
-        <MudTh>Indexed</MudTh>
-        <MudTh>Errors</MudTh>
         <MudTh>Job</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd><TimeDisplay Utc="@context.CreatedAt"/></MudTd>
-        <MudTd>@context.LibraryId</MudTd>
-        <MudTd>@context.Version</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@MonitorTypeFormatting.TypeColor(context.Type)">
+                @MonitorTypeFormatting.TypeLabel(context.Type)
+            </MudChip>
+        </MudTd>
+        <MudTd>@RenderTarget(context)</MudTd>
         <MudTd>
             <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">
                 @context.Status
             </MudChip>
         </MudTd>
+        <MudTd>@RenderProgress(context)</MudTd>
         <MudTd>@(context.Duration?.ToString(@"hh\:mm\:ss") ?? "—")</MudTd>
-        <MudTd>@context.IndexedPageCount</MudTd>
-        <MudTd>@context.ErrorCount</MudTd>
         <MudTd Style="font-family:monospace; font-size:.7rem">@context.JobId</MudTd>
     </RowTemplate>
     <NoRecordsContent>
@@ -68,6 +79,35 @@
         "Cancelled" => Color.Warning,
         var _       => Color.Default
     };
+
+    private static string RenderTarget(MonitorJobService.JobHistoryRow row) => row.Type switch
+    {
+        JobType.RenameLibrary
+            => $"{row.LibraryId} → {row.RenameToId ?? "(unknown)"}",
+        JobType.IndexProjectDependencies
+            => $"(scan: {row.ScanPath ?? "(unknown)"})",
+        JobType.DeleteLibrary
+            => row.LibraryId ?? "(unknown)",
+        var _ when string.IsNullOrEmpty(row.LibraryId)
+            => "—",
+        var _ when string.IsNullOrEmpty(row.Version)
+            => row.LibraryId!,
+        var _
+            => $"{row.LibraryId} @ {row.Version}"
+    };
+
+    private static string RenderProgress(MonitorJobService.JobHistoryRow row)
+    {
+        string result;
+        var label = row.ItemsLabel;
+        if (string.IsNullOrEmpty(label) || (row.ItemsProcessed == 0 && row.ItemsTotal == 0))
+            result = "—";
+        else if (row.ItemsTotal > 0)
+            result = $"{row.ItemsProcessed:N0} / {row.ItemsTotal:N0} {label}";
+        else
+            result = $"{row.ItemsProcessed:N0} {label}";
+        return result;
+    }
 
     private void OnRowClicked(TableRowClickEventArgs<MonitorJobService.JobHistoryRow> args)
     {
