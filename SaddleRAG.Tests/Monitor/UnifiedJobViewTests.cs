@@ -108,4 +108,145 @@ public sealed class UnifiedJobViewTests
         Assert.Equal(200, row.ItemsTotal);
         Assert.Equal("chunks", row.ItemsLabel);
     }
+
+    [Fact]
+    public async Task ListSortsByCreatedAtDescAndAppliesLimit()
+    {
+        var scrape = new FakeScrapeJobRepository();
+        var bg = new FakeBackgroundJobRepository();
+        var rescrub = new FakeRescrubJobRepository();
+        var now = DateTime.UtcNow;
+
+        scrape.Add(MakeScrape("s_old", now.AddMinutes(-30)));
+        bg.Add(MakeBackground("b_mid", BackgroundJobTypes.Rechunk, now.AddMinutes(-20)));
+        rescrub.Add(MakeRescrub("r_new", now.AddMinutes(-10)));
+
+        var view = new UnifiedJobView(scrape, bg, rescrub);
+        var rows = await view.ListAsync(null, null, null, limit: 2, ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("r_new", rows[0].JobId);
+        Assert.Equal("b_mid", rows[1].JobId);
+    }
+
+    [Fact]
+    public async Task ListFiltersByStatus()
+    {
+        var scrape = new FakeScrapeJobRepository();
+        scrape.Add(MakeScrape("a", DateTime.UtcNow, ScrapeJobStatus.Completed));
+        scrape.Add(MakeScrape("b", DateTime.UtcNow.AddSeconds(-1), ScrapeJobStatus.Failed));
+
+        var view = new UnifiedJobView(scrape, new FakeBackgroundJobRepository(), new FakeRescrubJobRepository());
+        var rows = await view.ListAsync(statusFilter: ScrapeJobStatus.Failed, null, null, limit: 10,
+                                        ct: TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(rows);
+        Assert.Equal("b", row.JobId);
+    }
+
+    [Fact]
+    public async Task ListFiltersByType()
+    {
+        var scrape = new FakeScrapeJobRepository();
+        scrape.Add(MakeScrape("s", DateTime.UtcNow));
+        var bg = new FakeBackgroundJobRepository();
+        bg.Add(MakeBackground("b", BackgroundJobTypes.Rechunk, DateTime.UtcNow));
+
+        var view = new UnifiedJobView(scrape, bg, new FakeRescrubJobRepository());
+        var rows = await view.ListAsync(null, typeFilter: JobType.Rechunk, null, limit: 10,
+                                        ct: TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(rows);
+        Assert.Equal("b", row.JobId);
+    }
+
+    [Fact]
+    public async Task LibraryFilterExcludesRowsWithNoLibrary()
+    {
+        var bg = new FakeBackgroundJobRepository();
+        bg.Add(MakeBackground("b1", BackgroundJobTypes.Rechunk, DateTime.UtcNow));
+        bg.Add(new BackgroundJobRecord
+                   {
+                       Id        = "b2",
+                       JobType   = BackgroundJobTypes.RenameLibrary,
+                       LibraryId = null,
+                       Version   = null,
+                       InputJson = "{}",
+                       Status    = ScrapeJobStatus.Completed,
+                       CreatedAt = DateTime.UtcNow.AddSeconds(-1)
+                   }
+              );
+
+        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var rows = await view.ListAsync(null, null, libraryFilter: "x", limit: 10,
+                                        ct: TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(rows);
+        Assert.Equal("b1", row.JobId);
+    }
+
+    [Fact]
+    public async Task MalformedInputJsonDoesNotCrashProjection()
+    {
+        var bg = new FakeBackgroundJobRepository();
+        bg.Add(new BackgroundJobRecord
+                   {
+                       Id        = "b1",
+                       JobType   = BackgroundJobTypes.RenameLibrary,
+                       InputJson = "{not-json",
+                       Status    = ScrapeJobStatus.Completed,
+                       CreatedAt = DateTime.UtcNow
+                   }
+              );
+
+        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var rows = await view.ListAsync(null, null, null, 10, ct: TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(rows);
+        Assert.Null(row.RenameToId);
+    }
+
+    #region Helper methods
+
+    private static ScrapeJobRecord MakeScrape(string id, DateTime createdAt,
+                                              ScrapeJobStatus status = ScrapeJobStatus.Completed) =>
+        new ScrapeJobRecord
+            {
+                Id = id,
+                Job = new ScrapeJob
+                          {
+                              LibraryId          = "x",
+                              Version            = "1",
+                              RootUrl            = "https://x",
+                              LibraryHint        = "test",
+                              AllowedUrlPatterns = []
+                          },
+                Status   = status,
+                CreatedAt = createdAt
+            };
+
+    private static BackgroundJobRecord MakeBackground(string id, string jobType, DateTime createdAt) =>
+        new BackgroundJobRecord
+            {
+                Id        = id,
+                JobType   = jobType,
+                LibraryId = "x",
+                Version   = "1",
+                InputJson = "{}",
+                Status    = ScrapeJobStatus.Completed,
+                CreatedAt = createdAt
+            };
+
+    private static RescrubJobRecord MakeRescrub(string id, DateTime createdAt) =>
+        new RescrubJobRecord
+            {
+                Id        = id,
+                LibraryId = "x",
+                Version   = "1",
+                Status    = ScrapeJobStatus.Completed,
+                CreatedAt = createdAt,
+                Options   = new RescrubOptions()
+            };
+
+    #endregion
 }
