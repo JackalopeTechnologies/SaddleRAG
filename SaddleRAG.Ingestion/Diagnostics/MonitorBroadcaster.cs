@@ -111,7 +111,7 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
         }
     }
 
-    public void RecordError(string jobId, string message)
+    public void RecordError(string jobId, string message, string? url = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         ArgumentException.ThrowIfNullOrEmpty(message);
@@ -121,7 +121,7 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
             {
                 state.ErrorCount++;
                 EnqueueCapped(state.pmRecentErrors,
-                              new RecentError { Message = message, At = DateTime.UtcNow },
+                              new RecentError { Message = message, Url = url, At = DateTime.UtcNow },
                               ErrorFeedCapacity
                              );
             }

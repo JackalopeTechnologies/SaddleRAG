@@ -20,7 +20,7 @@ public interface IMonitorBroadcaster
     void RecordJobStarted(string jobId, string libraryId, string version, string rootUrl);
     void RecordFetch(string jobId, string url);
     void RecordReject(string jobId, string url, string reason);
-    void RecordError(string jobId, string message);
+    void RecordError(string jobId, string message, string? url = null);
     void RecordPageClassified(string jobId);
     void RecordChunkGenerated(string jobId);
     void RecordChunkEmbedded(string jobId);

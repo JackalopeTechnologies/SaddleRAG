@@ -6,15 +6,23 @@
 }
 else
 {
-    <MudPaper Outlined="true" Style="max-height:240px; overflow:auto">
+    <MudPaper Outlined="true" Style="max-height:320px; overflow:auto">
         <MudList T="string" Dense="true">
             @foreach (var e in Errors.Reverse())
             {
                 <MudListItem Icon="@Icons.Material.Filled.ErrorOutline" IconColor="Color.Error">
-                    <MudStack Row="true" Spacing="2">
-                        <span style="font-family:monospace; opacity:.6"><TimeDisplay Utc="@e.At" Format="HH:mm:ss" ShowZone="false"/></span>
-                        <span>@e.Message</span>
-                    </MudStack>
+                    <div>
+                        <span style="font-family:monospace; opacity:.6; margin-right:.5rem">
+                            <TimeDisplay Utc="@e.At" Format="HH:mm:ss" ShowZone="false"/>
+                        </span>
+                        <span style="font-weight:600">@e.Message</span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(e.Url))
+                    {
+                        <div style="font-family:monospace; font-size:.72rem; opacity:.75; word-break:break-all; margin-top:.15rem">
+                            @e.Url
+                        </div>
+                    }
                 </MudListItem>
             }
         </MudList>
