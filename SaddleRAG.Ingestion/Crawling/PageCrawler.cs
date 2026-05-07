@@ -1191,7 +1191,7 @@ public class PageCrawler
                                       exDepth,
                                       ex.Message
                                      );
-            mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message);
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message, url);
         }
         finally
         {
@@ -1223,7 +1223,7 @@ public class PageCrawler
                                       nullDepth,
                                       NoResponseError
                                      );
-            mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError);
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError, originalUrl);
         }
         else
             await DispatchKnownResponseAsync(response,
@@ -1266,7 +1266,7 @@ public class PageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status} rate limited"
                                          );
-                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} rate limited");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} rate limited", originalUrl);
                 break;
             }
             case true when HostRateLimiter.IsForbiddenStatus(response.Status) && inScope:
@@ -1282,7 +1282,7 @@ public class PageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status} gated"
                                          );
-                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} gated");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} gated", originalUrl);
                 break;
             }
             default:
@@ -1297,7 +1297,7 @@ public class PageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status}"
                                          );
-                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}");
+                mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}", originalUrl);
                 break;
             }
         }
@@ -1343,7 +1343,7 @@ public class PageCrawler
                                       entry.InScopeDepth,
                                       $"HTTP {response.Status} forbidden (max retries)"
                                      );
-            mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} forbidden (max retries)");
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} forbidden (max retries)", originalUrl);
         }
     }
 
@@ -2134,7 +2134,11 @@ public class PageCrawler
     ///     extension hasn't been discovered yet, probe each known extension
     ///     (.html, .htm, .aspx) and stop at the first that returns 200,
     ///     recording it on <paramref name="extensionState" /> so subsequent
-    ///     link extraction keeps extensions on discovered URLs.
+    ///     link extraction keeps extensions on discovered URLs. Once the
+    ///     extension is known, applies it upfront to URLs that were enqueued
+    ///     (and normalized to extension-stripped form) before discovery — the
+    ///     probe only fires when extensionState.Value is null, so without the
+    ///     upfront apply every pre-discovery URL would 404 and never recover.
     ///     Shared by the real crawl and dry-run paths so they can't drift.
     /// </summary>
     private async Task<(IPage Page, IResponse? Response, string FetchUrl)>
@@ -2144,13 +2148,50 @@ public class PageCrawler
                                         SiteExtensionState extensionState,
                                         CancellationToken ct)
     {
-        string fetchUrl = url;
+        string fetchUrl = MaybeApplyKnownExtension(url, extensionState.Value);
         var response = await NavigateAndPreparePageAsync(page, fetchUrl, ct);
 
         if (response != null && response.Status == HttpNotFound && extensionState.Value == null)
             (page, response, fetchUrl) = await RetryWithExtensionsAsync(url, page, browser, extensionState, ct);
 
         return (page, response, fetchUrl);
+    }
+
+    /// <summary>
+    ///     Append the discovered site extension (e.g. ".htm") to <paramref name="url" />'s
+    ///     path when (a) the extension is known and (b) the URL doesn't already end in any
+    ///     known extension. Preserves query string and non-default port. Returns the URL
+    ///     unchanged when either condition fails, when the path is just "/", or when the URL
+    ///     doesn't parse — the caller's navigate will surface any remaining failure.
+    /// </summary>
+    private static string MaybeApplyKnownExtension(string url, string? knownExtension)
+    {
+        string result = url;
+        bool needsApply = !string.IsNullOrEmpty(knownExtension);
+        if (needsApply)
+        {
+            try
+            {
+                var uri = new Uri(url);
+                string path = uri.AbsolutePath;
+                bool alreadyExtensioned = smExtensionsToStrip
+                    .Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+                bool pathIsFetchable = !string.IsNullOrEmpty(path)
+                                    && path != "/"
+                                    && !path.EndsWith(value: '/');
+                if (!alreadyExtensioned && pathIsFetchable)
+                {
+                    string portSuffix = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
+                    result = $"{uri.Scheme}://{uri.Host}{portSuffix}{path}{knownExtension}{uri.Query}";
+                }
+            }
+            catch(UriFormatException)
+            {
+                // Leave URL unchanged so the upstream navigate reports the failure.
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

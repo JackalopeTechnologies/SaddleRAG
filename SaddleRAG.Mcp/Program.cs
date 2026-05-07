@@ -291,6 +291,14 @@ builder.Services
 // Blazor Server + SignalR for /monitor
 builder.Services.AddRazorComponents()
        .AddInteractiveServerComponents();
+// Default DisconnectedCircuitRetentionPeriod is 3 minutes — too short for the
+// monitor pages which operators leave open overnight. After expiry the server
+// purges the circuit and reconnects fail; without the reconnect modal in
+// App.razor that would silently surface as stale data.
+builder.Services.Configure<Microsoft.AspNetCore.Components.Server.CircuitOptions>(options =>
+{
+    options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromHours(value: 8);
+});
 builder.Services.AddSignalR();
 builder.Services.AddMudServices();
 builder.Services.AddHostedService<MonitorTickService>();

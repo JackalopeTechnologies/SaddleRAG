@@ -36,7 +36,7 @@
         <MudTh>Job</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.CreatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudTd>
+        <MudTd><TimeDisplay Utc="@context.CreatedAt"/></MudTd>
         <MudTd>@context.LibraryId</MudTd>
         <MudTd>@context.Version</MudTd>
         <MudTd>

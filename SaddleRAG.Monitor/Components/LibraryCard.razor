@@ -9,7 +9,7 @@
         <MudText Typo="Typo.caption">v@(Library.Version) · @Library.ChunkCount chunks · @Library.PageCount pages</MudText>
         @if (Library.LastScrapedAt is not null)
         {
-            <MudText Typo="Typo.caption">Scraped @Library.LastScrapedAt.Value.ToString("yyyy-MM-dd HH:mm 'UTC'")</MudText>
+            <MudText Typo="Typo.caption">Scraped <TimeDisplay Utc="@Library.LastScrapedAt"/></MudText>
         }
         @if (!string.IsNullOrEmpty(Library.Hint))
         {
