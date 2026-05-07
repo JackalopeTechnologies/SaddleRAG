@@ -26,15 +26,22 @@ namespace SaddleRAG.Ingestion;
 public class BackgroundJobRunner : IBackgroundJobRunner
 {
     public BackgroundJobRunner(RepositoryFactory repositoryFactory,
+                               IMonitorBroadcaster broadcaster,
                                IHostApplicationLifetime lifetime,
                                ILogger<BackgroundJobRunner> logger)
     {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(lifetime);
+        ArgumentNullException.ThrowIfNull(logger);
         mRepositoryFactory = repositoryFactory;
+        mBroadcaster = broadcaster;
         mAppStoppingToken = lifetime.ApplicationStopping;
         mLogger = logger;
     }
 
     private readonly CancellationToken mAppStoppingToken;
+    private readonly IMonitorBroadcaster mBroadcaster;
     private readonly ILogger<BackgroundJobRunner> mLogger;
 
     private readonly RepositoryFactory mRepositoryFactory;
@@ -82,12 +89,14 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         jobRecord.PipelineState = PipelineStateRunning;
         await jobRepo.UpsertAsync(jobRecord);
 
+        mBroadcaster.RecordJobStarted(jobRecord.Id,
+                                      jobRecord.LibraryId ?? string.Empty,
+                                      jobRecord.Version ?? string.Empty,
+                                      rootUrl: string.Empty
+                                     );
+
         mLogger.LogInformation("Running background job {JobId} ({JobType}) for {LibraryId}/{Version}",
-                               jobRecord.Id,
-                               jobRecord.JobType,
-                               jobRecord.LibraryId,
-                               jobRecord.Version
-                              );
+                               jobRecord.Id, jobRecord.JobType, jobRecord.LibraryId, jobRecord.Version);
 
         Action<int, int> onProgress = (processed, total) =>
                                       {
@@ -95,6 +104,11 @@ public class BackgroundJobRunner : IBackgroundJobRunner
                                           jobRecord.ItemsTotal = total;
                                           jobRecord.LastProgressAt = DateTime.UtcNow;
                                           jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
+                                          mBroadcaster.RecordJobProgress(jobRecord.Id,
+                                                                         processed,
+                                                                         total,
+                                                                         jobRecord.ItemsLabel ?? string.Empty
+                                                                        );
                                       };
 
         try
@@ -106,23 +120,23 @@ public class BackgroundJobRunner : IBackgroundJobRunner
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
 
+            mBroadcaster.RecordJobCompleted(jobRecord.Id, indexedPageCount: 0);
+
             mLogger.LogInformation("Background job {JobId} ({JobType}) completed",
-                                   jobRecord.Id,
-                                   jobRecord.JobType
-                                  );
+                                   jobRecord.Id, jobRecord.JobType);
         }
         catch(OperationCanceledException)
         {
             mLogger.LogInformation("Background job {JobId} ({JobType}) was cancelled",
-                                   jobRecord.Id,
-                                   jobRecord.JobType
-                                  );
+                                   jobRecord.Id, jobRecord.JobType);
 
             jobRecord.Status = ScrapeJobStatus.Cancelled;
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);
             jobRecord.CancelledAt = DateTime.UtcNow;
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
+
+            mBroadcaster.RecordJobCancelled(jobRecord.Id);
         }
         catch(Exception ex)
         {
@@ -133,6 +147,8 @@ public class BackgroundJobRunner : IBackgroundJobRunner
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
+
+            mBroadcaster.RecordJobFailed(jobRecord.Id, ex.Message);
         }
     }
 
