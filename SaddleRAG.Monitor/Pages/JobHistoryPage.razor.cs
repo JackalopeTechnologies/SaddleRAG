@@ -8,6 +8,7 @@
 
 using Microsoft.AspNetCore.Components;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -41,6 +42,13 @@ public abstract class JobHistoryPageBase : ComponentBase
     protected string? LibraryFilter { get; set; }
 
     /// <summary>
+    ///     Selected job type filter or null for "all types".
+    /// </summary>
+    protected JobType? TypeFilter { get; set; }
+
+    protected static readonly JobType[] pmTypeChoices = Enum.GetValues<JobType>();
+
+    /// <summary>
     ///     Maximum number of rows to fetch.
     /// </summary>
     protected int LimitChoice { get; set; } = DefaultLimit;
@@ -71,6 +79,6 @@ public abstract class JobHistoryPageBase : ComponentBase
             statusEnum = parsed;
         }
 
-        Rows = await Jobs.ListAsync(statusEnum, null, LibraryFilter, LimitChoice);
+        Rows = await Jobs.ListAsync(statusEnum, TypeFilter, LibraryFilter, LimitChoice);
     }
 }
