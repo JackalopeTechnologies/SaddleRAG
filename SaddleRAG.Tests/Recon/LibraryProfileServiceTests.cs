@@ -246,6 +246,22 @@ public sealed class LibraryProfileServiceTests
         Assert.Empty(saved.Stoplist);
     }
 
+    [Fact]
+    public async Task SaveLeavesCrawlHintsEmptyWhenNoPriorVersionExists()
+    {
+        var repo = Substitute.For<ILibraryProfileRepository>();
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryProfile>());
+
+        var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
+        var newProfile = MakeProfileWithCrawlHints("1.0", new CrawlHints());
+
+        var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
+
+        Assert.Empty(saved.CrawlHints.ExcludedUrlPatterns);
+        Assert.Empty(saved.CrawlHints.ExpectedHosts);
+        Assert.Equal(string.Empty, saved.CrawlHints.Notes);
+    }
+
     private static LibraryProfile MakeProfile(IReadOnlyList<string> languages,
                                               IReadOnlyList<string> likely,
                                               float confidence,

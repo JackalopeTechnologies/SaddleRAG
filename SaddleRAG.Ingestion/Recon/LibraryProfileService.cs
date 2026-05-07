@@ -51,8 +51,14 @@ public class LibraryProfileService
         Validate(profile);
 
         var normalized = Normalize(profile);
-        var withStoplist = await ApplyStoplistCarryForwardAsync(repository, normalized, ct);
-        var withCarryForward = await ApplyCrawlHintsCarryForwardAsync(repository, withStoplist, ct);
+
+        bool needPriorList = profile.Stoplist.Count == 0 || profile.CrawlHints.ExcludedUrlPatterns.Count == 0;
+        IReadOnlyList<LibraryProfile> priorProfiles = [];
+        if (needPriorList)
+            priorProfiles = await repository.ListAllAsync(ct);
+
+        var withStoplist = ApplyStoplistCarryForward(priorProfiles, normalized);
+        var withCarryForward = ApplyCrawlHintsCarryForward(priorProfiles, withStoplist);
 
         await repository.UpsertAsync(withCarryForward, ct);
         mLogger.LogInformation("Saved library profile for {LibraryId}/{Version} (source={Source}, confidence={Confidence:F2}, stoplist={StoplistCount}, excludedPatterns={ExcludedCount})",
@@ -73,20 +79,18 @@ public class LibraryProfileService
     ///     LLM's curation work survive a library version bump without
     ///     re-doing it. Non-empty incoming Stoplists are never overridden.
     /// </summary>
-    private static async Task<LibraryProfile> ApplyStoplistCarryForwardAsync(ILibraryProfileRepository repository,
-                                                                             LibraryProfile profile,
-                                                                             CancellationToken ct)
+    private static LibraryProfile ApplyStoplistCarryForward(IReadOnlyList<LibraryProfile> priorProfiles,
+                                                            LibraryProfile profile)
     {
         var result = profile;
         if (profile.Stoplist.Count == 0)
         {
-            var all = await repository.ListAllAsync(ct);
-            var prior = all.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
-                                       !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
-                                       p.Stoplist.Count > 0
-                                 )
-                           .OrderByDescending(p => p.CreatedUtc)
-                           .FirstOrDefault();
+            var prior = priorProfiles.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
+                                                 !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
+                                                 p.Stoplist.Count > 0
+                                           )
+                                    .OrderByDescending(p => p.CreatedUtc)
+                                    .FirstOrDefault();
             if (prior != null)
                 result = profile with { Stoplist = prior.Stoplist };
         }
@@ -103,20 +107,18 @@ public class LibraryProfileService
     ///     ExcludedUrlPatterns is treated as the LLM having an opinion and
     ///     is never overridden.
     /// </summary>
-    private static async Task<LibraryProfile> ApplyCrawlHintsCarryForwardAsync(ILibraryProfileRepository repository,
-                                                                               LibraryProfile profile,
-                                                                               CancellationToken ct)
+    private static LibraryProfile ApplyCrawlHintsCarryForward(IReadOnlyList<LibraryProfile> priorProfiles,
+                                                               LibraryProfile profile)
     {
         var result = profile;
         if (profile.CrawlHints.ExcludedUrlPatterns.Count == 0)
         {
-            var all = await repository.ListAllAsync(ct);
-            var prior = all.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
-                                       !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
-                                       p.CrawlHints.ExcludedUrlPatterns.Count > 0
-                                 )
-                           .OrderByDescending(p => p.CreatedUtc)
-                           .FirstOrDefault();
+            var prior = priorProfiles.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
+                                                 !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
+                                                 p.CrawlHints.ExcludedUrlPatterns.Count > 0
+                                           )
+                                    .OrderByDescending(p => p.CreatedUtc)
+                                    .FirstOrDefault();
             if (prior != null)
                 result = profile with { CrawlHints = prior.CrawlHints };
         }
