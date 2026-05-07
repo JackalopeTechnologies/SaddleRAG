@@ -104,11 +104,13 @@ public class BackgroundJobRunner : IBackgroundJobRunner
                                           jobRecord.ItemsTotal = total;
                                           jobRecord.LastProgressAt = DateTime.UtcNow;
                                           jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
-                                          mBroadcaster.RecordJobProgress(jobRecord.Id,
-                                                                         processed,
-                                                                         total,
-                                                                         jobRecord.ItemsLabel ?? string.Empty
-                                                                        );
+                                          if (!string.IsNullOrEmpty(jobRecord.ItemsLabel))
+                                          {
+                                              mBroadcaster.RecordJobProgress(jobRecord.Id,
+                                                                             processed,
+                                                                             total,
+                                                                             jobRecord.ItemsLabel);
+                                          }
                                       };
 
         try
