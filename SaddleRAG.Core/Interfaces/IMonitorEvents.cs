@@ -20,6 +20,7 @@ namespace SaddleRAG.Core.Interfaces;
 public interface IMonitorEvents
 {
     event Action<JobStartedEvent>?   JobStarted;
+    event Action<JobProgressEvent>?  JobProgress;
     event Action<JobCompletedEvent>? JobCompleted;
     event Action<JobFailedEvent>?    JobFailed;
     event Action<JobCancelledEvent>? JobCancelled;

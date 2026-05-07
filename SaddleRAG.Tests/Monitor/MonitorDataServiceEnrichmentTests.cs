@@ -49,7 +49,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(repo,
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var summaries = await svc.GetLibrarySummariesAsync(TestContext.Current.CancellationToken);
 
@@ -89,7 +91,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(libRepo,
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
@@ -146,7 +150,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(libRepo,
                                          chunkRepo,
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
@@ -197,7 +203,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(libRepo,
                                          chunkRepo,
                                          profileRepo,
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
 
         var loaded = await svc.GetLibraryProfileAsync("alpha", "1", TestContext.Current.CancellationToken);
@@ -217,7 +225,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var loaded = await svc.GetLibraryProfileAsync("missing", "1", TestContext.Current.CancellationToken);
         Assert.Null(loaded);
@@ -265,7 +275,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(libRepo,
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var versions = await svc.GetVersionsAsync("alpha", TestContext.Current.CancellationToken);
 
@@ -280,7 +292,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var versions = await svc.GetVersionsAsync("missing", TestContext.Current.CancellationToken);
         Assert.Empty(versions);
@@ -333,7 +347,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         jobRepo,
+                                         new UnifiedJobView(jobRepo,
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var jobId = await svc.GetLatestJobIdAsync("alpha", "1", TestContext.Current.CancellationToken);
 
@@ -346,7 +362,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var jobId = await svc.GetLatestJobIdAsync("missing", "1", TestContext.Current.CancellationToken);
         Assert.Null(jobId);
@@ -380,7 +398,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          auditRepo);
         var summary = await svc.GetAuditSummaryAsync("job-1", TestContext.Current.CancellationToken);
 
@@ -396,7 +416,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var summary = await svc.GetAuditSummaryAsync("missing-job", TestContext.Current.CancellationToken);
         Assert.Null(summary);
@@ -425,7 +447,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         jobRepo,
+                                         new UnifiedJobView(jobRepo,
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var info = await svc.GetJobInfoAsync("job-1", TestContext.Current.CancellationToken);
 
@@ -443,7 +467,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          new FakeScrapeAuditRepository());
         var info = await svc.GetJobInfoAsync("missing", TestContext.Current.CancellationToken);
         Assert.Null(info);
@@ -482,7 +508,9 @@ public sealed class MonitorDataServiceEnrichmentTests
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
-                                         new FakeScrapeJobRepository(),
+                                         new UnifiedJobView(new FakeScrapeJobRepository(),
+                                                            new FakeBackgroundJobRepository(),
+                                                            new FakeRescrubJobRepository()),
                                          auditRepo);
         var (fetches, rejects) = await svc.GetTerminalFeedsAsync("job-1",
                                                                  50,

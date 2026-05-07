@@ -28,6 +28,7 @@ public interface IMonitorBroadcaster
     void RecordJobCompleted(string jobId, int indexedPageCount);
     void RecordJobFailed(string jobId, string errorMessage);
     void RecordJobCancelled(string jobId);
+    void RecordJobProgress(string jobId, int processed, int total, string label);
     void RecordSuspectFlag(string jobId, string libraryId, string version, IReadOnlyList<string> reasons);
 
     JobTickSnapshot? GetJobSnapshot(string jobId);

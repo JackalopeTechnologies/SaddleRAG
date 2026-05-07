@@ -9,6 +9,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Recon;
@@ -26,17 +27,26 @@ public class RescrubJobRunner
 {
     public RescrubJobRunner(RescrubService service,
                             RepositoryFactory repositoryFactory,
+                            IMonitorBroadcaster broadcaster,
                             IHostApplicationLifetime lifetime,
                             ILogger<RescrubJobRunner> logger)
     {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(lifetime);
+        ArgumentNullException.ThrowIfNull(logger);
         mService = service;
         mRepositoryFactory = repositoryFactory;
+        mBroadcaster = broadcaster;
         mAppStoppingToken = lifetime.ApplicationStopping;
         mLogger = logger;
     }
 
     private readonly CancellationToken mAppStoppingToken;
+    private readonly IMonitorBroadcaster mBroadcaster;
     private readonly ILogger<RescrubJobRunner> mLogger;
+
     private readonly RepositoryFactory mRepositoryFactory;
 
     private readonly RescrubService mService;
@@ -83,6 +93,12 @@ public class RescrubJobRunner
         jobRecord.PipelineState = PipelineStateRunning;
         await jobRepo.UpsertAsync(jobRecord);
 
+        mBroadcaster.RecordJobStarted(jobRecord.Id,
+                                      jobRecord.LibraryId,
+                                      jobRecord.Version,
+                                      rootUrl: string.Empty
+                                     );
+
         mLogger.LogInformation("Running rescrub job {JobId} for {LibraryId} v{Version}",
                                jobRecord.Id,
                                jobRecord.LibraryId,
@@ -113,6 +129,11 @@ public class RescrubJobRunner
                                                          jobRecord.ChunksTotal = total;
                                                          jobRecord.LastProgressAt = DateTime.UtcNow;
                                                          jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
+                                                         mBroadcaster.RecordJobProgress(jobRecord.Id,
+                                                                                        processed,
+                                                                                        total,
+                                                                                        ProgressLabel
+                                                                                       );
                                                      },
                                                      mAppStoppingToken
                                                     );
@@ -125,6 +146,8 @@ public class RescrubJobRunner
             jobRecord.ChunksTotal = result.Processed;
             jobRecord.Result = result;
             await jobRepo.UpsertAsync(jobRecord);
+
+            mBroadcaster.RecordJobCompleted(jobRecord.Id, indexedPageCount: 0);
 
             mLogger.LogInformation("Rescrub job {JobId} completed: processed={Processed}, changed={Changed}",
                                    jobRecord.Id,
@@ -141,6 +164,8 @@ public class RescrubJobRunner
             jobRecord.CancelledAt = DateTime.UtcNow;
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
+
+            mBroadcaster.RecordJobCancelled(jobRecord.Id);
         }
         catch(Exception ex)
         {
@@ -151,8 +176,11 @@ public class RescrubJobRunner
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
             jobRecord.CompletedAt = DateTime.UtcNow;
             await jobRepo.UpsertAsync(jobRecord);
+
+            mBroadcaster.RecordJobFailed(jobRecord.Id, ex.Message);
         }
     }
 
     private const string PipelineStateRunning = "Running";
+    private const string ProgressLabel = "chunks";
 }
