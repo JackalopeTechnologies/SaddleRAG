@@ -12,6 +12,11 @@ namespace SaddleRAG.Core.Models;
 ///     crawler enqueues, not how chunks are classified. Carried forward
 ///     across versions of the same library when the new profile's
 ///     ExcludedUrlPatterns is empty (mirrors Stoplist carry-forward).
+///     Carry-forward replaces the entire record — when supplying any
+///     subfield, supply ExcludedUrlPatterns too (even empty) is not
+///     sufficient; populate ExcludedUrlPatterns to opt out of
+///     carry-forward, otherwise prior values for ExpectedHosts and
+///     Notes will overwrite the new ones.
 /// </summary>
 public record CrawlHints
 {
