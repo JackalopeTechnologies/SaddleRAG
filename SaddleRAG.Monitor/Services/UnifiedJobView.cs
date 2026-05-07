@@ -147,7 +147,7 @@ public sealed class UnifiedJobView : IUnifiedJobView
 
     private static JobType MapBackgroundType(string jobType)
     {
-        JobType result = JobType.Rechunk;
+        JobType result = JobType.Unknown;
         switch (jobType)
         {
             case BackgroundJobTypes.Rechunk:                  result = JobType.Rechunk; break;
