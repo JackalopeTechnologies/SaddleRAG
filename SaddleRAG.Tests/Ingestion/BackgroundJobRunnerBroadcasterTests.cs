@@ -27,7 +27,7 @@ public sealed class BackgroundJobRunnerBroadcasterTests
         var (runner, broadcaster, _) = MakeRunner();
 
         var record = MakeRecord(BackgroundJobTypes.RenameLibrary);
-        await runner.QueueAsync(record, (_, _, _) => Task.CompletedTask);
+        await runner.QueueAsync(record, (_, _, _) => Task.CompletedTask, TestContext.Current.CancellationToken);
         await WaitForCompletion(record, broadcaster);
 
         broadcaster.Received(1).RecordJobStarted(record.Id, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
@@ -49,7 +49,7 @@ public sealed class BackgroundJobRunnerBroadcasterTests
             onProgress(10, 100);
             onProgress(20, 100);
             await Task.CompletedTask;
-        });
+        }, TestContext.Current.CancellationToken);
         await WaitForCompletion(record, broadcaster);
 
         broadcaster.Received(1).RecordJobProgress(record.Id, 10, 100, "chunks");
@@ -62,7 +62,7 @@ public sealed class BackgroundJobRunnerBroadcasterTests
         var (runner, broadcaster, _) = MakeRunner();
 
         var record = MakeRecord(BackgroundJobTypes.DeleteVersion);
-        await runner.QueueAsync(record, (_, _, _) => throw new InvalidOperationException("boom"));
+        await runner.QueueAsync(record, (_, _, _) => throw new InvalidOperationException("boom"), TestContext.Current.CancellationToken);
         await WaitForCompletion(record, broadcaster);
 
         broadcaster.Received(1).RecordJobFailed(record.Id, "boom");
@@ -75,7 +75,7 @@ public sealed class BackgroundJobRunnerBroadcasterTests
         var (runner, broadcaster, _) = MakeRunner();
 
         var record = MakeRecord(BackgroundJobTypes.Rechunk);
-        await runner.QueueAsync(record, (_, _, _) => throw new OperationCanceledException("test cancel"));
+        await runner.QueueAsync(record, (_, _, _) => throw new OperationCanceledException("test cancel"), TestContext.Current.CancellationToken);
         await WaitForCompletion(record, broadcaster);
 
         broadcaster.Received(1).RecordJobCancelled(record.Id);
