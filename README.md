@@ -80,7 +80,7 @@ SaddleRAG automatically pulls the required models on first use:
 
 ### Step 3: Install SaddleRAG
 
-1. Download `SaddleRAG.Mcp.msi` from the [latest release](https://github.com/JackalopeTechnologies/saddlerag/releases/latest)
+1. Download `SaddleRAG.Mcp-*.msi` from the [latest release](https://github.com/JackalopeTechnologies/saddlerag/releases/latest)
 2. Run the installer
 3. **MongoDB Configuration** -- the installer defaults to `mongodb://localhost:27017` with database `SaddleRAG`. Use the **Test Connection** button to verify MongoDB is reachable. If your MongoDB is on a different host, enter the connection string. **Reset to Local Defaults** reverts to the standard local settings.
 4. **Ollama Configuration** -- defaults to `http://localhost:11434`. Use **Test Connection** to verify. Change only if Ollama is running on another machine.
