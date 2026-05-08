@@ -45,4 +45,19 @@ public static class BackgroundJobTypes
     ///     Submit a URL correction for a page in an existing library version.
     /// </summary>
     public const string SubmitUrlCorrection = "submit_url_correction";
+
+    /// <summary>
+    ///     Manually purge ScrapeAuditLog rows for a single scrape job.
+    ///     Audit rows are also auto-purged after 30 days via the TTL index;
+    ///     this tool exists for early eviction of large debugging logs.
+    /// </summary>
+    public const string CleanupAuditLog = "cleanup_audit_log";
+
+    /// <summary>
+    ///     Manually delete ScrapeJobs rows matching a filter (status,
+    ///     library, version, or explicit ids). Cascades to ScrapeAuditLog
+    ///     by default. ScrapeJobs are NOT auto-purged — they live until a
+    ///     user invokes this tool.
+    /// </summary>
+    public const string DeleteScrapeJobs = "delete_scrape_jobs";
 }

@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 
@@ -47,4 +48,28 @@ internal sealed class FakeScrapeJobRepository : IScrapeJobRepository
                                                     string version,
                                                     CancellationToken ct = default) =>
         throw new NotSupportedException("FakeScrapeJobRepository: GetActiveJobAsync not supported in this test");
+
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeScrapeJobRepository: DeleteAsync not supported in this test");
+
+    public Task<long> DeleteManyAsync(ScrapeJobStatus? status,
+                                      string? libraryId,
+                                      string? version,
+                                      CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeScrapeJobRepository: DeleteManyAsync not supported in this test");
+
+    public Task<long> CountDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                 string? libraryId,
+                                                 string? version,
+                                                 CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeScrapeJobRepository: CountDeleteCandidatesAsync not supported in this test"
+                                       );
+
+    public Task<IReadOnlyList<ScrapeJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                                          string? libraryId,
+                                                                          string? version,
+                                                                          int limit,
+                                                                          CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeScrapeJobRepository: ListDeleteCandidatesAsync not supported in this test"
+                                       );
 }

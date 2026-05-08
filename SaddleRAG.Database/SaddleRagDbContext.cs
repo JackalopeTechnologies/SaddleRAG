@@ -232,7 +232,26 @@ public class SaddleRagDbContext
                                                       ),
                                                   cancellationToken: ct
                                                  );
+
+        // ScrapeAuditLog: TTL on DiscoveredAt — Mongo auto-deletes audit
+        // rows older than smAuditRetention. Manual cleanup tools cover early
+        // eviction; ScrapeJobs themselves are NOT subject to TTL and remain
+        // until explicitly deleted.
+        await
+            ScrapeAuditLog.Indexes.CreateOneAsync(new CreateIndexModel<ScrapeAuditLogEntry>(auditKeys.Ascending(a => a
+                                                                                            .DiscoveredAt
+                                                                                        ),
+                                                                                    new CreateIndexOptions
+                                                                                        {
+                                                                                            ExpireAfter = smAuditRetention
+                                                                                        }
+                                                                               ),
+                                                  cancellationToken: ct
+                                                 );
     }
+
+    private static readonly TimeSpan smAuditRetention = TimeSpan.FromDays(smAuditRetentionDays);
+    private const int smAuditRetentionDays = 30;
 
     private const string CollectionLibraries = "libraries";
     private const string CollectionLibraryVersions = "libraryVersions";
