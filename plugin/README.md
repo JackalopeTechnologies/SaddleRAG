@@ -23,7 +23,7 @@ The plugin only handles Claude Code wiring. The SaddleRAG server itself, plus it
 
 ### Windows (MSI installer — easiest)
 
-Download `SaddleRAG.Mcp.msi` from the [latest release](https://github.com/JackalopeTechnologies/saddlerag/releases/latest) and run it. Installs the `SaddleRAGMcp` Windows service on `http://localhost:6100`.
+Download `SaddleRAG.Mcp-*.msi` from the [latest release](https://github.com/JackalopeTechnologies/saddlerag/releases/latest) and run it. Installs the `SaddleRAGMcp` Windows service on `http://localhost:6100`.
 
 Verify:
 
