@@ -54,10 +54,11 @@ public static class BackgroundJobTypes
     public const string CleanupAuditLog = "cleanup_audit_log";
 
     /// <summary>
-    ///     Manually delete ScrapeJobs rows matching a filter (status,
-    ///     library, version, or explicit ids). Cascades to ScrapeAuditLog
-    ///     by default. ScrapeJobs are NOT auto-purged — they live until a
-    ///     user invokes this tool.
+    ///     Manually delete job tracking rows across ScrapeJobs, BackgroundJobs,
+    ///     and RescrubJobs collections by filter (kind, status, library, version,
+    ///     or explicit ids). Cascades to ScrapeAuditLog by default for scrape jobs.
+    ///     Job rows are also auto-purged after 30 days from CompletedAt via TTL
+    ///     indexes; this tool exists for early eviction.
     /// </summary>
-    public const string DeleteScrapeJobs = "delete_scrape_jobs";
+    public const string CleanupJobs = "cleanup_jobs";
 }

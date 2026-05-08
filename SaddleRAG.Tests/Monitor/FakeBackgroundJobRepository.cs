@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 
@@ -48,4 +49,28 @@ internal sealed class FakeBackgroundJobRepository : IBackgroundJobRepository
                                                    .ToList();
         return Task.FromResult(result);
     }
+
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeBackgroundJobRepository: DeleteAsync not supported in this test");
+
+    public Task<long> DeleteManyAsync(ScrapeJobStatus? status,
+                                      string? libraryId,
+                                      string? version,
+                                      CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeBackgroundJobRepository: DeleteManyAsync not supported in this test");
+
+    public Task<long> CountDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                 string? libraryId,
+                                                 string? version,
+                                                 CancellationToken ct = default) =>
+        throw new
+            NotSupportedException("FakeBackgroundJobRepository: CountDeleteCandidatesAsync not supported in this test");
+
+    public Task<IReadOnlyList<BackgroundJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                                              string? libraryId,
+                                                                              string? version,
+                                                                              int limit,
+                                                                              CancellationToken ct = default) =>
+        throw new
+            NotSupportedException("FakeBackgroundJobRepository: ListDeleteCandidatesAsync not supported in this test");
 }
