@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 
 #endregion
@@ -61,4 +62,43 @@ public interface IScrapeJobRepository
     ///     instead of getting wedged on a dead runner.
     /// </summary>
     Task<ScrapeJobRecord?> GetActiveJobAsync(string libraryId, string version, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Delete a single scrape job record by id. Returns true if a row
+    ///     was removed, false if no row matched.
+    /// </summary>
+    Task<bool> DeleteAsync(string id, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Delete every scrape job matching the supplied filter. At least
+    ///     one filter (status, libraryId, or version) must be specified;
+    ///     callers that pass no filter receive zero deletions to prevent
+    ///     accidental wholesale removal. Returns the number of rows removed.
+    /// </summary>
+    Task<long> DeleteManyAsync(ScrapeJobStatus? status,
+                               string? libraryId,
+                               string? version,
+                               CancellationToken ct = default);
+
+    /// <summary>
+    ///     Count the rows that <see cref="DeleteManyAsync" /> would delete
+    ///     for the supplied filter. Returns zero when no filter is set so
+    ///     dry-run preview matches the apply behaviour.
+    /// </summary>
+    Task<long> CountDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                          string? libraryId,
+                                          string? version,
+                                          CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return the rows that <see cref="DeleteManyAsync" /> would delete
+    ///     for the supplied filter, ordered most-recent first and capped at
+    ///     <paramref name="limit" />. Used by dry-run previews so callers
+    ///     can show a sample of affected job ids.
+    /// </summary>
+    Task<IReadOnlyList<ScrapeJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                                   string? libraryId,
+                                                                   string? version,
+                                                                   int limit,
+                                                                   CancellationToken ct = default);
 }
