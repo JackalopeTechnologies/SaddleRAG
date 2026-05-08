@@ -36,4 +36,11 @@ public interface ILibraryIndexRepository
     ///     Returns the count of deleted documents.
     /// </summary>
     Task<long> DeleteAsync(string libraryId, string version, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return every distinct (LibraryId, Version) tuple for which an
+    ///     index bundle has been built. Used by orphan detection to compare
+    ///     child pairs against the parent <see cref="LibraryRecord" /> set.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
 }

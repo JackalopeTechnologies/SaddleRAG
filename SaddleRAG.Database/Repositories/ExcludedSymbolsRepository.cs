@@ -126,4 +126,18 @@ public class ExcludedSymbolsRepository : IExcludedSymbolsRepository
         var result = (int) count;
         return result;
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default)
+    {
+        var grouped = await mContext.ExcludedSymbols
+                                    .Aggregate()
+                                    .Group(e => new { e.LibraryId, e.Version },
+                                           g => new { g.Key.LibraryId, g.Key.Version }
+                                          )
+                                    .ToListAsync(ct);
+        var result = grouped.Select(g => new LibraryVersionKey(g.LibraryId, g.Version)).ToList();
+        return result;
+    }
 }

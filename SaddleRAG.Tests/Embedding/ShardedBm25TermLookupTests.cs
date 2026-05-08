@@ -59,6 +59,10 @@ public sealed class ShardedBm25TermLookupTests
 
         public Task<long> DeleteAsync(string libraryId, string version, CancellationToken ct = default) =>
             Task.FromResult(result: 0L);
+
+        public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<LibraryVersionKey>>(Array.Empty<LibraryVersionKey>());
     }
 
     [Fact]

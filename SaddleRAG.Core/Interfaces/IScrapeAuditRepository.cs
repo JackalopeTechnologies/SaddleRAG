@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 
 #endregion
@@ -66,4 +67,11 @@ public interface IScrapeAuditRepository
     ///     Returns the number of documents removed.
     /// </summary>
     Task<long> DeleteByLibraryVersionAsync(string libraryId, string version, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return every distinct (LibraryId, Version) tuple referenced by an
+    ///     audit log entry. Used by orphan detection so the cleanup sweep
+    ///     can also drop audit rows whose parent library is gone.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
 }

@@ -7,6 +7,7 @@
 #region Usings
 
 using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 
 #endregion
@@ -69,4 +70,9 @@ internal sealed class FakeScrapeAuditRepository : IScrapeAuditRepository
                                                   string version,
                                                   CancellationToken ct = default) =>
         throw new NotSupportedException("FakeScrapeAuditRepository: DeleteByLibraryVersionAsync not supported in this test");
+
+    public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "FakeScrapeAuditRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
+        );
 }

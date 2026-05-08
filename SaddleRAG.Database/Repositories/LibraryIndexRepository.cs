@@ -63,6 +63,20 @@ public class LibraryIndexRepository : ILibraryIndexRepository
         return result.DeletedCount;
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default)
+    {
+        var grouped = await mContext.LibraryIndexes
+                                    .Aggregate()
+                                    .Group(i => new { i.LibraryId, i.Version },
+                                           g => new { g.Key.LibraryId, g.Key.Version }
+                                          )
+                                    .ToListAsync(ct);
+        var result = grouped.Select(g => new LibraryVersionKey(g.LibraryId, g.Version)).ToList();
+        return result;
+    }
+
     /// <summary>
     ///     Compose the document id used as the primary key for an index bundle.
     /// </summary>

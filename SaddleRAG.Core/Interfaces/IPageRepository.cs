@@ -43,4 +43,11 @@ public interface IPageRepository
     ///     Delete all pages for a library version.
     /// </summary>
     Task<long> DeleteAsync(string libraryId, string version, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return every distinct (LibraryId, Version) tuple for which at
+    ///     least one page exists. Used by orphan detection to compare child
+    ///     pairs against the parent <see cref="LibraryRecord" /> set.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
 }

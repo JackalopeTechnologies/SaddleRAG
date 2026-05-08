@@ -61,4 +61,12 @@ public static class BackgroundJobTypes
     ///     indexes; this tool exists for early eviction.
     /// </summary>
     public const string CleanupJobs = "cleanup_jobs";
+
+    /// <summary>
+    ///     Sweep stranded (LibraryId, Version) rows in child collections whose
+    ///     parent <see cref="LibraryRecord" /> no longer exists. Surfaces and
+    ///     removes data left behind when a scrape was cancelled before the
+    ///     library row landed.
+    /// </summary>
+    public const string CleanupOrphans = "cleanup_orphans";
 }

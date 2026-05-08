@@ -60,4 +60,12 @@ public interface IExcludedSymbolsRepository
     ///     list_excluded_symbols tool's Returned/TotalExcluded headers.
     /// </summary>
     Task<int> CountAsync(string libraryId, string version, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return every distinct (LibraryId, Version) tuple for which at
+    ///     least one rejection has been recorded. Used by orphan detection
+    ///     to compare child pairs against the parent
+    ///     <see cref="LibraryRecord" /> set.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
 }
