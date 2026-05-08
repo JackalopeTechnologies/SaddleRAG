@@ -45,4 +45,28 @@ public static class BackgroundJobTypes
     ///     Submit a URL correction for a page in an existing library version.
     /// </summary>
     public const string SubmitUrlCorrection = "submit_url_correction";
+
+    /// <summary>
+    ///     Manually purge ScrapeAuditLog rows for a single scrape job.
+    ///     Audit rows are also auto-purged after 30 days via the TTL index;
+    ///     this tool exists for early eviction of large debugging logs.
+    /// </summary>
+    public const string CleanupAuditLog = "cleanup_audit_log";
+
+    /// <summary>
+    ///     Manually delete job tracking rows across ScrapeJobs, BackgroundJobs,
+    ///     and RescrubJobs collections by filter (kind, status, library, version,
+    ///     or explicit ids). Cascades to ScrapeAuditLog by default for scrape jobs.
+    ///     Job rows are also auto-purged after 30 days from CompletedAt via TTL
+    ///     indexes; this tool exists for early eviction.
+    /// </summary>
+    public const string CleanupJobs = "cleanup_jobs";
+
+    /// <summary>
+    ///     Sweep stranded (LibraryId, Version) rows in child collections whose
+    ///     parent <see cref="LibraryRecord" /> no longer exists. Surfaces and
+    ///     removes data left behind when a scrape was cancelled before the
+    ///     library row landed.
+    /// </summary>
+    public const string CleanupOrphans = "cleanup_orphans";
 }

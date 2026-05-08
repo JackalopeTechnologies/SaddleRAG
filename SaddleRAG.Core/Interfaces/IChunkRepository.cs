@@ -139,4 +139,11 @@ public interface IChunkRepository
                                                      string version,
                                                      int limit,
                                                      CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return every distinct (LibraryId, Version) tuple for which at
+    ///     least one chunk exists. Used by orphan detection to compare child
+    ///     pairs against the parent <see cref="LibraryRecord" /> set.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
 }

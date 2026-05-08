@@ -35,5 +35,10 @@ internal sealed class FakeLibraryProfileRepository : ILibraryProfileRepository
     public Task<IReadOnlyList<LibraryProfile>> ListAllAsync(CancellationToken ct = default) =>
         throw new NotSupportedException("FakeLibraryProfileRepository: ListAllAsync not supported in this test");
 
+    public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "FakeLibraryProfileRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
+        );
+
     private static string Key(string libraryId, string version) => $"{libraryId}/{version}";
 }

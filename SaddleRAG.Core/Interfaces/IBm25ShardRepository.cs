@@ -76,4 +76,11 @@ public interface IBm25ShardRepository
     Task<long> DeleteAsync(string libraryId,
                            string version,
                            CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return every distinct (LibraryId, Version) tuple for which at
+    ///     least one BM25 shard exists. Used by orphan detection to compare
+    ///     child pairs against the parent <see cref="LibraryRecord" /> set.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
 }

@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 
 #endregion
@@ -230,6 +231,20 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
                                                     );
         var result = await mContext.ScrapeAuditLog.DeleteManyAsync(filter, ct);
         return result.DeletedCount;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default)
+    {
+        var grouped = await mContext.ScrapeAuditLog
+                                    .Aggregate()
+                                    .Group(a => new { a.LibraryId, a.Version },
+                                           g => new { g.Key.LibraryId, g.Key.Version }
+                                          )
+                                    .ToListAsync(ct);
+        var result = grouped.Select(g => new LibraryVersionKey(g.LibraryId, g.Version)).ToList();
+        return result;
     }
 
     private const string AggregateIdField = "_id";
