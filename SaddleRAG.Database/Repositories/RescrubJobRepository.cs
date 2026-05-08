@@ -7,6 +7,7 @@
 #region Usings
 
 using MongoDB.Driver;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 
@@ -60,4 +61,81 @@ public class RescrubJobRepository : IRescrubJobRepository
                                     .ToListAsync(ct);
         return results;
     }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteAsync(string id, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(id);
+        var result = await mContext.RescrubJobs.DeleteOneAsync(j => j.Id == id, ct);
+        return result.DeletedCount > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task<long> DeleteManyAsync(ScrapeJobStatus? status,
+                                            string? libraryId,
+                                            string? version,
+                                            CancellationToken ct = default)
+    {
+        var filter = BuildDeleteFilter(status, libraryId, version);
+        long result = 0;
+        if (filter != null)
+        {
+            var deletion = await mContext.RescrubJobs.DeleteManyAsync(filter, ct);
+            result = deletion.DeletedCount;
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<long> CountDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                       string? libraryId,
+                                                       string? version,
+                                                       CancellationToken ct = default)
+    {
+        var filter = BuildDeleteFilter(status, libraryId, version);
+        long result = 0;
+        if (filter != null)
+            result = await mContext.RescrubJobs.CountDocumentsAsync(filter, cancellationToken: ct);
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RescrubJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                                                 string? libraryId,
+                                                                                 string? version,
+                                                                                 int limit,
+                                                                                 CancellationToken ct = default)
+    {
+        var filter = BuildDeleteFilter(status, libraryId, version);
+        IReadOnlyList<RescrubJobRecord> result = Array.Empty<RescrubJobRecord>();
+        if (filter != null)
+            result = await mContext.RescrubJobs.Find(filter)
+                                   .SortByDescending(j => j.CreatedAt)
+                                   .Limit(limit > 0 ? limit : DefaultCandidateLimit)
+                                   .ToListAsync(ct);
+
+        return result;
+    }
+
+    private static FilterDefinition<RescrubJobRecord>? BuildDeleteFilter(ScrapeJobStatus? status,
+                                                                         string? libraryId,
+                                                                         string? version)
+    {
+        var clauses = new List<FilterDefinition<RescrubJobRecord>>();
+        if (status.HasValue)
+            clauses.Add(Builders<RescrubJobRecord>.Filter.Eq(j => j.Status, status.Value));
+        if (!string.IsNullOrEmpty(libraryId))
+            clauses.Add(Builders<RescrubJobRecord>.Filter.Eq(j => j.LibraryId, libraryId));
+        if (!string.IsNullOrEmpty(version))
+            clauses.Add(Builders<RescrubJobRecord>.Filter.Eq(j => j.Version, version));
+
+        FilterDefinition<RescrubJobRecord>? result = clauses.Count == 0
+                                                         ? null
+                                                         : Builders<RescrubJobRecord>.Filter.And(clauses);
+        return result;
+    }
+
+    private const int DefaultCandidateLimit = 20;
 }

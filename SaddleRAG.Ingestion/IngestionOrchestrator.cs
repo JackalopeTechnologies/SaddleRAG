@@ -50,7 +50,6 @@ public class IngestionOrchestrator
         mLlmClassifier = llmClassifier;
         mChunker = chunker;
         mEmbeddingProvider = embeddingProvider;
-        mVectorSearch = vectorSearch;
         mLibraryRepository = libraryRepository;
         mPageRepository = pageRepository;
         mChunkRepository = chunkRepository;
@@ -58,12 +57,11 @@ public class IngestionOrchestrator
         mLibraryIndexRepository = libraryIndexRepository;
         mBm25ShardRepository = bm25ShardRepository;
         mSuspectDetector = suspectDetector;
-        mAuditWriter = auditWriter;
         mBroadcaster = broadcaster;
         mLogger = logger;
+        mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
     }
 
-    private readonly IScrapeAuditWriter mAuditWriter;
     private readonly IBm25ShardRepository mBm25ShardRepository;
     private readonly IMonitorBroadcaster mBroadcaster;
 
@@ -72,6 +70,7 @@ public class IngestionOrchestrator
 
     private readonly PageCrawler mCrawler;
     private readonly IEmbeddingProvider mEmbeddingProvider;
+    private readonly IndexStage mIndexStage;
     private readonly ILibraryIndexRepository mLibraryIndexRepository;
     private readonly ILibraryProfileRepository mLibraryProfileRepository;
     private readonly ILibraryRepository mLibraryRepository;
@@ -79,7 +78,6 @@ public class IngestionOrchestrator
     private readonly ILogger<IngestionOrchestrator> mLogger;
     private readonly IPageRepository mPageRepository;
     private readonly SuspectDetector mSuspectDetector;
-    private readonly IVectorSearchProvider mVectorSearch;
 
     /// <summary>
     ///     Run the streaming ingestion pipeline for a scrape job.
@@ -167,14 +165,14 @@ public class IngestionOrchestrator
                                  );
         var chunkTask = RunChunkStageAsync(classifyToChunk.Reader, chunkToEmbed.Writer, progress, onProgress, cts);
         var embedTask = RunEmbedStageAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
-        var indexTask = RunIndexStageAsync(profile,
-                                           job,
-                                           auditCtx,
-                                           embedToIndex.Reader,
-                                           progress,
-                                           onProgress,
-                                           cts
-                                          );
+        var indexTask = mIndexStage.RunAsync(profile,
+                                             job,
+                                             auditCtx,
+                                             embedToIndex.Reader,
+                                             progress,
+                                             onProgress,
+                                             cts
+                                            );
 
         try
         {
@@ -270,8 +268,6 @@ public class IngestionOrchestrator
     private const int PageChannelCapacity = 50;
     private const int ChunkChannelCapacity = 20;
     private const int EmbedBatchSize = 32;
-
-    private const int IndexRebuildInterval = 100;
 
     // Safety limit for embedding context window (nomic-embed-text: 2048 tokens)
     // Use 6000 chars as hard cap (~2000 tokens at ~3 chars/token)
@@ -784,113 +780,4 @@ public class IngestionOrchestrator
 
     #endregion
 
-    #region Index stage
-
-    private async Task RunIndexStageAsync(string? profile,
-                                          ScrapeJob job,
-                                          AuditContext auditCtx,
-                                          ChannelReader<DocChunk[]> input,
-                                          ScrapeJobRecord progress,
-                                          Action<ScrapeJobRecord>? onProgress,
-                                          CancellationTokenSource cts)
-    {
-        var pendingChunks = new List<DocChunk>();
-        var indexedPageUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pageChunkCounts =
-            new Dictionary<string, (int ChunkCount, DocCategory Category)>(StringComparer.OrdinalIgnoreCase);
-        var pageMetadata = new Dictionary<string, (int Depth, string? ParentUrl)>(StringComparer.OrdinalIgnoreCase);
-
-        try
-        {
-            await foreach(var embeddedChunks in input.ReadAllAsync(cts.Token))
-            {
-                pendingChunks.AddRange(embeddedChunks);
-                progress.ChunksCompleted += embeddedChunks.Length;
-
-                // Track unique page URLs and accumulate per-page chunk counts
-                AccumulatePageChunkCounts(embeddedChunks, indexedPageUrls, pageChunkCounts, pageMetadata);
-
-                if (pendingChunks.Count >= IndexRebuildInterval)
-                {
-                    await RebuildIndexAsync(profile, job, pendingChunks, cts.Token);
-                    pendingChunks.Clear();
-                    progress.PagesCompleted = indexedPageUrls.Count;
-                    onProgress?.Invoke(progress);
-                }
-            }
-
-            // Final rebuild with remaining chunks
-            if (pendingChunks.Count > 0)
-            {
-                await RebuildIndexAsync(profile, job, pendingChunks, cts.Token);
-                progress.PagesCompleted = indexedPageUrls.Count;
-                onProgress?.Invoke(progress);
-            }
-
-            // Emit one audit record per page that completed the full pipeline
-            foreach((var pageUrl, (var chunkCount, var category)) in pageChunkCounts)
-            {
-                var host = new Uri(pageUrl).Host;
-                pageMetadata.TryGetValue(pageUrl, out var meta);
-                mAuditWriter.RecordIndexed(auditCtx,
-                                           pageUrl,
-                                           meta.ParentUrl,
-                                           host,
-                                           meta.Depth,
-                                           new AuditPageOutcome
-                                               {
-                                                   FetchStatus = null,
-                                                   Category = category.ToString(),
-                                                   ChunkCount = chunkCount
-                                               }
-                                          );
-                mBroadcaster.RecordPageCompleted(auditCtx.JobId);
-            }
-        }
-        catch(OperationCanceledException)
-        {
-            throw;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogError(ex, "Index stage fatal error");
-            await cts.CancelAsync();
-            throw;
-        }
-    }
-
-    private static void AccumulatePageChunkCounts(DocChunk[] chunks,
-                                                  HashSet<string> indexedPageUrls,
-                                                  Dictionary<string, (int ChunkCount, DocCategory Category)>
-                                                      pageChunkCounts,
-                                                  Dictionary<string, (int Depth, string? ParentUrl)> pageMetadata)
-    {
-        foreach(var chunk in chunks)
-        {
-            indexedPageUrls.Add(chunk.PageUrl);
-            if (pageChunkCounts.TryGetValue(chunk.PageUrl, out var existing))
-                pageChunkCounts[chunk.PageUrl] = (existing.ChunkCount + 1, chunk.Category);
-            else
-                pageChunkCounts[chunk.PageUrl] = (1, chunk.Category);
-            pageMetadata.TryAdd(chunk.PageUrl, (chunk.Depth, chunk.ParentUrl));
-        }
-    }
-
-    private async Task RebuildIndexAsync(string? profile,
-                                         ScrapeJob job,
-                                         List<DocChunk> chunks,
-                                         CancellationToken ct)
-    {
-        try
-        {
-            await mVectorSearch.IndexChunksAsync(profile, job.LibraryId, job.Version, chunks, ct);
-            mLogger.LogInformation("Rebuilt vector index with {Count} new chunks", chunks.Count);
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogWarning(ex, "Vector index rebuild failed, will retry on next batch");
-        }
-    }
-
-    #endregion
 }

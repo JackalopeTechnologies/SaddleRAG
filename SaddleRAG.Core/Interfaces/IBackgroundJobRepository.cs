@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 
 #endregion
@@ -35,4 +36,37 @@ public interface IBackgroundJobRepository
     Task<IReadOnlyList<BackgroundJobRecord>> ListRecentAsync(string? jobType = null,
                                                              int limit = 20,
                                                              CancellationToken ct = default);
+
+    /// <summary>
+    ///     Delete a single background job by id. Returns true when a row was removed.
+    /// </summary>
+    Task<bool> DeleteAsync(string id, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Delete every background job matching the supplied filter. Callers
+    ///     that pass no filter receive zero deletions to prevent accidental
+    ///     wholesale removal. Returns the number of rows deleted.
+    /// </summary>
+    Task<long> DeleteManyAsync(ScrapeJobStatus? status,
+                               string? libraryId,
+                               string? version,
+                               CancellationToken ct = default);
+
+    /// <summary>
+    ///     Count rows that <see cref="DeleteManyAsync" /> would delete.
+    /// </summary>
+    Task<long> CountDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                          string? libraryId,
+                                          string? version,
+                                          CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return a sample of rows that <see cref="DeleteManyAsync" /> would delete,
+    ///     ordered most-recent first and capped at <paramref name="limit" />.
+    /// </summary>
+    Task<IReadOnlyList<BackgroundJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                                       string? libraryId,
+                                                                       string? version,
+                                                                       int limit,
+                                                                       CancellationToken ct = default);
 }

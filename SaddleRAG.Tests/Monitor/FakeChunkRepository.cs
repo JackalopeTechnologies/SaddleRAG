@@ -110,5 +110,10 @@ internal sealed class FakeChunkRepository : IChunkRepository
                                                             CancellationToken ct = default) =>
         throw new NotSupportedException("FakeChunkRepository: GetSampleTitlesAsync not supported in this test");
 
+    public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException(
+            "FakeChunkRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
+        );
+
     private static string Key(string libraryId, string version) => $"{libraryId}/{version}";
 }
