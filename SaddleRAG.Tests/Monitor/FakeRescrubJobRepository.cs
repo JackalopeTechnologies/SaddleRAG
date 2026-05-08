@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 
@@ -42,4 +43,28 @@ internal sealed class FakeRescrubJobRepository : IRescrubJobRepository
         IReadOnlyList<RescrubJobRecord> result = mJobs.OrderByDescending(j => j.CreatedAt).Take(limit).ToList();
         return Task.FromResult(result);
     }
+
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeRescrubJobRepository: DeleteAsync not supported in this test");
+
+    public Task<long> DeleteManyAsync(ScrapeJobStatus? status,
+                                      string? libraryId,
+                                      string? version,
+                                      CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeRescrubJobRepository: DeleteManyAsync not supported in this test");
+
+    public Task<long> CountDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                 string? libraryId,
+                                                 string? version,
+                                                 CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeRescrubJobRepository: CountDeleteCandidatesAsync not supported in this test"
+                                       );
+
+    public Task<IReadOnlyList<RescrubJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
+                                                                           string? libraryId,
+                                                                           string? version,
+                                                                           int limit,
+                                                                           CancellationToken ct = default) =>
+        throw new NotSupportedException("FakeRescrubJobRepository: ListDeleteCandidatesAsync not supported in this test"
+                                       );
 }

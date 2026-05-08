@@ -233,25 +233,68 @@ public class SaddleRagDbContext
                                                   cancellationToken: ct
                                                  );
 
-        // ScrapeAuditLog: TTL on DiscoveredAt — Mongo auto-deletes audit
-        // rows older than smAuditRetention. Manual cleanup tools cover early
-        // eviction; ScrapeJobs themselves are NOT subject to TTL and remain
-        // until explicitly deleted.
+        // ScrapeAuditLog: TTL on DiscoveredAt. Auto-purges audit rows
+        // older than smJobRetention. Manual cleanup_audit_log tool covers
+        // early eviction.
         await
             ScrapeAuditLog.Indexes.CreateOneAsync(new CreateIndexModel<ScrapeAuditLogEntry>(auditKeys.Ascending(a => a
                                                                                             .DiscoveredAt
                                                                                         ),
                                                                                     new CreateIndexOptions
                                                                                         {
-                                                                                            ExpireAfter = smAuditRetention
+                                                                                            ExpireAfter = smJobRetention
                                                                                         }
                                                                                ),
                                                   cancellationToken: ct
                                                  );
+
+        // ScrapeJobs: TTL on CompletedAt. Running jobs (CompletedAt = null)
+        // are skipped by Mongo's TTL purge; only terminal jobs eventually
+        // age out. Manual cleanup_jobs tool covers early eviction.
+        var scrapeJobKeys = Builders<ScrapeJobRecord>.IndexKeys;
+        await
+            ScrapeJobs.Indexes.CreateOneAsync(new CreateIndexModel<ScrapeJobRecord>(scrapeJobKeys.Ascending(j => j
+                                                                                        .CompletedAt
+                                                                                    ),
+                                                                                new CreateIndexOptions
+                                                                                    {
+                                                                                        ExpireAfter = smJobRetention
+                                                                                    }
+                                                                           ),
+                                              cancellationToken: ct
+                                             );
+
+        // BackgroundJobs: TTL on CompletedAt with the same Running-skip semantics.
+        var backgroundJobKeys = Builders<BackgroundJobRecord>.IndexKeys;
+        await
+            BackgroundJobs.Indexes.CreateOneAsync(new CreateIndexModel<BackgroundJobRecord>(backgroundJobKeys.Ascending(j => j
+                                                                                            .CompletedAt
+                                                                                        ),
+                                                                                    new CreateIndexOptions
+                                                                                        {
+                                                                                            ExpireAfter = smJobRetention
+                                                                                        }
+                                                                               ),
+                                                  cancellationToken: ct
+                                                 );
+
+        // RescrubJobs: TTL on CompletedAt with the same Running-skip semantics.
+        var rescrubJobKeys = Builders<RescrubJobRecord>.IndexKeys;
+        await
+            RescrubJobs.Indexes.CreateOneAsync(new CreateIndexModel<RescrubJobRecord>(rescrubJobKeys.Ascending(j => j
+                                                                                          .CompletedAt
+                                                                                      ),
+                                                                                  new CreateIndexOptions
+                                                                                      {
+                                                                                          ExpireAfter = smJobRetention
+                                                                                      }
+                                                                             ),
+                                               cancellationToken: ct
+                                              );
     }
 
-    private static readonly TimeSpan smAuditRetention = TimeSpan.FromDays(smAuditRetentionDays);
-    private const int smAuditRetentionDays = 30;
+    private static readonly TimeSpan smJobRetention = TimeSpan.FromDays(JobRetentionDays);
+    private const int JobRetentionDays = 30;
 
     private const string CollectionLibraries = "libraries";
     private const string CollectionLibraryVersions = "libraryVersions";
