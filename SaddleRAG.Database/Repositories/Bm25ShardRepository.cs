@@ -137,6 +137,20 @@ public class Bm25ShardRepository : IBm25ShardRepository
         return result.DeletedCount;
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default)
+    {
+        var grouped = await mContext.Bm25Shards
+                                    .Aggregate()
+                                    .Group(s => new { s.LibraryId, s.Version },
+                                           g => new { g.Key.LibraryId, g.Key.Version }
+                                          )
+                                    .ToListAsync(ct);
+        var result = grouped.Select(g => new LibraryVersionKey(g.LibraryId, g.Version)).ToList();
+        return result;
+    }
+
     private async Task<IReadOnlyList<Bm25Posting>> ResolveFromShardSpillAsync(string shardFileId,
                                                                               string term,
                                                                               CancellationToken ct)

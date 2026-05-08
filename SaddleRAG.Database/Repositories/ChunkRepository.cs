@@ -303,6 +303,20 @@ public class ChunkRepository : IChunkRepository
         return distinct;
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default)
+    {
+        var grouped = await mContext.Chunks
+                                    .Aggregate()
+                                    .Group(c => new { c.LibraryId, c.Version },
+                                           g => new { g.Key.LibraryId, g.Key.Version }
+                                          )
+                                    .ToListAsync(ct);
+        var result = grouped.Select(g => new LibraryVersionKey(g.LibraryId, g.Version)).ToList();
+        return result;
+    }
+
     private static IEnumerable<string> ProjectTypeNames(IReadOnlyList<DocChunk> chunks)
     {
         // For v2+ chunks: return Symbols[] entries with Kind == Type.

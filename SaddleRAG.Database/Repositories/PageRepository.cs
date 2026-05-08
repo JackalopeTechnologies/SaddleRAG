@@ -106,4 +106,18 @@ public class PageRepository : IPageRepository
         var result = await mContext.Pages.DeleteManyAsync(filter, ct);
         return result.DeletedCount;
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default)
+    {
+        var grouped = await mContext.Pages
+                                    .Aggregate()
+                                    .Group(p => new { p.LibraryId, p.Version },
+                                           g => new { g.Key.LibraryId, g.Key.Version }
+                                          )
+                                    .ToListAsync(ct);
+        var result = grouped.Select(g => new LibraryVersionKey(g.LibraryId, g.Version)).ToList();
+        return result;
+    }
 }

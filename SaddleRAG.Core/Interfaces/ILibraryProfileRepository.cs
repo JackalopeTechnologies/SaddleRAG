@@ -42,4 +42,11 @@ public interface ILibraryProfileRepository
     ///     List every cached profile. Used by diagnostics.
     /// </summary>
     Task<IReadOnlyList<LibraryProfile>> ListAllAsync(CancellationToken ct = default);
+
+    /// <summary>
+    ///     Return every distinct (LibraryId, Version) tuple for which a
+    ///     profile is cached. Used by orphan detection to compare child
+    ///     pairs against the parent <see cref="LibraryRecord" /> set.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
 }

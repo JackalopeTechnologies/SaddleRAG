@@ -8,6 +8,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Ingestion.Diagnostics;
 
@@ -49,6 +50,10 @@ public sealed class ScrapeAuditWriterTests
                                                       string version,
                                                       CancellationToken ct = default)
             => Task.FromResult(result: 0L);
+
+        public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<LibraryVersionKey>>(Array.Empty<LibraryVersionKey>());
     }
 
     [Fact]
