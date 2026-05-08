@@ -433,6 +433,285 @@ public sealed class JobCleanupToolsTests
                                                     );
     }
 
+    [Fact]
+    public async Task CleanupJobsDryRunNeverInvokesAnyDeleteMethod()
+    {
+        var scrapeRepo = Substitute.For<IScrapeJobRepository>();
+        var bgRepo = Substitute.For<IBackgroundJobRepository>();
+        var rescrubRepo = Substitute.For<IRescrubJobRepository>();
+        var auditRepo = Substitute.For<IScrapeAuditRepository>();
+        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+
+        factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
+        factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
+        factory.GetRescrubJobRepository(Arg.Any<string?>()).Returns(rescrubRepo);
+        factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
+
+        scrapeRepo.ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                             Arg.Any<string?>(),
+                                             Arg.Any<string?>(),
+                                             Arg.Any<int>(),
+                                             Arg.Any<CancellationToken>()
+                                            )
+                  .Returns(Array.Empty<ScrapeJobRecord>());
+        bgRepo.ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<int>(),
+                                         Arg.Any<CancellationToken>()
+                                        )
+              .Returns(Array.Empty<BackgroundJobRecord>());
+        rescrubRepo.ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                              Arg.Any<string?>(),
+                                              Arg.Any<string?>(),
+                                              Arg.Any<int>(),
+                                              Arg.Any<CancellationToken>()
+                                             )
+                   .Returns(Array.Empty<RescrubJobRecord>());
+
+        await JobCleanupTools.CleanupJobs(factory,
+                                          MakeNoopRunner(),
+                                          kind: null,
+                                          jobIds: new[] { JobIdAlpha, JobIdBeta },
+                                          status: "Failed",
+                                          library: "any",
+                                          version: "1.0",
+                                          includeAudit: true,
+                                          dryRun: true,
+                                          profile: null,
+                                          TestContext.Current.CancellationToken
+                                         );
+
+        await scrapeRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<CancellationToken>()
+                                                        );
+        await bgRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await bgRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<CancellationToken>()
+                                                    );
+        await rescrubRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await rescrubRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                          Arg.Any<string?>(),
+                                                          Arg.Any<string?>(),
+                                                          Arg.Any<CancellationToken>()
+                                                         );
+        await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await auditRepo.DidNotReceive().DeleteByLibraryVersionAsync(Arg.Any<string>(),
+                                                                    Arg.Any<string>(),
+                                                                    Arg.Any<CancellationToken>()
+                                                                   );
+    }
+
+    [Fact]
+    public async Task CleanupJobsKindBackgroundOnlyTouchesBackgroundRepoAndSkipsAuditCascade()
+    {
+        var scrapeRepo = Substitute.For<IScrapeJobRepository>();
+        var bgRepo = Substitute.For<IBackgroundJobRepository>();
+        var rescrubRepo = Substitute.For<IRescrubJobRepository>();
+        var auditRepo = Substitute.For<IScrapeAuditRepository>();
+        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+
+        factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
+        factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
+        factory.GetRescrubJobRepository(Arg.Any<string?>()).Returns(rescrubRepo);
+        factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
+        bgRepo.DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                               Arg.Any<string?>(),
+                               Arg.Any<string?>(),
+                               Arg.Any<CancellationToken>()
+                              )
+              .Returns(returnThis: 3L);
+
+        await JobCleanupTools.CleanupJobs(factory,
+                                          MakeInlineRunner(),
+                                          kind: "background",
+                                          jobIds: null,
+                                          status: "Failed",
+                                          library: null,
+                                          version: null,
+                                          includeAudit: true,
+                                          dryRun: false,
+                                          profile: null,
+                                          TestContext.Current.CancellationToken
+                                         );
+
+        await bgRepo.Received(requiredNumberOfCalls: 1).DeleteManyAsync(ScrapeJobStatus.Failed,
+                                                                        null,
+                                                                        null,
+                                                                        Arg.Any<CancellationToken>()
+                                                                       );
+        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<CancellationToken>()
+                                                        );
+        await rescrubRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                          Arg.Any<string?>(),
+                                                          Arg.Any<string?>(),
+                                                          Arg.Any<CancellationToken>()
+                                                         );
+        await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CleanupJobsKindRescrubOnlyTouchesRescrubRepo()
+    {
+        var scrapeRepo = Substitute.For<IScrapeJobRepository>();
+        var bgRepo = Substitute.For<IBackgroundJobRepository>();
+        var rescrubRepo = Substitute.For<IRescrubJobRepository>();
+        var auditRepo = Substitute.For<IScrapeAuditRepository>();
+        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+
+        factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
+        factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
+        factory.GetRescrubJobRepository(Arg.Any<string?>()).Returns(rescrubRepo);
+        factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
+        rescrubRepo.DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                    Arg.Any<string?>(),
+                                    Arg.Any<string?>(),
+                                    Arg.Any<CancellationToken>()
+                                   )
+                   .Returns(returnThis: 1L);
+
+        await JobCleanupTools.CleanupJobs(factory,
+                                          MakeInlineRunner(),
+                                          kind: "rescrub",
+                                          jobIds: null,
+                                          status: null,
+                                          library: "lib-x",
+                                          version: null,
+                                          includeAudit: true,
+                                          dryRun: false,
+                                          profile: null,
+                                          TestContext.Current.CancellationToken
+                                         );
+
+        await rescrubRepo.Received(requiredNumberOfCalls: 1).DeleteManyAsync(null,
+                                                                             "lib-x",
+                                                                             null,
+                                                                             Arg.Any<CancellationToken>()
+                                                                            );
+        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<CancellationToken>()
+                                                        );
+        await bgRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<CancellationToken>()
+                                                    );
+        await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CleanupJobsApplyByFilterRespectsIncludeAuditFalse()
+    {
+        var scrapeRepo = Substitute.For<IScrapeJobRepository>();
+        var bgRepo = Substitute.For<IBackgroundJobRepository>();
+        var rescrubRepo = Substitute.For<IRescrubJobRepository>();
+        var auditRepo = Substitute.For<IScrapeAuditRepository>();
+        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+
+        factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
+        factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
+        factory.GetRescrubJobRepository(Arg.Any<string?>()).Returns(rescrubRepo);
+        factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
+        scrapeRepo.DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                   Arg.Any<string?>(),
+                                   Arg.Any<string?>(),
+                                   Arg.Any<CancellationToken>()
+                                  )
+                  .Returns(returnThis: 5L);
+        bgRepo.DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                               Arg.Any<string?>(),
+                               Arg.Any<string?>(),
+                               Arg.Any<CancellationToken>()
+                              )
+              .Returns(returnThis: 0L);
+        rescrubRepo.DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                    Arg.Any<string?>(),
+                                    Arg.Any<string?>(),
+                                    Arg.Any<CancellationToken>()
+                                   )
+                   .Returns(returnThis: 0L);
+
+        await JobCleanupTools.CleanupJobs(factory,
+                                          MakeInlineRunner(),
+                                          kind: null,
+                                          jobIds: null,
+                                          status: "Failed",
+                                          library: null,
+                                          version: null,
+                                          includeAudit: false,
+                                          dryRun: false,
+                                          profile: null,
+                                          TestContext.Current.CancellationToken
+                                         );
+
+        await scrapeRepo.DidNotReceive().ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                                   Arg.Any<string?>(),
+                                                                   Arg.Any<string?>(),
+                                                                   Arg.Any<int>(),
+                                                                   Arg.Any<CancellationToken>()
+                                                                  );
+        await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CleanupJobsRefusalReturnsZeroDeletionsAndDoesNotQueueJob()
+    {
+        var scrapeRepo = Substitute.For<IScrapeJobRepository>();
+        var bgRepo = Substitute.For<IBackgroundJobRepository>();
+        var rescrubRepo = Substitute.For<IRescrubJobRepository>();
+        var runner = MakeNoopRunner();
+        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+
+        factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
+        factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
+        factory.GetRescrubJobRepository(Arg.Any<string?>()).Returns(rescrubRepo);
+
+        var json = await JobCleanupTools.CleanupJobs(factory,
+                                                     runner,
+                                                     kind: "all",
+                                                     jobIds: null,
+                                                     status: null,
+                                                     library: null,
+                                                     version: null,
+                                                     includeAudit: true,
+                                                     dryRun: false,
+                                                     profile: null,
+                                                     TestContext.Current.CancellationToken
+                                                    );
+
+        Assert.Contains("\"Status\": \"NoFilter\"", json);
+        await runner.DidNotReceive()
+                    .QueueAsync(Arg.Any<BackgroundJobRecord>(),
+                                Arg.Any<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>(),
+                                Arg.Any<CancellationToken>()
+                               );
+        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<string?>(),
+                                                         Arg.Any<CancellationToken>()
+                                                        );
+        await bgRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<CancellationToken>()
+                                                    );
+        await rescrubRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                          Arg.Any<string?>(),
+                                                          Arg.Any<string?>(),
+                                                          Arg.Any<CancellationToken>()
+                                                         );
+    }
+
     private static ScrapeJobRecord MakeScrapeJob(string id,
                                                  ScrapeJobStatus status,
                                                  string libraryId,
