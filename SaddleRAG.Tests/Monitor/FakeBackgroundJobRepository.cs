@@ -16,13 +16,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeBackgroundJobRepository : IBackgroundJobRepository
 {
-    private readonly List<BackgroundJobRecord> mJobs = new();
-
-    public void Add(BackgroundJobRecord job)
-    {
-        ArgumentNullException.ThrowIfNull(job);
-        mJobs.Add(job);
-    }
+    private readonly List<BackgroundJobRecord> mJobs = new List<BackgroundJobRecord>();
 
     public Task UpsertAsync(BackgroundJobRecord job, CancellationToken ct = default)
     {
@@ -43,10 +37,10 @@ internal sealed class FakeBackgroundJobRepository : IBackgroundJobRepository
                                                                     CancellationToken ct = default)
     {
         IReadOnlyList<BackgroundJobRecord> result = mJobs
-                                                   .Where(j => jobType is null || j.JobType == jobType)
-                                                   .OrderByDescending(j => j.CreatedAt)
-                                                   .Take(limit)
-                                                   .ToList();
+                                                    .Where(j => jobType is null || j.JobType == jobType)
+                                                    .OrderByDescending(j => j.CreatedAt)
+                                                    .Take(limit)
+                                                    .ToList();
         return Task.FromResult(result);
     }
 
@@ -73,4 +67,10 @@ internal sealed class FakeBackgroundJobRepository : IBackgroundJobRepository
                                                                               CancellationToken ct = default) =>
         throw new
             NotSupportedException("FakeBackgroundJobRepository: ListDeleteCandidatesAsync not supported in this test");
+
+    public void Add(BackgroundJobRecord job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        mJobs.Add(job);
+    }
 }

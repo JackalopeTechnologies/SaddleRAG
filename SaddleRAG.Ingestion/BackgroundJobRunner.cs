@@ -92,11 +92,15 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         mBroadcaster.RecordJobStarted(jobRecord.Id,
                                       jobRecord.LibraryId ?? string.Empty,
                                       jobRecord.Version ?? string.Empty,
-                                      rootUrl: string.Empty
+                                      string.Empty
                                      );
 
         mLogger.LogInformation("Running background job {JobId} ({JobType}) for {LibraryId}/{Version}",
-                               jobRecord.Id, jobRecord.JobType, jobRecord.LibraryId, jobRecord.Version);
+                               jobRecord.Id,
+                               jobRecord.JobType,
+                               jobRecord.LibraryId,
+                               jobRecord.Version
+                              );
 
         Action<int, int> onProgress = (processed, total) =>
                                       {
@@ -109,7 +113,8 @@ public class BackgroundJobRunner : IBackgroundJobRunner
                                               mBroadcaster.RecordJobProgress(jobRecord.Id,
                                                                              processed,
                                                                              total,
-                                                                             jobRecord.ItemsLabel);
+                                                                             jobRecord.ItemsLabel
+                                                                            );
                                           }
                                       };
 
@@ -125,12 +130,16 @@ public class BackgroundJobRunner : IBackgroundJobRunner
             mBroadcaster.RecordJobCompleted(jobRecord.Id, indexedPageCount: 0);
 
             mLogger.LogInformation("Background job {JobId} ({JobType}) completed",
-                                   jobRecord.Id, jobRecord.JobType);
+                                   jobRecord.Id,
+                                   jobRecord.JobType
+                                  );
         }
         catch(OperationCanceledException)
         {
             mLogger.LogInformation("Background job {JobId} ({JobType}) was cancelled",
-                                   jobRecord.Id, jobRecord.JobType);
+                                   jobRecord.Id,
+                                   jobRecord.JobType
+                                  );
 
             jobRecord.Status = ScrapeJobStatus.Cancelled;
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);

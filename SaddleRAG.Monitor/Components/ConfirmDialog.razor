@@ -20,7 +20,14 @@
     [Parameter]
     public string ConfirmLabel { get; set; } = "Delete";
 
-    private void Cancel() => MudDialog.Cancel();
-    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private void Confirm()
+    {
+        MudDialog.Close(DialogResult.Ok(result: true));
+    }
 
 }

@@ -238,13 +238,13 @@ public class SaddleRagDbContext
         // early eviction.
         await
             ScrapeAuditLog.Indexes.CreateOneAsync(new CreateIndexModel<ScrapeAuditLogEntry>(auditKeys.Ascending(a => a
-                                                                                            .DiscoveredAt
-                                                                                        ),
-                                                                                    new CreateIndexOptions
-                                                                                        {
-                                                                                            ExpireAfter = smJobRetention
-                                                                                        }
-                                                                               ),
+                                                                   .DiscoveredAt
+                                                               ),
+                                                           new CreateIndexOptions
+                                                               {
+                                                                   ExpireAfter = smJobRetention
+                                                               }
+                                                      ),
                                                   cancellationToken: ct
                                                  );
 
@@ -254,27 +254,28 @@ public class SaddleRagDbContext
         var scrapeJobKeys = Builders<ScrapeJobRecord>.IndexKeys;
         await
             ScrapeJobs.Indexes.CreateOneAsync(new CreateIndexModel<ScrapeJobRecord>(scrapeJobKeys.Ascending(j => j
-                                                                                        .CompletedAt
-                                                                                    ),
-                                                                                new CreateIndexOptions
-                                                                                    {
-                                                                                        ExpireAfter = smJobRetention
-                                                                                    }
-                                                                           ),
+                                                               .CompletedAt
+                                                           ),
+                                                       new CreateIndexOptions
+                                                           {
+                                                               ExpireAfter = smJobRetention
+                                                           }
+                                                  ),
                                               cancellationToken: ct
                                              );
 
         // BackgroundJobs: TTL on CompletedAt with the same Running-skip semantics.
         var backgroundJobKeys = Builders<BackgroundJobRecord>.IndexKeys;
         await
-            BackgroundJobs.Indexes.CreateOneAsync(new CreateIndexModel<BackgroundJobRecord>(backgroundJobKeys.Ascending(j => j
-                                                                                            .CompletedAt
-                                                                                        ),
-                                                                                    new CreateIndexOptions
-                                                                                        {
-                                                                                            ExpireAfter = smJobRetention
-                                                                                        }
-                                                                               ),
+            BackgroundJobs.Indexes.CreateOneAsync(new CreateIndexModel<BackgroundJobRecord>(backgroundJobKeys
+                                                               .Ascending(j => j
+                                                                              .CompletedAt
+                                                                         ),
+                                                           new CreateIndexOptions
+                                                               {
+                                                                   ExpireAfter = smJobRetention
+                                                               }
+                                                      ),
                                                   cancellationToken: ct
                                                  );
 
@@ -282,18 +283,17 @@ public class SaddleRagDbContext
         var rescrubJobKeys = Builders<RescrubJobRecord>.IndexKeys;
         await
             RescrubJobs.Indexes.CreateOneAsync(new CreateIndexModel<RescrubJobRecord>(rescrubJobKeys.Ascending(j => j
-                                                                                          .CompletedAt
-                                                                                      ),
-                                                                                  new CreateIndexOptions
-                                                                                      {
-                                                                                          ExpireAfter = smJobRetention
-                                                                                      }
-                                                                             ),
+                                                                .CompletedAt
+                                                            ),
+                                                        new CreateIndexOptions
+                                                            {
+                                                                ExpireAfter = smJobRetention
+                                                            }
+                                                   ),
                                                cancellationToken: ct
                                               );
     }
 
-    private static readonly TimeSpan smJobRetention = TimeSpan.FromDays(JobRetentionDays);
     private const int JobRetentionDays = 30;
 
     private const string CollectionLibraries = "libraries";
@@ -311,4 +311,6 @@ public class SaddleRagDbContext
     private const string CollectionExcludedSymbols = "library_excluded_symbols";
     private const string CollectionScrapeAuditLog = "scrape_audit_log";
     private const string Bm25BucketName = "bm25";
+
+    private static readonly TimeSpan smJobRetention = TimeSpan.FromDays(JobRetentionDays);
 }

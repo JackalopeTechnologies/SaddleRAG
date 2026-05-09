@@ -37,11 +37,11 @@ public sealed class MonitorLifecycleRelay : IHostedService
     /// <inheritdoc />
     public Task StartAsync(CancellationToken ct)
     {
-        mEvents.JobStarted        += OnJobStarted;
-        mEvents.JobProgress       += OnJobProgress;
-        mEvents.JobCompleted      += OnJobCompleted;
-        mEvents.JobFailed         += OnJobFailed;
-        mEvents.JobCancelled      += OnJobCancelled;
+        mEvents.JobStarted += OnJobStarted;
+        mEvents.JobProgress += OnJobProgress;
+        mEvents.JobCompleted += OnJobCompleted;
+        mEvents.JobFailed += OnJobFailed;
+        mEvents.JobCancelled += OnJobCancelled;
         mEvents.SuspectFlagRaised += OnSuspectFlag;
         return Task.CompletedTask;
     }
@@ -49,11 +49,11 @@ public sealed class MonitorLifecycleRelay : IHostedService
     /// <inheritdoc />
     public Task StopAsync(CancellationToken ct)
     {
-        mEvents.JobStarted        -= OnJobStarted;
-        mEvents.JobProgress       -= OnJobProgress;
-        mEvents.JobCompleted      -= OnJobCompleted;
-        mEvents.JobFailed         -= OnJobFailed;
-        mEvents.JobCancelled      -= OnJobCancelled;
+        mEvents.JobStarted -= OnJobStarted;
+        mEvents.JobProgress -= OnJobProgress;
+        mEvents.JobCompleted -= OnJobCompleted;
+        mEvents.JobFailed -= OnJobFailed;
+        mEvents.JobCancelled -= OnJobCancelled;
         mEvents.SuspectFlagRaised -= OnSuspectFlag;
         return Task.CompletedTask;
     }

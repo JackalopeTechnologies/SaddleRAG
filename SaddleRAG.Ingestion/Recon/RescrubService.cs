@@ -85,6 +85,7 @@ public class RescrubService
         if (profile == null)
             result = new RescrubResult { LibraryId = libraryId, Version = version, ReconNeeded = true };
         else
+        {
             result = await RunRescrubAsync(chunkRepo,
                                            indexRepo,
                                            bm25ShardRepo,
@@ -97,6 +98,7 @@ public class RescrubService
                                            onProgress,
                                            ct
                                           );
+        }
 
         return result;
     }
@@ -191,6 +193,7 @@ public class RescrubService
                               );
 
         if (!options.DryRun && options.BoundaryAudit)
+        {
             await PersistBoundaryIssuePctAsync(libraryRepo,
                                                libraryId,
                                                version,
@@ -198,6 +201,7 @@ public class RescrubService
                                                scoped.Count,
                                                ct
                                               );
+        }
 
         return result;
     }

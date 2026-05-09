@@ -157,8 +157,6 @@ public static class UrlCorrectionTools
                                                                        library,
                                                                        version,
                                                                        CorrectedHint,
-                                                                       DefaultMaxPages,
-                                                                       ScrapeJob.DefaultFetchDelayMs,
                                                                        forceClean: true
                                                                   );
                                                               var scrapeJobId =

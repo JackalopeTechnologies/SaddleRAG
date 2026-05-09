@@ -52,28 +52,14 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
     /// </summary>
     protected JobType? TypeFilter { get; set; }
 
-    protected static readonly JobType[] pmTypeChoices = Enum.GetValues<JobType>();
-
     /// <summary>
     ///     Maximum number of rows to fetch.
     /// </summary>
     protected int LimitChoice { get; set; } = DefaultLimit;
 
-    /// <summary>
-    ///     The set of valid status names offered by the filter dropdown.
-    /// </summary>
-    protected static readonly string[] pmStatusChoices = Enum.GetNames<ScrapeJobStatus>();
-
-    private HubConnection? mHub;
     private bool mDisposed;
 
-    private const int DefaultLimit = 100;
-    private const string HubPath = "/monitor/hub";
-    private const string JobStartedMethod = "JobStarted";
-    private const string JobProgressMethod = "JobProgress";
-    private const string JobCompletedMethod = "JobCompleted";
-    private const string JobFailedMethod = "JobFailed";
-    private const string JobCancelledMethod = "JobCancelled";
+    private HubConnection? mHub;
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
@@ -103,7 +89,8 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
                                          await LoadAsync();
                                          await InvokeAsync(StateHasChanged);
                                      }
-                                 });
+                                 }
+                                );
 
         mHub.On<JobProgressEvent>(JobProgressMethod,
                                   async e =>
@@ -112,16 +99,18 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
                                       {
                                           Rows = Rows.Select(r => r.JobId == e.JobId
                                                                       ? r with
-                                                                        {
-                                                                            ItemsProcessed = e.ItemsProcessed,
-                                                                            ItemsTotal     = e.ItemsTotal,
-                                                                            ItemsLabel     = e.ItemsLabel
-                                                                        }
-                                                                      : r)
+                                                                            {
+                                                                                ItemsProcessed = e.ItemsProcessed,
+                                                                                ItemsTotal = e.ItemsTotal,
+                                                                                ItemsLabel = e.ItemsLabel
+                                                                            }
+                                                                      : r
+                                                            )
                                                      .ToList();
                                           await InvokeAsync(StateHasChanged);
                                       }
-                                  });
+                                  }
+                                 );
 
         mHub.On<JobCompletedEvent>(JobCompletedMethod,
                                    async _ =>
@@ -131,7 +120,8 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
                                            await LoadAsync();
                                            await InvokeAsync(StateHasChanged);
                                        }
-                                   });
+                                   }
+                                  );
 
         mHub.On<JobFailedEvent>(JobFailedMethod,
                                 async _ =>
@@ -141,7 +131,8 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
                                         await LoadAsync();
                                         await InvokeAsync(StateHasChanged);
                                     }
-                                });
+                                }
+                               );
 
         mHub.On<JobCancelledEvent>(JobCancelledMethod,
                                    async _ =>
@@ -151,7 +142,8 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
                                            await LoadAsync();
                                            await InvokeAsync(StateHasChanged);
                                        }
-                                   });
+                                   }
+                                  );
 
         await mHub.StartAsync();
     }
@@ -163,12 +155,25 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(Jobs);
         ScrapeJobStatus? statusEnum = null;
-        if (!string.IsNullOrEmpty(StatusFilter)
-         && Enum.TryParse<ScrapeJobStatus>(StatusFilter, ignoreCase: true, out var parsed))
-        {
+        if (!string.IsNullOrEmpty(StatusFilter) &&
+            Enum.TryParse<ScrapeJobStatus>(StatusFilter, ignoreCase: true, out var parsed))
             statusEnum = parsed;
-        }
 
         Rows = await Jobs.ListAsync(statusEnum, TypeFilter, LibraryFilter, LimitChoice);
     }
+
+    private const int DefaultLimit = 100;
+    private const string HubPath = "/monitor/hub";
+    private const string JobStartedMethod = "JobStarted";
+    private const string JobProgressMethod = "JobProgress";
+    private const string JobCompletedMethod = "JobCompleted";
+    private const string JobFailedMethod = "JobFailed";
+    private const string JobCancelledMethod = "JobCancelled";
+
+    protected static readonly JobType[] pmTypeChoices = Enum.GetValues<JobType>();
+
+    /// <summary>
+    ///     The set of valid status names offered by the filter dropdown.
+    /// </summary>
+    protected static readonly string[] pmStatusChoices = Enum.GetNames<ScrapeJobStatus>();
 }

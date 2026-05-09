@@ -33,8 +33,11 @@ public class OllamaSettings
 
     /// <summary>
     ///     Model name for the legacy LLM categorical reranker
-    ///     (ReRankerStrategy = Llm). Smaller instruction-following models
-    ///     work for this prompt-based categorical scoring approach.
+    ///     (ReRankerStrategy = Llm). Default is phi4-mini:3.8b
+    ///     (Microsoft, Western supply chain). Smaller instruction-
+    ///     following models work for this prompt-based categorical
+    ///     scoring approach. Currently dispatches to NoOp until
+    ///     calibration is verified — see ToggleableReRanker.
     /// </summary>
     public string ReRankingModel { get; set; } = DefaultReRankingModel;
 
@@ -42,10 +45,11 @@ public class OllamaSettings
     ///     Model name for the cross-encoder reranker
     ///     (ReRankerStrategy = CrossEncoder). Defaults to the Mixedbread
     ///     mxbai-rerank-large-v2 community port. Mixedbread AI is registered
-    ///     in Berlin; non-Chinese supply chain. The model is a true
-    ///     cross-encoder by training but is hosted on Ollama as a generate
-    ///     model with a "respond with only the score" prompt — produces
-    ///     continuous floats instead of qwen3:1.7b's 5-bucket plateau.
+    ///     in Berlin; non-Chinese supply chain. The community Ollama port
+    ///     was originally hosted as a generate model emitting continuous
+    ///     0.0–1.0 floats but has since been republished as embed-only,
+    ///     which is why ToggleableReRanker currently routes the
+    ///     CrossEncoder strategy to NoOp.
     /// </summary>
     public string CrossEncoderModel { get; set; } = DefaultCrossEncoderModel;
 
@@ -74,22 +78,16 @@ public class OllamaSettings
     public int ModelPullTimeoutSeconds { get; set; } = DefaultModelPullTimeoutSeconds;
 
     /// <summary>
-    ///     Whether to use Ollama-based re-ranking for search results.
-    ///     When false, NoOpReRanker passes results through unchanged.
-    /// </summary>
-    public bool ReRankingEnabled { get; init; } = true;
-
-    /// <summary>
     ///     Configuration section name in appsettings.
     /// </summary>
     public const string SectionName = "Ollama";
 
     public const string DefaultEndpoint = "http://localhost:11434";
     public const string DefaultEmbeddingModel = "nomic-embed-text";
-    public const string DefaultClassificationModel = "qwen3:1.7b";
-    public const string DefaultReRankingModel = "qwen3:1.7b";
+    public const string DefaultClassificationModel = "phi4-mini:3.8b";
+    public const string DefaultReRankingModel = "phi4-mini:3.8b";
     public const string DefaultCrossEncoderModel = "rjmalagon/mxbai-rerank-large-v2:1.5b-fp16";
-    public const string DefaultReconModel = "qwen3:14b";
+    public const string DefaultReconModel = "phi4:14b";
     public const int DefaultEmbeddingDimensions = 768;
     public const int DefaultModelPullTimeoutSeconds = 600;
     public const float DefaultReconMinConfidence = 0.6f;

@@ -1,5 +1,5 @@
-@* SaddleRAG.Monitor/Components/VersionList.razor *@
 @using SaddleRAG.Core.Models
+@* SaddleRAG.Monitor/Components/VersionList.razor *@
 
 @if (Versions.Count == 0)
 {
@@ -22,10 +22,12 @@ else
                     {
                         <MudChip T="string" Size="Size.Small" Color="Color.Primary">current</MudChip>
                     }
-                    <span style="font-family:monospace">@context.Version</span>
+                    <span style="font-family: monospace">@context.Version</span>
                 </MudStack>
             </MudTd>
-            <MudTd><TimeDisplay Utc="@context.ScrapedAt"/></MudTd>
+            <MudTd>
+                <TimeDisplay Utc="@context.ScrapedAt"/>
+            </MudTd>
             <MudTd>@context.PageCount</MudTd>
             <MudTd>@context.ChunkCount</MudTd>
             <MudTd>

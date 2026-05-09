@@ -292,7 +292,8 @@ public sealed class LibraryProfileServiceTests
                                                       ExcludedUrlPatterns = ["/account/login"],
                                                       ExpectedHosts = ["docs.x.com"],
                                                       Notes = "auth wall"
-                                                  });
+                                                  }
+                                             );
         repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { prior });
 
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
@@ -310,12 +311,14 @@ public sealed class LibraryProfileServiceTests
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
         var prior = MakeProfileWithCrawlHints("1.0",
-                                              new CrawlHints { ExcludedUrlPatterns = ["/old/path"] });
+                                              new CrawlHints { ExcludedUrlPatterns = ["/old/path"] }
+                                             );
         repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(new[] { prior });
 
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
         var newProfile = MakeProfileWithCrawlHints("1.1",
-                                                   new CrawlHints { ExcludedUrlPatterns = ["/new/path"] });
+                                                   new CrawlHints { ExcludedUrlPatterns = ["/new/path"] }
+                                                  );
 
         var saved = await service.SaveAsync(repo, newProfile, TestContext.Current.CancellationToken);
 

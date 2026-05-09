@@ -77,6 +77,7 @@ public sealed class IngestStatusResponseTests
         var json = JsonSerializer.Serialize(response);
 
         Assert.Contains("\"RecommendedExcludedUrlPatterns\":[\"/account/login\",\"/account/register\"]",
-                        json);
+                        json
+                       );
     }
 }

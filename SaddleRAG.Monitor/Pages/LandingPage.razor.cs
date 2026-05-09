@@ -58,11 +58,13 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
                .WithAutomaticReconnect()
                .Build();
 
-        mHub.On<IReadOnlyList<string>>(ActiveJobsEvent, async ids =>
-        {
-            RebuildFromIds(ids);
-            await InvokeAsync(StateHasChanged);
-        });
+        mHub.On<IReadOnlyList<string>>(ActiveJobsEvent,
+                                       async ids =>
+                                       {
+                                           RebuildFromIds(ids);
+                                           await InvokeAsync(StateHasChanged);
+                                       }
+                                      );
 
         await mHub.StartAsync();
         await mHub.InvokeAsync(SubscribeLandingMethod);

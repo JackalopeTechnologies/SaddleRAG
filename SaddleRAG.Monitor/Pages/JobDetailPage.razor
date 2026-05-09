@@ -1,7 +1,6 @@
 @* SaddleRAG.Monitor/Pages/JobDetailPage.razor *@
 @page "/monitor/jobs/{JobId}"
 @rendermode InteractiveServer
-@using SaddleRAG.Monitor.Pages
 @inherits JobDetailPageBase
 
 @if (Info is null)
@@ -13,7 +12,7 @@ else
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-3" Wrap="Wrap.Wrap">
         <MudText Typo="Typo.h5">
             <MudLink Href="@($"/monitor/libraries/{Info.LibraryId}")">@Info.LibraryId</MudLink>
-            <span style="opacity:.7"> v@(Info.Version)</span>
+            <span style="opacity: .7"> v@(Info.Version)</span>
         </MudText>
         <MudChip T="string" Size="Size.Small" Color="@MonitorTypeFormatting.TypeColor(Info.Type)">
             @MonitorTypeFormatting.TypeLabel(Info.Type)
@@ -51,7 +50,7 @@ else
                     <MudItem xs="12" md="6">
                         <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Fetches</MudText>
                         <MudList Dense="true" T="string">
-                            @foreach (var f in CurrentTick.RecentFetches)
+                            @foreach(var f in CurrentTick.RecentFetches)
                             {
                                 <MudListItem>
                                     <MudText Style="font-family: monospace; font-size: 0.75rem">@f.Url</MudText>
@@ -62,7 +61,7 @@ else
                     <MudItem xs="12" md="6">
                         <MudText Typo="Typo.subtitle2" Class="mb-1">Recent Rejects</MudText>
                         <MudList Dense="true" T="string">
-                            @foreach (var r in CurrentTick.RecentRejects)
+                            @foreach(var r in CurrentTick.RecentRejects)
                             {
                                 <MudListItem>
                                     <MudStack Row="true">
@@ -94,23 +93,23 @@ else
             <MudGrid>
                 <MudItem xs="12" md="6">
                     <MudText Typo="Typo.subtitle2" Class="mb-1">Fetched URLs (last @TerminalFetches.Count)</MudText>
-                    <MudList T="string" Dense="true" Style="max-height:480px; overflow:auto">
-                        @foreach (var f in TerminalFetches)
+                    <MudList T="string" Dense="true" Style="max-height: 480px; overflow: auto">
+                        @foreach(var f in TerminalFetches)
                         {
                             <MudListItem>
-                                <span style="font-family:monospace; font-size:.75rem">@f.Url</span>
+                                <span style="font-family: monospace; font-size: .75rem">@f.Url</span>
                             </MudListItem>
                         }
                     </MudList>
                 </MudItem>
                 <MudItem xs="12" md="6">
                     <MudText Typo="Typo.subtitle2" Class="mb-1">Skipped URLs (last @TerminalRejects.Count)</MudText>
-                    <MudList T="string" Dense="true" Style="max-height:480px; overflow:auto">
-                        @foreach (var r in TerminalRejects)
+                    <MudList T="string" Dense="true" Style="max-height: 480px; overflow: auto">
+                        @foreach(var r in TerminalRejects)
                         {
                             <MudListItem>
                                 <MudStack Row="true">
-                                    <span style="font-family:monospace; font-size:.75rem">@r.Url</span>
+                                    <span style="font-family: monospace; font-size: .75rem">@r.Url</span>
                                     <MudChip T="string" Size="Size.Small">@r.Reason</MudChip>
                                 </MudStack>
                             </MudListItem>

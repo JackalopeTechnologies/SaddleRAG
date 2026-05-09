@@ -121,7 +121,7 @@ public static class IngestTools
     {
         bool hasProfile = libraryProfile != null;
         bool hasChunks = chunkCount > 0;
-        IReadOnlyList<string> excludedPatterns = libraryProfile?.CrawlHints.ExcludedUrlPatterns ?? [];
+        var excludedPatterns = libraryProfile?.CrawlHints.ExcludedUrlPatterns ?? [];
 
         var response = (hasProfile, hasChunks, stale, force) switch
             {
@@ -232,9 +232,9 @@ public static class IngestTools
         var sampleTitles = await chunkRepo.GetSampleTitlesAsync(library, version, UrlSuspectSampleTitleLimit, ct);
         var hostnameDist = await chunkRepo.GetHostnameDistributionAsync(library, version, ct);
 
-        var sampleTitlesJoined = string.Join(SemicolonSeparator, sampleTitles.Take(UrlSuspectSampleTitlesShown));
-        var hostnamesJoined = string.Join(CommaSeparator, hostnameDist.Keys.Take(UrlSuspectHostnamesShown));
-        var reasonsJoined = string.Join(CommaSeparator, suspectReasons);
+        string sampleTitlesJoined = string.Join(SemicolonSeparator, sampleTitles.Take(UrlSuspectSampleTitlesShown));
+        string hostnamesJoined = string.Join(CommaSeparator, hostnameDist.Keys.Take(UrlSuspectHostnamesShown));
+        string reasonsJoined = string.Join(CommaSeparator, suspectReasons);
 
         var result = new IngestStatusResponse
                          {

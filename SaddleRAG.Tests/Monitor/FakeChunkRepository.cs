@@ -16,27 +16,17 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeChunkRepository : IChunkRepository
 {
-    private readonly Dictionary<string, IReadOnlyDictionary<string, int>> mHostMaps = new();
-    private readonly Dictionary<string, IReadOnlyDictionary<string, double>> mLangMaps = new();
+    private readonly Dictionary<string, IReadOnlyDictionary<string, int>> mHostMaps =
+        new Dictionary<string, IReadOnlyDictionary<string, int>>();
 
-    public void SetHosts(string libraryId, string version, IReadOnlyDictionary<string, int> hosts)
-    {
-        ArgumentNullException.ThrowIfNull(hosts);
-        mHostMaps[Key(libraryId, version)] = hosts;
-    }
-
-    public void SetLanguages(string libraryId, string version, IReadOnlyDictionary<string, double> langs)
-    {
-        ArgumentNullException.ThrowIfNull(langs);
-        mLangMaps[Key(libraryId, version)] = langs;
-    }
+    private readonly Dictionary<string, IReadOnlyDictionary<string, double>> mLangMaps =
+        new Dictionary<string, IReadOnlyDictionary<string, double>>();
 
     public Task<IReadOnlyDictionary<string, int>> GetHostnameDistributionAsync(string libraryId,
                                                                                string version,
                                                                                CancellationToken ct = default)
     {
-        IReadOnlyDictionary<string, int> result = mHostMaps.GetValueOrDefault(Key(libraryId, version))
-                                                  ?? new Dictionary<string, int>();
+        var result = mHostMaps.GetValueOrDefault(Key(libraryId, version)) ?? new Dictionary<string, int>();
         return Task.FromResult(result);
     }
 
@@ -44,8 +34,7 @@ internal sealed class FakeChunkRepository : IChunkRepository
                                                                          string version,
                                                                          CancellationToken ct = default)
     {
-        IReadOnlyDictionary<string, double> result = mLangMaps.GetValueOrDefault(Key(libraryId, version))
-                                                     ?? new Dictionary<string, double>();
+        var result = mLangMaps.GetValueOrDefault(Key(libraryId, version)) ?? new Dictionary<string, double>();
         return Task.FromResult(result);
     }
 
@@ -111,9 +100,21 @@ internal sealed class FakeChunkRepository : IChunkRepository
         throw new NotSupportedException("FakeChunkRepository: GetSampleTitlesAsync not supported in this test");
 
     public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "FakeChunkRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
-        );
+        throw new
+            NotSupportedException("FakeChunkRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
+                                 );
+
+    public void SetHosts(string libraryId, string version, IReadOnlyDictionary<string, int> hosts)
+    {
+        ArgumentNullException.ThrowIfNull(hosts);
+        mHostMaps[Key(libraryId, version)] = hosts;
+    }
+
+    public void SetLanguages(string libraryId, string version, IReadOnlyDictionary<string, double> langs)
+    {
+        ArgumentNullException.ThrowIfNull(langs);
+        mLangMaps[Key(libraryId, version)] = langs;
+    }
 
     private static string Key(string libraryId, string version) => $"{libraryId}/{version}";
 }
