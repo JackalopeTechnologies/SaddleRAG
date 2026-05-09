@@ -102,7 +102,7 @@ public class PageCrawler
         /// </summary>
         public ConcurrentBag<string> DroppedInScopeUrls { get; } = new ConcurrentBag<string>();
 
-        public SiteExtensionState ExtensionState { get; } = new();
+        public SiteExtensionState ExtensionState { get; } = new SiteExtensionState();
 
         public int PageCount => Volatile.Read(ref mPageCount);
         public int InFlightCount => Volatile.Read(ref mInFlight);
@@ -1226,6 +1226,7 @@ public class PageCrawler
             mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError, originalUrl);
         }
         else
+        {
             await DispatchKnownResponseAsync(response,
                                              page,
                                              fetchUrl,
@@ -1234,6 +1235,7 @@ public class PageCrawler
                                              limiter,
                                              originalUrl
                                             );
+        }
     }
 
     private async Task DispatchKnownResponseAsync(IResponse response,
@@ -1343,7 +1345,10 @@ public class PageCrawler
                                       entry.InScopeDepth,
                                       $"HTTP {response.Status} forbidden (max retries)"
                                      );
-            mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status} forbidden (max retries)", originalUrl);
+            mBroadcaster.RecordError(ctx.AuditCtx.JobId,
+                                     $"HTTP {response.Status} forbidden (max retries)",
+                                     originalUrl
+                                    );
         }
     }
 
@@ -2176,9 +2181,7 @@ public class PageCrawler
                 string path = uri.AbsolutePath;
                 bool alreadyExtensioned = smExtensionsToStrip
                     .Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
-                bool pathIsFetchable = !string.IsNullOrEmpty(path)
-                                    && path != "/"
-                                    && !path.EndsWith(value: '/');
+                bool pathIsFetchable = !string.IsNullOrEmpty(path) && path != "/" && !path.EndsWith(value: '/');
                 if (!alreadyExtensioned && pathIsFetchable)
                 {
                     string portSuffix = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";

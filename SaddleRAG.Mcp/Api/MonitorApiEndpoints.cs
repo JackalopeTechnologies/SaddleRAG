@@ -30,7 +30,8 @@ public static class MonitorApiEndpoints
         group.MapPost(CancelJobPath, CancelJob);
 
         app.MapGet(ApiGroupPath + QueryMetricsPath,
-                   (IQueryMetrics metrics) => Results.Ok(metrics.Snapshot()));
+                   (IQueryMetrics metrics) => Results.Ok(metrics.Snapshot())
+                  );
     }
 
     private static async Task<IResult> CancelJob(string jobId, ScrapeJobRunner runner)

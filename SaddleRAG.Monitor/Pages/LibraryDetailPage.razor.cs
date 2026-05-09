@@ -63,7 +63,7 @@ public abstract class LibraryDetailPageBase : ComponentBase
         ArgumentNullException.ThrowIfNull(Snackbar);
         if (Detail is not null)
         {
-            var jobId = await WriteService.RescrapeAsync(Detail.LibraryId, Detail.Version);
+            string? jobId = await WriteService.RescrapeAsync(Detail.LibraryId, Detail.Version);
             if (!string.IsNullOrEmpty(jobId))
             {
                 Snackbar.Add($"Rescrape queued (job {jobId}).", Severity.Success);
@@ -80,7 +80,7 @@ public abstract class LibraryDetailPageBase : ComponentBase
         ArgumentNullException.ThrowIfNull(Snackbar);
         if (Detail is not null)
         {
-            var jobId = await WriteService.RescrubAsync(Detail.LibraryId, Detail.Version);
+            string? jobId = await WriteService.RescrubAsync(Detail.LibraryId, Detail.Version);
             if (!string.IsNullOrEmpty(jobId))
                 Snackbar.Add($"Rescrub queued (job {jobId}).", Severity.Success);
             else
@@ -96,21 +96,21 @@ public abstract class LibraryDetailPageBase : ComponentBase
         ArgumentNullException.ThrowIfNull(Nav);
         if (Detail is not null)
         {
-            var version = Detail.Version;
-            var libraryId = Detail.LibraryId;
+            string version = Detail.Version;
+            string libraryId = Detail.LibraryId;
             var parameters = new DialogParameters
-                {
-                    {
-                        nameof(ConfirmDialog.Message),
-                        $"Delete version {version} of {libraryId}? This removes its chunks, pages, and audit log."
-                    },
-                    { nameof(ConfirmDialog.ConfirmLabel), DeleteConfirmLabel }
-                };
+                                 {
+                                     {
+                                         nameof(ConfirmDialog.Message),
+                                         $"Delete version {version} of {libraryId}? This removes its chunks, pages, and audit log."
+                                     },
+                                     { nameof(ConfirmDialog.ConfirmLabel), DeleteConfirmLabel }
+                                 };
             var dialog = await DialogService.ShowAsync<ConfirmDialog>($"Delete version {version}", parameters);
             var result = await dialog.Result;
             if (result is not null && !result.Canceled)
             {
-                var ok = await WriteService.DeleteVersionAsync(libraryId, version);
+                bool ok = await WriteService.DeleteVersionAsync(libraryId, version);
                 if (ok)
                 {
                     Snackbar.Add($"Deleted version {version}.", Severity.Success);

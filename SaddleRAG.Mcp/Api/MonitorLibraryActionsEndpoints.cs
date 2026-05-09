@@ -55,23 +55,24 @@ public static class MonitorLibraryActionsEndpoints
         var recent = await jobs.ListRecentAsync(RescrapeJobScanLimit, ct);
         var previous = recent.Where(r => string.Equals(r.Job.LibraryId,
                                                        libraryId,
-                                                       StringComparison.OrdinalIgnoreCase)
-                                      && string.Equals(r.Job.Version,
+                                                       StringComparison.OrdinalIgnoreCase
+                                                      ) &&
+                                         string.Equals(r.Job.Version,
                                                        req.Version,
-                                                       StringComparison.OrdinalIgnoreCase)
-                                    )
+                                                       StringComparison.OrdinalIgnoreCase
+                                                      )
+                                   )
                              .OrderByDescending(r => r.CreatedAt)
                              .FirstOrDefault();
         IResult result;
         if (previous is null)
-        {
             result = Results.NotFound(new { Error = NoPriorScrapeError });
-        }
         else
         {
             var jobId = await queue.QueueAsync(previous.Job, profile: null, ct);
             result = Results.Ok(new { JobId = jobId });
         }
+
         return result;
     }
 
@@ -87,9 +88,7 @@ public static class MonitorLibraryActionsEndpoints
         var lib = await libs.GetLibraryAsync(libraryId, ct);
         IResult result;
         if (lib is null)
-        {
             result = Results.NotFound(new { Error = UnknownLibraryError });
-        }
         else
         {
             var jobId = await runner.QueueAsync(libraryId,
@@ -100,6 +99,7 @@ public static class MonitorLibraryActionsEndpoints
                                                );
             result = Results.Ok(new { JobId = jobId });
         }
+
         return result;
     }
 
@@ -113,9 +113,9 @@ public static class MonitorLibraryActionsEndpoints
         var deleteResult = await libs.DeleteVersionAsync(libraryId, version, ct);
         return Results.Ok(new
                               {
-                                  VersionsDeleted = deleteResult.VersionsDeleted,
-                                  LibraryRowDeleted = deleteResult.LibraryRowDeleted,
-                                  CurrentVersionRepointedTo = deleteResult.CurrentVersionRepointedTo
+                                  deleteResult.VersionsDeleted,
+                                  deleteResult.LibraryRowDeleted,
+                                  deleteResult.CurrentVersionRepointedTo
                               }
                          );
     }

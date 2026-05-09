@@ -148,18 +148,20 @@ public class ScrapeJobRepository : IScrapeJobRepository
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ScrapeJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
-                                                                                string? libraryId,
-                                                                                string? version,
-                                                                                int limit,
-                                                                                CancellationToken ct = default)
+        string? libraryId,
+        string? version,
+        int limit,
+        CancellationToken ct = default)
     {
         var filter = BuildDeleteFilter(status, libraryId, version);
         IReadOnlyList<ScrapeJobRecord> result = Array.Empty<ScrapeJobRecord>();
         if (filter != null)
+        {
             result = await mContext.ScrapeJobs.Find(filter)
                                    .SortByDescending(j => j.CreatedAt)
                                    .Limit(limit > 0 ? limit : DefaultCandidateLimit)
                                    .ToListAsync(ct);
+        }
 
         return result;
     }
@@ -176,9 +178,9 @@ public class ScrapeJobRepository : IScrapeJobRepository
         if (!string.IsNullOrEmpty(version))
             clauses.Add(Builders<ScrapeJobRecord>.Filter.Eq(JobVersionPath, version));
 
-        FilterDefinition<ScrapeJobRecord>? result = clauses.Count == 0
-                                                        ? null
-                                                        : Builders<ScrapeJobRecord>.Filter.And(clauses);
+        var result = clauses.Count == 0
+                         ? null
+                         : Builders<ScrapeJobRecord>.Filter.And(clauses);
         return result;
     }
 

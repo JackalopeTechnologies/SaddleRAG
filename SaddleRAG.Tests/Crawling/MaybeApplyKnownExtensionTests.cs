@@ -39,15 +39,15 @@ public sealed class MaybeApplyKnownExtensionTests
     [Fact]
     public void NullKnownExtensionReturnsUrlUnchanged()
     {
-        string url = "https://help.aerotech.com/automation1/Content/Parameters/AbortDecelRate";
+        var url = "https://help.aerotech.com/automation1/Content/Parameters/AbortDecelRate";
         Assert.Equal(url, Invoke(url, knownExtension: null));
     }
 
     [Fact]
     public void EmptyKnownExtensionReturnsUrlUnchanged()
     {
-        string url = "https://help.aerotech.com/automation1/Content/Parameters/AbortDecelRate";
-        Assert.Equal(url, Invoke(url, knownExtension: string.Empty));
+        var url = "https://help.aerotech.com/automation1/Content/Parameters/AbortDecelRate";
+        Assert.Equal(url, Invoke(url, string.Empty));
     }
 
     [Fact]
@@ -60,36 +60,36 @@ public sealed class MaybeApplyKnownExtensionTests
     [Fact]
     public void DoesNotAppendWhenPathAlreadyHasKnownExtension()
     {
-        string url = "https://help.aerotech.com/automation1/Content/Parameters.htm";
-        Assert.Equal(url, Invoke(url, knownExtension: ".htm"));
+        var url = "https://help.aerotech.com/automation1/Content/Parameters.htm";
+        Assert.Equal(url, Invoke(url, ".htm"));
     }
 
     [Fact]
     public void DoesNotAppendWhenPathHasDifferentKnownExtension()
     {
-        string url = "https://docs.example.com/page.html";
-        Assert.Equal(url, Invoke(url, knownExtension: ".htm"));
+        var url = "https://docs.example.com/page.html";
+        Assert.Equal(url, Invoke(url, ".htm"));
     }
 
     [Fact]
     public void LeavesRootPathUnchanged()
     {
-        string url = "https://help.aerotech.com/";
-        Assert.Equal(url, Invoke(url, knownExtension: ".htm"));
+        var url = "https://help.aerotech.com/";
+        Assert.Equal(url, Invoke(url, ".htm"));
     }
 
     [Fact]
     public void LeavesEmptyPathUnchanged()
     {
-        string url = "https://help.aerotech.com";
-        Assert.Equal(url, Invoke(url, knownExtension: ".htm"));
+        var url = "https://help.aerotech.com";
+        Assert.Equal(url, Invoke(url, ".htm"));
     }
 
     [Fact]
     public void LeavesTrailingSlashPathUnchanged()
     {
-        string url = "https://help.aerotech.com/automation1/Content/Parameters/";
-        Assert.Equal(url, Invoke(url, knownExtension: ".htm"));
+        var url = "https://help.aerotech.com/automation1/Content/Parameters/";
+        Assert.Equal(url, Invoke(url, ".htm"));
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class MaybeApplyKnownExtensionTests
     [Fact]
     public void MalformedUrlReturnedUnchanged()
     {
-        string url = "not a url";
-        Assert.Equal(url, Invoke(url, knownExtension: ".htm"));
+        var url = "not a url";
+        Assert.Equal(url, Invoke(url, ".htm"));
     }
 }

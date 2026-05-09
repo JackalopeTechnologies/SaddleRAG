@@ -11,7 +11,10 @@ if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
 # `Set-Content -Encoding UTF8`, which Claude Desktop's JSON parser rejects.
 $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
-# --- Helper: remove mcpServers.saddlerag from a JSON settings file ---
+# --- Helper: remove mcpServers.saddlerag and any mcp__saddlerag__* entries
+#     from permissions.allow in a JSON settings file. The permissions block
+#     only exists in the Claude Code CLI config; on Claude Desktop the
+#     hasPerms check simply skips that branch. ---
 function Remove-SaddleRagEntry
 {
     param([string]$FilePath, $Encoding)
@@ -19,15 +22,38 @@ function Remove-SaddleRagEntry
     if (-not (Test-Path $FilePath)) { return }
 
     $s = Get-Content $FilePath -Raw | ConvertFrom-Json
+    $changed = $false
 
     $hasMcp = $s.PSObject.Properties | Where-Object { $_.Name -eq 'mcpServers' }
-    if (-not $hasMcp) { return }
+    if ($hasMcp)
+    {
+        $hasSaddle = $s.mcpServers.PSObject.Properties | Where-Object { $_.Name -eq 'saddlerag' }
+        if ($hasSaddle)
+        {
+            $s.mcpServers.PSObject.Properties.Remove('saddlerag')
+            $changed = $true
+        }
+    }
 
-    $hasSaddle = $s.mcpServers.PSObject.Properties | Where-Object { $_.Name -eq 'saddlerag' }
-    if (-not $hasSaddle) { return }
+    $hasPerms = $s.PSObject.Properties | Where-Object { $_.Name -eq 'permissions' }
+    if ($hasPerms)
+    {
+        $hasAllow = $s.permissions.PSObject.Properties | Where-Object { $_.Name -eq 'allow' }
+        if ($hasAllow)
+        {
+            $filtered = @($s.permissions.allow | Where-Object { $_ -notlike 'mcp__saddlerag__*' })
+            if ($filtered.Count -ne @($s.permissions.allow).Count)
+            {
+                $s.permissions.allow = $filtered
+                $changed = $true
+            }
+        }
+    }
 
-    $s.mcpServers.PSObject.Properties.Remove('saddlerag')
-    [System.IO.File]::WriteAllText($FilePath, ($s | ConvertTo-Json -Depth 10), $Encoding)
+    if ($changed)
+    {
+        [System.IO.File]::WriteAllText($FilePath, ($s | ConvertTo-Json -Depth 10), $Encoding)
+    }
 }
 
 # Claude Code CLI

@@ -43,7 +43,7 @@ public sealed class RescrubJobRepositoryDeleteTests
     [Fact]
     public async Task DeleteAsyncRemovesSingleRowAndReturnsTrue()
     {
-        var job = MakeJob(ScrapeJobStatus.Failed, libraryId: $"lib-{Guid.NewGuid():N}", version: "1.0");
+        var job = MakeJob(ScrapeJobStatus.Failed, $"lib-{Guid.NewGuid():N}", "1.0");
         await mRepo.UpsertAsync(job, TestContext.Current.CancellationToken);
 
         bool removed = await mRepo.DeleteAsync(job.Id, TestContext.Current.CancellationToken);

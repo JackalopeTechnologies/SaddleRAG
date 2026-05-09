@@ -119,5 +119,8 @@ public class ScrapeJobRecord
     /// <summary>
     ///     Atomically bump <see cref="ErrorCount" /> by 1 and return the new value.
     /// </summary>
-    public int IncrementErrorCount() => Interlocked.Increment(ref mErrorCount);
+    public int IncrementErrorCount()
+    {
+        return Interlocked.Increment(ref mErrorCount);
+    }
 }

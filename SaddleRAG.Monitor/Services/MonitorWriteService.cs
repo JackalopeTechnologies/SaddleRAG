@@ -99,6 +99,7 @@ public sealed class MonitorWriteService
             var payload = await response.Content.ReadFromJsonAsync<JobIdResponse>(ct);
             result = payload?.JobId;
         }
+
         return result;
     }
 

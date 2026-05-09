@@ -44,11 +44,12 @@ public sealed class MonitorDataService
         mAudit = audit;
     }
 
-    private readonly ILibraryRepository mLibraries;
-    private readonly IChunkRepository mChunks;
-    private readonly ILibraryProfileRepository mProfiles;
-    private readonly IUnifiedJobView mJobs;
     private readonly IScrapeAuditRepository mAudit;
+    private readonly IChunkRepository mChunks;
+    private readonly IUnifiedJobView mJobs;
+
+    private readonly ILibraryRepository mLibraries;
+    private readonly ILibraryProfileRepository mProfiles;
 
     /// <summary>
     ///     Returns a summary row for every library, including counts from the current version record.
@@ -161,11 +162,13 @@ public sealed class MonitorDataService
         ArgumentException.ThrowIfNullOrEmpty(version);
         var rows = await mJobs.ListAsync(statusFilter: null,
                                          typeFilter: null,
-                                         libraryFilter: libraryId,
-                                         limit: RecentJobsScanLimit,
-                                         ct);
-        var match = rows.Where(r => string.Equals(r.LibraryId, libraryId, StringComparison.OrdinalIgnoreCase)
-                                 && string.Equals(r.Version, version, StringComparison.OrdinalIgnoreCase))
+                                         libraryId,
+                                         RecentJobsScanLimit,
+                                         ct
+                                        );
+        var match = rows.Where(r => string.Equals(r.LibraryId, libraryId, StringComparison.OrdinalIgnoreCase) &&
+                                    string.Equals(r.Version, version, StringComparison.OrdinalIgnoreCase)
+                              )
                         .OrderByDescending(r => r.CreatedAt)
                         .FirstOrDefault();
         return match?.JobId;
@@ -209,7 +212,7 @@ public sealed class MonitorDataService
         {
             result = await mAudit.SummarizeAsync(jobId, ct);
         }
-        catch (Exception)
+        catch(Exception)
         {
             // Audit may not exist for this job; treat as absent.
         }
@@ -228,32 +231,36 @@ public sealed class MonitorDataService
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         var fetched = await mAudit.QueryAsync(jobId,
-                                              status: AuditStatus.Fetched,
+                                              AuditStatus.Fetched,
                                               skipReason: null,
                                               host: null,
                                               urlSubstring: null,
                                               limit,
-                                              ct);
+                                              ct
+                                             );
         var skipped = await mAudit.QueryAsync(jobId,
-                                              status: AuditStatus.Skipped,
+                                              AuditStatus.Skipped,
                                               skipReason: null,
                                               host: null,
                                               urlSubstring: null,
                                               limit,
-                                              ct);
+                                              ct
+                                             );
 
         var fetches = fetched.Select(e => new RecentFetch
                                               {
                                                   Url = e.Url,
                                                   At = e.DiscoveredAt
-                                              })
+                                              }
+                                    )
                              .ToList();
         var rejects = skipped.Select(e => new RecentReject
                                               {
                                                   Url = e.Url,
                                                   Reason = e.SkipReason?.ToString() ?? string.Empty,
                                                   At = e.DiscoveredAt
-                                              })
+                                              }
+                                    )
                              .ToList();
         return (fetches, rejects);
     }

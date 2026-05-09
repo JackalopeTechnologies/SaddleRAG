@@ -15,20 +15,10 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeLibraryRepository : ILibraryRepository
 {
-    private readonly List<LibraryRecord> mLibraries = new();
-    private readonly Dictionary<string, LibraryVersionRecord> mVersions = new();
+    private readonly List<LibraryRecord> mLibraries = new List<LibraryRecord>();
 
-    public void AddLibrary(LibraryRecord library)
-    {
-        ArgumentNullException.ThrowIfNull(library);
-        mLibraries.Add(library);
-    }
-
-    public void AddVersion(LibraryVersionRecord version)
-    {
-        ArgumentNullException.ThrowIfNull(version);
-        mVersions[VersionKey(version.LibraryId, version.Version)] = version;
-    }
+    private readonly Dictionary<string, LibraryVersionRecord>
+        mVersions = new Dictionary<string, LibraryVersionRecord>();
 
     public Task<IReadOnlyList<LibraryRecord>> GetAllLibrariesAsync(CancellationToken ct = default)
     {
@@ -47,13 +37,9 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
         ArgumentNullException.ThrowIfNull(library);
         var idx = mLibraries.FindIndex(l => l.Id == library.Id);
         if (idx >= 0)
-        {
             mLibraries[idx] = library;
-        }
         else
-        {
             mLibraries.Add(library);
-        }
 
         return Task.CompletedTask;
     }
@@ -64,9 +50,7 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
     {
         LibraryVersionRecord? result = null;
         if (mVersions.TryGetValue(VersionKey(libraryId, version), out var found))
-        {
             result = found;
-        }
 
         return Task.FromResult(result);
     }
@@ -93,13 +77,14 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
     {
         var result = new DeleteVersionResult(VersionsDeleted: 0,
                                              LibraryRowDeleted: false,
-                                             CurrentVersionRepointedTo: null);
+                                             CurrentVersionRepointedTo: null
+                                            );
         return Task.FromResult(result);
     }
 
     public Task<long> DeleteAsync(string libraryId, CancellationToken ct = default)
     {
-        return Task.FromResult(0L);
+        return Task.FromResult(result: 0L);
     }
 
     public Task<RenameLibraryResponse> RenameAsync(string oldId, string newId, CancellationToken ct = default)
@@ -119,6 +104,18 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
     public Task ClearSuspectAsync(string libraryId, string version, CancellationToken ct = default)
     {
         return Task.CompletedTask;
+    }
+
+    public void AddLibrary(LibraryRecord library)
+    {
+        ArgumentNullException.ThrowIfNull(library);
+        mLibraries.Add(library);
+    }
+
+    public void AddVersion(LibraryVersionRecord version)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        mVersions[VersionKey(version.LibraryId, version.Version)] = version;
     }
 
     private static string VersionKey(string libraryId, string version) => $"{libraryId}|{version}";

@@ -1,14 +1,14 @@
 // OllamaReRanker.cs
-
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-SaddleRAG-Commercial
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
-
 #region Usings
 
+using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
@@ -18,254 +18,196 @@ using SaddleRAG.Core.Models;
 
 #endregion
 
-
 namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
-///     Ollama-based batch re-ranker.
-///     Sends all candidates in a single prompt and parses one score per document.
-///     Uses a categorical word-list (PERFECT/HIGH/MEDIUM/LOW/NONE) for reliable parsing.
+///     Generate-mode LLM reranker. Per-pair (query, document) scoring
+///     against the configured ReRankingModel (default phi4-mini:3.8b).
+///     Each candidate gets a single Ollama call returning a continuous
+///     float in [0, 1] driven by a 3-shot corpus-anchored prompt.
+///     Replaces the legacy 5-bucket categorical implementation that
+///     plateaued at HIGH for nearly every candidate when driven by
+///     qwen3:1.7b. Calls run concurrently via Task.WhenAll — Ollama
+///     serializes at the daemon for one loaded model so worst case
+///     matches sequential latency, while num_parallel &gt; 1
+///     installations get a 2-4x speedup.
 /// </summary>
 public class OllamaReRanker : IReRanker
-
 {
     public OllamaReRanker(IOptions<OllamaSettings> settings,
                           ILogger<OllamaReRanker> logger)
-
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(logger);
+
         mSettings = settings.Value;
-
         mLogger = logger;
-
         mClient = new OllamaApiClient(new Uri(mSettings.Endpoint));
+        mLogger.LogDebug("OllamaReRanker initialized with prompt {Version}", PromptVersion);
     }
 
-
     private readonly OllamaApiClient mClient;
-
     private readonly ILogger<OllamaReRanker> mLogger;
-
     private readonly OllamaSettings mSettings;
-
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ReRankResult>> ReRankAsync(string query,
                                                                IReadOnlyList<DocChunk> candidates,
                                                                int maxResults,
                                                                CancellationToken ct = default)
-
     {
         ArgumentException.ThrowIfNullOrEmpty(query);
-
         ArgumentNullException.ThrowIfNull(candidates);
 
-
-        var scores = await ScoreBatchAsync(query, candidates, ct);
-
-
-        var results = candidates
-                      .Select((chunk, index) => new ReRankResult
-
-                                                    {
-                                                        Chunk = chunk,
-
-                                                        RelevanceScore = index < scores.Count ? scores[index] : 0f
-                                                    }
-                             )
-                      .OrderByDescending(r => r.RelevanceScore)
-                      .Take(maxResults)
-                      .ToList();
-
-
-        return results;
+        IReadOnlyList<ReRankResult> result;
+        if (candidates.Count == 0)
+            result = Array.Empty<ReRankResult>();
+        else
+            result = await ScoreCandidatesAsync(query, candidates, maxResults, ct);
+        return result;
     }
 
-
-    private async Task<IReadOnlyList<float>> ScoreBatchAsync(string query,
-                                                             IReadOnlyList<DocChunk> candidates,
-                                                             CancellationToken ct)
-
+    private async Task<IReadOnlyList<ReRankResult>> ScoreCandidatesAsync(string query,
+                                                                         IReadOnlyList<DocChunk> candidates,
+                                                                         int maxResults,
+                                                                         CancellationToken ct)
     {
-        var promptBuilder = new StringBuilder();
+        var tasks = candidates
+                    .Select(chunk => ScoreCandidateAsync(query, chunk, ct))
+                    .ToArray();
 
-        promptBuilder.AppendLine(NoThinkDirective);
+        var scored = await Task.WhenAll(tasks);
+        var ordered = scored.OrderByDescending(r => r.RelevanceScore).Take(maxResults).ToList();
+        return ordered;
+    }
 
-        promptBuilder.AppendLine(RelevanceRatingInstruction);
+    private async Task<ReRankResult> ScoreCandidateAsync(string query, DocChunk chunk, CancellationToken ct)
+    {
+        var score = await ScoreOneAsync(query, chunk.Content, ct);
+        var result = new ReRankResult
+                         {
+                             Chunk = chunk,
+                             RelevanceScore = score
+                         };
+        return result;
+    }
 
-        promptBuilder
-            .AppendLine(CategoryWordListInstruction);
+    private async Task<float> ScoreOneAsync(string query, string content, CancellationToken ct)
+    {
+        var prompt = BuildPrompt(query, TruncateDocument(content));
+        var responseText = await CallOllamaAsync(prompt, ct);
+        var score = ParseScore(responseText);
+        return score;
+    }
 
-        promptBuilder.AppendLine();
-
-        promptBuilder.AppendLine($"Query: {query}");
-
-        promptBuilder.AppendLine();
-
-
-        for(var i = 0; i < candidates.Count; i++)
-
-        {
-            string content = candidates[i].Content;
-
-            string truncated = content.Length > MaxContentCharsPerDoc
-                                   ? content[..MaxContentCharsPerDoc]
-                                   : content;
-
-
-            promptBuilder.AppendLine($"--- Document {i + 1}: {candidates[i].PageTitle} ---");
-
-            promptBuilder.AppendLine(truncated);
-
-            promptBuilder.AppendLine();
-        }
-
-
-        promptBuilder.AppendLine(ReplyFormatInstruction);
-
-        promptBuilder.AppendLine(ReplyFormatExampleMedium);
-
-        promptBuilder.AppendLine(ReplyFormatExampleHigh);
-
-        promptBuilder.AppendLine(ReplyFormatExampleEtc);
-
-
-        var scores = new List<float>();
-
-
+    private async Task<string> CallOllamaAsync(string prompt, CancellationToken ct)
+    {
+        var responseBuilder = new StringBuilder();
         try
-
         {
             var request = new GenerateRequest
-
                               {
                                   Model = mSettings.ReRankingModel,
-
-                                  Prompt = promptBuilder.ToString(),
-
+                                  Prompt = prompt,
                                   Stream = true,
-
-                                  Options = new RequestOptions
-
-                                                {
-                                                    Temperature = 0f
-                                                }
+                                  Options = new RequestOptions { Temperature = 0f }
                               };
-
-
-            var responseBuilder = new StringBuilder();
-
             await foreach(var token in mClient.GenerateAsync(request, ct))
-
             {
                 if (responseBuilder.Length < MaxResponseChars)
-
                     responseBuilder.Append(token?.Response ?? string.Empty);
             }
-
-
-            string responseText = responseBuilder.ToString().Trim();
-
-            scores = ParseBatchScores(responseText, candidates.Count);
-
-
-            mLogger.LogDebug("Batch re-rank response for {Count} candidates: {Response}",
-                             candidates.Count,
-                             responseText
-                            );
         }
-
-        catch(Exception ex)
-
+        catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogWarning(ex, "Batch re-ranking failed for {Count} candidates", candidates.Count);
+            mLogger.LogWarning(ex, "Reranker call failed; treating as score 0");
         }
 
-
-        // Pad with zeros if parsing returned fewer scores than candidates
-
-        while (scores.Count < candidates.Count)
-
-            scores.Add(item: 0f);
-
-
-        return scores;
+        return responseBuilder.ToString().Trim();
     }
 
-
-    private List<float> ParseBatchScores(string responseText, int expectedCount)
-
+    private static string TruncateDocument(string content)
     {
-        var scores = new List<float>(expectedCount);
-
-        string[] lines = responseText.Split(separator: '\n', StringSplitOptions.RemoveEmptyEntries);
-
-
-        foreach(string line in lines)
-
-        {
-            if (scores.Count >= expectedCount)
-
-                break;
-
-
-            var score = 0f;
-
-            string[] words = line.Split(' ', ':', '\t', '.', ',');
-
-
-            var found = false;
-
-            foreach(string word in words)
-
-            {
-                if (!found && smScoreMap.TryGetValue(word.Trim(), out float mapped))
-
-                {
-                    score = mapped;
-
-                    found = true;
-                }
-            }
-
-
-            if (found)
-
-                scores.Add(score);
-        }
-
-
-        return scores;
+        var result = content.Length <= MaxDocumentChars ? content : content[..MaxDocumentChars];
+        return result;
     }
 
+    /// <summary>
+    ///     Build the 3-shot corpus-anchored prompt for relevance scoring.
+    ///     Anchor cases lock in the calibration scale: an exact-name
+    ///     match against the canonical class doc → 0.95; a sibling-class
+    ///     mention in a related-but-not-target doc → 0.55; an entirely
+    ///     unrelated doc from a different library → 0.05. Public so unit
+    ///     tests can pin the prompt format without spinning Ollama.
+    /// </summary>
+    public static string BuildPrompt(string query, string document)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(query);
+        ArgumentNullException.ThrowIfNull(document);
 
-    private const int MaxContentCharsPerDoc = 500;
+        var prompt = $$"""
+                       You are a documentation relevance scorer. Given a search query and a documentation snippet, output ONLY a single decimal number between 0.0 and 1.0 representing how well the snippet answers the query. No explanation, no other text.
 
-    private const int MaxResponseChars = 2048;
+                       Scale:
+                       0.9-1.0  Perfect match — the snippet IS the documentation for what the query asks
+                       0.6-0.8  Strong match — closely related class, method, or concept
+                       0.3-0.5  Weak match — mentions related ideas but not the focus
+                       0.0-0.2  Off topic
 
+                       Examples:
 
-    private const string NoThinkDirective = "/no_think";
-    private const string RelevanceRatingInstruction = "Rate how relevant each document is to the search query.";
+                       Query: FastLineRenderableSeries class
+                       Document: FastLineRenderableSeries Class — Defines a Line renderable series, supporting solid, stroked (thickness 1+) lines, dashed lines and optional Point-markers. A RenderableSeries has an IDataSeries data-source.
+                       Score: 0.95
 
-    private const string CategoryWordListInstruction =
-        "For each document, reply with its number and ONE word: PERFECT, HIGH, MEDIUM, LOW, or NONE.";
+                       Query: FastLineRenderableSeries class
+                       Document: Spline Line Series — smoothing algorithm that gives charts a smooth look. Uses SplineLineRenderableSeries type to render a line with cubic-spline interpolation.
+                       Score: 0.55
 
-    private const string ReplyFormatInstruction = "Reply with ONLY one line per document in this exact format:";
-    private const string ReplyFormatExampleMedium = "1: MEDIUM";
-    private const string ReplyFormatExampleHigh = "2: HIGH";
-    private const string ReplyFormatExampleEtc = "etc.";
+                       Query: FastLineRenderableSeries class
+                       Document: How to clone the Math.NET Spatial source code from GitHub. Run git clone https://github.com/mathnet/mathnet-spatial.git, then open the .sln in Visual Studio.
+                       Score: 0.05
 
-    private static readonly Dictionary<string, float> smScoreMap =
-        new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase)
+                       Now score this:
 
-            {
-                ["PERFECT"] = 1.0f,
+                       Query: {{query}}
+                       Document: {{document}}
+                       Score:
+                       """;
+        return prompt;
+    }
 
-                ["HIGH"] = 0.8f,
+    /// <summary>
+    ///     Tolerant parser. The model is asked to emit only a number but
+    ///     occasionally adds prefixes ("Relevance: 0.85") or extra text
+    ///     ("0.85 (high confidence)"). Extracts the first float-shaped
+    ///     token from the response and clamps to [0, 1]. Returns 0 if no
+    ///     float is found (empty response, model confused, etc.).
+    /// </summary>
+    public static float ParseScore(string responseText)
+    {
+        ArgumentNullException.ThrowIfNull(responseText);
 
-                ["MEDIUM"] = 0.5f,
+        var score = 0f;
+        var match = smFloatRegex.Match(responseText);
+        if (match.Success && float.TryParse(match.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var raw))
+            score = Math.Clamp(raw, MinScore, MaxScore);
 
-                ["LOW"] = 0.2f,
+        return score;
+    }
 
-                ["NONE"] = 0.0f
-            };
+    /// <summary>
+    ///     Bumped whenever the prompt template changes meaningfully.
+    ///     Currently informational only (rerank scores aren't cached) but
+    ///     reserved for future bench-harness diffing.
+    /// </summary>
+    public const string PromptVersion = "v2-continuous";
+
+    private const int MaxResponseChars = 256;
+    private const int MaxDocumentChars = 2000;
+    private const float MinScore = 0f;
+    private const float MaxScore = 1f;
+
+    // Matches floats like "0.85", "0.0", ".97", "1", "1.0".
+    private static readonly Regex smFloatRegex = new Regex(@"\d*\.\d+|\d+(?:\.\d+)?", RegexOptions.Compiled);
 }

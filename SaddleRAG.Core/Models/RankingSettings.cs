@@ -43,9 +43,14 @@ public class RankingSettings
     public int ProseMentionThreshold { get; set; } = DefaultProseMentionThreshold;
 
     /// <summary>
-    ///     Default reranker strategy used when toggle_reranking activates
-    ///     reranking. Off is the recommended starting point until a bench
-    ///     run confirms a non-Off strategy net-helps.
+    ///     Active reranker strategy. Mutable at runtime via the
+    ///     set_rerank_strategy MCP tool; SearchTools and the dispatcher
+    ///     both read this property per-call, so writes flow through
+    ///     immediately. Off skips reranking; Llm and CrossEncoder are
+    ///     currently commented out at the dispatch sites and fall
+    ///     through to NoOp — see ToggleableReRanker.ResolveActive and
+    ///     SearchTools.ShouldRerank. Default kept at Off until a
+    ///     calibrated Western reranker pipeline is wired up.
     /// </summary>
     public ReRankerStrategy ReRankerStrategy { get; set; } = ReRankerStrategy.Off;
 

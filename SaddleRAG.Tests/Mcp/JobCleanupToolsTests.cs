@@ -155,9 +155,9 @@ public sealed class JobCleanupToolsTests
                                                      MakeNoopRunner(),
                                                      kind: null,
                                                      jobIds: null,
-                                                     status: "Cancelled",
-                                                     library: "actipro-wpf",
-                                                     version: "25.1",
+                                                     "Cancelled",
+                                                     "actipro-wpf",
+                                                     "25.1",
                                                      includeAudit: true,
                                                      dryRun: true,
                                                      profile: null,
@@ -200,32 +200,35 @@ public sealed class JobCleanupToolsTests
 
         await JobCleanupTools.CleanupJobs(factory,
                                           MakeNoopRunner(),
-                                          kind: "scrape",
+                                          "scrape",
                                           jobIds: null,
-                                          status: "Cancelled",
-                                          library: "actipro-wpf",
-                                          version: "25.1",
+                                          "Cancelled",
+                                          "actipro-wpf",
+                                          "25.1",
                                           includeAudit: true,
                                           dryRun: true,
                                           profile: null,
                                           TestContext.Current.CancellationToken
                                          );
 
-        await scrapeRepo.Received().CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                               Arg.Any<string?>(),
-                                                               Arg.Any<string?>(),
-                                                               Arg.Any<CancellationToken>()
-                                                              );
-        await bgRepo.DidNotReceive().CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                                Arg.Any<string?>(),
-                                                                Arg.Any<string?>(),
-                                                                Arg.Any<CancellationToken>()
-                                                               );
-        await rescrubRepo.DidNotReceive().CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                                     Arg.Any<string?>(),
-                                                                     Arg.Any<string?>(),
-                                                                     Arg.Any<CancellationToken>()
-                                                                    );
+        await scrapeRepo.Received()
+                        .CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                    Arg.Any<string?>(),
+                                                    Arg.Any<string?>(),
+                                                    Arg.Any<CancellationToken>()
+                                                   );
+        await bgRepo.DidNotReceive()
+                    .CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                Arg.Any<string?>(),
+                                                Arg.Any<string?>(),
+                                                Arg.Any<CancellationToken>()
+                                               );
+        await rescrubRepo.DidNotReceive()
+                         .CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<string?>(),
+                                                     Arg.Any<CancellationToken>()
+                                                    );
     }
 
     [Fact]
@@ -250,7 +253,7 @@ public sealed class JobCleanupToolsTests
         var json = await JobCleanupTools.CleanupJobs(factory,
                                                      MakeInlineRunner(),
                                                      kind: null,
-                                                     jobIds: new[] { JobIdAlpha, JobIdBeta },
+                                                     new[] { JobIdAlpha, JobIdBeta },
                                                      status: null,
                                                      library: null,
                                                      version: null,
@@ -267,12 +270,14 @@ public sealed class JobCleanupToolsTests
         await bgRepo.Received(requiredNumberOfCalls: 1).DeleteAsync(JobIdBeta, Arg.Any<CancellationToken>());
         await rescrubRepo.Received(requiredNumberOfCalls: 1).DeleteAsync(JobIdAlpha, Arg.Any<CancellationToken>());
         await rescrubRepo.Received(requiredNumberOfCalls: 1).DeleteAsync(JobIdBeta, Arg.Any<CancellationToken>());
-        await auditRepo.Received(requiredNumberOfCalls: 1).DeleteByJobIdAsync(JobIdAlpha,
-                                                                              Arg.Any<CancellationToken>()
-                                                                             );
-        await auditRepo.Received(requiredNumberOfCalls: 1).DeleteByJobIdAsync(JobIdBeta,
-                                                                              Arg.Any<CancellationToken>()
-                                                                             );
+        await auditRepo.Received(requiredNumberOfCalls: 1)
+                       .DeleteByJobIdAsync(JobIdAlpha,
+                                           Arg.Any<CancellationToken>()
+                                          );
+        await auditRepo.Received(requiredNumberOfCalls: 1)
+                       .DeleteByJobIdAsync(JobIdBeta,
+                                           Arg.Any<CancellationToken>()
+                                          );
     }
 
     [Fact]
@@ -326,9 +331,9 @@ public sealed class JobCleanupToolsTests
                                                      MakeInlineRunner(),
                                                      kind: null,
                                                      jobIds: null,
-                                                     status: "Cancelled",
-                                                     library: "actipro-wpf",
-                                                     version: "25.1",
+                                                     "Cancelled",
+                                                     "actipro-wpf",
+                                                     "25.1",
                                                      includeAudit: true,
                                                      dryRun: false,
                                                      profile: null,
@@ -336,27 +341,32 @@ public sealed class JobCleanupToolsTests
                                                     );
 
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await auditRepo.Received(requiredNumberOfCalls: 1).DeleteByJobIdAsync(JobIdAlpha,
-                                                                              Arg.Any<CancellationToken>()
-                                                                             );
-        await auditRepo.Received(requiredNumberOfCalls: 1).DeleteByJobIdAsync(JobIdBeta,
-                                                                              Arg.Any<CancellationToken>()
-                                                                             );
-        await scrapeRepo.Received(requiredNumberOfCalls: 1).DeleteManyAsync(ScrapeJobStatus.Cancelled,
-                                                                            "actipro-wpf",
-                                                                            "25.1",
-                                                                            Arg.Any<CancellationToken>()
-                                                                           );
-        await bgRepo.Received(requiredNumberOfCalls: 1).DeleteManyAsync(ScrapeJobStatus.Cancelled,
-                                                                        "actipro-wpf",
-                                                                        "25.1",
-                                                                        Arg.Any<CancellationToken>()
-                                                                       );
-        await rescrubRepo.Received(requiredNumberOfCalls: 1).DeleteManyAsync(ScrapeJobStatus.Cancelled,
-                                                                             "actipro-wpf",
-                                                                             "25.1",
-                                                                             Arg.Any<CancellationToken>()
-                                                                            );
+        await auditRepo.Received(requiredNumberOfCalls: 1)
+                       .DeleteByJobIdAsync(JobIdAlpha,
+                                           Arg.Any<CancellationToken>()
+                                          );
+        await auditRepo.Received(requiredNumberOfCalls: 1)
+                       .DeleteByJobIdAsync(JobIdBeta,
+                                           Arg.Any<CancellationToken>()
+                                          );
+        await scrapeRepo.Received(requiredNumberOfCalls: 1)
+                        .DeleteManyAsync(ScrapeJobStatus.Cancelled,
+                                         "actipro-wpf",
+                                         "25.1",
+                                         Arg.Any<CancellationToken>()
+                                        );
+        await bgRepo.Received(requiredNumberOfCalls: 1)
+                    .DeleteManyAsync(ScrapeJobStatus.Cancelled,
+                                     "actipro-wpf",
+                                     "25.1",
+                                     Arg.Any<CancellationToken>()
+                                    );
+        await rescrubRepo.Received(requiredNumberOfCalls: 1)
+                         .DeleteManyAsync(ScrapeJobStatus.Cancelled,
+                                          "actipro-wpf",
+                                          "25.1",
+                                          Arg.Any<CancellationToken>()
+                                         );
     }
 
     [Fact]
@@ -379,7 +389,7 @@ public sealed class JobCleanupToolsTests
         await JobCleanupTools.CleanupJobs(factory,
                                           MakeInlineRunner(),
                                           kind: null,
-                                          jobIds: new[] { JobIdAlpha },
+                                          new[] { JobIdAlpha },
                                           status: null,
                                           library: null,
                                           version: null,
@@ -402,7 +412,7 @@ public sealed class JobCleanupToolsTests
                                                              MakeNoopRunner(),
                                                              kind: null,
                                                              jobIds: null,
-                                                             status: "BananaPhone",
+                                                             "BananaPhone",
                                                              library: null,
                                                              version: null,
                                                              includeAudit: true,
@@ -410,7 +420,7 @@ public sealed class JobCleanupToolsTests
                                                              profile: null,
                                                              TestContext.Current.CancellationToken
                                                         )
-                                                    );
+                                                   );
     }
 
     [Fact]
@@ -420,17 +430,17 @@ public sealed class JobCleanupToolsTests
 
         await Assert.ThrowsAsync<ArgumentException>(() => JobCleanupTools.CleanupJobs(factory,
                                                              MakeNoopRunner(),
-                                                             kind: "ScreenSaver",
+                                                             "ScreenSaver",
                                                              jobIds: null,
                                                              status: null,
-                                                             library: "x",
+                                                             "x",
                                                              version: null,
                                                              includeAudit: true,
                                                              dryRun: true,
                                                              profile: null,
                                                              TestContext.Current.CancellationToken
                                                         )
-                                                    );
+                                                   );
     }
 
     [Fact]
@@ -472,10 +482,10 @@ public sealed class JobCleanupToolsTests
         await JobCleanupTools.CleanupJobs(factory,
                                           MakeNoopRunner(),
                                           kind: null,
-                                          jobIds: new[] { JobIdAlpha, JobIdBeta },
-                                          status: "Failed",
-                                          library: "any",
-                                          version: "1.0",
+                                          new[] { JobIdAlpha, JobIdBeta },
+                                          "Failed",
+                                          "any",
+                                          "1.0",
                                           includeAudit: true,
                                           dryRun: true,
                                           profile: null,
@@ -483,28 +493,32 @@ public sealed class JobCleanupToolsTests
                                          );
 
         await scrapeRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<CancellationToken>()
-                                                        );
+        await scrapeRepo.DidNotReceive()
+                        .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<CancellationToken>()
+                                        );
         await bgRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await bgRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                     Arg.Any<string?>(),
-                                                     Arg.Any<string?>(),
-                                                     Arg.Any<CancellationToken>()
-                                                    );
+        await bgRepo.DidNotReceive()
+                    .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                     Arg.Any<string?>(),
+                                     Arg.Any<string?>(),
+                                     Arg.Any<CancellationToken>()
+                                    );
         await rescrubRepo.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await rescrubRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                          Arg.Any<string?>(),
-                                                          Arg.Any<string?>(),
-                                                          Arg.Any<CancellationToken>()
-                                                         );
+        await rescrubRepo.DidNotReceive()
+                         .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                          Arg.Any<string?>(),
+                                          Arg.Any<string?>(),
+                                          Arg.Any<CancellationToken>()
+                                         );
         await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await auditRepo.DidNotReceive().DeleteByLibraryVersionAsync(Arg.Any<string>(),
-                                                                    Arg.Any<string>(),
-                                                                    Arg.Any<CancellationToken>()
-                                                                   );
+        await auditRepo.DidNotReceive()
+                       .DeleteByLibraryVersionAsync(Arg.Any<string>(),
+                                                    Arg.Any<string>(),
+                                                    Arg.Any<CancellationToken>()
+                                                   );
     }
 
     [Fact]
@@ -529,9 +543,9 @@ public sealed class JobCleanupToolsTests
 
         await JobCleanupTools.CleanupJobs(factory,
                                           MakeInlineRunner(),
-                                          kind: "background",
+                                          "background",
                                           jobIds: null,
-                                          status: "Failed",
+                                          "Failed",
                                           library: null,
                                           version: null,
                                           includeAudit: true,
@@ -540,21 +554,24 @@ public sealed class JobCleanupToolsTests
                                           TestContext.Current.CancellationToken
                                          );
 
-        await bgRepo.Received(requiredNumberOfCalls: 1).DeleteManyAsync(ScrapeJobStatus.Failed,
-                                                                        null,
-                                                                        null,
-                                                                        Arg.Any<CancellationToken>()
-                                                                       );
-        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<CancellationToken>()
-                                                        );
-        await rescrubRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                          Arg.Any<string?>(),
-                                                          Arg.Any<string?>(),
-                                                          Arg.Any<CancellationToken>()
-                                                         );
+        await bgRepo.Received(requiredNumberOfCalls: 1)
+                    .DeleteManyAsync(ScrapeJobStatus.Failed,
+                                     libraryId: null,
+                                     version: null,
+                                     Arg.Any<CancellationToken>()
+                                    );
+        await scrapeRepo.DidNotReceive()
+                        .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<CancellationToken>()
+                                        );
+        await rescrubRepo.DidNotReceive()
+                         .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                          Arg.Any<string?>(),
+                                          Arg.Any<string?>(),
+                                          Arg.Any<CancellationToken>()
+                                         );
         await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -580,10 +597,10 @@ public sealed class JobCleanupToolsTests
 
         await JobCleanupTools.CleanupJobs(factory,
                                           MakeInlineRunner(),
-                                          kind: "rescrub",
+                                          "rescrub",
                                           jobIds: null,
                                           status: null,
-                                          library: "lib-x",
+                                          "lib-x",
                                           version: null,
                                           includeAudit: true,
                                           dryRun: false,
@@ -591,21 +608,24 @@ public sealed class JobCleanupToolsTests
                                           TestContext.Current.CancellationToken
                                          );
 
-        await rescrubRepo.Received(requiredNumberOfCalls: 1).DeleteManyAsync(null,
-                                                                             "lib-x",
-                                                                             null,
-                                                                             Arg.Any<CancellationToken>()
-                                                                            );
-        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<CancellationToken>()
-                                                        );
-        await bgRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                     Arg.Any<string?>(),
-                                                     Arg.Any<string?>(),
-                                                     Arg.Any<CancellationToken>()
-                                                    );
+        await rescrubRepo.Received(requiredNumberOfCalls: 1)
+                         .DeleteManyAsync(status: null,
+                                          "lib-x",
+                                          version: null,
+                                          Arg.Any<CancellationToken>()
+                                         );
+        await scrapeRepo.DidNotReceive()
+                        .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<CancellationToken>()
+                                        );
+        await bgRepo.DidNotReceive()
+                    .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                     Arg.Any<string?>(),
+                                     Arg.Any<string?>(),
+                                     Arg.Any<CancellationToken>()
+                                    );
         await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -645,7 +665,7 @@ public sealed class JobCleanupToolsTests
                                           MakeInlineRunner(),
                                           kind: null,
                                           jobIds: null,
-                                          status: "Failed",
+                                          "Failed",
                                           library: null,
                                           version: null,
                                           includeAudit: false,
@@ -654,12 +674,13 @@ public sealed class JobCleanupToolsTests
                                           TestContext.Current.CancellationToken
                                          );
 
-        await scrapeRepo.DidNotReceive().ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                                   Arg.Any<string?>(),
-                                                                   Arg.Any<string?>(),
-                                                                   Arg.Any<int>(),
-                                                                   Arg.Any<CancellationToken>()
-                                                                  );
+        await scrapeRepo.DidNotReceive()
+                        .ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
+                                                   Arg.Any<string?>(),
+                                                   Arg.Any<string?>(),
+                                                   Arg.Any<int>(),
+                                                   Arg.Any<CancellationToken>()
+                                                  );
         await auditRepo.DidNotReceive().DeleteByJobIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -678,7 +699,7 @@ public sealed class JobCleanupToolsTests
 
         var json = await JobCleanupTools.CleanupJobs(factory,
                                                      runner,
-                                                     kind: "all",
+                                                     "all",
                                                      jobIds: null,
                                                      status: null,
                                                      library: null,
@@ -695,21 +716,24 @@ public sealed class JobCleanupToolsTests
                                 Arg.Any<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>(),
                                 Arg.Any<CancellationToken>()
                                );
-        await scrapeRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<string?>(),
-                                                         Arg.Any<CancellationToken>()
-                                                        );
-        await bgRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                     Arg.Any<string?>(),
-                                                     Arg.Any<string?>(),
-                                                     Arg.Any<CancellationToken>()
-                                                    );
-        await rescrubRepo.DidNotReceive().DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
-                                                          Arg.Any<string?>(),
-                                                          Arg.Any<string?>(),
-                                                          Arg.Any<CancellationToken>()
-                                                         );
+        await scrapeRepo.DidNotReceive()
+                        .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<string?>(),
+                                         Arg.Any<CancellationToken>()
+                                        );
+        await bgRepo.DidNotReceive()
+                    .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                     Arg.Any<string?>(),
+                                     Arg.Any<string?>(),
+                                     Arg.Any<CancellationToken>()
+                                    );
+        await rescrubRepo.DidNotReceive()
+                         .DeleteManyAsync(Arg.Any<ScrapeJobStatus?>(),
+                                          Arg.Any<string?>(),
+                                          Arg.Any<string?>(),
+                                          Arg.Any<CancellationToken>()
+                                         );
     }
 
     private static ScrapeJobRecord MakeScrapeJob(string id,

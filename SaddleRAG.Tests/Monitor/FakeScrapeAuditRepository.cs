@@ -16,21 +16,8 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeScrapeAuditRepository : IScrapeAuditRepository
 {
-    private readonly Dictionary<string, AuditSummary> mSummaries = new();
-    private readonly List<ScrapeAuditLogEntry> mEntries = new();
-
-    public void SetSummary(string jobId, AuditSummary summary)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(jobId);
-        ArgumentNullException.ThrowIfNull(summary);
-        mSummaries[jobId] = summary;
-    }
-
-    public void AddEntry(ScrapeAuditLogEntry entry)
-    {
-        ArgumentNullException.ThrowIfNull(entry);
-        mEntries.Add(entry);
-    }
+    private readonly List<ScrapeAuditLogEntry> mEntries = new List<ScrapeAuditLogEntry>();
+    private readonly Dictionary<string, AuditSummary> mSummaries = new Dictionary<string, AuditSummary>();
 
     public Task<AuditSummary> SummarizeAsync(string jobId, CancellationToken ct = default) =>
         mSummaries.TryGetValue(jobId, out var s)
@@ -52,8 +39,9 @@ internal sealed class FakeScrapeAuditRepository : IScrapeAuditRepository
                               .Where(e => status is null || e.Status == status)
                               .Where(e => skipReason is null || e.SkipReason == skipReason)
                               .Where(e => string.IsNullOrEmpty(host) || e.Host == host)
-                              .Where(e => string.IsNullOrEmpty(urlSubstring)
-                                       || e.Url.Contains(urlSubstring, StringComparison.OrdinalIgnoreCase))
+                              .Where(e => string.IsNullOrEmpty(urlSubstring) ||
+                                          e.Url.Contains(urlSubstring, StringComparison.OrdinalIgnoreCase)
+                                    )
                               .Take(limit > 0 ? limit : 50)
                               .ToList();
         IReadOnlyList<ScrapeAuditLogEntry> result = matches;
@@ -69,10 +57,24 @@ internal sealed class FakeScrapeAuditRepository : IScrapeAuditRepository
     public Task<long> DeleteByLibraryVersionAsync(string libraryId,
                                                   string version,
                                                   CancellationToken ct = default) =>
-        throw new NotSupportedException("FakeScrapeAuditRepository: DeleteByLibraryVersionAsync not supported in this test");
+        throw new
+            NotSupportedException("FakeScrapeAuditRepository: DeleteByLibraryVersionAsync not supported in this test");
 
     public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "FakeScrapeAuditRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
-        );
+        throw new
+            NotSupportedException("FakeScrapeAuditRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
+                                 );
+
+    public void SetSummary(string jobId, AuditSummary summary)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        ArgumentNullException.ThrowIfNull(summary);
+        mSummaries[jobId] = summary;
+    }
+
+    public void AddEntry(ScrapeAuditLogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        mEntries.Add(entry);
+    }
 }

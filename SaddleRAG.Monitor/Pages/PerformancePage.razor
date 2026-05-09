@@ -1,7 +1,6 @@
 @* SaddleRAG.Monitor/Pages/PerformancePage.razor *@
 @page "/monitor/performance"
 @rendermode InteractiveServer
-@using SaddleRAG.Core.Models.Monitor
 @inherits PerformancePageBase
 
 <MudText Typo="Typo.h4" Class="mb-3">Query performance</MudText>
@@ -67,7 +66,9 @@ else
                 <MudTh>Note</MudTh>
             </HeaderContent>
             <RowTemplate>
-                <MudTd Style="font-family:monospace; font-size:.7rem"><TimeDisplay Utc="@context.At" Format="HH:mm:ss.fff" ShowZone="false"/></MudTd>
+                <MudTd Style="font-family: monospace; font-size: .7rem">
+                    <TimeDisplay Utc="@context.At" Format="HH:mm:ss.fff" ShowZone="false"/>
+                </MudTd>
                 <MudTd>@context.Operation</MudTd>
                 <MudTd>
                     <MudText Typo="Typo.body2" Color="@(context.Success ? Color.Default : Color.Error)">

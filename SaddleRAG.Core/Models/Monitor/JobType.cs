@@ -20,5 +20,8 @@ public enum JobType
     DeleteLibrary,
     IndexProjectDependencies,
     SubmitUrlCorrection,
+    CleanupAuditLog,
+    CleanupJobs,
+    CleanupOrphans,
     Unknown
 }

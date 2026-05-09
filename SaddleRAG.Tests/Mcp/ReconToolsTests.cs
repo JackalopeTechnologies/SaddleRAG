@@ -86,11 +86,11 @@ public sealed class ReconToolsTests
 
         await repo.Received(requiredNumberOfCalls: 1)
                   .UpsertAsync(Arg.Is<LibraryProfile>(p =>
-                                                         p.CrawlHints.ExcludedUrlPatterns.Count == 2 &&
-                                                         p.CrawlHints.ExcludedUrlPatterns[0] == "/account/login" &&
-                                                         p.CrawlHints.ExpectedHosts.Count == 1 &&
-                                                         p.CrawlHints.Notes == "API ref auth-walled"
-                                                    ),
+                                                          p.CrawlHints.ExcludedUrlPatterns.Count == 2 &&
+                                                          p.CrawlHints.ExcludedUrlPatterns[0] == "/account/login" &&
+                                                          p.CrawlHints.ExpectedHosts.Count == 1 &&
+                                                          p.CrawlHints.Notes == "API ref auth-walled"
+                                                     ),
                                Arg.Any<CancellationToken>()
                               );
         Assert.Contains("\"LibraryId\":", resultJson);
@@ -128,10 +128,10 @@ public sealed class ReconToolsTests
 
         await repo.Received(requiredNumberOfCalls: 1)
                   .UpsertAsync(Arg.Is<LibraryProfile>(p =>
-                                                         p.CrawlHints.ExcludedUrlPatterns.Count == 0 &&
-                                                         p.CrawlHints.ExpectedHosts.Count == 0 &&
-                                                         p.CrawlHints.Notes == string.Empty
-                                                    ),
+                                                          p.CrawlHints.ExcludedUrlPatterns.Count == 0 &&
+                                                          p.CrawlHints.ExpectedHosts.Count == 0 &&
+                                                          p.CrawlHints.Notes == string.Empty
+                                                     ),
                                Arg.Any<CancellationToken>()
                               );
     }

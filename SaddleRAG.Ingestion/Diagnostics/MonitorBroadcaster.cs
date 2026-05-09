@@ -16,13 +16,6 @@ namespace SaddleRAG.Ingestion.Diagnostics;
 
 public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
 {
-    public event Action<JobStartedEvent>?   JobStarted;
-    public event Action<JobCompletedEvent>? JobCompleted;
-    public event Action<JobFailedEvent>?    JobFailed;
-    public event Action<JobCancelledEvent>? JobCancelled;
-    public event Action<SuspectFlagEvent>?  SuspectFlagRaised;
-    public event Action<JobProgressEvent>? JobProgress;
-
     private sealed class JobState
     {
         public required string JobId { get; init; }
@@ -311,6 +304,13 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
         }
     }
 
+    public event Action<JobStartedEvent>? JobStarted;
+    public event Action<JobCompletedEvent>? JobCompleted;
+    public event Action<JobFailedEvent>? JobFailed;
+    public event Action<JobCancelledEvent>? JobCancelled;
+    public event Action<SuspectFlagEvent>? SuspectFlagRaised;
+    public event Action<JobProgressEvent>? JobProgress;
+
     private void Increment(string jobId, Action<JobState> mutate)
     {
         if (mJobs.TryGetValue(jobId, out var state))
@@ -331,7 +331,7 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
 
     private PipelineCounters CaptureCounters(string jobId)
     {
-        PipelineCounters result = smEmptyCounters;
+        var result = smEmptyCounters;
         if (mJobs.TryGetValue(jobId, out var state))
         {
             lock(state.pmLock)

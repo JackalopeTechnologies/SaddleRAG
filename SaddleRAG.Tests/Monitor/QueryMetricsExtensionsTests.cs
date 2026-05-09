@@ -20,7 +20,8 @@ public sealed class QueryMetricsExtensionsTests
         var rec = new QueryMetricsRecorder(capacity: 16);
         var result = await rec.TimeAsync("search",
                                          () => Task.FromResult(SuccessValue),
-                                         resultCount: r => r);
+                                         r => r
+                                        );
         Assert.Equal(SuccessValue, result);
 
         var snap = rec.Snapshot();
@@ -35,11 +36,15 @@ public sealed class QueryMetricsExtensionsTests
     public async Task TimeAsyncRecordsFailureSampleAndRethrows()
     {
         var rec = new QueryMetricsRecorder(capacity: 16);
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => rec.TimeAsync<int>("search",
-                                     () => Task.FromException<int>(new InvalidOperationException(FailureMessage))
-                                    )
-        );
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => rec.TimeAsync("search",
+                                                                              () =>
+                                                                                  Task.FromException<
+                                                                                      int>(new
+                                                                                              InvalidOperationException(FailureMessage
+                                                                                                  )
+                                                                                          )
+                                                                         )
+                                                                    );
         Assert.Equal(FailureMessage, ex.Message);
 
         var snap = rec.Snapshot();

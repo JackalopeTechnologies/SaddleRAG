@@ -19,17 +19,21 @@ namespace SaddleRAG.Core.Interfaces;
 public interface IQueryMetrics
 {
     /// <summary>
+    ///     UTC timestamp when the recorder was constructed (process-start proxy).
+    /// </summary>
+    DateTime ProcessStartedUtc { get; }
+
+    /// <summary>
     ///     Append a single query sample to the in-memory ring buffer.
     /// </summary>
-    void Record(string operation, TimeSpan duration, bool success, int? resultCount = null, string? note = null);
+    void Record(string operation,
+                TimeSpan duration,
+                bool success,
+                int? resultCount = null,
+                string? note = null);
 
     /// <summary>
     ///     Return a snapshot of recent samples plus per-operation aggregate stats.
     /// </summary>
     QueryMetricsSnapshot Snapshot();
-
-    /// <summary>
-    ///     UTC timestamp when the recorder was constructed (process-start proxy).
-    /// </summary>
-    DateTime ProcessStartedUtc { get; }
 }

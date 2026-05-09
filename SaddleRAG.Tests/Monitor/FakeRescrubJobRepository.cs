@@ -16,13 +16,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeRescrubJobRepository : IRescrubJobRepository
 {
-    private readonly List<RescrubJobRecord> mJobs = new();
-
-    public void Add(RescrubJobRecord job)
-    {
-        ArgumentNullException.ThrowIfNull(job);
-        mJobs.Add(job);
-    }
+    private readonly List<RescrubJobRecord> mJobs = new List<RescrubJobRecord>();
 
     public Task UpsertAsync(RescrubJobRecord job, CancellationToken ct = default)
     {
@@ -57,8 +51,8 @@ internal sealed class FakeRescrubJobRepository : IRescrubJobRepository
                                                  string? libraryId,
                                                  string? version,
                                                  CancellationToken ct = default) =>
-        throw new NotSupportedException("FakeRescrubJobRepository: CountDeleteCandidatesAsync not supported in this test"
-                                       );
+        throw new
+            NotSupportedException("FakeRescrubJobRepository: CountDeleteCandidatesAsync not supported in this test");
 
     public Task<IReadOnlyList<RescrubJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
                                                                            string? libraryId,
@@ -67,4 +61,10 @@ internal sealed class FakeRescrubJobRepository : IRescrubJobRepository
                                                                            CancellationToken ct = default) =>
         throw new NotSupportedException("FakeRescrubJobRepository: ListDeleteCandidatesAsync not supported in this test"
                                        );
+
+    public void Add(RescrubJobRecord job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        mJobs.Add(job);
+    }
 }

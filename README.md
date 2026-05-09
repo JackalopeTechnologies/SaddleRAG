@@ -27,7 +27,7 @@ learn.microsoft   --+      +------+------+
                                   |
                            +------v------+
                            |   Ollama    |  (local LLM)
-                           |  Classifier |  qwen3:1.7b
+                           |  Classifier |  phi4-mini:3.8b
                            +------+------+
                                   |
                            +------v------+
@@ -74,7 +74,7 @@ Ollama runs AI models locally for document classification and embedding generati
 
 SaddleRAG automatically pulls the required models on first use:
 - `nomic-embed-text` -- generates vector embeddings (768 dimensions)
-- `qwen3:1.7b` -- classifies documentation pages and optional re-ranking
+- `phi4-mini:3.8b` -- classifies documentation pages and optional re-ranking
 
 > **Running Ollama elsewhere?** The SaddleRAG installer lets you point to any Ollama endpoint (e.g. `http://your-gpu-server:11434`).
 
@@ -281,7 +281,7 @@ SaddleRAG exposes 33 tools through the MCP protocol. Six load eagerly into every
 
 | Tool | Description |
 |---|---|
-| `toggle_reranking` | Enable or disable LLM re-ranking of search results at runtime |
+| `set_rerank_strategy` | Set the reranker strategy at runtime: Off, Llm, or CrossEncoder |
 | `toggle_logging` | Toggle verbose request logging without restarting the server |
 
 ### Diagnostics
@@ -391,8 +391,8 @@ Every MCP tool accepts an optional `profile` parameter to target a specific data
     "Endpoint": "http://localhost:11434",
     "EmbeddingModel": "nomic-embed-text",
     "EmbeddingDimensions": 768,
-    "ClassificationModel": "qwen3:1.7b",
-    "ReRankingModel": "qwen3:1.7b",
+    "ClassificationModel": "phi4-mini:3.8b",
+    "ReRankingModel": "phi4-mini:3.8b",
     "ModelPullTimeoutSeconds": 600
   }
 }

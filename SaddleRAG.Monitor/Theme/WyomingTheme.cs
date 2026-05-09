@@ -14,23 +14,25 @@ namespace SaddleRAG.Monitor.Theme;
 
 public static class WyomingTheme
 {
-    public static MudTheme Create() =>
-        new MudTheme
-            {
-                PaletteLight = new PaletteLight
-                                   {
-                                       Primary = BrownPrimary,
-                                       Secondary = GoldSecondary,
-                                       Background = CreamBg,
-                                       AppbarBackground = BrownPrimary,
-                                       AppbarText = Colors.Shades.White
-                                   },
-                PaletteDark = new PaletteDark
-                                  {
-                                      Primary = GoldSecondary,
-                                      Secondary = BrownPrimary
-                                  }
-            };
+    public static MudTheme Create()
+    {
+        return new MudTheme
+                   {
+                       PaletteLight = new PaletteLight
+                                          {
+                                              Primary = BrownPrimary,
+                                              Secondary = GoldSecondary,
+                                              Background = CreamBg,
+                                              AppbarBackground = BrownPrimary,
+                                              AppbarText = Colors.Shades.White
+                                          },
+                       PaletteDark = new PaletteDark
+                                         {
+                                             Primary = GoldSecondary,
+                                             Secondary = BrownPrimary
+                                         }
+                   };
+    }
 
     private const string BrownPrimary = "#492F24";
     private const string GoldSecondary = "#FFC425";

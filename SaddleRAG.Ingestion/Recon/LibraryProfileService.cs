@@ -85,12 +85,13 @@ public class LibraryProfileService
         var result = profile;
         if (profile.Stoplist.Count == 0)
         {
-            var prior = priorProfiles.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
-                                                 !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
-                                                 p.Stoplist.Count > 0
-                                           )
-                                    .OrderByDescending(p => p.CreatedUtc)
-                                    .FirstOrDefault();
+            var prior = priorProfiles
+                        .Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
+                                    !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
+                                    p.Stoplist.Count > 0
+                              )
+                        .OrderByDescending(p => p.CreatedUtc)
+                        .FirstOrDefault();
             if (prior != null)
                 result = profile with { Stoplist = prior.Stoplist };
         }
@@ -108,17 +109,18 @@ public class LibraryProfileService
     ///     is never overridden.
     /// </summary>
     private static LibraryProfile ApplyCrawlHintsCarryForward(IReadOnlyList<LibraryProfile> priorProfiles,
-                                                               LibraryProfile profile)
+                                                              LibraryProfile profile)
     {
         var result = profile;
         if (profile.CrawlHints.ExcludedUrlPatterns.Count == 0)
         {
-            var prior = priorProfiles.Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
-                                                 !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
-                                                 p.CrawlHints.ExcludedUrlPatterns.Count > 0
-                                           )
-                                    .OrderByDescending(p => p.CreatedUtc)
-                                    .FirstOrDefault();
+            var prior = priorProfiles
+                        .Where(p => string.Equals(p.LibraryId, profile.LibraryId, StringComparison.Ordinal) &&
+                                    !string.Equals(p.Version, profile.Version, StringComparison.Ordinal) &&
+                                    p.CrawlHints.ExcludedUrlPatterns.Count > 0
+                              )
+                        .OrderByDescending(p => p.CreatedUtc)
+                        .FirstOrDefault();
             if (prior != null)
                 result = profile with { CrawlHints = prior.CrawlHints };
         }

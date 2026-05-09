@@ -72,8 +72,10 @@ public sealed class RetrievalBench
             var classified = QueryShapeClassifier.IsIdentifierShaped(entry.Query);
             var expectedIdentifier = string.Equals(entry.Shape, ShapeIdentifier, StringComparison.OrdinalIgnoreCase);
             if (classified != expectedIdentifier)
+            {
                 mismatches.Add($"{entry.Name}: expected {entry.Shape}, classified as {(classified ? ShapeIdentifier : ShapeProse)}"
                               );
+            }
         }
 
         Assert.True(mismatches.Count == 0,

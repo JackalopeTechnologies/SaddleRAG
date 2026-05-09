@@ -18,10 +18,10 @@ public sealed class QueryMetricsRecorderTests
     public void RingBufferCapsAtCapacity()
     {
         var rec = new QueryMetricsRecorder(capacity: 3);
-        rec.Record("search", TimeSpan.FromMilliseconds(10), success: true);
-        rec.Record("search", TimeSpan.FromMilliseconds(20), success: true);
-        rec.Record("search", TimeSpan.FromMilliseconds(30), success: true);
-        rec.Record("search", TimeSpan.FromMilliseconds(40), success: true);
+        rec.Record("search", TimeSpan.FromMilliseconds(milliseconds: 10), success: true);
+        rec.Record("search", TimeSpan.FromMilliseconds(milliseconds: 20), success: true);
+        rec.Record("search", TimeSpan.FromMilliseconds(milliseconds: 30), success: true);
+        rec.Record("search", TimeSpan.FromMilliseconds(milliseconds: 40), success: true);
 
         var snap = rec.Snapshot();
         Assert.Equal(expected: 3, snap.RecentSamples.Count);
@@ -33,9 +33,9 @@ public sealed class QueryMetricsRecorderTests
     public void PerOperationStatsAreGroupedAndPercentilesAreReasonable()
     {
         var rec = new QueryMetricsRecorder(capacity: 1024);
-        for(int i = 1; i <= SampleCount; i++)
+        for(var i = 1; i <= SampleCount; i++)
             rec.Record("search", TimeSpan.FromMilliseconds(i), success: true);
-        rec.Record("embed", TimeSpan.FromMilliseconds(200), success: true);
+        rec.Record("embed", TimeSpan.FromMilliseconds(milliseconds: 200), success: true);
 
         var snap = rec.Snapshot();
         var search = snap.PerOperation.Single(o => o.Operation == "search");
@@ -50,9 +50,9 @@ public sealed class QueryMetricsRecorderTests
     public void FailureCountTracksUnsuccessfulSamples()
     {
         var rec = new QueryMetricsRecorder(capacity: 100);
-        rec.Record("search", TimeSpan.FromMilliseconds(5), success: true);
-        rec.Record("search", TimeSpan.FromMilliseconds(5), success: false);
-        rec.Record("search", TimeSpan.FromMilliseconds(5), success: false);
+        rec.Record("search", TimeSpan.FromMilliseconds(milliseconds: 5), success: true);
+        rec.Record("search", TimeSpan.FromMilliseconds(milliseconds: 5), success: false);
+        rec.Record("search", TimeSpan.FromMilliseconds(milliseconds: 5), success: false);
 
         var snap = rec.Snapshot();
         var op = snap.PerOperation.Single();

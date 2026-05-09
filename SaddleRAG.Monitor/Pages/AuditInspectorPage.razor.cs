@@ -33,7 +33,10 @@ public abstract class AuditInspectorPageBase : ComponentBase
 
     private readonly HashSet<string> mExpandedRows = [];
 
-    protected bool IsExpanded(string entryId) => mExpandedRows.Contains(entryId);
+    protected bool IsExpanded(string entryId)
+    {
+        return mExpandedRows.Contains(entryId);
+    }
 
     protected void ToggleExpanded(string entryId)
     {
@@ -70,14 +73,17 @@ public abstract class AuditInspectorPageBase : ComponentBase
                                             );
     }
 
-    protected static Color StatusColor(string status) => status switch
-        {
-            "Indexed" => Color.Success,
-            "Fetched" => Color.Info,
-            "Skipped" => Color.Warning,
-            "Failed" => Color.Error,
-            var _ => Color.Default
-        };
+    protected static Color StatusColor(string status)
+    {
+        return status switch
+            {
+                "Indexed" => Color.Success,
+                "Fetched" => Color.Info,
+                "Skipped" => Color.Warning,
+                "Failed" => Color.Error,
+                var _ => Color.Default
+            };
+    }
 
     private static T? ParseEnum<T>(string? raw)
         where T : struct, Enum

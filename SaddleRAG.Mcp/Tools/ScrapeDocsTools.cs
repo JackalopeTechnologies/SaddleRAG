@@ -210,6 +210,7 @@ public static class ScrapeDocsTools
                       };
         }
         else
+        {
             job = ScrapeJobFactory.CreateFromUrl(url,
                                                  libraryId,
                                                  version,
@@ -218,6 +219,7 @@ public static class ScrapeDocsTools
                                                  fetchDelayMs,
                                                  force
                                                 );
+        }
 
         return job;
     }

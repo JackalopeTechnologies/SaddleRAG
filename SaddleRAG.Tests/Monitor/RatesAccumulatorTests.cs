@@ -19,36 +19,36 @@ public sealed class RatesAccumulatorTests
     public void RatesReturnsZeroBeforeSecondSample()
     {
         var acc = new RatesAccumulator();
-        var rates = acc.Update(new PipelineCounters { PagesFetched = 10 }, sampleAt: T(0));
-        Assert.Equal(0.0, rates.PagesFetchedPerSec, 3);
+        var rates = acc.Update(new PipelineCounters { PagesFetched = 10 }, T(sec: 0));
+        Assert.Equal(expected: 0.0, rates.PagesFetchedPerSec, precision: 3);
     }
 
     [Fact]
     public void RatesComputedFromDeltaAndElapsed()
     {
         var acc = new RatesAccumulator();
-        acc.Update(new PipelineCounters { PagesFetched = 10 }, sampleAt: T(0));
-        var rates = acc.Update(new PipelineCounters { PagesFetched = 12 }, sampleAt: T(1));
-        Assert.Equal(2.0, rates.PagesFetchedPerSec, 3);
+        acc.Update(new PipelineCounters { PagesFetched = 10 }, T(sec: 0));
+        var rates = acc.Update(new PipelineCounters { PagesFetched = 12 }, T(sec: 1));
+        Assert.Equal(expected: 2.0, rates.PagesFetchedPerSec, precision: 3);
     }
 
     [Fact]
     public void RatesUseTwoMostRecentSamplesOnly()
     {
         var acc = new RatesAccumulator();
-        acc.Update(new PipelineCounters { PagesFetched = 0 },   T(0));
-        acc.Update(new PipelineCounters { PagesFetched = 100 }, T(10));
-        var rates = acc.Update(new PipelineCounters { PagesFetched = 102 }, T(11));
-        Assert.Equal(2.0, rates.PagesFetchedPerSec, 3);
+        acc.Update(new PipelineCounters { PagesFetched = 0 }, T(sec: 0));
+        acc.Update(new PipelineCounters { PagesFetched = 100 }, T(sec: 10));
+        var rates = acc.Update(new PipelineCounters { PagesFetched = 102 }, T(sec: 11));
+        Assert.Equal(expected: 2.0, rates.PagesFetchedPerSec, precision: 3);
     }
 
     [Fact]
     public void RatesAreZeroWhenSamplesAtSameInstant()
     {
         var acc = new RatesAccumulator();
-        acc.Update(new PipelineCounters { PagesFetched = 10 }, T(5));
-        var rates = acc.Update(new PipelineCounters { PagesFetched = 12 }, T(5));
-        Assert.Equal(0.0, rates.PagesFetchedPerSec, 3);
+        acc.Update(new PipelineCounters { PagesFetched = 10 }, T(sec: 5));
+        var rates = acc.Update(new PipelineCounters { PagesFetched = 12 }, T(sec: 5));
+        Assert.Equal(expected: 0.0, rates.PagesFetchedPerSec, precision: 3);
     }
 
     [Fact]
@@ -63,7 +63,8 @@ public sealed class RatesAccumulatorTests
                            ChunksEmbedded = 0,
                            PagesCompleted = 0
                        },
-                   T(0));
+                   T(sec: 0)
+                  );
         var rates = acc.Update(new PipelineCounters
                                    {
                                        PagesFetched = 10,
@@ -72,12 +73,13 @@ public sealed class RatesAccumulatorTests
                                        ChunksEmbedded = 25,
                                        PagesCompleted = 5
                                    },
-                               T(2));
-        Assert.Equal(5.0,  rates.PagesFetchedPerSec, 3);
-        Assert.Equal(4.0,  rates.PagesClassifiedPerSec, 3);
-        Assert.Equal(15.0, rates.ChunksGeneratedPerSec, 3);
-        Assert.Equal(12.5, rates.ChunksEmbeddedPerSec, 3);
-        Assert.Equal(2.5,  rates.PagesCompletedPerSec, 3);
+                               T(sec: 2)
+                              );
+        Assert.Equal(expected: 5.0, rates.PagesFetchedPerSec, precision: 3);
+        Assert.Equal(expected: 4.0, rates.PagesClassifiedPerSec, precision: 3);
+        Assert.Equal(expected: 15.0, rates.ChunksGeneratedPerSec, precision: 3);
+        Assert.Equal(expected: 12.5, rates.ChunksEmbeddedPerSec, precision: 3);
+        Assert.Equal(expected: 2.5, rates.PagesCompletedPerSec, precision: 3);
     }
 
     private static DateTime T(int sec) => new DateTime(year: 2026,
@@ -85,6 +87,7 @@ public sealed class RatesAccumulatorTests
                                                        day: 1,
                                                        hour: 0,
                                                        minute: 0,
-                                                       second: sec,
-                                                       DateTimeKind.Utc);
+                                                       sec,
+                                                       DateTimeKind.Utc
+                                                      );
 }
