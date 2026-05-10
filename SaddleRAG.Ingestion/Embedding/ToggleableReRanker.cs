@@ -17,15 +17,13 @@ using SaddleRAG.Core.Models;
 namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
-///     Strategy-aware reranker dispatcher. Holds three concrete
-///     rerankers (NoOp, Ollama LLM, CrossEncoder) plus a runtime Enabled
-///     bool kill switch. Per call, dispatches to the strategy named in
-///     RankingSettings.ReRankerStrategy unless Enabled has been flipped
-///     to false (in which case NoOp passes results through unchanged).
-///     The bool toggle is preserved for backward compatibility with the
-///     existing toggle_reranking MCP tool — set Enabled=false to bypass
-///     reranking entirely without changing config; set Enabled=true to
-///     restore the configured strategy.
+///     Strategy-aware reranker dispatcher. Holds three concrete rerankers
+///     (NoOp, Ollama LLM, CrossEncoder) and dispatches per call to the
+///     strategy named in RankingSettings.ReRankerStrategy. The Strategy
+///     property is a runtime-mutable view over the same setting; writing
+///     to it is visible to every consumer that reads RankingSettings
+///     (e.g. SearchTools' diagnostic Strategy field). Use the
+///     set_rerank_strategy MCP tool to flip strategies without a restart.
 /// </summary>
 public class ToggleableReRanker : IReRanker
 {
@@ -42,22 +40,21 @@ public class ToggleableReRanker : IReRanker
         mCrossEncoderReRanker =
             new CrossEncoderReRanker(ollamaSettings, loggerFactory.CreateLogger<CrossEncoderReRanker>());
         mNoOpReRanker = new NoOpReRanker();
-        mEnabled = ollamaSettings.Value.ReRankingEnabled;
         mLogger = loggerFactory.CreateLogger<ToggleableReRanker>();
     }
 
     /// <summary>
-    ///     The strategy that ReRankAsync will dispatch to right now,
-    ///     accounting for both the Enabled kill switch and the
-    ///     configured ReRankerStrategy. Useful for diagnostic responses
-    ///     (toggle_reranking, search_docs Strategy field).
+    ///     The active reranker strategy. Backed by
+    ///     RankingSettings.ReRankerStrategy so reads and writes are
+    ///     consistent with every other consumer of that setting.
     /// </summary>
-    public ReRankerStrategy ActiveStrategy
+    public ReRankerStrategy Strategy
     {
-        get
+        get => mRankingSettings.ReRankerStrategy;
+        set
         {
-            var result = !mEnabled ? ReRankerStrategy.Off : mRankingSettings.ReRankerStrategy;
-            return result;
+            mRankingSettings.ReRankerStrategy = value;
+            mLogger.LogInformation("Re-ranking strategy set to {Strategy}", value);
         }
     }
 
@@ -84,36 +81,25 @@ public class ToggleableReRanker : IReRanker
 
     private IReRanker ResolveActive()
     {
-        var strategy = ActiveStrategy;
+        // Llm dispatch is re-enabled with the rewritten OllamaReRanker
+        // (per-pair continuous-float scoring against phi4-mini, replacing
+        // the legacy 5-bucket categorical plateau). CrossEncoder stays
+        // routed to NoOp because the rjmalagon/mxbai-rerank-large-v2
+        // Ollama port lost its generate capability upstream — re-enable
+        // when a real cross-encoder runtime is wired up (HuggingFace TEI
+        // sidecar with /api/rerank).
+        var strategy = Strategy;
         var result = strategy switch
             {
                 ReRankerStrategy.Off => (IReRanker) mNoOpReRanker,
                 ReRankerStrategy.Llm => mOllamaReRanker,
-                ReRankerStrategy.CrossEncoder => mCrossEncoderReRanker,
+                ReRankerStrategy.CrossEncoder => mNoOpReRanker,
                 var _ => mNoOpReRanker
             };
+        // mCrossEncoderReRanker is kept instantiated for future
+        // re-enable; discard read silences the unused-field warning
+        // without #pragma suppression.
+        _ = mCrossEncoderReRanker;
         return result;
     }
-
-    private const string EnabledLabel = "enabled";
-    private const string DisabledLabel = "disabled";
-
-    #region Enabled property
-
-    private volatile bool mEnabled;
-
-    public bool Enabled
-    {
-        get => mEnabled;
-        set
-        {
-            mEnabled = value;
-            mLogger.LogInformation("Re-ranking {State} (strategy={Strategy})",
-                                   value ? EnabledLabel : DisabledLabel,
-                                   ActiveStrategy
-                                  );
-        }
-    }
-
-    #endregion
 }

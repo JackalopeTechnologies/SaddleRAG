@@ -21,14 +21,22 @@ public sealed class QueryMetricsRecorder : IQueryMetrics
 {
     public QueryMetricsRecorder(int capacity = DefaultCapacity)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(capacity, other: 1);
         mCapacity = capacity;
         ProcessStartedUtc = DateTime.UtcNow;
     }
 
+    private readonly int mCapacity;
+    private readonly object mLock = new object();
+    private readonly LinkedList<QuerySample> mSamples = new LinkedList<QuerySample>();
+
     public DateTime ProcessStartedUtc { get; }
 
-    public void Record(string operation, TimeSpan duration, bool success, int? resultCount = null, string? note = null)
+    public void Record(string operation,
+                       TimeSpan duration,
+                       bool success,
+                       int? resultCount = null,
+                       string? note = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(operation);
         var sample = new QuerySample
@@ -75,29 +83,25 @@ public sealed class QueryMetricsRecorder : IQueryMetrics
         var sorted = g.Select(s => s.DurationMs).OrderBy(d => d).ToArray();
         return new QueryOperationStats
                    {
-                       Operation    = g.Key,
-                       Count        = sorted.Length,
+                       Operation = g.Key,
+                       Count = sorted.Length,
                        FailureCount = g.Count(s => !s.Success),
-                       AvgMs        = sorted.Average(),
-                       P50Ms        = Percentile(sorted, P50),
-                       P95Ms        = Percentile(sorted, P95),
-                       MaxMs        = sorted[^1]
+                       AvgMs = sorted.Average(),
+                       P50Ms = Percentile(sorted, P50),
+                       P95Ms = Percentile(sorted, P95),
+                       MaxMs = sorted[^1]
                    };
     }
 
     private static double Percentile(double[] sortedAsc, double p)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sortedAsc.Length, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sortedAsc.Length, other: 0);
         var rank = p * (sortedAsc.Length - 1);
         var lo = (int) Math.Floor(rank);
         var hi = (int) Math.Ceiling(rank);
         var fraction = rank - lo;
         return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * fraction;
     }
-
-    private readonly int mCapacity;
-    private readonly object mLock = new object();
-    private readonly LinkedList<QuerySample> mSamples = new LinkedList<QuerySample>();
 
     private const int DefaultCapacity = 5000;
     private const double P50 = 0.50;

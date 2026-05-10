@@ -8,7 +8,7 @@
     else
     {
         <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-            @foreach (var kv in Mix.OrderByDescending(p => p.Value))
+            @foreach(var kv in Mix.OrderByDescending(p => p.Value))
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Default">
                     @kv.Key: @((kv.Value * 100.0).ToString("F0"))%

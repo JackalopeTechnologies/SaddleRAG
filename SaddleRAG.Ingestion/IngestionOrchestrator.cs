@@ -341,6 +341,7 @@ public class IngestionOrchestrator
                          };
         }
         else
+        {
             result = await PersistSinglePageChunksAsync(classified,
                                                         chunks.ToList(),
                                                         libraryId,
@@ -348,6 +349,7 @@ public class IngestionOrchestrator
                                                         url,
                                                         ct
                                                        );
+        }
 
         return result;
     }
@@ -779,5 +781,4 @@ public class IngestionOrchestrator
     }
 
     #endregion
-
 }

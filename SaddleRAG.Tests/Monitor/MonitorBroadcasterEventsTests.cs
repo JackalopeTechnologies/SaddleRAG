@@ -127,14 +127,14 @@ public sealed class MonitorBroadcasterEventsTests
         JobProgressEvent? captured = null;
         broadcaster.JobProgress += e => captured = e;
 
-        broadcaster.RecordJobProgress("job-7", processed: 17, total: 42, label: "chunks");
+        broadcaster.RecordJobProgress("job-7", processed: 17, total: 42, "chunks");
 
         Assert.NotNull(captured);
         if (captured is not null)
         {
             Assert.Equal("job-7", captured.JobId);
-            Assert.Equal(17, captured.ItemsProcessed);
-            Assert.Equal(42, captured.ItemsTotal);
+            Assert.Equal(expected: 17, captured.ItemsProcessed);
+            Assert.Equal(expected: 42, captured.ItemsTotal);
             Assert.Equal("chunks", captured.ItemsLabel);
         }
     }
@@ -146,7 +146,7 @@ public sealed class MonitorBroadcasterEventsTests
         JobStartedEvent? captured = null;
         broadcaster.JobStarted += e => captured = e;
 
-        broadcaster.RecordJobStarted("job-9", libraryId: string.Empty, version: string.Empty, rootUrl: string.Empty);
+        broadcaster.RecordJobStarted("job-9", string.Empty, string.Empty, string.Empty);
 
         Assert.NotNull(captured);
         if (captured is not null)

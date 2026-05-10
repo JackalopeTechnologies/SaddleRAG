@@ -207,6 +207,7 @@ public static class SearchTools
         if (resolvedVersion == null)
             json = LibraryNotFoundJson(library);
         else
+        {
             json = await BuildLibraryOverviewAsync(vectorSearch,
                                                    embeddingProvider,
                                                    metrics,
@@ -215,6 +216,7 @@ public static class SearchTools
                                                    profile,
                                                    ct
                                                   );
+        }
 
         return json;
     }
@@ -247,8 +249,8 @@ public static class SearchTools
                                                                              MaxOverviewResults,
                                                                              ct
                                                                             ),
-                                              resultCount: r => r.Count,
-                                              note: $"library={library}"
+                                              r => r.Count,
+                                              $"library={library}"
                                              );
 
         if (results.Count == 0)
@@ -265,8 +267,8 @@ public static class SearchTools
                                                                              MaxOverviewResults,
                                                                              ct
                                                                             ),
-                                              resultCount: r => r.Count,
-                                              note: $"library={library};fallback"
+                                              r => r.Count,
+                                              $"library={library};fallback"
                                              );
         }
 
@@ -369,12 +371,12 @@ public static class SearchTools
         var candidateCount = maxResults * CandidateMultiplier;
         var searchResults = await metrics.TimeAsync(QueryMetricOperations.VectorSearch,
                                                     () => vectorSearch.SearchAsync(embeddings[0],
-                                                                                   filter,
-                                                                                   candidateCount,
-                                                                                   ct
-                                                                                  ),
-                                                    resultCount: r => r.Count,
-                                                    note: $"library={library ?? "*"}"
+                                                             filter,
+                                                             candidateCount,
+                                                             ct
+                                                        ),
+                                                    r => r.Count,
+                                                    $"library={library ?? "*"}"
                                                    );
         vectorSw.Stop();
 
@@ -480,14 +482,26 @@ public static class SearchTools
 
     private static bool ShouldRerank(ReRankerStrategy strategy, bool queryIsIdentifierShape, int candidateCount)
     {
+        // Llm strategy now reranks regardless of identifier shape. The
+        // legacy gate skipped reranking on CamelCase/dotted/callable
+        // queries because the old qwen3:1.7b 5-bucket plateau hurt those
+        // cases more than it helped. The new phi4-mini per-pair
+        // continuous-float reranker scores exact-name matches at 0.9+
+        // and lifts them above noise — exactly the case where BM25
+        // tokenization fails on identifiers like FastLineRenderableSeries.
+        // queryIsIdentifierShape is still computed and surfaced in the
+        // diagnostic Strategy field but no longer gates dispatch.
+        // CrossEncoder cases stay commented while ToggleableReRanker
+        // routes that strategy to NoOp.
         var fingerprint = (strategy, queryIsIdentifierShape, EnoughCandidates: candidateCount >= ReRankMinCandidates);
 
         var result = fingerprint switch
             {
                 (ReRankerStrategy.Off, var _, var _) => false,
-                (ReRankerStrategy.Llm, true, var _) => false,
-                (ReRankerStrategy.Llm, false, false) => false,
-                (ReRankerStrategy.Llm, false, true) => true,
+                (ReRankerStrategy.Llm, var _, false) => false,
+                (ReRankerStrategy.Llm, var _, true) => true,
+                // (ReRankerStrategy.CrossEncoder, var _, false) => false,
+                // (ReRankerStrategy.CrossEncoder, var _, true) => true,
                 var _ => false
             };
         return result;
@@ -519,6 +533,7 @@ public static class SearchTools
                            .ToList();
         }
         else
+        {
             result = await BlendWithRerankerAsync(reRanker,
                                                   metrics,
                                                   query,
@@ -527,6 +542,7 @@ public static class SearchTools
                                                   blendWeight,
                                                   ct
                                                  );
+        }
 
         return result;
     }
@@ -542,8 +558,12 @@ public static class SearchTools
         var hybridByChunkId = hybrid.ToDictionary(c => c.Chunk.Id, c => c, StringComparer.Ordinal);
         var candidateChunks = hybrid.Select(c => c.Chunk).ToList();
         var rerankResults = await metrics.TimeAsync(QueryMetricOperations.Rerank,
-                                                    () => reRanker.ReRankAsync(query, candidateChunks, hybrid.Count, ct),
-                                                    resultCount: r => r.Count
+                                                    () => reRanker.ReRankAsync(query,
+                                                                               candidateChunks,
+                                                                               hybrid.Count,
+                                                                               ct
+                                                                              ),
+                                                    r => r.Count
                                                    );
 
         var hybridWeight = 1.0f - blendWeight;

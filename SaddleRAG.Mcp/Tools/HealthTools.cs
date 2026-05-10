@@ -52,6 +52,7 @@ public static class HealthTools
         if (lib == null)
             result = JsonSerializer.Serialize(new { Error = $"Library '{library}' not found." }, smJsonOptions);
         else
+        {
             result = await BuildHealthResponseAsync(library,
                                                     lib,
                                                     version,
@@ -59,6 +60,8 @@ public static class HealthTools
                                                     libraryRepo,
                                                     ct
                                                    );
+        }
+
         return result;
     }
 
@@ -76,6 +79,7 @@ public static class HealthTools
         if (versionRecord == null)
             result = JsonSerializer.Serialize(new { Error = $"Version '{resolvedVersion}' not found." }, smJsonOptions);
         else
+        {
             result = await BuildVersionSnapshotAsync(library,
                                                      lib,
                                                      resolvedVersion,
@@ -83,6 +87,8 @@ public static class HealthTools
                                                      chunkRepo,
                                                      ct
                                                     );
+        }
+
         return result;
     }
 

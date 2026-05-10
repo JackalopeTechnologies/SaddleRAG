@@ -16,13 +16,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeScrapeJobRepository : IScrapeJobRepository
 {
-    private readonly List<ScrapeJobRecord> mJobs = new();
-
-    public void Add(ScrapeJobRecord job)
-    {
-        ArgumentNullException.ThrowIfNull(job);
-        mJobs.Add(job);
-    }
+    private readonly List<ScrapeJobRecord> mJobs = new List<ScrapeJobRecord>();
 
     public Task<IReadOnlyList<ScrapeJobRecord>> ListRecentAsync(int limit = 20, CancellationToken ct = default)
     {
@@ -72,4 +66,10 @@ internal sealed class FakeScrapeJobRepository : IScrapeJobRepository
                                                                           CancellationToken ct = default) =>
         throw new NotSupportedException("FakeScrapeJobRepository: ListDeleteCandidatesAsync not supported in this test"
                                        );
+
+    public void Add(ScrapeJobRecord job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        mJobs.Add(job);
+    }
 }

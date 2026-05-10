@@ -108,18 +108,20 @@ public class BackgroundJobRepository : IBackgroundJobRepository
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<BackgroundJobRecord>> ListDeleteCandidatesAsync(ScrapeJobStatus? status,
-                                                                                    string? libraryId,
-                                                                                    string? version,
-                                                                                    int limit,
-                                                                                    CancellationToken ct = default)
+        string? libraryId,
+        string? version,
+        int limit,
+        CancellationToken ct = default)
     {
         var filter = BuildDeleteFilter(status, libraryId, version);
         IReadOnlyList<BackgroundJobRecord> result = Array.Empty<BackgroundJobRecord>();
         if (filter != null)
+        {
             result = await mContext.BackgroundJobs.Find(filter)
                                    .SortByDescending(j => j.CreatedAt)
                                    .Limit(limit > 0 ? limit : DefaultCandidateLimit)
                                    .ToListAsync(ct);
+        }
 
         return result;
     }
@@ -136,9 +138,9 @@ public class BackgroundJobRepository : IBackgroundJobRepository
         if (!string.IsNullOrEmpty(version))
             clauses.Add(Builders<BackgroundJobRecord>.Filter.Eq(j => j.Version, version));
 
-        FilterDefinition<BackgroundJobRecord>? result = clauses.Count == 0
-                                                            ? null
-                                                            : Builders<BackgroundJobRecord>.Filter.And(clauses);
+        var result = clauses.Count == 0
+                         ? null
+                         : Builders<BackgroundJobRecord>.Filter.And(clauses);
         return result;
     }
 

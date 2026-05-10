@@ -22,7 +22,8 @@ public sealed class IngestToolsTests
                                                      "1.0",
                                                      "https://docs.example.com",
                                                      "ready",
-                                                         ["/account/login", "/account/register"]);
+                                                         ["/account/login", "/account/register"]
+                                                    );
 
         Assert.Equal(IngestStatus.ReadyToScrape, response.Status);
         Assert.Equal(new[] { "/account/login", "/account/register" }, response.RecommendedExcludedUrlPatterns);
@@ -35,7 +36,8 @@ public sealed class IngestToolsTests
                                                      "1.0",
                                                      "https://docs.example.com",
                                                      "ready",
-                                                     []);
+                                                         []
+                                                    );
 
         Assert.Empty(response.RecommendedExcludedUrlPatterns);
     }
@@ -47,7 +49,8 @@ public sealed class IngestToolsTests
                                                      "1.0",
                                                      "https://docs.example.com",
                                                      "ready",
-                                                         ["/account/login"]);
+                                                         ["/account/login"]
+                                                    );
 
         Assert.Equal("scrape_docs", response.NextTool);
         Assert.Equal("https://docs.example.com", response.NextToolArgs["url"]);

@@ -47,8 +47,6 @@ internal sealed class IndexStage
     private readonly ILogger mLogger;
     private readonly IVectorSearchProvider mVectorSearch;
 
-    private const int IndexRebuildInterval = 100;
-
     /// <summary>
     ///     Drive the index stage to completion or cancellation. Each unique
     ///     page URL whose chunks arrive at this stage gets a single
@@ -176,4 +174,6 @@ internal sealed class IndexStage
             mBroadcaster.RecordPageCompleted(auditCtx.JobId);
         }
     }
+
+    private const int IndexRebuildInterval = 100;
 }

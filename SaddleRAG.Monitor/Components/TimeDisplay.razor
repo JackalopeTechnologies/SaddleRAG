@@ -1,3 +1,4 @@
+@using System.Globalization
 @* SaddleRAG.Monitor/Components/TimeDisplay.razor *@
 @* Renders a UTC DateTime so the browser-side timezone.js script can *@
 @* swap it for the viewer's local time + UTC offset. The server-side  *@
@@ -12,7 +13,9 @@ else
 {
     <span data-utc="@FormatIso(Utc.Value)"
           data-fmt="@Format"
-          data-show-zone="@(ShowZone ? "true" : "false")">@Fallback(Utc.Value)</span>
+          data-show-zone="@(ShowZone ? "true" : "false")">
+        @Fallback(Utc.Value)
+    </span>
 }
 
 @code {
@@ -31,26 +34,26 @@ else
 
     private static string FormatIso(DateTime value)
     {
-        DateTime utc = value.Kind switch
-        {
-            DateTimeKind.Utc         => value,
-            DateTimeKind.Local       => value.ToUniversalTime(),
-            DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
-            var _                    => value
-        };
-        return utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture);
+        var utc = value.Kind switch
+            {
+                DateTimeKind.Utc => value,
+                DateTimeKind.Local => value.ToUniversalTime(),
+                DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                var _ => value
+            };
+        return utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture);
     }
 
     private string Fallback(DateTime value)
     {
-        DateTime utc = value.Kind switch
-        {
-            DateTimeKind.Utc         => value,
-            DateTimeKind.Local       => value.ToUniversalTime(),
-            DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
-            var _                    => value
-        };
-        string text = utc.ToString(Format, System.Globalization.CultureInfo.InvariantCulture);
+        var utc = value.Kind switch
+            {
+                DateTimeKind.Utc => value,
+                DateTimeKind.Local => value.ToUniversalTime(),
+                DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+                var _ => value
+            };
+        var text = utc.ToString(Format, CultureInfo.InvariantCulture);
         if (ShowZone)
         {
             text = text + " UTC";

@@ -37,6 +37,14 @@ public static class JobCleanupTools
         Rescrub
     }
 
+    private sealed record CleanupJobsApplyResult(
+        long ScrapeJobsDeleted,
+        long BackgroundJobsDeleted,
+        long RescrubJobsDeleted,
+        long AuditDeleted);
+
+    private sealed record DryRunSlice(long Count, IReadOnlyList<object> Sample);
+
     [McpServerTool(Name = "cleanup_audit_log")]
     [Description("Manually purge ScrapeAuditLog rows for a single scrape job. Useful when " +
                  "a runaway crawl has left a huge audit log behind and you want to evict " +
@@ -137,31 +145,31 @@ public static class JobCleanupTools
         var parsedKind = ParseKind(kind);
         var parsedStatus = ParseStatus(status);
         var idList = jobIds?.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray() ?? Array.Empty<string>();
-        bool hasFilter = idList.Length > 0
-                      || parsedStatus.HasValue
-                      || !string.IsNullOrWhiteSpace(library)
-                      || !string.IsNullOrWhiteSpace(version);
+        bool hasFilter = idList.Length > 0 ||
+                         parsedStatus.HasValue ||
+                         !string.IsNullOrWhiteSpace(library) ||
+                         !string.IsNullOrWhiteSpace(version);
 
-        Task<string> task = (hasFilter, dryRun) switch
+        var task = (hasFilter, dryRun) switch
             {
-                (false, _) => Task.FromResult(JsonSerializer.Serialize(new
-                                                                           {
-                                                                               Status = NoFilterStatus,
-                                                                               Message = NoFilterMessage
-                                                                           },
-                                                                       smJsonOptions
-                                                                      )
-                                             ),
+                (false, var _) => Task.FromResult(JsonSerializer.Serialize(new
+                                                                               {
+                                                                                   Status = NoFilterStatus,
+                                                                                   Message = NoFilterMessage
+                                                                               },
+                                                                           smJsonOptions
+                                                                          )
+                                                 ),
                 (true, true) => BuildCleanupJobsDryRunAsync(repositoryFactory,
-                                                           profile,
-                                                           parsedKind,
-                                                           idList,
-                                                           parsedStatus,
-                                                           library,
-                                                           version,
-                                                           includeAudit,
-                                                           ct
-                                                          ),
+                                                            profile,
+                                                            parsedKind,
+                                                            idList,
+                                                            parsedStatus,
+                                                            library,
+                                                            version,
+                                                            includeAudit,
+                                                            ct
+                                                           ),
                 (true, false) => QueueCleanupJobsAsync(repositoryFactory,
                                                        runner,
                                                        profile,
@@ -319,15 +327,15 @@ public static class JobCleanupTools
                                               async (record, _, jobCt) =>
                                               {
                                                   var deletion = await ApplyCleanupJobsAsync(repositoryFactory,
-                                                                            profile,
-                                                                            kind,
-                                                                            idList,
-                                                                            parsedStatus,
-                                                                            library,
-                                                                            version,
-                                                                            includeAudit,
-                                                                            jobCt
-                                                                       );
+                                                                          profile,
+                                                                          kind,
+                                                                          idList,
+                                                                          parsedStatus,
+                                                                          library,
+                                                                          version,
+                                                                          includeAudit,
+                                                                          jobCt
+                                                                     );
                                                   record.ResultJson = JsonSerializer.Serialize(new
                                                                {
                                                                    DryRun = false,
@@ -335,8 +343,8 @@ public static class JobCleanupTools
                                                                                 {
                                                                                     Kind = kind.ToString(),
                                                                                     JobIds = idList.Length == 0
-                                                                                                 ? null
-                                                                                                 : idList,
+                                                                                        ? null
+                                                                                        : idList,
                                                                                     Status = parsedStatus?.ToString(),
                                                                                     Library = library,
                                                                                     Version = version
@@ -373,7 +381,7 @@ public static class JobCleanupTools
                                                                   string? version,
                                                                   CancellationToken ct)
     {
-        var slice = new DryRunSlice(Count: 0, Sample: Array.Empty<object>());
+        var slice = new DryRunSlice(Count: 0, Array.Empty<object>());
         if (InScope(kind, JobKind.Scrape))
         {
             var repo = repositoryFactory.GetScrapeJobRepository(profile);
@@ -398,7 +406,7 @@ public static class JobCleanupTools
                                                                       string? version,
                                                                       CancellationToken ct)
     {
-        var slice = new DryRunSlice(Count: 0, Sample: Array.Empty<object>());
+        var slice = new DryRunSlice(Count: 0, Array.Empty<object>());
         if (InScope(kind, JobKind.Background))
         {
             var repo = repositoryFactory.GetBackgroundJobRepository(profile);
@@ -423,7 +431,7 @@ public static class JobCleanupTools
                                                                    string? version,
                                                                    CancellationToken ct)
     {
-        var slice = new DryRunSlice(Count: 0, Sample: Array.Empty<object>());
+        var slice = new DryRunSlice(Count: 0, Array.Empty<object>());
         if (InScope(kind, JobKind.Rescrub))
         {
             var repo = repositoryFactory.GetRescrubJobRepository(profile);
@@ -456,20 +464,21 @@ public static class JobCleanupTools
 
         if (InScope(kind, JobKind.Scrape))
         {
-            var (scrape, audit) = await ApplyScrapeCleanupAsync(repositoryFactory,
-                                                                profile,
-                                                                idList,
-                                                                parsedStatus,
-                                                                library,
-                                                                version,
-                                                                includeAudit,
-                                                                ct
-                                                               );
+            (var scrape, var audit) = await ApplyScrapeCleanupAsync(repositoryFactory,
+                                                                    profile,
+                                                                    idList,
+                                                                    parsedStatus,
+                                                                    library,
+                                                                    version,
+                                                                    includeAudit,
+                                                                    ct
+                                                                   );
             scrapeDeleted = scrape;
             auditDeleted = audit;
         }
 
         if (InScope(kind, JobKind.Background))
+        {
             backgroundDeleted = await ApplyBackgroundCleanupAsync(repositoryFactory,
                                                                   profile,
                                                                   idList,
@@ -478,8 +487,10 @@ public static class JobCleanupTools
                                                                   version,
                                                                   ct
                                                                  );
+        }
 
         if (InScope(kind, JobKind.Rescrub))
+        {
             rescrubDeleted = await ApplyRescrubCleanupAsync(repositoryFactory,
                                                             profile,
                                                             idList,
@@ -488,6 +499,7 @@ public static class JobCleanupTools
                                                             version,
                                                             ct
                                                            );
+        }
 
         return new CleanupJobsApplyResult(scrapeDeleted, backgroundDeleted, rescrubDeleted, auditDeleted);
     }
@@ -536,12 +548,12 @@ public static class JobCleanupTools
     }
 
     private static async Task<(long Jobs, long Audit)> ApplyScrapeByFilterAsync(IScrapeJobRepository repo,
-                                                                                IScrapeAuditRepository auditRepo,
-                                                                                ScrapeJobStatus? parsedStatus,
-                                                                                string? library,
-                                                                                string? version,
-                                                                                bool includeAudit,
-                                                                                CancellationToken ct)
+        IScrapeAuditRepository auditRepo,
+        ScrapeJobStatus? parsedStatus,
+        string? library,
+        string? version,
+        bool includeAudit,
+        CancellationToken ct)
     {
         long audit = 0;
         if (includeAudit)
@@ -650,8 +662,8 @@ public static class JobCleanupTools
                                                                          {
                                                                              job.Id,
                                                                              Status = job.Status.ToString(),
-                                                                             LibraryId = job.Job.LibraryId,
-                                                                             Version = job.Job.Version,
+                                                                             job.Job.LibraryId,
+                                                                             job.Job.Version,
                                                                              job.CreatedAt,
                                                                              job.CompletedAt
                                                                          };
@@ -708,18 +720,16 @@ public static class JobCleanupTools
         return result;
     }
 
-    private sealed record CleanupJobsApplyResult(long ScrapeJobsDeleted,
-                                                 long BackgroundJobsDeleted,
-                                                 long RescrubJobsDeleted,
-                                                 long AuditDeleted);
-
-    private sealed record DryRunSlice(long Count, IReadOnlyList<object> Sample);
-
     private const int SampleSize = 20;
     private const int AllMatchesLimit = 100_000;
     private const string NoFilterStatus = "NoFilter";
-    private const string NoFilterMessage = "At least one of jobIds, status, library, or version must be supplied. Refusing to delete every job row.";
-    private const string UnknownStatusMessage = "Unknown status '{0}'. Expected one of: Queued, Running, Completed, Failed, Cancelled.";
+
+    private const string NoFilterMessage =
+        "At least one of jobIds, status, library, or version must be supplied. Refusing to delete every job row.";
+
+    private const string UnknownStatusMessage =
+        "Unknown status '{0}'. Expected one of: Queued, Running, Completed, Failed, Cancelled.";
+
     private const string UnknownKindMessage = "Unknown kind '{0}'. Expected one of: scrape, background, rescrub, all.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };

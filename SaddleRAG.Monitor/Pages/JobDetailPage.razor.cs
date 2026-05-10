@@ -38,9 +38,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     protected IReadOnlyList<RecentFetch> TerminalFetches { get; private set; } = Array.Empty<RecentFetch>();
     protected IReadOnlyList<RecentReject> TerminalRejects { get; private set; } = Array.Empty<RecentReject>();
 
-    protected bool IsActive => Info is not null
-                            && (Info.Status is "Queued" or "Running")
-                            && Info.CompletedAt is null;
+    protected bool IsActive => Info is not null && Info.Status is "Queued" or "Running" && Info.CompletedAt is null;
 
     protected string Elapsed => Info?.StartedAt is null
                                     ? "—"
@@ -48,28 +46,19 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                                                                            .ToString(@"hh\:mm\:ss");
 
     protected Severity TerminalSeverity => Info?.Status switch
-    {
-        "Completed" => Severity.Success,
-        "Failed"    => Severity.Error,
-        "Cancelled" => Severity.Warning,
-        var _       => Severity.Info
-    };
+        {
+            "Completed" => Severity.Success,
+            "Failed" => Severity.Error,
+            "Cancelled" => Severity.Warning,
+            var _ => Severity.Info
+        };
 
-    protected static Color StatusColor(string status) => status switch
-    {
-        "Running"   => Color.Info,
-        "Queued"    => Color.Default,
-        "Completed" => Color.Success,
-        "Failed"    => Color.Error,
-        "Cancelled" => Color.Warning,
-        var _       => Color.Default
-    };
+    private readonly RatesAccumulator mRates = new RatesAccumulator();
+    private bool mDisposed;
+    private Timer? mElapsedTimer;
 
     private CancellationTokenSource mFallbackCts = new CancellationTokenSource();
     private HubConnection? mHub;
-    private System.Threading.Timer? mElapsedTimer;
-    private readonly RatesAccumulator mRates = new RatesAccumulator();
-    private bool mDisposed;
 
     public async ValueTask DisposeAsync()
     {
@@ -80,6 +69,19 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
             await mElapsedTimer.DisposeAsync();
         if (mHub is not null)
             await mHub.DisposeAsync();
+    }
+
+    protected static Color StatusColor(string status)
+    {
+        return status switch
+            {
+                "Running" => Color.Info,
+                "Queued" => Color.Default,
+                "Completed" => Color.Success,
+                "Failed" => Color.Error,
+                "Cancelled" => Color.Warning,
+                var _ => Color.Default
+            };
     }
 
     private void TryCancelFallback()
@@ -172,17 +174,18 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 
         if (IsActive)
         {
-            mElapsedTimer = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged),
-                                                       state: null,
-                                                       dueTime: TimeSpan.FromSeconds(1),
-                                                       period: TimeSpan.FromSeconds(1));
+            mElapsedTimer = new Timer(_ => InvokeAsync(StateHasChanged),
+                                      state: null,
+                                      TimeSpan.FromSeconds(seconds: 1),
+                                      TimeSpan.FromSeconds(seconds: 1)
+                                     );
         }
     }
 
     private async Task LoadTerminalFeedsAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
-        var (fetches, rejects) = await DataService.GetTerminalFeedsAsync(JobId);
+        (var fetches, var rejects) = await DataService.GetTerminalFeedsAsync(JobId);
         TerminalFetches = fetches;
         TerminalRejects = rejects;
     }
@@ -244,23 +247,25 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private void IngestTick(JobTickEvent tick)
     {
         ArgumentNullException.ThrowIfNull(tick);
-        foreach (var err in tick.ErrorsThisTick)
+        foreach(var err in tick.ErrorsThisTick)
             AllErrors.Add(err);
         while (AllErrors.Count > MaxErrorsRetained)
-            AllErrors.RemoveAt(0);
+            AllErrors.RemoveAt(index: 0);
     }
 
-    private static JobTickEvent SnapshotToTick(JobTickSnapshot snap) =>
-        new JobTickEvent
-            {
-                JobId = snap.JobId,
-                At = DateTime.UtcNow,
-                Counters = snap.Counters,
-                CurrentHost = snap.CurrentHost,
-                RecentFetches = snap.RecentFetches,
-                RecentRejects = snap.RecentRejects,
-                ErrorsThisTick = snap.RecentErrors
-            };
+    private static JobTickEvent SnapshotToTick(JobTickSnapshot snap)
+    {
+        return new JobTickEvent
+                   {
+                       JobId = snap.JobId,
+                       At = DateTime.UtcNow,
+                       Counters = snap.Counters,
+                       CurrentHost = snap.CurrentHost,
+                       RecentFetches = snap.RecentFetches,
+                       RecentRejects = snap.RecentRejects,
+                       ErrorsThisTick = snap.RecentErrors
+                   };
+    }
 
     private const string HubPath = "/monitor/hub";
     private const string JobTickMethod = "JobTick";

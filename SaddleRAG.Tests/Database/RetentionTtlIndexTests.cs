@@ -50,7 +50,7 @@ public sealed class RetentionTtlIndexTests
                                          );
 
         Assert.NotNull(ttl);
-        Assert.Equal(expected: ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
+        Assert.Equal(ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class RetentionTtlIndexTests
                                          );
 
         Assert.NotNull(ttl);
-        Assert.Equal(expected: ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
+        Assert.Equal(ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class RetentionTtlIndexTests
                                          );
 
         Assert.NotNull(ttl);
-        Assert.Equal(expected: ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
+        Assert.Equal(ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class RetentionTtlIndexTests
                                          );
 
         Assert.NotNull(ttl);
-        Assert.Equal(expected: ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
+        Assert.Equal(ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
     }
 
     private static async Task<BsonDocument?> FindTtlIndexAsync<T>(IMongoIndexManager<T> indexes,
@@ -101,9 +101,9 @@ public sealed class RetentionTtlIndexTests
     {
         var cursor = await indexes.ListAsync(ct);
         var all = await cursor.ToListAsync(ct);
-        var result = all.FirstOrDefault(i => i.Contains(BsonFieldExpireAfterSeconds)
-                                          && i[BsonFieldKey].AsBsonDocument.Contains(keyField)
-                                        );
+        var result = all.FirstOrDefault(i => i.Contains(BsonFieldExpireAfterSeconds) &&
+                                             i[BsonFieldKey].AsBsonDocument.Contains(keyField)
+                                       );
         return result;
     }
 

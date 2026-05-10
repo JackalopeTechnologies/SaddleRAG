@@ -14,6 +14,12 @@ namespace SaddleRAG.Tests.Monitor;
 
 public sealed class MainLayoutTests
 {
+    private sealed class TestableMainLayout : MainLayoutBase
+    {
+        public bool DrawerOpenForTest => DrawerOpen;
+        public void InvokeToggle() => ToggleDrawer();
+    }
+
     [Fact]
     public void ToggleDrawerFlipsTheDrawerOpenFlag()
     {
@@ -23,11 +29,5 @@ public sealed class MainLayoutTests
         Assert.False(layout.DrawerOpenForTest);
         layout.InvokeToggle();
         Assert.True(layout.DrawerOpenForTest);
-    }
-
-    private sealed class TestableMainLayout : MainLayoutBase
-    {
-        public bool DrawerOpenForTest => DrawerOpen;
-        public void InvokeToggle() => ToggleDrawer();
     }
 }

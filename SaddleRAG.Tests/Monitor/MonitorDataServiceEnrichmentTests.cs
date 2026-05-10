@@ -28,7 +28,8 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 Hint = string.Empty,
                                 CurrentVersion = "1",
                                 AllVersions = new List<string> { "1" }
-                            });
+                            }
+                       );
         repo.AddLibrary(new LibraryRecord
                             {
                                 Id = "Alpha",
@@ -36,7 +37,8 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 Hint = string.Empty,
                                 CurrentVersion = "1",
                                 AllVersions = new List<string> { "1" }
-                            });
+                            }
+                       );
         repo.AddLibrary(new LibraryRecord
                             {
                                 Id = "mongodb.driver",
@@ -44,15 +46,18 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 Hint = string.Empty,
                                 CurrentVersion = "1",
                                 AllVersions = new List<string> { "1" }
-                            });
+                            }
+                       );
 
         var svc = new MonitorDataService(repo,
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var summaries = await svc.GetLibrarySummariesAsync(TestContext.Current.CancellationToken);
 
         var ids = summaries.Select(s => s.LibraryId).ToList();
@@ -62,7 +67,14 @@ public sealed class MonitorDataServiceEnrichmentTests
     [Fact]
     public async Task GetLibraryDetailAsyncCarriesSuspectReasonsAndScrapedAt()
     {
-        var scraped = new DateTime(2026, 4, 28, 12, 0, 0, DateTimeKind.Utc);
+        var scraped = new DateTime(year: 2026,
+                                   month: 4,
+                                   day: 28,
+                                   hour: 12,
+                                   minute: 0,
+                                   second: 0,
+                                   DateTimeKind.Utc
+                                  );
         var libRepo = new FakeLibraryRepository();
         libRepo.AddLibrary(new LibraryRecord
                                {
@@ -71,7 +83,8 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    Hint = "hello",
                                    CurrentVersion = "1",
                                    AllVersions = new List<string> { "1" }
-                               });
+                               }
+                          );
         libRepo.AddVersion(new LibraryVersionRecord
                                {
                                    Id = "alpha/1",
@@ -86,22 +99,25 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    BoundaryIssuePct = 2.5,
                                    Suspect = true,
                                    SuspectReasons = new[] { "low confidence", "thin docs" }
-                               });
+                               }
+                          );
 
         var svc = new MonitorDataService(libRepo,
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
         Assert.NotNull(detail);
         Assert.True(detail.IsSuspect);
         Assert.Equal(new[] { "low confidence", "thin docs" }, detail.SuspectReasons);
         Assert.Equal(scraped, detail.LastScrapedAt);
-        Assert.Equal(2.5, detail.BoundaryIssuePct);
+        Assert.Equal(expected: 2.5, detail.BoundaryIssuePct);
         Assert.Equal("nomic-embed-text", detail.EmbeddingModelName);
     }
 
@@ -116,7 +132,8 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    Hint = string.Empty,
                                    CurrentVersion = "1",
                                    AllVersions = new List<string> { "1" }
-                               });
+                               }
+                          );
         libRepo.AddVersion(new LibraryVersionRecord
                                {
                                    Id = "alpha/1",
@@ -128,7 +145,8 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    EmbeddingProviderId = "ollama",
                                    EmbeddingModelName = "nomic-embed-text",
                                    EmbeddingDimensions = 768
-                               });
+                               }
+                          );
 
         var chunkRepo = new FakeChunkRepository();
         chunkRepo.SetHosts("alpha",
@@ -138,36 +156,40 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    ["docs.aerotech.com"] = 20,
                                    ["help.aerotech.com"] = 30,
                                    ["learn.aerotech.com"] = 10
-                               });
+                               }
+                          );
         chunkRepo.SetLanguages("alpha",
                                "1",
                                new Dictionary<string, double>
                                    {
                                        ["csharp"] = 0.6,
                                        ["unfenced"] = 0.4
-                                   });
+                                   }
+                              );
 
         var svc = new MonitorDataService(libRepo,
                                          chunkRepo,
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var detail = await svc.GetLibraryDetailAsync("alpha", TestContext.Current.CancellationToken);
 
         Assert.NotNull(detail);
-        Assert.Equal(3, detail.HostnameDistribution.Count);
-        Assert.Equal("help.aerotech.com", detail.HostnameDistribution[0].Host);
-        Assert.Equal(30, detail.HostnameDistribution[0].Count);
-        Assert.Equal("docs.aerotech.com", detail.HostnameDistribution[1].Host);
-        Assert.Equal(20, detail.HostnameDistribution[1].Count);
-        Assert.Equal("learn.aerotech.com", detail.HostnameDistribution[2].Host);
-        Assert.Equal(10, detail.HostnameDistribution[2].Count);
+        Assert.Equal(expected: 3, detail.HostnameDistribution.Count);
+        Assert.Equal("help.aerotech.com", detail.HostnameDistribution[index: 0].Host);
+        Assert.Equal(expected: 30, detail.HostnameDistribution[index: 0].Count);
+        Assert.Equal("docs.aerotech.com", detail.HostnameDistribution[index: 1].Host);
+        Assert.Equal(expected: 20, detail.HostnameDistribution[index: 1].Count);
+        Assert.Equal("learn.aerotech.com", detail.HostnameDistribution[index: 2].Host);
+        Assert.Equal(expected: 10, detail.HostnameDistribution[index: 2].Count);
 
-        Assert.Equal(2, detail.LanguageMix.Count);
-        Assert.Equal(0.6, detail.LanguageMix["csharp"], 3);
-        Assert.Equal(0.4, detail.LanguageMix["unfenced"], 3);
+        Assert.Equal(expected: 2, detail.LanguageMix.Count);
+        Assert.Equal(expected: 0.6, detail.LanguageMix["csharp"], precision: 3);
+        Assert.Equal(expected: 0.4, detail.LanguageMix["unfenced"], precision: 3);
     }
 
     [Fact]
@@ -205,8 +227,10 @@ public sealed class MonitorDataServiceEnrichmentTests
                                          profileRepo,
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
 
         var loaded = await svc.GetLibraryProfileAsync("alpha", "1", TestContext.Current.CancellationToken);
 
@@ -216,7 +240,7 @@ public sealed class MonitorDataServiceEnrichmentTests
         Assert.Equal(new[] { "Console", "WriteLine" }, loaded.LikelySymbols);
         Assert.Equal("PascalCase", loaded.Casing.Types);
         Assert.Equal("camelCase", loaded.Casing.Parameters);
-        Assert.Equal(0.85f, loaded.Confidence);
+        Assert.Equal(expected: 0.85f, loaded.Confidence);
     }
 
     [Fact]
@@ -227,8 +251,10 @@ public sealed class MonitorDataServiceEnrichmentTests
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var loaded = await svc.GetLibraryProfileAsync("missing", "1", TestContext.Current.CancellationToken);
         Assert.Null(loaded);
     }
@@ -244,9 +270,24 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    Hint = string.Empty,
                                    Name = "alpha",
                                    AllVersions = new List<string> { "1", "2" }
-                               });
-        var older = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
-        var newer = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc);
+                               }
+                          );
+        var older = new DateTime(year: 2026,
+                                 month: 1,
+                                 day: 1,
+                                 hour: 12,
+                                 minute: 0,
+                                 second: 0,
+                                 DateTimeKind.Utc
+                                );
+        var newer = new DateTime(year: 2026,
+                                 month: 4,
+                                 day: 1,
+                                 hour: 12,
+                                 minute: 0,
+                                 second: 0,
+                                 DateTimeKind.Utc
+                                );
         libRepo.AddVersion(new LibraryVersionRecord
                                {
                                    Id = "alpha/1",
@@ -258,7 +299,8 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    EmbeddingProviderId = "ollama",
                                    EmbeddingModelName = "nomic-embed-text",
                                    EmbeddingDimensions = 768
-                               });
+                               }
+                          );
         libRepo.AddVersion(new LibraryVersionRecord
                                {
                                    Id = "alpha/2",
@@ -270,20 +312,23 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    EmbeddingProviderId = "ollama",
                                    EmbeddingModelName = "nomic-embed-text",
                                    EmbeddingDimensions = 768
-                               });
+                               }
+                          );
 
         var svc = new MonitorDataService(libRepo,
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var versions = await svc.GetVersionsAsync("alpha", TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, versions.Count);
-        Assert.Equal("2", versions[0].Version);
-        Assert.Equal("1", versions[1].Version);
+        Assert.Equal(expected: 2, versions.Count);
+        Assert.Equal("2", versions[index: 0].Version);
+        Assert.Equal("1", versions[index: 1].Version);
     }
 
     [Fact]
@@ -294,8 +339,10 @@ public sealed class MonitorDataServiceEnrichmentTests
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var versions = await svc.GetVersionsAsync("missing", TestContext.Current.CancellationToken);
         Assert.Empty(versions);
     }
@@ -315,8 +362,16 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           LibraryHint = "alpha",
                                           AllowedUrlPatterns = Array.Empty<string>()
                                       },
-                            CreatedAt = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc)
-                        });
+                            CreatedAt = new DateTime(year: 2026,
+                                                     month: 1,
+                                                     day: 1,
+                                                     hour: 12,
+                                                     minute: 0,
+                                                     second: 0,
+                                                     DateTimeKind.Utc
+                                                    )
+                        }
+                   );
         jobRepo.Add(new ScrapeJobRecord
                         {
                             Id = "new-job",
@@ -328,8 +383,16 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           LibraryHint = "alpha",
                                           AllowedUrlPatterns = Array.Empty<string>()
                                       },
-                            CreatedAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc)
-                        });
+                            CreatedAt = new DateTime(year: 2026,
+                                                     month: 4,
+                                                     day: 1,
+                                                     hour: 12,
+                                                     minute: 0,
+                                                     second: 0,
+                                                     DateTimeKind.Utc
+                                                    )
+                        }
+                   );
         jobRepo.Add(new ScrapeJobRecord
                         {
                             Id = "other-library",
@@ -341,16 +404,26 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           LibraryHint = "beta",
                                           AllowedUrlPatterns = Array.Empty<string>()
                                       },
-                            CreatedAt = new DateTime(2026, 5, 1, 12, 0, 0, DateTimeKind.Utc)
-                        });
+                            CreatedAt = new DateTime(year: 2026,
+                                                     month: 5,
+                                                     day: 1,
+                                                     hour: 12,
+                                                     minute: 0,
+                                                     second: 0,
+                                                     DateTimeKind.Utc
+                                                    )
+                        }
+                   );
 
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(jobRepo,
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var jobId = await svc.GetLatestJobIdAsync("alpha", "1", TestContext.Current.CancellationToken);
 
         Assert.Equal("new-job", jobId);
@@ -364,8 +437,10 @@ public sealed class MonitorDataServiceEnrichmentTests
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var jobId = await svc.GetLatestJobIdAsync("missing", "1", TestContext.Current.CancellationToken);
         Assert.Null(jobId);
     }
@@ -393,21 +468,24 @@ public sealed class MonitorDataServiceEnrichmentTests
                                                           ["docs.x.com"] = 80,
                                                           ["help.x.com"] = 20
                                                       }
-                                 });
+                                 }
+                            );
 
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         auditRepo);
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         auditRepo
+                                        );
         var summary = await svc.GetAuditSummaryAsync("job-1", TestContext.Current.CancellationToken);
 
         Assert.NotNull(summary);
-        Assert.Equal(100, summary.TotalConsidered);
-        Assert.Equal(50, summary.IndexedCount);
-        Assert.Equal(2, summary.SkipReasonCounts.Count);
+        Assert.Equal(expected: 100, summary.TotalConsidered);
+        Assert.Equal(expected: 50, summary.IndexedCount);
+        Assert.Equal(expected: 2, summary.SkipReasonCounts.Count);
     }
 
     [Fact]
@@ -418,8 +496,10 @@ public sealed class MonitorDataServiceEnrichmentTests
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var summary = await svc.GetAuditSummaryAsync("missing-job", TestContext.Current.CancellationToken);
         Assert.Null(summary);
     }
@@ -440,17 +520,34 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           AllowedUrlPatterns = Array.Empty<string>()
                                       },
                             Status = ScrapeJobStatus.Running,
-                            StartedAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc),
-                            CreatedAt = new DateTime(2026, 4, 1, 11, 59, 0, DateTimeKind.Utc)
-                        });
+                            StartedAt = new DateTime(year: 2026,
+                                                     month: 4,
+                                                     day: 1,
+                                                     hour: 12,
+                                                     minute: 0,
+                                                     second: 0,
+                                                     DateTimeKind.Utc
+                                                    ),
+                            CreatedAt = new DateTime(year: 2026,
+                                                     month: 4,
+                                                     day: 1,
+                                                     hour: 11,
+                                                     minute: 59,
+                                                     second: 0,
+                                                     DateTimeKind.Utc
+                                                    )
+                        }
+                   );
 
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(jobRepo,
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var info = await svc.GetJobInfoAsync("job-1", TestContext.Current.CancellationToken);
 
         Assert.NotNull(info);
@@ -458,7 +555,16 @@ public sealed class MonitorDataServiceEnrichmentTests
         Assert.Equal("alpha", info.LibraryId);
         Assert.Equal("1", info.Version);
         Assert.Equal("Running", info.Status);
-        Assert.Equal(new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc), info.StartedAt);
+        Assert.Equal(new DateTime(year: 2026,
+                                  month: 4,
+                                  day: 1,
+                                  hour: 12,
+                                  minute: 0,
+                                  second: 0,
+                                  DateTimeKind.Utc
+                                 ),
+                     info.StartedAt
+                    );
     }
 
     [Fact]
@@ -469,8 +575,10 @@ public sealed class MonitorDataServiceEnrichmentTests
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         new FakeScrapeAuditRepository());
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         new FakeScrapeAuditRepository()
+                                        );
         var info = await svc.GetJobInfoAsync("missing", TestContext.Current.CancellationToken);
         Assert.Null(info);
     }
@@ -488,9 +596,17 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    Url = "https://docs.x/page-a",
                                    Host = "docs.x",
                                    Depth = 1,
-                                   DiscoveredAt = new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc),
+                                   DiscoveredAt = new DateTime(year: 2026,
+                                                               month: 4,
+                                                               day: 1,
+                                                               hour: 12,
+                                                               minute: 0,
+                                                               second: 0,
+                                                               DateTimeKind.Utc
+                                                              ),
                                    Status = AuditStatus.Fetched
-                               });
+                               }
+                          );
         auditRepo.AddEntry(new ScrapeAuditLogEntry
                                {
                                    Id = "e2",
@@ -500,27 +616,47 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    Url = "https://docs.x/page-b",
                                    Host = "docs.x",
                                    Depth = 1,
-                                   DiscoveredAt = new DateTime(2026, 4, 1, 12, 0, 1, DateTimeKind.Utc),
+                                   DiscoveredAt = new DateTime(year: 2026,
+                                                               month: 4,
+                                                               day: 1,
+                                                               hour: 12,
+                                                               minute: 0,
+                                                               second: 1,
+                                                               DateTimeKind.Utc
+                                                              ),
                                    Status = AuditStatus.Skipped,
                                    SkipReason = AuditSkipReason.PatternExclude
-                               });
+                               }
+                          );
 
         var svc = new MonitorDataService(new FakeLibraryRepository(),
                                          new FakeChunkRepository(),
                                          new FakeLibraryProfileRepository(),
                                          new UnifiedJobView(new FakeScrapeJobRepository(),
                                                             new FakeBackgroundJobRepository(),
-                                                            new FakeRescrubJobRepository()),
-                                         auditRepo);
-        var (fetches, rejects) = await svc.GetTerminalFeedsAsync("job-1",
-                                                                 50,
-                                                                 TestContext.Current.CancellationToken);
+                                                            new FakeRescrubJobRepository()
+                                                           ),
+                                         auditRepo
+                                        );
+        (var fetches, var rejects) = await svc.GetTerminalFeedsAsync("job-1",
+                                                                     limit: 50,
+                                                                     TestContext.Current.CancellationToken
+                                                                    );
 
         Assert.Single(fetches);
-        Assert.Equal("https://docs.x/page-a", fetches[0].Url);
-        Assert.Equal(new DateTime(2026, 4, 1, 12, 0, 0, DateTimeKind.Utc), fetches[0].At);
+        Assert.Equal("https://docs.x/page-a", fetches[index: 0].Url);
+        Assert.Equal(new DateTime(year: 2026,
+                                  month: 4,
+                                  day: 1,
+                                  hour: 12,
+                                  minute: 0,
+                                  second: 0,
+                                  DateTimeKind.Utc
+                                 ),
+                     fetches[index: 0].At
+                    );
         Assert.Single(rejects);
-        Assert.Equal("https://docs.x/page-b", rejects[0].Url);
-        Assert.Equal("PatternExclude", rejects[0].Reason);
+        Assert.Equal("https://docs.x/page-b", rejects[index: 0].Url);
+        Assert.Equal("PatternExclude", rejects[index: 0].Reason);
     }
 }

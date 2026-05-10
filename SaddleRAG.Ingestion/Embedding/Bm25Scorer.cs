@@ -59,10 +59,10 @@ public static class Bm25Scorer
     ///     Convenience wrapper around <see cref="ScoreAsync" />.
     /// </summary>
     public static async Task<IReadOnlyList<(string ChunkId, double Score)>> TopNAsync(IBm25TermLookup termLookup,
-                                                                                      Bm25Stats stats,
-                                                                                      string query,
-                                                                                      int n,
-                                                                                      CancellationToken ct = default)
+        Bm25Stats stats,
+        string query,
+        int n,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(termLookup);
         ArgumentNullException.ThrowIfNull(stats);

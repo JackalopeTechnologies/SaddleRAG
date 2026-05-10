@@ -177,21 +177,26 @@ var rootCommand = new RootCommand(RootCommandDescription);
 // ingest command
 var ingestCommand = new Command(IngestCommandName, IngestCommandDescription);
 var rootUrlOption = new Option<string>(RootUrlOptionName)
-    { Description = RootUrlOptionDescription, Required = true };
+                        { Description = RootUrlOptionDescription, Required = true };
 var libraryIdOption = new Option<string>(LibraryIdOptionName)
-    { Description = UniqueLibraryIdDescription, Required = true };
+                          { Description = UniqueLibraryIdDescription, Required = true };
 var versionOption = new Option<string>(VersionOptionName)
-    { Description = VersionStringDescription, Required = true };
+                        { Description = VersionStringDescription, Required = true };
 var hintOption = new Option<string>(HintOptionName)
-    { Description = HintOptionDescription, Required = true };
+                     { Description = HintOptionDescription, Required = true };
 var allowedOption = new Option<string[]>(AllowedOptionName)
-    { Description = AllowedOptionDescription, Required = true, AllowMultipleArgumentsPerToken = true };
+                        {
+                            Description = AllowedOptionDescription, Required = true,
+                            AllowMultipleArgumentsPerToken = true
+                        };
 var excludedOption = new Option<string[]>(ExcludedOptionName)
-    { Description = ExcludedOptionDescription, AllowMultipleArgumentsPerToken = true };
+                         { Description = ExcludedOptionDescription, AllowMultipleArgumentsPerToken = true };
 var maxPagesOption = new Option<int>(MaxPagesOptionName)
-    { Description = MaxPagesOptionDescription, DefaultValueFactory = _ => 0 };
+                         { Description = MaxPagesOptionDescription, DefaultValueFactory = _ => 0 };
 var delayOption = new Option<int>(DelayOptionName)
-    { Description = DelayOptionDescription, DefaultValueFactory = _ => ScrapeJob.DefaultFetchDelayMs };
+                      {
+                          Description = DelayOptionDescription, DefaultValueFactory = _ => ScrapeJob.DefaultFetchDelayMs
+                      };
 
 ingestCommand.Options.Add(rootUrlOption);
 ingestCommand.Options.Add(libraryIdOption);
@@ -205,15 +210,24 @@ ingestCommand.Options.Add(delayOption);
 ingestCommand.SetAction(async (parseResult, ct) =>
                         {
                             var rootUrl = parseResult.GetValue(rootUrlOption) ??
-                                          throw new InvalidOperationException($"Required option '{RootUrlOptionName}' missing");
+                                          throw new
+                                              InvalidOperationException($"Required option '{RootUrlOptionName}' missing"
+                                                                       );
                             var libraryId = parseResult.GetValue(libraryIdOption) ??
-                                            throw new InvalidOperationException($"Required option '{LibraryIdOptionName}' missing");
+                                            throw new
+                                                InvalidOperationException($"Required option '{LibraryIdOptionName}' missing"
+                                                                         );
                             var version = parseResult.GetValue(versionOption) ??
-                                          throw new InvalidOperationException($"Required option '{VersionOptionName}' missing");
+                                          throw new
+                                              InvalidOperationException($"Required option '{VersionOptionName}' missing"
+                                                                       );
                             var hint = parseResult.GetValue(hintOption) ??
-                                       throw new InvalidOperationException($"Required option '{HintOptionName}' missing");
+                                       throw new InvalidOperationException($"Required option '{HintOptionName}' missing"
+                                                                          );
                             var allowed = parseResult.GetValue(allowedOption) ??
-                                          throw new InvalidOperationException($"Required option '{AllowedOptionName}' missing");
+                                          throw new
+                                              InvalidOperationException($"Required option '{AllowedOptionName}' missing"
+                                                                       );
                             var excluded = parseResult.GetValue(excludedOption);
                             var maxPages = parseResult.GetValue(maxPagesOption);
                             var delay = parseResult.GetValue(delayOption);
@@ -247,7 +261,8 @@ ingestCommand.SetAction(async (parseResult, ct) =>
                                                           );
                             Console.WriteLine();
                             return 0;
-                        });
+                        }
+                       );
 
 // list command
 var listCommand = new Command(ListCommandName, ListAllLibrariesDescription);
@@ -267,18 +282,22 @@ listCommand.SetAction(async (parseResult, ct) =>
                                                 );
                               }
                           }
+
                           return 0;
-                      });
+                      }
+                     );
 
 // status command
 var statusCommand = new Command(StatusCommandName, StatusCommandDescription);
 var statusLibOption = new Option<string>(LibraryIdOptionName)
-    { Description = LibraryIdDescription, Required = true };
+                          { Description = LibraryIdDescription, Required = true };
 statusCommand.Options.Add(statusLibOption);
 statusCommand.SetAction(async (parseResult, ct) =>
                         {
                             var libraryId = parseResult.GetValue(statusLibOption) ??
-                                            throw new InvalidOperationException($"Required option '{LibraryIdOptionName}' missing");
+                                            throw new
+                                                InvalidOperationException($"Required option '{LibraryIdOptionName}' missing"
+                                                                         );
                             var libRepo = provider.GetRequiredService<ILibraryRepository>();
                             var pageRepo = provider.GetRequiredService<IPageRepository>();
                             var chunkRepo = provider.GetRequiredService<IChunkRepository>();
@@ -299,8 +318,10 @@ statusCommand.SetAction(async (parseResult, ct) =>
                                     Console.WriteLine($"  v{ver}: {pages} pages, {chunks} chunks");
                                 }
                             }
+
                             return 0;
-                        });
+                        }
+                       );
 
 // dryrun command
 var dryrunCommand = new Command(DryrunCommandName, DryrunCommandDescription);
@@ -313,9 +334,13 @@ dryrunCommand.Options.Add(delayOption);
 dryrunCommand.SetAction(async (parseResult, ct) =>
                         {
                             var rootUrl = parseResult.GetValue(rootUrlOption) ??
-                                          throw new InvalidOperationException($"Required option '{RootUrlOptionName}' missing");
+                                          throw new
+                                              InvalidOperationException($"Required option '{RootUrlOptionName}' missing"
+                                                                       );
                             var allowed = parseResult.GetValue(allowedOption) ??
-                                          throw new InvalidOperationException($"Required option '{AllowedOptionName}' missing");
+                                          throw new
+                                              InvalidOperationException($"Required option '{AllowedOptionName}' missing"
+                                                                       );
                             var excluded = parseResult.GetValue(excludedOption);
                             var maxPages = parseResult.GetValue(maxPagesOption);
                             var delay = parseResult.GetValue(delayOption);
@@ -395,22 +420,23 @@ dryrunCommand.SetAction(async (parseResult, ct) =>
                             {
                                 Console.WriteLine();
                                 Console
-                                    .WriteLine($"Sample URLs still in queue (first {report.SamplePendingUrls.Count}):"
-                                              );
+                                    .WriteLine($"Sample URLs still in queue (first {report.SamplePendingUrls.Count}):");
                                 foreach(var pending in report.SamplePendingUrls)
                                     Console.WriteLine($"  {pending}");
                             }
+
                             return 0;
-                        });
+                        }
+                       );
 
 // reclassify command — re-run LLM classifier over already-ingested pages
 var reclassifyCommand = new Command(ReclassifyCommandName,
                                     ReclassifyCommandDescription
                                    );
 var reclassifyLibOption = new Option<string?>(LibraryIdOptionName)
-    { Description = ReclassifyLibraryIdDescription };
+                              { Description = ReclassifyLibraryIdDescription };
 var reclassifyAllOption = new Option<bool>(AllOptionName)
-    { Description = ReclassifyAllDescription, DefaultValueFactory = _ => false };
+                              { Description = ReclassifyAllDescription, DefaultValueFactory = _ => false };
 reclassifyCommand.Options.Add(reclassifyLibOption);
 reclassifyCommand.Options.Add(reclassifyAllOption);
 
@@ -490,17 +516,19 @@ reclassifyCommand.SetAction(async (parseResult, ct) =>
                                     .WriteLine("Pages and chunks updated in MongoDB. Restart MCP server (or call reload_profile) to refresh in-memory index."
                                               );
                                 return 0;
-                            });
+                            }
+                           );
 
 // inspect command — load a single page, dump TOC/sidebar info
 var inspectCommand = new Command(InspectCommandName, InspectCommandDescription);
 var inspectUrlOption = new Option<string>(UrlOptionName)
-    { Description = UrlOptionDescription, Required = true };
+                           { Description = UrlOptionDescription, Required = true };
 inspectCommand.Options.Add(inspectUrlOption);
 inspectCommand.SetAction(async (parseResult, ct) =>
                          {
                              var url = parseResult.GetValue(inspectUrlOption) ??
-                                       throw new InvalidOperationException($"Required option '{UrlOptionName}' missing");
+                                       throw new InvalidOperationException($"Required option '{UrlOptionName}' missing"
+                                                                          );
                              using var playwright = await Playwright.CreateAsync();
                              await using var browser =
                                  await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true }
@@ -617,7 +645,8 @@ inspectCommand.SetAction(async (parseResult, ct) =>
 
                              await page.CloseAsync();
                              return 0;
-                         });
+                         }
+                        );
 
 // profile command
 var profileCommand = new Command(ProfileCommandName, ProfileCommandDescription);
@@ -629,16 +658,14 @@ profileListCommand.SetAction(parseResult =>
                                  var activeOverride = Environment.GetEnvironmentVariable(MongoDbProfileEnvVar);
                                  (var activeConn, var activeDb) = settings.Resolve();
 
-                                 Console.WriteLine($"Active: {activeOverride ?? settings.ActiveProfile ?? "(direct)"}"
-                                                  );
+                                 Console.WriteLine($"Active: {activeOverride ?? settings.ActiveProfile ?? "(direct)"}");
                                  Console.WriteLine($"Connected to: {activeConn} / {activeDb}");
                                  Console.WriteLine();
 
                                  if (settings.Profiles.Count == 0)
                                  {
                                      Console
-                                         .WriteLine("No profiles defined. Using direct ConnectionString/DatabaseName."
-                                                   );
+                                         .WriteLine("No profiles defined. Using direct ConnectionString/DatabaseName.");
                                  }
                                  else
                                  {
@@ -661,16 +688,17 @@ profileListCommand.SetAction(parseResult =>
                                  Console.WriteLine("  Set SADDLERAG_MONGODB_PROFILE=company  (environment variable)");
                                  Console.WriteLine("  Or edit ActiveProfile in appsettings.json");
                                  return 0;
-                             });
+                             }
+                            );
 
 profileCommand.Subcommands.Add(profileListCommand);
 
 // scan command — scan project dependencies and index documentation
 var scanCommand = new Command(ScanCommandName, ScanCommandDescription);
 var scanPathOption = new Option<string>(PathOptionName)
-    { Description = PathOptionDescription, Required = true };
+                         { Description = PathOptionDescription, Required = true };
 var scanProfileOption = new Option<string?>(ProfileOptionName)
-    { Description = ProfileOptionDescription };
+                            { Description = ProfileOptionDescription };
 scanCommand.Options.Add(scanPathOption);
 scanCommand.Options.Add(scanProfileOption);
 
@@ -723,8 +751,10 @@ scanCommand.SetAction(async (parseResult, ct) =>
                                                 );
                               }
                           }
+
                           return 0;
-                      });
+                      }
+                     );
 
 rootCommand.Subcommands.Add(ingestCommand);
 rootCommand.Subcommands.Add(dryrunCommand);

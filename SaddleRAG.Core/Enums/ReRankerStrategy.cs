@@ -24,23 +24,23 @@ public enum ReRankerStrategy
     Off,
 
     /// <summary>
-    ///     Legacy Ollama qwen3:1.7b LLM categorical reranker. Kept for
-    ///     backward compatibility. Score blending (final = α·rerank +
-    ///     β·hybrid) prevents the reranker's mistakes from being
-    ///     unrecoverable, but the reranker's plateau scores (1.0/0.8/
-    ///     0.5/0.2/0.0) and 2–7s latency make it a bad default for
-    ///     identifier-heavy workloads.
+    ///     Categorical LLM reranker (Ollama prompt-based). Default model
+    ///     is phi4-mini:3.8b (Microsoft, Western supply chain). Currently
+    ///     dispatches to NoOp in ToggleableReRanker until calibration is
+    ///     verified — small instruction-tuned LLMs tend to plateau on
+    ///     the 5-bucket score scale (1.0/0.8/0.5/0.2/0.0) without a
+    ///     bench harness to tune the prompt against.
     /// </summary>
     Llm,
 
     /// <summary>
     ///     Cross-encoder-style reranker hosting Mixedbread mxbai-rerank-
-    ///     large-v2 on Ollama. Each (query, document) pair is scored
-    ///     independently with a "respond with only the number" prompt,
-    ///     yielding continuous floats in [0, 1]. Latency ~50-200ms per
-    ///     pair (so ~0.5-2s for a 10-candidate batch). Recommended
-    ///     non-Off strategy for production once the bench harness
-    ///     confirms it net-helps for your corpus.
+    ///     large-v2 on Ollama. The community Ollama port was originally
+    ///     hosted as a generate model emitting continuous floats, but
+    ///     has since been republished as embed-only — so this strategy
+    ///     also currently dispatches to NoOp. Re-enable when a real
+    ///     cross-encoder runtime is wired up (e.g. HuggingFace TEI
+    ///     sidecar with an /api/rerank endpoint).
     /// </summary>
     CrossEncoder
 }
