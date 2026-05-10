@@ -40,12 +40,12 @@ public sealed class ClaudeCodeWriter : IClientWriter
     private const string MsgSaddleRagRemoved = "saddlerag entry removed";
     private const string MsgSaddleRagNotPresent = "saddlerag entry was not present";
 
-    private static readonly JsonSerializerOptions psWriteOptions = new()
+    private static readonly JsonSerializerOptions smWriteOptions = new()
                                                                        {
                                                                            WriteIndented = true
                                                                        };
 
-    private static readonly UTF8Encoding psUtf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly UTF8Encoding smUtf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private readonly string mConfigPath;
     private readonly string mSkillPath;
@@ -190,8 +190,8 @@ public sealed class ClaudeCodeWriter : IClientWriter
             Directory.CreateDirectory(dir);
         }
         string tmp = mConfigPath + TmpSuffix;
-        string serialized = root.ToJsonString(psWriteOptions);
-        await File.WriteAllTextAsync(tmp, serialized, psUtf8NoBom, ct);
+        string serialized = root.ToJsonString(smWriteOptions);
+        await File.WriteAllTextAsync(tmp, serialized, smUtf8NoBom, ct);
         File.Move(tmp, mConfigPath, overwrite: true);
     }
 
@@ -261,6 +261,6 @@ public sealed class ClaudeCodeWriter : IClientWriter
                                      ?? throw new InvalidOperationException($"Embedded resource not found: {SkillResourceName}");
         using StreamReader reader = new(stream, Encoding.UTF8);
         string content = await reader.ReadToEndAsync(ct);
-        await File.WriteAllTextAsync(mSkillPath, content, psUtf8NoBom, ct);
+        await File.WriteAllTextAsync(mSkillPath, content, smUtf8NoBom, ct);
     }
 }
