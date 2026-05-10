@@ -2,17 +2,10 @@
 import { execFile } from 'child_process';
 import * as path from 'path';
 import type { DetectResult } from '../models/ServiceStatus';
+import { WINDOWS_PLATFORM, WINDOWS_SUBFOLDER, POSIX_SUBFOLDER, POWERSHELL_CMD, BASH_CMD, PS1_EXT, SH_EXT, POWERSHELL_SCRIPT_FLAG } from './ScriptPaths';
 
 type Dependency = 'mongodb' | 'ollama';
 
-const WINDOWS_PLATFORM = 'win32';
-const WINDOWS_SUBFOLDER = 'windows';
-const POSIX_SUBFOLDER = 'posix';
-const POWERSHELL_CMD = 'powershell';
-const BASH_CMD = 'bash';
-const PS1_EXT = '.ps1';
-const SH_EXT = '.sh';
-const POWERSHELL_SCRIPT_FLAG = '-File';
 const NOT_INSTALLED_EXIT_CODE = 2;
 
 export class DependencyChecker

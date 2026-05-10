@@ -1,18 +1,11 @@
 // ScriptRunner.ts
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { WINDOWS_PLATFORM, WINDOWS_SUBFOLDER, POSIX_SUBFOLDER, POWERSHELL_CMD, BASH_CMD, PS1_EXT, SH_EXT, POWERSHELL_SCRIPT_FLAG } from './ScriptPaths';
 
 const TERMINAL_NAME = 'SaddleRAG Setup';
-const WINDOWS_PLATFORM = 'win32';
-const WINDOWS_SUBFOLDER = 'windows';
-const POSIX_SUBFOLDER = 'posix';
-const POWERSHELL_CMD = 'powershell';
-const BASH_CMD = 'bash';
-const PS1_EXT = '.ps1';
-const SH_EXT = '.sh';
 const EXECUTION_POLICY_FLAG = '-ExecutionPolicy';
 const EXECUTION_POLICY_VALUE = 'Bypass';
-const POWERSHELL_SCRIPT_FLAG = '-File';
 
 export class ScriptRunner
 {
