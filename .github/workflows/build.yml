@@ -128,10 +128,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Determine version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+              $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          } else {
+              $version = "0.0.0"
+          }
+          echo "PackageVersion=$version" >> $env:GITHUB_ENV
+
       - name: Download linux-x64 artifact
         uses: actions/download-artifact@v5
         with:
-          name: saddlerag-0.0.0-linux-x64
+          name: saddlerag-${{ env.PackageVersion }}-linux-x64
           path: ./artifacts/linux-x64
 
       - name: Extract linux-x64 binary in WSL2 and run smoke test
