@@ -124,6 +124,7 @@ public class OllamaBootstrapper
 
     private const string OllamaExeNameWindows = "ollama.exe";
     private const string OllamaExeNamePosix = "ollama";
+    private const string OllamaWindowsFallbackPath = @"C:\Program Files\Ollama\ollama.exe";
     private const string OllamaPathLocalBin = "/usr/local/bin/ollama";
     private const string OllamaPathUsrBin = "/usr/bin/ollama";
     private const string OllamaDotDir = ".ollama";
@@ -199,7 +200,7 @@ public class OllamaBootstrapper
                       Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
                                    OllamaFolderName,
                                    OllamaExeName),
-                      @"C:\Program Files\Ollama\ollama.exe"
+                      OllamaWindowsFallbackPath
                   ]
                 : [
                       OllamaPathLocalBin,
