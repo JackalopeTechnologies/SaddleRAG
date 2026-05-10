@@ -454,7 +454,7 @@ else
     MonitorApiEndpoints.Map(app);
     MonitorLibraryActionsEndpoints.Map(app);
     MonitorSnapshotEndpoints.Map(app);
-
+    StatusApiEndpoints.Map(app);
 
     app.Run();
 }
