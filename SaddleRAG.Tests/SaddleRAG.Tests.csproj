@@ -27,6 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\SaddleRAG.ClientIntegration\SaddleRAG.ClientIntegration.csproj" />
     <ProjectReference Include="..\SaddleRAG.Core\SaddleRAG.Core.csproj" />
     <ProjectReference Include="..\SaddleRAG.Ingestion\SaddleRAG.Ingestion.csproj" />
     <ProjectReference Include="..\SaddleRAG.Mcp\SaddleRAG.Mcp.csproj" />
@@ -40,6 +41,9 @@
 
   <ItemGroup>
     <None Update="Fixtures\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="ClientIntegration\Fixtures\**\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="TestData\FileScrape\**\*.htm">

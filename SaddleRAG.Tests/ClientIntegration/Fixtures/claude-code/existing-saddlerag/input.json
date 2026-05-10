@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "saddlerag": {
+      "type": "http",
+      "url": "http://localhost:9999/mcp",
+      "timeout": 60,
+      "extraGarbage": "should-be-removed"
+    }
+  }
+}
