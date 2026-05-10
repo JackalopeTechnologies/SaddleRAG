@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "saddlerag": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "http://localhost:6100/mcp",
+        "--allow-http"
+      ]
+    }
+  }
+}
