@@ -5,7 +5,7 @@ export const window = {
     showInformationMessage: jest.fn(),
     createOutputChannel: jest.fn(() => ({ appendLine: jest.fn(), show: jest.fn() })),
     registerTreeDataProvider: jest.fn(),
-    withProgress: jest.fn()
+    withProgress: jest.fn((_opts: unknown, task: (p: { report: jest.Mock }) => Promise<void>) => task({ report: jest.fn() }))
 };
 export const commands = { registerCommand: jest.fn(), executeCommand: jest.fn() };
 export const env = { openExternal: jest.fn() };
