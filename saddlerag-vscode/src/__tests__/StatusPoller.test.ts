@@ -29,11 +29,16 @@ describe('StatusPoller', () => {
 
         await poller.pollNow();
 
-        expect(stateReceived).toContain('running');
+        expect(stateReceived[stateReceived.length - 1]).toBe('running');
     });
 
     it('emits saddlerag=stopped when /health fetch fails', async () => {
-        fetchMock.mockRejectedValue(new Error('ECONNREFUSED'));
+        fetchMock.mockImplementation((url: string) => {
+            if (url.includes('/health')) {
+                return Promise.reject(new Error('ECONNREFUSED'));
+            }
+            return Promise.resolve({ ok: true, json: async () => ({ libraries: [], activeJobs: [] }) });
+        });
 
         const poller = new StatusPoller('http://localhost:6100');
         const stateReceived: string[] = [];
