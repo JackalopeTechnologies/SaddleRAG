@@ -3,6 +3,8 @@
 import * as vscode from 'vscode';
 import type { ServiceStatus } from '../models/ServiceStatus';
 
+const HEALTH_HEALTHY = 'Healthy';
+
 export class SectionItem extends vscode.TreeItem
 {
     constructor(label: string, count?: number)
@@ -43,7 +45,7 @@ export class LibraryItem extends vscode.TreeItem
         super(name, vscode.TreeItemCollapsibleState.None);
         this.description = version;
         this.tooltip = `${name} ${version} — ${health}`;
-        this.iconPath = health === 'Healthy'
+        this.iconPath = health === HEALTH_HEALTHY
             ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'))
             : new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'));
         this.contextValue = 'library';
