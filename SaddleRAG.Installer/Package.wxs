@@ -81,8 +81,6 @@
         <!-- via -File "[MCPFOLDER]Script.ps1" without any inline PowerShell that    -->
         <!-- would be mangled by MSI's property formatter eating [...] expressions.  -->
         <Component Id="HelperScripts" Directory="MCPFOLDER" Guid="B3A1F2E4-9C7D-4E8B-A5F1-2D3E4F5A6B7C">
-            <File Source="RegisterClaudePlugin.ps1" />
-            <File Source="UnregisterClaudePlugin.ps1" />
             <File Source="SetOllamaKeepAlive.ps1" />
             <File Source="UnsetOllamaKeepAlive.ps1" />
         </Component>
