@@ -11,9 +11,12 @@ public sealed record SaddleRagEndpoint(
     int TimeoutSeconds,
     IReadOnlyList<string> ReadOnlyToolPermissions)
 {
+    private const string DefaultUrl = "http://localhost:6100/mcp";
+    private const int DefaultTimeoutSeconds = 300;
+
     public static SaddleRagEndpoint Default { get; } = new(
-        Url: "http://localhost:6100/mcp",
-        TimeoutSeconds: 300,
+        Url: DefaultUrl,
+        TimeoutSeconds: DefaultTimeoutSeconds,
         ReadOnlyToolPermissions: new[]
         {
             "mcp__saddlerag__search_docs",
