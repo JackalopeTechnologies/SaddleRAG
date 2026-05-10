@@ -762,6 +762,7 @@ rootCommand.Subcommands.Add(dryrunCommand);
 rootCommand.Subcommands.Add(inspectCommand);
 rootCommand.Subcommands.Add(reclassifyCommand);
 rootCommand.Subcommands.Add(RegisterClientsCommand.Build());
+rootCommand.Subcommands.Add(UnregisterClientsCommand.Build());
 rootCommand.Subcommands.Add(scanCommand);
 rootCommand.Subcommands.Add(listCommand);
 rootCommand.Subcommands.Add(statusCommand);
