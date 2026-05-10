@@ -1,0 +1,8 @@
+.vscode/**
+src/__tests__/**
+src/__mocks__/**
+jest.config.ts
+tsconfig.json
+*.map
+node_modules/**
+out/test/**
