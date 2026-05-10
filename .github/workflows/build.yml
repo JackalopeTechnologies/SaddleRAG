@@ -11,8 +11,38 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: windows-latest
+  matrix-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            binary: SaddleRAG.Mcp.exe
+            archive-cmd: zip
+            smoke-cmd: pwsh
+          - os: macos-latest
+            rid: osx-arm64
+            binary: SaddleRAG.Mcp
+            archive-cmd: tar
+            smoke-cmd: skip
+          - os: macos-13
+            rid: osx-x64
+            binary: SaddleRAG.Mcp
+            archive-cmd: tar
+            smoke-cmd: skip
+          - os: ubuntu-latest
+            rid: linux-x64
+            binary: SaddleRAG.Mcp
+            archive-cmd: tar
+            smoke-cmd: bash
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            binary: SaddleRAG.Mcp
+            archive-cmd: tar
+            smoke-cmd: bash
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v5
@@ -31,23 +61,10 @@ jobs:
           } else {
               $version = "0.0.0"
           }
-
-          # The git tag IS the MSI ProductVersion - no translation. Versioning policy:
-          #   0.1.N -> alpha series (prerelease)
-          #   0.2.N -> beta series  (prerelease)
-          #   any 0.x.y -> prerelease
-          #   1.0.0 and above -> stable
-          $msiVersion = $version
-          if ($version -match '^0\.') {
-              $isPrerelease = "true"
-          } else {
-              $isPrerelease = "false"
-          }
-
+          if ($version -match '^0\.') { $isPrerelease = "true" } else { $isPrerelease = "false" }
           echo "PackageVersion=$version" >> $env:GITHUB_ENV
-          echo "MsiVersion=$msiVersion" >> $env:GITHUB_ENV
           echo "IsPrerelease=$isPrerelease" >> $env:GITHUB_ENV
-          Write-Host "Version: $version (MSI: $msiVersion, Prerelease: $isPrerelease)"
+          Write-Host "Version: $version (Prerelease: $isPrerelease)"
 
       - name: Restore
         run: dotnet restore SaddleRAG.slnx
@@ -56,14 +73,109 @@ jobs:
         run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:Version=${{ env.PackageVersion }}
 
       - name: Test
-        # Integration tests (Mongo-backed repositories, Playwright-driven
-        # crawler scenarios) require services that aren't running on the
-        # GitHub-hosted runner. They're tagged [Trait("Category","Integration")]
-        # and run locally and on self-hosted runners that have those services.
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build --filter "Category!=Integration"
 
       - name: Publish
-        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ env.PackageVersion }}/publish -p:Version=${{ env.PackageVersion }}
+        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime ${{ matrix.rid }} --self-contained true --output ./publish/${{ matrix.rid }} -p:Version=${{ env.PackageVersion }}
+
+      - name: Archive (Windows)
+        if: matrix.archive-cmd == 'zip'
+        shell: pwsh
+        run: |
+          $dest = "./artifacts/SaddleRAG.Mcp-${{ env.PackageVersion }}-${{ matrix.rid }}.zip"
+          New-Item -ItemType Directory -Force -Path "./artifacts" | Out-Null
+          Compress-Archive -Path "./publish/${{ matrix.rid }}/*" -DestinationPath $dest
+          Write-Host "Created: $dest"
+
+      - name: Archive (POSIX)
+        if: matrix.archive-cmd == 'tar'
+        run: |
+          dest="./artifacts/saddlerag-${{ env.PackageVersion }}-${{ matrix.rid }}.tar.gz"
+          mkdir -p ./artifacts
+          tar -czf "$dest" -C "./publish/${{ matrix.rid }}" .
+          echo "Created: $dest"
+
+      - name: Smoke test (bash — Linux)
+        if: matrix.smoke-cmd == 'bash'
+        run: |
+          chmod +x "./publish/${{ matrix.rid }}/SaddleRAG.Mcp"
+          bash scripts/smoke-test.sh "./publish/${{ matrix.rid }}/SaddleRAG.Mcp"
+
+      - name: Smoke test (PowerShell — Windows)
+        if: matrix.smoke-cmd == 'pwsh'
+        shell: pwsh
+        run: |
+          .\scripts\smoke-test.ps1 -Binary ".\publish\${{ matrix.rid }}\SaddleRAG.Mcp.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: saddlerag-${{ env.PackageVersion }}-${{ matrix.rid }}
+          path: |
+            ./artifacts/*.zip
+            ./artifacts/*.tar.gz
+
+      - name: Kill orphan processes (Windows only)
+        if: always() && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Get-Process -Name dotnet, VBCSCompiler -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+  wsl-smoke-test:
+    needs: matrix-build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download linux-x64 artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: saddlerag-0.0.0-linux-x64
+          path: ./artifacts/linux-x64
+
+      - name: Extract linux-x64 binary in WSL2 and run smoke test
+        shell: wsl-bash {0}
+        run: |
+          mkdir -p /tmp/saddlerag-linux
+          tar -xzf "$(wslpath '${{ github.workspace }}')/artifacts/linux-x64/"*.tar.gz -C /tmp/saddlerag-linux
+          chmod +x /tmp/saddlerag-linux/SaddleRAG.Mcp
+          bash "$(wslpath '${{ github.workspace }}')/scripts/smoke-test.sh" /tmp/saddlerag-linux/SaddleRAG.Mcp
+
+  build-msi:
+    needs: matrix-build
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.x'
+
+      - name: Restore version from tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+              $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
+          } else {
+              $version = "0.0.0"
+          }
+          if ($version -match '^0\.') { $isPrerelease = "true" } else { $isPrerelease = "false" }
+          echo "PackageVersion=$version" >> $env:GITHUB_ENV
+          echo "MsiVersion=$version" >> $env:GITHUB_ENV
+          echo "IsPrerelease=$isPrerelease" >> $env:GITHUB_ENV
+
+      - name: Download win-x64 artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: saddlerag-${{ env.PackageVersion }}-win-x64
+          path: ./msi-publish
+
+      - name: Extract win-x64 zip for WiX
+        shell: pwsh
+        run: Expand-Archive -Path "./msi-publish/*.zip" -DestinationPath "./publish/win-x64"
 
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
@@ -74,24 +186,37 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
 
       - name: Build MSI
-        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ env.PackageVersion }}/publish -d Version=${{ env.MsiVersion }} -d PluginSourceDir=${{ github.workspace }}/plugin -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
+        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/publish/win-x64 -d Version=${{ env.MsiVersion }} -d PluginSourceDir=${{ github.workspace }}/plugin -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v5
         with:
-          name: SaddleRAG.Mcp-${{ env.PackageVersion }}
-          path: ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
+          name: SaddleRAG.Mcp-${{ env.PackageVersion }}-msi
+          path: ./artifacts/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
+
+  release:
+    needs: [matrix-build, build-msi]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Restore version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "PackageVersion=$VERSION" >> $GITHUB_ENV
+          if [[ "$VERSION" =~ ^0\. ]]; then echo "IsPrerelease=true" >> $GITHUB_ENV
+          else echo "IsPrerelease=false" >> $GITHUB_ENV; fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: ./release-artifacts
+          merge-multiple: true
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
+          files: ./release-artifacts/**
           prerelease: ${{ env.IsPrerelease }}
           draft: true
-
-      - name: Kill orphan processes
-        if: always()
-        run: |
-          Get-Process -Name dotnet, VBCSCompiler -ErrorAction SilentlyContinue |
-            Stop-Process -Force -ErrorAction SilentlyContinue
