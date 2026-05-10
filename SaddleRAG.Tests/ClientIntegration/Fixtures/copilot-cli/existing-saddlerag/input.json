@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "saddlerag": {
+      "type": "stdio",
+      "command": "stale-binary",
+      "extraGarbage": "remove me"
+    }
+  }
+}
