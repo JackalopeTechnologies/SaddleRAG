@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "saddlerag": {
+      "type": "sse",
+      "url": "http://localhost:6100/mcp"
+    }
+  }
+}
