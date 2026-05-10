@@ -29,6 +29,8 @@ public static class StatusApiEndpoints
         CancellationToken ct)
     {
         IReadOnlyList<LibraryRecord> libs = await libraryRepository.GetAllLibrariesAsync(ct);
+        // Intentionally shows only Running (not Queued) jobs — queued jobs
+        // have not started and have no meaningful progress to surface.
         IReadOnlyList<ScrapeJobRecord> running = await jobRepository.ListRunningJobsAsync(ct);
 
         IReadOnlyList<LibraryStatusItem> libraryItems = libs

@@ -56,6 +56,7 @@ public class StatusEndpointTests
         Assert.Single(result.Libraries);
         Assert.Equal("mongodb-driver", result.Libraries[0].Name);
         Assert.Equal("3.1.2", result.Libraries[0].Version);
+        Assert.Equal("Healthy", result.Libraries[0].Health);
 
         Assert.Single(result.ActiveJobs);
         Assert.Equal("job-1", result.ActiveJobs[0].Id);
