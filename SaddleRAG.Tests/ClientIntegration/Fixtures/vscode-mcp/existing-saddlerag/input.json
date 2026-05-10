@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "saddlerag": {
+      "type": "http",
+      "url": "http://wrong-host:9999/mcp",
+      "extraGarbage": "remove me"
+    }
+  }
+}
