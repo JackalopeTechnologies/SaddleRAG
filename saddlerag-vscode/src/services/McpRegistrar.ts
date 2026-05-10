@@ -3,13 +3,12 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 
-const SADDLERAG_KEY = 'saddlerag';
-const SERVERS_KEY = 'servers';
-const MCP_PORT = 6100;
-const MCP_ENTRY = {
+export const SADDLERAG_SERVER_KEY = 'saddlerag';
+export const SADDLERAG_MCP_ENTRY = {
     type: 'http',
-    url: `http://localhost:${MCP_PORT}/mcp`
+    url: 'http://localhost:6100/mcp'
 } as const;
+const SERVERS_KEY = 'servers';
 
 export class McpRegistrar
 {
@@ -22,19 +21,27 @@ export class McpRegistrar
 
     static defaultConfigPath(): string
     {
-        const platform = process.platform;
-        return platform === 'win32'
-            ? path.join(process.env['APPDATA'] ?? os.homedir(), 'Code', 'User', 'mcp.json')
-            : platform === 'darwin'
-                ? path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'mcp.json')
-                : path.join(os.homedir(), '.config', 'Code', 'User', 'mcp.json');
+        let result: string;
+        switch (process.platform)
+        {
+            case 'win32':
+                result = path.join(process.env['APPDATA'] ?? os.homedir(), 'Code', 'User', 'mcp.json');
+                break;
+            case 'darwin':
+                result = path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
+                break;
+            default:
+                result = path.join(os.homedir(), '.config', 'Code', 'User', 'mcp.json');
+                break;
+        }
+        return result;
     }
 
     async register(): Promise<void>
     {
         const config = await this.readConfig();
         const servers = this.ensureServers(config);
-        servers[SADDLERAG_KEY] = MCP_ENTRY;
+        servers[SADDLERAG_SERVER_KEY] = SADDLERAG_MCP_ENTRY;
         await this.writeConfig(config);
     }
 
@@ -46,7 +53,7 @@ export class McpRegistrar
             const servers = config[SERVERS_KEY] as Record<string, unknown> | undefined;
             if (servers !== undefined)
             {
-                delete servers[SADDLERAG_KEY];
+                delete servers[SADDLERAG_SERVER_KEY];
                 await this.writeConfig(config);
             }
         }
@@ -63,7 +70,7 @@ export class McpRegistrar
         {
             const config = await this.readConfig();
             const servers = config[SERVERS_KEY] as Record<string, unknown> | undefined;
-            result = servers?.[SADDLERAG_KEY] !== undefined;
+            result = servers?.[SADDLERAG_SERVER_KEY] !== undefined;
         }
         catch
         {

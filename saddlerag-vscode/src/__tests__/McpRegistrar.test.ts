@@ -2,7 +2,7 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { McpRegistrar } from '../services/McpRegistrar';
+import { McpRegistrar, SADDLERAG_SERVER_KEY, SADDLERAG_MCP_ENTRY } from '../services/McpRegistrar';
 
 const TEST_DIR = path.join(os.tmpdir(), `saddlerag-mcp-test-${Date.now()}`);
 const MCP_FILE = path.join(TEST_DIR, 'mcp.json');
@@ -23,10 +23,7 @@ describe('McpRegistrar', () => {
 
         const content = JSON.parse(await fs.readFile(MCP_FILE, 'utf-8')) as Record<string, unknown>;
         const servers = content['servers'] as Record<string, unknown>;
-        expect(servers['saddlerag']).toEqual({
-            type: 'http',
-            url: 'http://localhost:6100/mcp'
-        });
+        expect(servers[SADDLERAG_SERVER_KEY]).toEqual(SADDLERAG_MCP_ENTRY);
     });
 
     it('preserves existing servers when registering', async () => {
@@ -39,7 +36,7 @@ describe('McpRegistrar', () => {
         const content = JSON.parse(await fs.readFile(MCP_FILE, 'utf-8')) as Record<string, unknown>;
         const servers = content['servers'] as Record<string, unknown>;
         expect(servers['other-server']).toBeDefined();
-        expect(servers['saddlerag']).toBeDefined();
+        expect(servers[SADDLERAG_SERVER_KEY]).toBeDefined();
     });
 
     it('unregister removes only saddlerag key', async () => {
@@ -56,7 +53,7 @@ describe('McpRegistrar', () => {
 
         const content = JSON.parse(await fs.readFile(MCP_FILE, 'utf-8')) as Record<string, unknown>;
         const servers = content['servers'] as Record<string, unknown>;
-        expect(servers['saddlerag']).toBeUndefined();
+        expect(servers[SADDLERAG_SERVER_KEY]).toBeUndefined();
         expect(servers['other-server']).toBeDefined();
     });
 
