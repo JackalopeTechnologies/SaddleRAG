@@ -62,10 +62,13 @@ export class SaddleRagProvider implements vscode.TreeDataProvider<AnyTreeItem>
 
     private buildSectionChildren(sectionLabel: string): AnyTreeItem[]
     {
-        const section = sectionLabel.startsWith(SERVICES_LABEL) ? 'services'
-            : sectionLabel.startsWith(LIBRARIES_LABEL) ? 'libraries'
-            : sectionLabel.startsWith(ACTIVE_JOBS_LABEL) ? 'jobs'
-            : 'unknown';
+        const labelKeys: Array<[string, string]> = [
+            [SERVICES_LABEL, 'services'],
+            [LIBRARIES_LABEL, 'libraries'],
+            [ACTIVE_JOBS_LABEL, 'jobs']
+        ];
+        const entry = labelKeys.find(([prefix]) => sectionLabel.startsWith(prefix));
+        const section = entry?.[1] ?? 'unknown';
 
         let result: AnyTreeItem[];
         switch (section)
