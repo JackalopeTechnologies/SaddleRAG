@@ -2,7 +2,14 @@
   "mcpServers": {
     "azure-devops": {
       "command": "npx",
-      "args": ["-y", "@azure-devops/mcp", "PenskeShocks"]
+      "args": [
+        "-y",
+        "@azure-devops/mcp",
+        "PenskeShocks"
+      ]
     }
+  },
+  "permissions": {
+    "allow": []
   }
 }

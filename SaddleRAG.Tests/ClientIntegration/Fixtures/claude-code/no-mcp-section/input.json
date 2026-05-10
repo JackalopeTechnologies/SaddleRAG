@@ -1,4 +1,8 @@
 {
   "theme": "dark",
-  "skillUsage": {}
+  "skillUsage": {},
+  "mcpServers": {},
+  "permissions": {
+    "allow": []
+  }
 }
