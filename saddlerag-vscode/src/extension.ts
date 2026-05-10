@@ -14,6 +14,10 @@ import type { SidebarState } from './models/SidebarState';
 
 const SADDLERAG_BASE_URL = 'http://localhost:6100';
 const SADDLERAG_VIEW_ID = 'saddleragView';
+const BYTES_PER_MEGABYTE = 1024 * 1024;
+const RELOAD_BUTTON_LABEL = 'Reload';
+const MCP_REGISTERED_MESSAGE = 'SaddleRAG registered as an MCP server. Reload VS Code to activate.';
+const RELOAD_WINDOW_COMMAND = 'workbench.action.reloadWindow';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void>
 {
@@ -73,21 +77,26 @@ async function checkDependenciesAndStart(
     if (binaryPresent && !processManager.isRunning)
     {
         await processManager.start(binaryManager.binaryPath);
-        const registered = await mcpRegistrar.isRegistered();
-        if (!registered)
+        await registerMcpIfNeeded(mcpRegistrar);
+    }
+}
+
+async function registerMcpIfNeeded(mcpRegistrar: McpRegistrar): Promise<void>
+{
+    const registered = await mcpRegistrar.isRegistered();
+    if (!registered)
+    {
+        await mcpRegistrar.register();
+        void vscode.window.showInformationMessage(
+            MCP_REGISTERED_MESSAGE,
+            RELOAD_BUTTON_LABEL
+        ).then(choice =>
         {
-            await mcpRegistrar.register();
-            void vscode.window.showInformationMessage(
-                'SaddleRAG registered as an MCP server. Reload VS Code to activate.',
-                'Reload'
-            ).then(choice =>
+            if (choice === RELOAD_BUTTON_LABEL)
             {
-                if (choice === 'Reload')
-                {
-                    void vscode.commands.executeCommand('workbench.action.reloadWindow');
-                }
-            });
-        }
+                void vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+            }
+        });
     }
 }
 
@@ -106,7 +115,7 @@ async function downloadAndStart(
                 if (total > 0)
                 {
                     const increment = (downloaded / total) * 100;
-                    const message = `${Math.round(downloaded / 1024 / 1024)}MB`;
+                    const message = `${Math.round(downloaded / BYTES_PER_MEGABYTE)}MB`;
                     progress.report({ increment, message });
                 }
             });
@@ -115,19 +124,5 @@ async function downloadAndStart(
 
     await processManager.start(binaryManager.binaryPath);
 
-    const registered = await mcpRegistrar.isRegistered();
-    if (!registered)
-    {
-        await mcpRegistrar.register();
-        void vscode.window.showInformationMessage(
-            'SaddleRAG registered as an MCP server. Reload VS Code to activate.',
-            'Reload'
-        ).then(choice =>
-        {
-            if (choice === 'Reload')
-            {
-                void vscode.commands.executeCommand('workbench.action.reloadWindow');
-            }
-        });
-    }
+    await registerMcpIfNeeded(mcpRegistrar);
 }
