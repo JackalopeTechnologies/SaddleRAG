@@ -9,6 +9,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Ingestion.Embedding;
 using Serilog.Core;
 using Serilog.Events;
@@ -19,34 +20,41 @@ namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
 ///     MCP tools for runtime configuration changes.
-///     Enables the LLM to toggle features like re-ranking
-///     and logging without restarting the service.
+///     Enables the LLM to flip features like the reranker strategy
+///     and log level without restarting the service.
 /// </summary>
 [McpServerToolType]
 public static class SettingsTools
 {
-    [McpServerTool(Name = "toggle_reranking")]
-    [Description("Enable or disable LLM-based re-ranking of search results. " +
-                 "When enabled, search results are re-scored by the configured strategy " +
-                 "(Off / Llm / CrossEncoder — see RankingSettings.ReRankerStrategy). " +
-                 "Identifier-shaped queries (CamelCase, dotted, callable) skip re-ranking " +
-                 "even when enabled — hybrid scoring already wins on them. " +
-                 "Returns the current state plus the strategy that will actually dispatch."
+    [McpServerTool(Name = "set_rerank_strategy")]
+    [Description("Set the active reranker strategy at runtime. " +
+                 "'Off' = no reranking (hybrid score is final, fastest; current default). " +
+                 "'Llm' and 'CrossEncoder' are temporarily disabled — both accept the " +
+                 "value but route to NoOp until a calibrated Western reranker pipeline " +
+                 "is wired up (small categorical LLMs plateau on the 5-bucket scale; " +
+                 "the mxbai cross-encoder lost its Ollama generate capability upstream). " +
+                 "Omit strategy to read current state."
                 )]
-    public static string ToggleReRanking(ToggleableReRanker reRanker,
-                                         [Description("true to enable, false to disable, omit to just check current state"
-                                                     )]
-                                         bool? enabled = null)
+    public static string SetRerankStrategy(ToggleableReRanker reRanker,
+                                           [Description("Reranker strategy: Off, Llm, or CrossEncoder. Omit to read current state."
+                                                       )]
+                                           string? strategy = null)
     {
         ArgumentNullException.ThrowIfNull(reRanker);
 
-        if (enabled.HasValue)
-            reRanker.Enabled = enabled.Value;
+        string? warning = null;
+        if (!string.IsNullOrEmpty(strategy))
+        {
+            if (Enum.TryParse<ReRankerStrategy>(strategy, ignoreCase: true, out var parsed))
+                reRanker.Strategy = parsed;
+            else
+                warning = string.Format(InvalidStrategyWarningFormat, strategy);
+        }
 
         var response = new
                            {
-                               ReRankingEnabled = reRanker.Enabled,
-                               ActiveStrategy = reRanker.ActiveStrategy.ToString()
+                               Strategy = reRanker.Strategy.ToString(),
+                               Warning = warning
                            };
         var result = JsonSerializer.Serialize(response, smJsonOptions);
         return result;
@@ -85,6 +93,9 @@ public static class SettingsTools
 
     private const string InvalidLevelWarningFormat =
         "Unknown level '{0}'. Valid values: Verbose, Debug, Information, Warning, Error, Fatal. Current level unchanged.";
+
+    private const string InvalidStrategyWarningFormat =
+        "Unknown strategy '{0}'. Valid values: Off, Llm, CrossEncoder. Current strategy unchanged.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

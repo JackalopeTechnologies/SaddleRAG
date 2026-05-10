@@ -17,6 +17,52 @@ namespace SaddleRAG.Tests.Mcp;
 
 public sealed class OrphanCleanupToolsTests
 {
+    private sealed record Fixture(
+        RepositoryFactory Factory,
+        ILibraryRepository LibraryRepo,
+        IPageRepository PageRepo,
+        IChunkRepository ChunkRepo,
+        ILibraryProfileRepository ProfileRepo,
+        ILibraryIndexRepository IndexRepo,
+        IBm25ShardRepository Bm25Repo,
+        IExcludedSymbolsRepository ExcludedRepo,
+        IScrapeAuditRepository AuditRepo)
+    {
+        public void SeedLibraries(params LibraryRecord[] libraries)
+        {
+            LibraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
+                       .Returns(libraries.ToList());
+        }
+
+        public void SeedPagePairs(params LibraryVersionKey[] pairs) =>
+            PageRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                    .Returns(pairs.ToList());
+
+        public void SeedChunkPairs(params LibraryVersionKey[] pairs) =>
+            ChunkRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                     .Returns(pairs.ToList());
+
+        public void SeedProfilePairs(params LibraryVersionKey[] pairs) =>
+            ProfileRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                       .Returns(pairs.ToList());
+
+        public void SeedIndexPairs(params LibraryVersionKey[] pairs) =>
+            IndexRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                     .Returns(pairs.ToList());
+
+        public void SeedShardPairs(params LibraryVersionKey[] pairs) =>
+            Bm25Repo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                    .Returns(pairs.ToList());
+
+        public void SeedExcludedPairs(params LibraryVersionKey[] pairs) =>
+            ExcludedRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                        .Returns(pairs.ToList());
+
+        public void SeedAuditPairs(params LibraryVersionKey[] pairs) =>
+            AuditRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                     .Returns(pairs.ToList());
+    }
+
     [Fact]
     public async Task DryRunReportsOrphansAcrossAllCollectionsWithoutWriting()
     {
@@ -109,7 +155,7 @@ public sealed class OrphanCleanupToolsTests
 
         var json = await OrphanCleanupTools.CleanupOrphans(fixture.Factory,
                                                            MakeNoopRunner(),
-                                                           library: "orphan-b",
+                                                           "orphan-b",
                                                            version: null,
                                                            dryRun: true,
                                                            profile: null,
@@ -133,7 +179,7 @@ public sealed class OrphanCleanupToolsTests
         var json = await OrphanCleanupTools.CleanupOrphans(fixture.Factory,
                                                            MakeNoopRunner(),
                                                            library: null,
-                                                           version: "2.0",
+                                                           "2.0",
                                                            dryRun: true,
                                                            profile: null,
                                                            TestContext.Current.CancellationToken
@@ -287,7 +333,7 @@ public sealed class OrphanCleanupToolsTests
 
         await OrphanCleanupTools.CleanupOrphans(fixture.Factory,
                                                 MakeInlineRunner(),
-                                                library: "orphan-a",
+                                                "orphan-a",
                                                 version: null,
                                                 dryRun: false,
                                                 profile: null,
@@ -382,49 +428,4 @@ public sealed class OrphanCleanupToolsTests
     }
 
     private static readonly IReadOnlyList<LibraryVersionKey> EmptyKeys = Array.Empty<LibraryVersionKey>();
-
-    private sealed record Fixture(RepositoryFactory Factory,
-                                  ILibraryRepository LibraryRepo,
-                                  IPageRepository PageRepo,
-                                  IChunkRepository ChunkRepo,
-                                  ILibraryProfileRepository ProfileRepo,
-                                  ILibraryIndexRepository IndexRepo,
-                                  IBm25ShardRepository Bm25Repo,
-                                  IExcludedSymbolsRepository ExcludedRepo,
-                                  IScrapeAuditRepository AuditRepo)
-    {
-        public void SeedLibraries(params LibraryRecord[] libraries)
-        {
-            LibraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
-                       .Returns((IReadOnlyList<LibraryRecord>) libraries.ToList());
-        }
-
-        public void SeedPagePairs(params LibraryVersionKey[] pairs) =>
-            PageRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
-                    .Returns((IReadOnlyList<LibraryVersionKey>) pairs.ToList());
-
-        public void SeedChunkPairs(params LibraryVersionKey[] pairs) =>
-            ChunkRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
-                     .Returns((IReadOnlyList<LibraryVersionKey>) pairs.ToList());
-
-        public void SeedProfilePairs(params LibraryVersionKey[] pairs) =>
-            ProfileRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
-                       .Returns((IReadOnlyList<LibraryVersionKey>) pairs.ToList());
-
-        public void SeedIndexPairs(params LibraryVersionKey[] pairs) =>
-            IndexRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
-                     .Returns((IReadOnlyList<LibraryVersionKey>) pairs.ToList());
-
-        public void SeedShardPairs(params LibraryVersionKey[] pairs) =>
-            Bm25Repo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
-                    .Returns((IReadOnlyList<LibraryVersionKey>) pairs.ToList());
-
-        public void SeedExcludedPairs(params LibraryVersionKey[] pairs) =>
-            ExcludedRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
-                        .Returns((IReadOnlyList<LibraryVersionKey>) pairs.ToList());
-
-        public void SeedAuditPairs(params LibraryVersionKey[] pairs) =>
-            AuditRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
-                     .Returns((IReadOnlyList<LibraryVersionKey>) pairs.ToList());
-    }
 }

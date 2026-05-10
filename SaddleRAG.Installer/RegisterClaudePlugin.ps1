@@ -53,6 +53,52 @@ Add-Member -InputObject $cliEntry -MemberType NoteProperty -Name 'url'     -Valu
 Add-Member -InputObject $cliEntry -MemberType NoteProperty -Name 'timeout' -Value 300
 Add-Member -InputObject $cli.mcpServers -MemberType NoteProperty -Name 'saddlerag' -Value $cliEntry -Force
 
+# --- Pre-approve SaddleRAG read-only MCP tools so Claude Code does not
+#     prompt the user per-call for safe lookups. Mutating tools
+#     (scrape_docs, delete_library, cleanup_*, rescrub_library, etc.)
+#     intentionally still prompt — those affect persistent state.
+$saddleReadOnlyTools = @(
+    'mcp__saddlerag__search_docs',
+    'mcp__saddlerag__get_class_reference',
+    'mcp__saddlerag__get_library_overview',
+    'mcp__saddlerag__get_library_health',
+    'mcp__saddlerag__get_dashboard_index',
+    'mcp__saddlerag__get_server_logs',
+    'mcp__saddlerag__get_version_changes',
+    'mcp__saddlerag__get_job_status',
+    'mcp__saddlerag__get_scrape_status',
+    'mcp__saddlerag__get_rescrub_status',
+    'mcp__saddlerag__list_libraries',
+    'mcp__saddlerag__list_pages',
+    'mcp__saddlerag__list_symbols',
+    'mcp__saddlerag__list_excluded_symbols',
+    'mcp__saddlerag__list_jobs',
+    'mcp__saddlerag__list_scrape_jobs',
+    'mcp__saddlerag__list_rescrub_jobs',
+    'mcp__saddlerag__list_profiles',
+    'mcp__saddlerag__inspect_scrape',
+    'mcp__saddlerag__recon_library'
+)
+
+$hasPerms = $cli.PSObject.Properties | Where-Object { $_.Name -eq 'permissions' }
+if (-not $hasPerms)
+{
+    Add-Member -InputObject $cli -MemberType NoteProperty -Name 'permissions' -Value (New-Object PSObject)
+}
+
+$hasAllow = $cli.permissions.PSObject.Properties | Where-Object { $_.Name -eq 'allow' }
+if (-not $hasAllow)
+{
+    Add-Member -InputObject $cli.permissions -MemberType NoteProperty -Name 'allow' -Value @()
+}
+
+$existing = @($cli.permissions.allow)
+$toAdd = $saddleReadOnlyTools | Where-Object { $existing -notcontains $_ }
+if ($toAdd)
+{
+    $cli.permissions.allow = @($existing + $toAdd)
+}
+
 [System.IO.File]::WriteAllText($cliPath, ($cli | ConvertTo-Json -Depth 10), $Utf8NoBom)
 
 # --- Claude Desktop: stdio bridge via mcp-remote (only stdio is supported) ---

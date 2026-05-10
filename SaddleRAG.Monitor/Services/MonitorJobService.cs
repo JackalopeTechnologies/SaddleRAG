@@ -22,17 +22,6 @@ namespace SaddleRAG.Monitor.Services;
 public sealed class MonitorJobService
 {
     /// <summary>
-    ///     Initializes a new instance of <see cref="MonitorJobService" />.
-    /// </summary>
-    public MonitorJobService(IUnifiedJobView jobs)
-    {
-        ArgumentNullException.ThrowIfNull(jobs);
-        mJobs = jobs;
-    }
-
-    private readonly IUnifiedJobView mJobs;
-
-    /// <summary>
     ///     UI-friendly row projected from <see cref="JobRow" /> for the
     ///     /monitor/jobs index page.
     /// </summary>
@@ -63,6 +52,17 @@ public sealed class MonitorJobService
     }
 
     /// <summary>
+    ///     Initializes a new instance of <see cref="MonitorJobService" />.
+    /// </summary>
+    public MonitorJobService(IUnifiedJobView jobs)
+    {
+        ArgumentNullException.ThrowIfNull(jobs);
+        mJobs = jobs;
+    }
+
+    private readonly IUnifiedJobView mJobs;
+
+    /// <summary>
     ///     Lists recent jobs across all storage paths, projected to <see cref="JobHistoryRow" />.
     /// </summary>
     public async Task<IReadOnlyList<JobHistoryRow>> ListAsync(ScrapeJobStatus? status = null,
@@ -74,22 +74,23 @@ public sealed class MonitorJobService
         var rows = await mJobs.ListAsync(status, typeFilter, libraryIdFilter, limit, ct);
         return rows.Select(r => new JobHistoryRow
                                     {
-                                        JobId            = r.JobId,
-                                        Type             = r.Type,
-                                        LibraryId        = r.LibraryId,
-                                        Version          = r.Version,
-                                        RenameToId       = r.RenameToId,
-                                        ScanPath         = r.ScanPath,
-                                        Status           = r.Status.ToString(),
-                                        CreatedAt        = r.CreatedAt,
-                                        StartedAt        = r.StartedAt,
-                                        CompletedAt      = r.CompletedAt,
-                                        ItemsProcessed   = r.ItemsProcessed,
-                                        ItemsTotal       = r.ItemsTotal,
-                                        ItemsLabel       = r.ItemsLabel,
-                                        ErrorCount       = r.ErrorCount,
-                                        ErrorMessage     = r.ErrorMessage
-                                    })
+                                        JobId = r.JobId,
+                                        Type = r.Type,
+                                        LibraryId = r.LibraryId,
+                                        Version = r.Version,
+                                        RenameToId = r.RenameToId,
+                                        ScanPath = r.ScanPath,
+                                        Status = r.Status.ToString(),
+                                        CreatedAt = r.CreatedAt,
+                                        StartedAt = r.StartedAt,
+                                        CompletedAt = r.CompletedAt,
+                                        ItemsProcessed = r.ItemsProcessed,
+                                        ItemsTotal = r.ItemsTotal,
+                                        ItemsLabel = r.ItemsLabel,
+                                        ErrorCount = r.ErrorCount,
+                                        ErrorMessage = r.ErrorMessage
+                                    }
+                          )
                    .ToList();
     }
 

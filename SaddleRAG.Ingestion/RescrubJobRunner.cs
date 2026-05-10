@@ -96,7 +96,7 @@ public class RescrubJobRunner
         mBroadcaster.RecordJobStarted(jobRecord.Id,
                                       jobRecord.LibraryId,
                                       jobRecord.Version,
-                                      rootUrl: string.Empty
+                                      string.Empty
                                      );
 
         mLogger.LogInformation("Running rescrub job {JobId} for {LibraryId} v{Version}",
@@ -130,10 +130,10 @@ public class RescrubJobRunner
                                                          jobRecord.LastProgressAt = DateTime.UtcNow;
                                                          jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
                                                          mBroadcaster.RecordJobProgress(jobRecord.Id,
-                                                                                        processed,
-                                                                                        total,
-                                                                                        ProgressLabel
-                                                                                       );
+                                                                  processed,
+                                                                  total,
+                                                                  ProgressLabel
+                                                             );
                                                      },
                                                      mAppStoppingToken
                                                     );

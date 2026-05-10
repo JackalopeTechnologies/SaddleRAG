@@ -26,7 +26,135 @@ namespace SaddleRAG.Tests.Audit;
 /// </summary>
 public sealed class IndexStageAuditTests
 {
-    private const int RebuildThresholdChunkCount = 100;
+    private sealed record IndexedCall(
+        AuditContext Ctx,
+        string Url,
+        string? ParentUrl,
+        string Host,
+        int Depth,
+        AuditPageOutcome Outcome);
+
+    private sealed class SpyAuditWriter : IScrapeAuditWriter
+    {
+        public List<IndexedCall> IndexedCalls { get; } = new List<IndexedCall>();
+
+        public void RecordSkipped(AuditContext ctx,
+                                  string url,
+                                  string? parentUrl,
+                                  string host,
+                                  int depth,
+                                  AuditSkipReason reason,
+                                  string? detail)
+        {
+        }
+
+        public void RecordFetched(AuditContext ctx,
+                                  string url,
+                                  string? parentUrl,
+                                  string host,
+                                  int depth)
+        {
+        }
+
+        public void RecordFailed(AuditContext ctx,
+                                 string url,
+                                 string? parentUrl,
+                                 string host,
+                                 int depth,
+                                 string error)
+        {
+        }
+
+        public void RecordIndexed(AuditContext ctx,
+                                  string url,
+                                  string? parentUrl,
+                                  string host,
+                                  int depth,
+                                  AuditPageOutcome outcome)
+            => IndexedCalls.Add(new IndexedCall(ctx,
+                                                url,
+                                                parentUrl,
+                                                host,
+                                                depth,
+                                                outcome
+                                               )
+                               );
+
+        public Task FlushAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class SilentMonitorBroadcaster : IMonitorBroadcaster
+    {
+        public void RecordJobStarted(string jobId, string libraryId, string version, string rootUrl)
+        {
+        }
+
+        public void RecordFetch(string jobId, string url)
+        {
+        }
+
+        public void RecordReject(string jobId, string url, string reason)
+        {
+        }
+
+        public void RecordError(string jobId, string message, string? url = null)
+        {
+        }
+
+        public void RecordPageClassified(string jobId)
+        {
+        }
+
+        public void RecordChunkGenerated(string jobId)
+        {
+        }
+
+        public void RecordChunkEmbedded(string jobId)
+        {
+        }
+
+        public void RecordPageCompleted(string jobId)
+        {
+        }
+
+        public void RecordJobCompleted(string jobId, int indexedPageCount)
+        {
+        }
+
+        public void RecordJobFailed(string jobId, string errorMessage)
+        {
+        }
+
+        public void RecordJobCancelled(string jobId)
+        {
+        }
+
+        public void RecordJobProgress(string jobId, int processed, int total, string label)
+        {
+        }
+
+        public void RecordSuspectFlag(string jobId, string libraryId, string version, IReadOnlyList<string> reasons)
+        {
+        }
+
+        public JobTickSnapshot? GetJobSnapshot(string jobId) => null;
+
+        public IReadOnlyList<string> GetActiveJobIds() => [];
+
+        public void Subscribe(string jobId, Func<JobTickEvent, Task> handler)
+        {
+        }
+
+        public void Unsubscribe(string jobId, Func<JobTickEvent, Task> handler)
+        {
+        }
+
+        public void BroadcastTick(string jobId)
+        {
+        }
+    }
 
     [Fact]
     public async Task EmitsRecordIndexedForPagesAccumulatedBeforeCancellation()
@@ -52,7 +180,7 @@ public sealed class IndexStageAuditTests
         var pageAChunks = MakePageChunks(PageAUrl,
                                          RebuildThresholdChunkCount,
                                          depth: 1,
-                                         parentUrl: "https://docs.example.com/"
+                                         "https://docs.example.com/"
                                         );
 
         var channel = Channel.CreateUnbounded<DocChunk[]>();
@@ -65,13 +193,13 @@ public sealed class IndexStageAuditTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
                                                                     await indexStage
                                                                         .RunAsync(profile: null,
-                                                                            job,
-                                                                            auditCtx,
-                                                                            channel.Reader,
-                                                                            progress,
-                                                                            onProgress: null,
-                                                                            cts
-                                                                        )
+                                                                                 job,
+                                                                                 auditCtx,
+                                                                                 channel.Reader,
+                                                                                 progress,
+                                                                                 onProgress: null,
+                                                                                 cts
+                                                                            )
                                                                );
 
         Assert.Single(auditWriter.IndexedCalls);
@@ -101,14 +229,14 @@ public sealed class IndexStageAuditTests
         await channel.Writer.WriteAsync(MakePageChunks(PageAUrl,
                                                        count: 5,
                                                        depth: 1,
-                                                       parentUrl: "https://docs.example.com/"
+                                                       "https://docs.example.com/"
                                                       ),
                                         TestContext.Current.CancellationToken
                                        );
         await channel.Writer.WriteAsync(MakePageChunks(PageBUrl,
                                                        count: 3,
                                                        depth: 2,
-                                                       parentUrl: PageAUrl
+                                                       PageAUrl
                                                       ),
                                         TestContext.Current.CancellationToken
                                        );
@@ -221,125 +349,5 @@ public sealed class IndexStageAuditTests
                 Job = job
             };
 
-    private sealed record IndexedCall(AuditContext Ctx,
-                                      string Url,
-                                      string? ParentUrl,
-                                      string Host,
-                                      int Depth,
-                                      AuditPageOutcome Outcome);
-
-    private sealed class SpyAuditWriter : IScrapeAuditWriter
-    {
-        public List<IndexedCall> IndexedCalls { get; } = new List<IndexedCall>();
-
-        public void RecordSkipped(AuditContext ctx,
-                                  string url,
-                                  string? parentUrl,
-                                  string host,
-                                  int depth,
-                                  AuditSkipReason reason,
-                                  string? detail)
-        {
-        }
-
-        public void RecordFetched(AuditContext ctx,
-                                  string url,
-                                  string? parentUrl,
-                                  string host,
-                                  int depth)
-        {
-        }
-
-        public void RecordFailed(AuditContext ctx,
-                                 string url,
-                                 string? parentUrl,
-                                 string host,
-                                 int depth,
-                                 string error)
-        {
-        }
-
-        public void RecordIndexed(AuditContext ctx,
-                                  string url,
-                                  string? parentUrl,
-                                  string host,
-                                  int depth,
-                                  AuditPageOutcome outcome)
-            => IndexedCalls.Add(new IndexedCall(ctx, url, parentUrl, host, depth, outcome));
-
-        public Task FlushAsync(CancellationToken ct = default) => Task.CompletedTask;
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-    }
-
-    private sealed class SilentMonitorBroadcaster : IMonitorBroadcaster
-    {
-        public void RecordJobStarted(string jobId, string libraryId, string version, string rootUrl)
-        {
-        }
-
-        public void RecordFetch(string jobId, string url)
-        {
-        }
-
-        public void RecordReject(string jobId, string url, string reason)
-        {
-        }
-
-        public void RecordError(string jobId, string message, string? url = null)
-        {
-        }
-
-        public void RecordPageClassified(string jobId)
-        {
-        }
-
-        public void RecordChunkGenerated(string jobId)
-        {
-        }
-
-        public void RecordChunkEmbedded(string jobId)
-        {
-        }
-
-        public void RecordPageCompleted(string jobId)
-        {
-        }
-
-        public void RecordJobCompleted(string jobId, int indexedPageCount)
-        {
-        }
-
-        public void RecordJobFailed(string jobId, string errorMessage)
-        {
-        }
-
-        public void RecordJobCancelled(string jobId)
-        {
-        }
-
-        public void RecordJobProgress(string jobId, int processed, int total, string label)
-        {
-        }
-
-        public void RecordSuspectFlag(string jobId, string libraryId, string version, IReadOnlyList<string> reasons)
-        {
-        }
-
-        public JobTickSnapshot? GetJobSnapshot(string jobId) => null;
-
-        public IReadOnlyList<string> GetActiveJobIds() => [];
-
-        public void Subscribe(string jobId, Func<JobTickEvent, Task> handler)
-        {
-        }
-
-        public void Unsubscribe(string jobId, Func<JobTickEvent, Task> handler)
-        {
-        }
-
-        public void BroadcastTick(string jobId)
-        {
-        }
-    }
+    private const int RebuildThresholdChunkCount = 100;
 }

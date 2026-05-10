@@ -65,6 +65,7 @@ public static class MutationTools
             result = JsonSerializer.Serialize(response, smJsonOptions);
         }
         else
+        {
             result = await QueueRenameLibraryJobAsync(library,
                                                       newId,
                                                       repositoryFactory,
@@ -72,6 +73,7 @@ public static class MutationTools
                                                       profile,
                                                       ct
                                                      );
+        }
 
         return result;
     }
@@ -209,6 +211,7 @@ public static class MutationTools
             result = JsonSerializer.Serialize(preview, smJsonOptions);
         }
         else
+        {
             result = await QueueDeleteVersionJobAsync(library,
                                                       version,
                                                       repositoryFactory,
@@ -216,6 +219,7 @@ public static class MutationTools
                                                       profile,
                                                       ct
                                                      );
+        }
 
         return result;
     }
@@ -385,12 +389,11 @@ public static class MutationTools
         return JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) }, smJsonOptions);
     }
 
-    private static async Task<string> GetDeleteLibraryDryRunResultAsync(
-        string library,
-        LibraryRecord lib,
-        IChunkRepository chunkRepo,
-        IPageRepository pageRepo,
-        CancellationToken ct)
+    private static async Task<string> GetDeleteLibraryDryRunResultAsync(string library,
+                                                                        LibraryRecord lib,
+                                                                        IChunkRepository chunkRepo,
+                                                                        IPageRepository pageRepo,
+                                                                        CancellationToken ct)
     {
         long totalChunks = 0;
         long totalPages = 0;

@@ -30,6 +30,24 @@ namespace SaddleRAG.Mcp.Tools;
 [McpServerToolType]
 public static class OrphanCleanupTools
 {
+    private sealed record OrphanReport(
+        IReadOnlyList<LibraryVersionKey> Pages,
+        IReadOnlyList<LibraryVersionKey> Chunks,
+        IReadOnlyList<LibraryVersionKey> Profiles,
+        IReadOnlyList<LibraryVersionKey> Indexes,
+        IReadOnlyList<LibraryVersionKey> Bm25Shards,
+        IReadOnlyList<LibraryVersionKey> ExcludedSymbols,
+        IReadOnlyList<LibraryVersionKey> AuditLog);
+
+    private sealed record DeletionTotals(
+        long Pages,
+        long Chunks,
+        long Profiles,
+        long Indexes,
+        long Bm25Shards,
+        long ExcludedSymbols,
+        long AuditEntries);
+
     [McpServerTool(Name = "cleanup_orphans")]
     [Description("Detect and clean up (LibraryId, Version) rows in child collections " +
                  "whose parent libraries row is missing. Scans pages, chunks, libraryProfiles, " +
@@ -64,7 +82,16 @@ public static class OrphanCleanupTools
         if (dryRun)
             result = await BuildDryRunResultAsync(repositoryFactory, profile, library, version, ct);
         else
-            result = await QueueApplyJobAsync(repositoryFactory, runner, profile, library, version, ct);
+        {
+            result = await QueueApplyJobAsync(repositoryFactory,
+                                              runner,
+                                              profile,
+                                              library,
+                                              version,
+                                              ct
+                                             );
+        }
+
         return result;
     }
 
@@ -75,7 +102,13 @@ public static class OrphanCleanupTools
                                                              CancellationToken ct)
     {
         var parents = await GetValidParentsAsync(factory, profile, ct);
-        var orphans = await CollectOrphansAsync(factory, profile, parents, library, version, ct);
+        var orphans = await CollectOrphansAsync(factory,
+                                                profile,
+                                                parents,
+                                                library,
+                                                version,
+                                                ct
+                                               );
         var preview = new
                           {
                               DryRun = true,
@@ -178,13 +211,13 @@ public static class OrphanCleanupTools
         var excludedPairs = await excludedRepo.GetDistinctLibraryVersionPairsAsync(ct);
         var auditPairs = await auditRepo.GetDistinctLibraryVersionPairsAsync(ct);
 
-        var report = new OrphanReport(Pages: FilterOrphans(pagePairs, parents, library, version),
-                                      Chunks: FilterOrphans(chunkPairs, parents, library, version),
-                                      Profiles: FilterOrphans(profilePairs, parents, library, version),
-                                      Indexes: FilterOrphans(indexPairs, parents, library, version),
-                                      Bm25Shards: FilterOrphans(shardPairs, parents, library, version),
-                                      ExcludedSymbols: FilterOrphans(excludedPairs, parents, library, version),
-                                      AuditLog: FilterOrphans(auditPairs, parents, library, version)
+        var report = new OrphanReport(FilterOrphans(pagePairs, parents, library, version),
+                                      FilterOrphans(chunkPairs, parents, library, version),
+                                      FilterOrphans(profilePairs, parents, library, version),
+                                      FilterOrphans(indexPairs, parents, library, version),
+                                      FilterOrphans(shardPairs, parents, library, version),
+                                      FilterOrphans(excludedPairs, parents, library, version),
+                                      FilterOrphans(auditPairs, parents, library, version)
                                      );
         return report;
     }
@@ -258,13 +291,13 @@ public static class OrphanCleanupTools
                                              ct
                                             );
 
-        var totals = new DeletionTotals(Pages: pages,
-                                        Chunks: chunks,
-                                        Profiles: profiles,
-                                        Indexes: indexes,
-                                        Bm25Shards: shards,
-                                        ExcludedSymbols: excluded,
-                                        AuditEntries: audit
+        var totals = new DeletionTotals(pages,
+                                        chunks,
+                                        profiles,
+                                        indexes,
+                                        shards,
+                                        excluded,
+                                        audit
                                        );
         return totals;
     }
@@ -324,22 +357,6 @@ public static class OrphanCleanupTools
                           };
         return summary;
     }
-
-    private sealed record OrphanReport(IReadOnlyList<LibraryVersionKey> Pages,
-                                       IReadOnlyList<LibraryVersionKey> Chunks,
-                                       IReadOnlyList<LibraryVersionKey> Profiles,
-                                       IReadOnlyList<LibraryVersionKey> Indexes,
-                                       IReadOnlyList<LibraryVersionKey> Bm25Shards,
-                                       IReadOnlyList<LibraryVersionKey> ExcludedSymbols,
-                                       IReadOnlyList<LibraryVersionKey> AuditLog);
-
-    private sealed record DeletionTotals(long Pages,
-                                         long Chunks,
-                                         long Profiles,
-                                         long Indexes,
-                                         long Bm25Shards,
-                                         long ExcludedSymbols,
-                                         long AuditEntries);
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

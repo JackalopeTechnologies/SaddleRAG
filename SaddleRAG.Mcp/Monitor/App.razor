@@ -12,9 +12,8 @@
        so users see when the SignalR circuit drops (e.g. overnight idle), and
        can reload deliberately rather than staring at silently stale data. *@
     <style>
-        #components-reconnect-modal {
-            display: none;
-        }
+        #components-reconnect-modal { display: none; }
+
         #components-reconnect-modal.components-reconnect-show,
         #components-reconnect-modal.components-reconnect-failed,
         #components-reconnect-modal.components-reconnect-rejected {
@@ -33,17 +32,18 @@
             z-index: 9999;
             max-width: 320px;
         }
+
         #components-reconnect-modal .reconnect-show-only,
         #components-reconnect-modal .reconnect-failed-only,
         #components-reconnect-modal .reconnect-rejected-only {
             display: none;
             margin: 0;
         }
+
         #components-reconnect-modal.components-reconnect-show .reconnect-show-only,
         #components-reconnect-modal.components-reconnect-failed .reconnect-failed-only,
-        #components-reconnect-modal.components-reconnect-rejected .reconnect-rejected-only {
-            display: block;
-        }
+        #components-reconnect-modal.components-reconnect-rejected .reconnect-rejected-only { display: block; }
+
         #components-reconnect-modal a {
             color: #b45309;
             font-weight: 600;

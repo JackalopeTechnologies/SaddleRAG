@@ -29,27 +29,29 @@ public abstract class PerformancePageBase : ComponentBase, IDisposable
     /// </summary>
     protected QueryMetricsSnapshot? Snapshot { get; private set; }
 
-    private System.Threading.Timer? mTimer;
-
-    /// <inheritdoc />
-    protected override Task OnInitializedAsync()
-    {
-        Refresh();
-        mTimer = new System.Threading.Timer(_ => InvokeAsync(() =>
-            {
-                Refresh();
-                StateHasChanged();
-            }),
-                                            state: null,
-                                            dueTime: RefreshIntervalMs,
-                                            period: RefreshIntervalMs);
-        return Task.CompletedTask;
-    }
+    private Timer? mTimer;
 
     /// <inheritdoc />
     public void Dispose()
     {
         mTimer?.Dispose();
+    }
+
+    /// <inheritdoc />
+    protected override Task OnInitializedAsync()
+    {
+        Refresh();
+        mTimer = new Timer(_ => InvokeAsync(() =>
+                                            {
+                                                Refresh();
+                                                StateHasChanged();
+                                            }
+                                           ),
+                           state: null,
+                           RefreshIntervalMs,
+                           RefreshIntervalMs
+                          );
+        return Task.CompletedTask;
     }
 
     private void Refresh()

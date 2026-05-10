@@ -27,7 +27,7 @@ else
                 <MudTable Items="@TopSkipReasons" Dense="true" T="KeyValuePair<AuditSkipReason, int>">
                     <RowTemplate>
                         <MudTd>@context.Key</MudTd>
-                        <MudTd Style="width:80px">@context.Value</MudTd>
+                        <MudTd Style="width: 80px">@context.Value</MudTd>
                     </RowTemplate>
                 </MudTable>
             }
@@ -42,8 +42,8 @@ else
             {
                 <MudTable Items="@TopHosts" Dense="true" T="KeyValuePair<string, int>">
                     <RowTemplate>
-                        <MudTd Style="font-family:monospace">@context.Key</MudTd>
-                        <MudTd Style="width:80px">@context.Value</MudTd>
+                        <MudTd Style="font-family: monospace">@context.Key</MudTd>
+                        <MudTd Style="width: 80px">@context.Value</MudTd>
                     </RowTemplate>
                 </MudTable>
             }
@@ -51,7 +51,9 @@ else
         <MudItem xs="12">
             <MudButton Variant="Variant.Text" Color="Color.Primary"
                        Href="@($"/monitor/audits/{JobId}")"
-                       Disabled="@string.IsNullOrEmpty(JobId)">View full audit</MudButton>
+                       Disabled="@string.IsNullOrEmpty(JobId)">
+                View full audit
+            </MudButton>
         </MudItem>
     </MudGrid>
 }
@@ -70,15 +72,15 @@ else
         Summary is null
             ? Array.Empty<KeyValuePair<AuditSkipReason, int>>()
             : Summary.SkipReasonCounts.OrderByDescending(kv => kv.Value)
-                                      .Take(TopN)
-                                      .ToList();
+                     .Take(TopN)
+                     .ToList();
 
     private IReadOnlyList<KeyValuePair<string, int>> TopHosts =>
         Summary is null
             ? Array.Empty<KeyValuePair<string, int>>()
             : Summary.HostCounts.OrderByDescending(kv => kv.Value)
-                                .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
-                                .Take(TopN)
-                                .ToList();
+                     .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                     .Take(TopN)
+                     .ToList();
 
 }

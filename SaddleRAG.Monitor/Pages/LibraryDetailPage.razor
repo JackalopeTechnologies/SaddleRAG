@@ -14,11 +14,17 @@ else
 
     <MudStack Row="true" Spacing="1" Class="mb-3">
         <MudButton StartIcon="@Icons.Material.Filled.Refresh" Variant="Variant.Outlined"
-                   OnClick="@RescrapeAsync">Rescrape</MudButton>
+                   OnClick="@RescrapeAsync">
+            Rescrape
+        </MudButton>
         <MudButton StartIcon="@Icons.Material.Filled.CleaningServices" Variant="Variant.Outlined"
-                   OnClick="@RescrubAsync">Rescrub</MudButton>
+                   OnClick="@RescrubAsync">
+            Rescrub
+        </MudButton>
         <MudButton StartIcon="@Icons.Material.Filled.DeleteForever" Variant="Variant.Outlined"
-                   Color="Color.Error" OnClick="@DeleteVersionAsync">Delete version</MudButton>
+                   Color="Color.Error" OnClick="@DeleteVersionAsync">
+            Delete version
+        </MudButton>
     </MudStack>
 
     <MudTabs Elevation="1" Rounded="true" ApplyEffectsToContainer="true">
@@ -48,7 +54,7 @@ else
                                 <MudAlert Severity="Severity.Warning" Class="mt-2" Dense="true">
                                     <MudText Typo="Typo.body2" Class="mb-1">Suspect reasons:</MudText>
                                     <MudList T="string" Dense="true">
-                                        @foreach (var r in Detail.SuspectReasons)
+                                        @foreach(string r in Detail.SuspectReasons)
                                         {
                                             <MudListItem Icon="@Icons.Material.Filled.FiberManualRecord" IconSize="Size.Small">@r</MudListItem>
                                         }

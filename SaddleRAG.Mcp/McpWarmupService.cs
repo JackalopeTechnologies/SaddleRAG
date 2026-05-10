@@ -78,8 +78,6 @@ public sealed class McpWarmupService : BackgroundService
 
             var embeddingProvider = scope.ServiceProvider.GetRequiredService<IEmbeddingProvider>();
 
-            var reRanker = scope.ServiceProvider.GetRequiredService<IReRanker>();
-
 
             var profileNames = GetProfilesToBootstrap(contextFactory, dbSettings);
 
@@ -150,9 +148,9 @@ public sealed class McpWarmupService : BackgroundService
 
                 stepSw.Restart();
 
-                await reRanker.ReRankAsync(WarmupProbeText, [], maxResults: 1, stoppingToken);
+                await bootstrapper.WarmModelsAsync(stoppingToken);
 
-                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - qwen3:1.7b warm",
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - generate models warm",
                                        startupSw.Elapsed.TotalSeconds,
                                        stepSw.ElapsedMilliseconds
                                       );

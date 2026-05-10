@@ -15,13 +15,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeLibraryProfileRepository : ILibraryProfileRepository
 {
-    private readonly Dictionary<string, LibraryProfile> mProfiles = new();
-
-    public void SetProfile(LibraryProfile profile)
-    {
-        ArgumentNullException.ThrowIfNull(profile);
-        mProfiles[Key(profile.LibraryId, profile.Version)] = profile;
-    }
+    private readonly Dictionary<string, LibraryProfile> mProfiles = new Dictionary<string, LibraryProfile>();
 
     public Task<LibraryProfile?> GetAsync(string libraryId, string version, CancellationToken ct = default) =>
         Task.FromResult(mProfiles.GetValueOrDefault(Key(libraryId, version)));
@@ -36,9 +30,15 @@ internal sealed class FakeLibraryProfileRepository : ILibraryProfileRepository
         throw new NotSupportedException("FakeLibraryProfileRepository: ListAllAsync not supported in this test");
 
     public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default) =>
-        throw new NotSupportedException(
-            "FakeLibraryProfileRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
-        );
+        throw new
+            NotSupportedException("FakeLibraryProfileRepository: GetDistinctLibraryVersionPairsAsync not supported in this test"
+                                 );
+
+    public void SetProfile(LibraryProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        mProfiles[Key(profile.LibraryId, profile.Version)] = profile;
+    }
 
     private static string Key(string libraryId, string version) => $"{libraryId}/{version}";
 }

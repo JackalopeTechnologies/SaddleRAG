@@ -33,11 +33,13 @@ public sealed class RatesAccumulator
             {
                 rates = new PipelineRates
                             {
-                                PagesFetchedPerSec    = (now.PagesFetched    - prior.Counters.PagesFetched)    / elapsed,
-                                PagesClassifiedPerSec = (now.PagesClassified - prior.Counters.PagesClassified) / elapsed,
-                                ChunksGeneratedPerSec = (now.ChunksGenerated - prior.Counters.ChunksGenerated) / elapsed,
-                                ChunksEmbeddedPerSec  = (now.ChunksEmbedded  - prior.Counters.ChunksEmbedded)  / elapsed,
-                                PagesCompletedPerSec  = (now.PagesCompleted  - prior.Counters.PagesCompleted)  / elapsed
+                                PagesFetchedPerSec = (now.PagesFetched - prior.Counters.PagesFetched) / elapsed,
+                                PagesClassifiedPerSec =
+                                    (now.PagesClassified - prior.Counters.PagesClassified) / elapsed,
+                                ChunksGeneratedPerSec =
+                                    (now.ChunksGenerated - prior.Counters.ChunksGenerated) / elapsed,
+                                ChunksEmbeddedPerSec = (now.ChunksEmbedded - prior.Counters.ChunksEmbedded) / elapsed,
+                                PagesCompletedPerSec = (now.PagesCompleted - prior.Counters.PagesCompleted) / elapsed
                             };
             }
         }

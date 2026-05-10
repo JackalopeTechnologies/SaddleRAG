@@ -17,10 +17,12 @@
             {
                 <MudText Typo="Typo.caption" Class="mb-1">Reasons:</MudText>
                 <MudList T="string" Dense="true">
-                    @foreach (var r in Reasons)
+                    @foreach(string r in Reasons)
                     {
                         <MudListItem Icon="@Icons.Material.Filled.FiberManualRecord"
-                                     IconSize="Size.Small">@r</MudListItem>
+                                     IconSize="Size.Small">
+                            @r
+                        </MudListItem>
                     }
                 </MudList>
             }

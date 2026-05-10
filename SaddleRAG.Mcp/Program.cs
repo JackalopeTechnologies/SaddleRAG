@@ -12,6 +12,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Components.Server;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using ModelContextProtocol.Protocol;
 using MudBlazor.Services;
@@ -295,10 +296,12 @@ builder.Services.AddRazorComponents()
 // monitor pages which operators leave open overnight. After expiry the server
 // purges the circuit and reconnects fail; without the reconnect modal in
 // App.razor that would silently surface as stale data.
-builder.Services.Configure<Microsoft.AspNetCore.Components.Server.CircuitOptions>(options =>
-{
-    options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromHours(value: 8);
-});
+builder.Services.Configure<CircuitOptions>(options =>
+                                           {
+                                               options.DisconnectedCircuitRetentionPeriod =
+                                                   TimeSpan.FromHours(value: 8);
+                                           }
+                                          );
 builder.Services.AddSignalR();
 builder.Services.AddMudServices();
 builder.Services.AddHostedService<MonitorTickService>();

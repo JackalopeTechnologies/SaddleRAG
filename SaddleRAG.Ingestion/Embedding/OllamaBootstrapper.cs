@@ -7,6 +7,7 @@
 #region Usings
 
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -53,6 +54,64 @@ public class OllamaBootstrapper
 
         mLogger.LogInformation("Ollama bootstrap complete");
     }
+
+    /// <summary>
+    ///     Pre-load the configured generate-capable models (classification +
+    ///     reranking) into Ollama VRAM so the first user request doesn't
+    ///     pay a multi-second cold-load penalty. Uses keep_alive=-1 so the
+    ///     models stay resident across idle gaps. Decoupled from the
+    ///     reranker dispatch strategy on purpose: even when ToggleableReRanker
+    ///     routes Llm/CrossEncoder to NoOp, the configured model is still
+    ///     warmed so re-enabling the dispatch is instant.
+    /// </summary>
+    public async Task WarmModelsAsync(CancellationToken ct = default)
+    {
+        var candidates = new[]
+                             {
+                                 mSettings.ClassificationModel,
+                                 mSettings.ReRankingModel
+                             };
+        var distinct = candidates
+                       .Where(m => !string.IsNullOrWhiteSpace(m))
+                       .Distinct(StringComparer.OrdinalIgnoreCase)
+                       .ToList();
+
+        if (distinct.Count > 0)
+        {
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromMinutes(WarmupTimeoutMinutes);
+            var endpoint = new Uri(new Uri(mSettings.Endpoint), GenerateEndpointPath);
+
+            foreach(string model in distinct)
+            {
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    var payload = new
+                                      {
+                                          model,
+                                          prompt = WarmupPrompt,
+                                          stream = false,
+                                          keep_alive = KeepAliveForever
+                                      };
+                    var response = await client.PostAsJsonAsync(endpoint, payload, ct);
+                    response.EnsureSuccessStatusCode();
+                    sw.Stop();
+                    mLogger.LogInformation("Warmed {Model} in {Ms}ms", model, sw.ElapsedMilliseconds);
+                }
+                catch(Exception ex) when(ex is not OperationCanceledException)
+                {
+                    sw.Stop();
+                    mLogger.LogWarning(ex, "Failed to warm {Model} after {Ms}ms", model, sw.ElapsedMilliseconds);
+                }
+            }
+        }
+    }
+
+    private const string GenerateEndpointPath = "/api/generate";
+    private const string WarmupPrompt = ".";
+    private const int KeepAliveForever = -1;
+    private const int WarmupTimeoutMinutes = 5;
 
     private const string OllamaWindowsInstallerUrl = "https://ollama.com/download/OllamaSetup.exe";
     private const string OllamaExeName = "ollama.exe";
@@ -358,15 +417,12 @@ public class OllamaBootstrapper
     /// <summary>
     ///     Pick which reranker model (if any) to pull at startup based on
     ///     the configured ReRankerStrategy. Off → no reranker model.
-    ///     Llm → pull ReRankingModel (default qwen3:1.7b).
+    ///     Llm → pull ReRankingModel (default phi4-mini:3.8b).
     ///     CrossEncoder → pull CrossEncoderModel (Mixedbread mxbai).
-    ///     The legacy ReRankingEnabled bool acts as a soft gate: when
-    ///     false, we skip the reranker pull regardless of strategy
-    ///     (matches the runtime kill switch behavior of ToggleableReRanker).
     /// </summary>
     private string? ResolveRerankerModel()
     {
-        var strategy = mSettings.ReRankingEnabled ? mRankingSettings.ReRankerStrategy : ReRankerStrategy.Off;
+        var strategy = mRankingSettings.ReRankerStrategy;
         var model = strategy switch
             {
                 ReRankerStrategy.Off => null,
