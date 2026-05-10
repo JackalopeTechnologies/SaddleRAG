@@ -28,7 +28,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void>
     const binaryManager = new BinaryManager(context.globalStorageUri.fsPath, version);
     const processManager = new ProcessManager();
     const statusPoller = new StatusPoller(SADDLERAG_BASE_URL);
-    const mcpRegistrar = new McpRegistrar();
+    const mcpRegistrar = new McpRegistrar(undefined, `${SADDLERAG_BASE_URL}/mcp`);
     const checker = new DependencyChecker(scriptsRoot);
     const runner = new ScriptRunner(scriptsRoot);
     const provider = new SaddleRagProvider();
@@ -36,6 +36,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void>
     vscode.window.registerTreeDataProvider(SADDLERAG_VIEW_ID, provider);
 
     context.subscriptions.push(
+        { dispose: () => statusPoller.stop() },
+        { dispose: () => void processManager.stop() },
         vscode.commands.registerCommand('saddlerag.refresh', () => void statusPoller.pollNow()),
         vscode.commands.registerCommand('saddlerag.openWebHub', () =>
         {
@@ -58,7 +60,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void>
 
 export function deactivate(): void
 {
-    // Timers are cleared via context.subscriptions disposal — no explicit action needed
+    // Process and timers are stopped via context.subscriptions disposal
 }
 
 async function checkDependenciesAndStart(
@@ -69,7 +71,8 @@ async function checkDependenciesAndStart(
     statusPoller: StatusPoller
 ): Promise<void>
 {
-    await Promise.all([checker.check('mongodb'), checker.check('ollama')]);
+    const [mongoResult, ollamaResult] = await Promise.all([checker.check('mongodb'), checker.check('ollama')]);
+    statusPoller.setDependencyStatuses(mongoResult.status, ollamaResult.status);
 
     void statusPoller.pollNow();
 

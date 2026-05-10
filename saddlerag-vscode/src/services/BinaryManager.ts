@@ -120,6 +120,12 @@ export class BinaryManager
             const file = (require('fs') as typeof import('fs')).createWriteStream(dest);
             https.get(url, { headers: { 'User-Agent': USER_AGENT } }, (res) =>
             {
+                if (res.statusCode !== 200)
+                {
+                    file.destroy();
+                    reject(new Error(`Download failed: HTTP ${res.statusCode ?? 'unknown'} from ${url}`));
+                    return;
+                }
                 const total = parseInt(res.headers['content-length'] ?? '0', 10);
                 let downloaded = 0;
                 res.on('data', (chunk: Buffer) =>

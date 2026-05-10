@@ -43,6 +43,11 @@ export class StatusPoller
         this.statusTimer = null;
     }
 
+    setDependencyStatuses(mongodb: ServiceStatus, ollama: ServiceStatus): void
+    {
+        this.updateState({ mongodb, ollama });
+    }
+
     async pollNow(): Promise<void>
     {
         await Promise.all([this.pollHealth(), this.pollStatus()]);

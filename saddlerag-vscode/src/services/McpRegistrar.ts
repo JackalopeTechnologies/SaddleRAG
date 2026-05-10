@@ -4,19 +4,19 @@ import * as path from 'path';
 import * as os from 'os';
 
 export const SADDLERAG_SERVER_KEY = 'saddlerag';
-export const SADDLERAG_MCP_ENTRY = {
-    type: 'http',
-    url: 'http://localhost:6100/mcp'
-} as const;
+const DEFAULT_MCP_URL = 'http://localhost:6100/mcp';
+export const SADDLERAG_MCP_ENTRY = { type: 'http', url: DEFAULT_MCP_URL } as const;
 const SERVERS_KEY = 'servers';
 
 export class McpRegistrar
 {
     private readonly configPath: string;
+    private readonly mcpUrl: string;
 
-    constructor(configPath?: string)
+    constructor(configPath?: string, mcpUrl?: string)
     {
         this.configPath = configPath ?? McpRegistrar.defaultConfigPath();
+        this.mcpUrl = mcpUrl ?? DEFAULT_MCP_URL;
     }
 
     static defaultConfigPath(): string
@@ -41,7 +41,7 @@ export class McpRegistrar
     {
         const config = await this.readConfig();
         const servers = this.ensureServers(config);
-        servers[SADDLERAG_SERVER_KEY] = SADDLERAG_MCP_ENTRY;
+        servers[SADDLERAG_SERVER_KEY] = { type: 'http', url: this.mcpUrl };
         await this.writeConfig(config);
     }
 
