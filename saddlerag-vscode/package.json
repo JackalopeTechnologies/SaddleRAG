@@ -4,14 +4,24 @@
   "description": "Documentation RAG for AI coding assistants — indexes docs, serves them via MCP",
   "version": "0.0.1",
   "publisher": "jackalope-technologies",
-  "engines": { "vscode": "^1.102.0" },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "engines": {
+    "vscode": "^1.102.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "views": {
       "saddlerag-sidebar": [
-        { "id": "saddleragView", "name": "SaddleRAG", "icon": "$(database)" }
+        {
+          "id": "saddleragView",
+          "name": "SaddleRAG",
+          "icon": "$(database)"
+        }
       ]
     },
     "viewsContainers": {
@@ -24,13 +34,29 @@
       ]
     },
     "commands": [
-      { "command": "saddlerag.refresh", "title": "Refresh", "icon": "$(refresh)" },
-      { "command": "saddlerag.openWebHub", "title": "Open Web Hub", "icon": "$(link-external)" }
+      {
+        "command": "saddlerag.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "saddlerag.openWebHub",
+        "title": "Open Web Hub",
+        "icon": "$(link-external)"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "saddlerag.refresh", "when": "view == saddleragView", "group": "navigation" },
-        { "command": "saddlerag.openWebHub", "when": "view == saddleragView", "group": "navigation" }
+        {
+          "command": "saddlerag.refresh",
+          "when": "view == saddleragView",
+          "group": "navigation"
+        },
+        {
+          "command": "saddlerag.openWebHub",
+          "when": "view == saddleragView",
+          "group": "navigation"
+        }
       ]
     }
   },
@@ -42,12 +68,14 @@
     "package": "vsce package"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.102.0",
     "@vscode/test-electron": "^2.4.0",
     "@vscode/vsce": "^3.0.0",
     "jest": "^29.0.0",
     "ts-jest": "^29.0.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.4.0"
   }
 }
