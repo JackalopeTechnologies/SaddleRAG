@@ -90,21 +90,14 @@ SaddleRAG automatically pulls the required models on first use:
 
 ### Step 4: Connect Your AI Assistant
 
-Add this to your MCP client configuration. For **Claude Code**, create a `.mcp.json` file in your project root or home directory:
+The MSI installer wires SaddleRAG into all your installed AI tools automatically:
 
-```json
-{
-  "mcpServers": {
-    "saddlerag": {
-      "type": "http",
-      "url": "http://localhost:6100/mcp",
-      "timeout": 60
-    }
-  }
-}
-```
+- **Claude Code** — adds a user-level MCP server entry
+- **Claude Desktop** — adds a server entry to `claude_desktop_config.json`
+- **VSCode (GitHub Copilot Chat MCP)** — adds a server entry to VS Code user settings
+- **GitHub Copilot CLI** — adds a server entry to the Copilot CLI MCP config
 
-Or install the [Claude Code plugin](#claude-code-plugin) for automatic wiring and the `saddlerag-first` skill.
+No manual `.mcp.json` editing required. If a tool is not installed, its registration is skipped silently.
 
 ### Step 5: Verify
 
@@ -163,30 +156,33 @@ Add to `.mcp.json` in your project root:
 }
 ```
 
-## Claude Code Plugin
+## Managing AI Client Registrations
 
-The `plugin/` directory is a Claude Code plugin that wires SaddleRAG into every session automatically — no manual `.mcp.json` needed. It:
+The `SaddleRAG.Cli` tool manages which AI tools SaddleRAG is wired into.
 
-- Registers the SaddleRAG MCP server
-- Bundles a `saddlerag-first` skill that tells Claude to query SaddleRAG before answering from training data on any coding question
-
-### Install (local development)
+### Check registration status
 
 ```bash
-claude --plugin-dir E:/GitHub/SaddleRAG/plugin
+SaddleRAG.Cli clients-status
 ```
 
-### Install (from git, once published)
+Reports whether SaddleRAG is registered in each supported tool, with config file paths and any errors.
+
+### Re-register after adding a new tool
 
 ```bash
-claude plugin install https://github.com/JackalopeTechnologies/saddlerag --plugin-dir plugin
+SaddleRAG.Cli register-clients
 ```
 
-### Context efficiency
+Registers SaddleRAG in all installed AI tools. Safe to run multiple times — existing entries are updated in place.
 
-The plugin uses per-tool `[McpMeta("anthropic/alwaysLoad", true)]` flags so only the 6 entry-point tools occupy session-start context (~1–2k tokens). The other 27 admin/maintenance tools stay deferred behind ToolSearch and are loaded on demand.
+### Disable SaddleRAG for specific tools
 
-Full plugin documentation: [plugin/README.md](plugin/README.md)
+```bash
+SaddleRAG.Cli unregister-clients --claude-desktop=true --claude-code=false
+```
+
+Each flag controls one tool. Omitted flags default to `true` (remove from that tool). The example above removes SaddleRAG from Claude Desktop but leaves Claude Code wired.
 
 ## MCP Tools Reference
 
@@ -407,6 +403,46 @@ SADDLERAG_MONGODB_PROFILE=company          # Override active profile
 ASPNETCORE_ENVIRONMENT=Development      # Enable dev settings (disables re-ranking)
 ```
 
+## Troubleshooting
+
+### SaddleRAG isn't visible in Claude Code / Claude Desktop / VSCode / Copilot
+
+Run the diagnostics command:
+
+```bash
+SaddleRAG.Cli clients-status
+```
+
+Then re-register:
+
+```bash
+SaddleRAG.Cli register-clients
+```
+
+If registration succeeds but the tool still doesn't appear, restart the AI tool so it picks up the new config.
+
+### I want to disable SaddleRAG for one specific tool
+
+Use `unregister-clients` with explicit flags. Each flag controls one tool; unspecified tools are also unregistered by default, so be explicit:
+
+```bash
+# Remove from Claude Desktop only, leave everything else registered
+SaddleRAG.Cli unregister-clients --claude-desktop=true --claude-code=false --vscode=false --copilot-cli=false
+```
+
+To re-enable a tool later, run `register-clients` (it re-wires all installed tools).
+
+### The MCP server health check fails
+
+Visit `http://localhost:6100/health`. If it returns an error, check the service:
+
+```powershell
+Get-Service SaddleRAGMcp
+Start-Service SaddleRAGMcp
+```
+
+Logs are in `%ProgramData%\SaddleRAG\logs\`.
+
 ## Releasing
 
 To create a new release with an MSI installer:
@@ -435,12 +471,9 @@ SaddleRAG.Ingestion/              # Scraping, classification, chunking, embeddin
   Ecosystems/                  #   NuGet, npm, pip registry clients
 SaddleRAG.Mcp/                    # ASP.NET Core MCP server (HTTP transport)
   Tools/                       #   33 MCP tool definitions across 18 files
-SaddleRAG.Cli/                    # Command-line interface (8 subcommands)
+SaddleRAG.Cli/                    # Command-line interface (ingest, status, register-clients, ...)
 SaddleRAG.Installer/              # WiX MSI installer definition
 SaddleRAG.Tests/                  # Integration and unit tests
-plugin/                           # Claude Code plugin
-  .mcp.json                    #   MCP server registration
-  skills/saddlerag-first/      #   Skill: query SaddleRAG before answering from training data
 ```
 
 ## License
