@@ -43,7 +43,7 @@ describe('McpRegistrar', () => {
         const existing = {
             servers: {
                 'other-server': { type: 'http', url: 'http://other' },
-                'saddlerag': { type: 'http', url: 'http://localhost:6100/mcp' }
+                [SADDLERAG_SERVER_KEY]: SADDLERAG_MCP_ENTRY
             }
         };
         await fs.writeFile(MCP_FILE, JSON.stringify(existing), 'utf-8');
@@ -58,7 +58,7 @@ describe('McpRegistrar', () => {
     });
 
     it('isRegistered returns true when saddlerag entry exists', async () => {
-        const existing = { servers: { saddlerag: { type: 'http', url: 'http://localhost:6100/mcp' } } };
+        const existing = { servers: { [SADDLERAG_SERVER_KEY]: SADDLERAG_MCP_ENTRY } };
         await fs.writeFile(MCP_FILE, JSON.stringify(existing), 'utf-8');
 
         const reg = new McpRegistrar(MCP_FILE);
