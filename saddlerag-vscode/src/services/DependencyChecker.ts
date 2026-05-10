@@ -5,6 +5,16 @@ import type { DetectResult } from '../models/ServiceStatus';
 
 type Dependency = 'mongodb' | 'ollama';
 
+const WINDOWS_PLATFORM = 'win32';
+const WINDOWS_SUBFOLDER = 'windows';
+const POSIX_SUBFOLDER = 'posix';
+const POWERSHELL_CMD = 'powershell';
+const BASH_CMD = 'bash';
+const PS1_EXT = '.ps1';
+const SH_EXT = '.sh';
+const POWERSHELL_SCRIPT_FLAG = '-File';
+const NOT_INSTALLED_EXIT_CODE = 2;
+
 export class DependencyChecker
 {
     private readonly scriptsRoot: string;
@@ -16,28 +26,36 @@ export class DependencyChecker
 
     scriptPath(scriptName: string, platform: NodeJS.Platform = process.platform): string
     {
-        const isWindows = platform === 'win32';
-        const folder = isWindows ? 'windows' : 'posix';
-        const ext = isWindows ? '.ps1' : '.sh';
+        const isWindows = platform === WINDOWS_PLATFORM;
+        const folder = isWindows ? WINDOWS_SUBFOLDER : POSIX_SUBFOLDER;
+        const ext = isWindows ? PS1_EXT : SH_EXT;
         return path.join(this.scriptsRoot, folder, `${scriptName}${ext}`);
     }
 
     parseDetectOutput(exitCode: number, stdout: string): DetectResult
     {
+        let result: DetectResult = { status: 'not-installed' };
         try
         {
             const parsed = JSON.parse(stdout) as { status: string; port?: number; path?: string };
-            const result: DetectResult = exitCode === 0
-                ? { status: 'running', port: parsed['port'] }
-                : exitCode === 1
-                    ? { status: 'stopped', path: parsed['path'] }
-                    : { status: 'not-installed' };
-            return result;
+            switch (exitCode)
+            {
+                case 0:
+                    result = { status: 'running', port: parsed['port'] };
+                    break;
+                case 1:
+                    result = { status: 'stopped', path: parsed['path'] };
+                    break;
+                default:
+                    result = { status: 'not-installed' };
+                    break;
+            }
         }
         catch
         {
-            return { status: 'not-installed' };
+            // stdout was not valid JSON; result stays not-installed
         }
+        return result;
     }
 
     async check(dependency: Dependency): Promise<DetectResult>
@@ -47,13 +65,14 @@ export class DependencyChecker
 
         return new Promise((resolve) =>
         {
-            const cmd = process.platform === 'win32' ? 'powershell' : 'bash';
-            const args = process.platform === 'win32' ? ['-File', script] : [script];
+            const isWindows = process.platform === WINDOWS_PLATFORM;
+            const cmd = isWindows ? POWERSHELL_CMD : BASH_CMD;
+            const args = isWindows ? [POWERSHELL_SCRIPT_FLAG, script] : [script];
 
             execFile(cmd, args, (error, stdout) =>
             {
                 const code = error?.code;
-                const exitCode = typeof code === 'number' ? code : 0;
+                const exitCode = error === null ? 0 : typeof code === 'number' ? code : NOT_INSTALLED_EXIT_CODE;
                 resolve(this.parseDetectOutput(exitCode, stdout.trim()));
             });
         });

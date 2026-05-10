@@ -1,6 +1,9 @@
 // DependencyChecker.test.ts
 import * as path from 'path';
+import { execFile } from 'child_process';
 import { DependencyChecker } from '../services/DependencyChecker';
+
+jest.mock('child_process');
 
 describe('DependencyChecker', () => {
     it('parseDetectOutput: exit 0 returns running', () => {
@@ -41,5 +44,32 @@ describe('DependencyChecker', () => {
         const p = checker.scriptPath('detect-mongodb', 'linux');
         expect(p).toContain('posix');
         expect(p.endsWith('.sh')).toBe(true);
+    });
+
+    describe('check', () => {
+        it('returns running when script exits 0', async () => {
+            const mockExecFile = execFile as jest.MockedFunction<typeof execFile>;
+            mockExecFile.mockImplementation((_cmd, _args, callback: any) => {
+                callback(null, '{"status":"running","port":27017}', '');
+                return {} as any;
+            });
+
+            const checker = new DependencyChecker('/scripts');
+            const result = await checker.check('mongodb');
+            expect(result.status).toBe('running');
+        });
+
+        it('returns not-installed when script binary not found (ENOENT)', async () => {
+            const mockExecFile = execFile as jest.MockedFunction<typeof execFile>;
+            const err = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+            mockExecFile.mockImplementation((_cmd, _args, callback: any) => {
+                callback(err, '', '');
+                return {} as any;
+            });
+
+            const checker = new DependencyChecker('/scripts');
+            const result = await checker.check('mongodb');
+            expect(result.status).toBe('not-installed');
+        });
     });
 });
