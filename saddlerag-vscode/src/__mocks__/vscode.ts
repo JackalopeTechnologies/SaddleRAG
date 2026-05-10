@@ -1,6 +1,6 @@
 // src/__mocks__/vscode.ts
 export const window = {
-    createTerminal: jest.fn(),
+    createTerminal: jest.fn(() => ({ show: jest.fn(), sendText: jest.fn() })),
     showErrorMessage: jest.fn(),
     showInformationMessage: jest.fn(),
     createOutputChannel: jest.fn(() => ({ appendLine: jest.fn(), show: jest.fn() })),
