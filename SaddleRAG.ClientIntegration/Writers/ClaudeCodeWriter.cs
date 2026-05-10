@@ -112,6 +112,10 @@ public sealed class ClaudeCodeWriter : IClientWriter
             {
                 res = UnregisterResult.Failed(Name, mConfigPath, $"failed to parse {mConfigPath}: {ex.Message}");
             }
+            catch (IOException ex)
+            {
+                res = UnregisterResult.Failed(Name, mConfigPath, $"I/O error on {mConfigPath}: {ex.Message}");
+            }
         }
         if (File.Exists(mSkillPath))
         {
@@ -130,6 +134,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
         bool fileExists = File.Exists(mConfigPath);
         bool entryPresent = false;
         bool endpointMatches = false;
+        string notes = string.Empty;
         if (fileExists)
         {
             try
@@ -144,8 +149,9 @@ public sealed class ClaudeCodeWriter : IClientWriter
                     endpointMatches = string.Equals(url, SaddleRagEndpoint.Default.Url, StringComparison.Ordinal);
                 }
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                notes = $"config file malformed: {ex.Message}";
             }
         }
         return new StatusResult(
@@ -155,7 +161,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
             SaddleRagEntryPresent: entryPresent,
             EndpointMatchesCanonical: endpointMatches,
             SkillFilePresent: File.Exists(mSkillPath),
-            Notes: string.Empty);
+            Notes: notes);
     }
 
     private async Task<JsonObject> LoadRootAsync(CancellationToken ct)
