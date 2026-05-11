@@ -76,10 +76,14 @@ public class OllamaBootstrapper
                        .Distinct(StringComparer.OrdinalIgnoreCase)
                        .ToList();
 
+        var timeoutSeconds = mSettings.WarmModelTimeoutSeconds;
+        if (timeoutSeconds < MinimumWarmModelTimeoutSeconds)
+            timeoutSeconds = OllamaSettings.DefaultWarmModelTimeoutSeconds;
+
         if (distinct.Count > 0)
         {
             using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromMinutes(WarmupTimeoutMinutes);
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
             var endpoint = new Uri(new Uri(mSettings.Endpoint), GenerateEndpointPath);
 
             foreach(string model in distinct)
@@ -99,6 +103,16 @@ public class OllamaBootstrapper
                     sw.Stop();
                     mLogger.LogInformation("Warmed {Model} in {Ms}ms", model, sw.ElapsedMilliseconds);
                 }
+                catch(OperationCanceledException ex) when(!ct.IsCancellationRequested)
+                {
+                    sw.Stop();
+                    mLogger.LogWarning(ex,
+                                       "Timed out warming {Model} after {Ms}ms (timeout {TimeoutSeconds}s)",
+                                       model,
+                                       sw.ElapsedMilliseconds,
+                                       timeoutSeconds
+                                      );
+                }
                 catch(Exception ex) when(ex is not OperationCanceledException)
                 {
                     sw.Stop();
@@ -111,7 +125,7 @@ public class OllamaBootstrapper
     private const string GenerateEndpointPath = "/api/generate";
     private const string WarmupPrompt = ".";
     private const int KeepAliveForever = -1;
-    private const int WarmupTimeoutMinutes = 5;
+    private const int MinimumWarmModelTimeoutSeconds = 1;
 
     private const string OllamaWindowsInstallerUrl = "https://ollama.com/download/OllamaSetup.exe";
     internal static string OllamaExeName =>

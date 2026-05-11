@@ -18,6 +18,9 @@ public static class QueryMetricOperations
     /// <summary>Embedding-provider call to convert a query string into a vector.</summary>
     public const string EmbedQuery = "embed_query";
 
+    /// <summary>One-shot local LLM query-planning call before retrieval.</summary>
+    public const string QueryPlan = "query_plan";
+
     /// <summary>Vector-search-provider call against the indexed chunks.</summary>
     public const string VectorSearch = "vector_search";
 

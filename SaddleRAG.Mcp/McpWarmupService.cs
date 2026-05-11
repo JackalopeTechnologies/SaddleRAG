@@ -170,7 +170,7 @@ public sealed class McpWarmupService : BackgroundService
                                       );
             }
 
-            catch(Exception ex) when(ex is not OperationCanceledException)
+            catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
 
             {
                 mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Warmup probe failed", startupSw.Elapsed.TotalSeconds);

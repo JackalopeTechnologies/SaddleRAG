@@ -20,21 +20,19 @@ using SaddleRAG.Ingestion.Recon;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tool exposing <c>rechunk_library</c> — refresh an already-ingested
-///     library against the current chunker code, without re-crawling. Use this
-///     after a chunker change ships and existing libraries should benefit
-///     without paying the cost of a full re-ingest.
+///     MCP tool exposing <c>rechunk_library</c> — rebuild chunks from stored pages
+///     without fetching the source site again.
 /// </summary>
 [McpServerToolType]
 public static class RechunkTools
 {
     [McpServerTool(Name = "rechunk_library")]
-    [Description("Re-run the chunker over pages already stored for (library, version). " +
-                 "Replaces all chunks and re-embeds, then requires rescrub_library as a mandatory follow-up " +
-                 "to populate corpus-aware Symbols[] and rebuild library_indexes — do not skip this. " +
-                 "NO re-crawl, NO re-classify. Use after a chunker code change when existing chunks should " +
-                 "be re-cut without re-fetching the docs site. Returns { JobId, Status: 'Queued' } immediately; " +
-                 "poll get_job_status for progress and results including BoundaryHint."
+    [Description("Reuse pages already stored for (library, version), run the current chunker over them again, replace all " +
+                 "chunks, and re-embed those new chunks. Does NOT fetch the source site again. Use this when chunk boundaries " +
+                 "or the chunk-to-embedding input changed and you want a local rebuild from stored pages instead of a full " +
+                 "re-scrape. This currently requires a rescrub_library follow-up to refresh parser-derived metadata and rebuild " +
+                 "library_indexes. Returns { JobId, Status: 'Queued' } immediately; poll get_job_status for progress and " +
+                 "results including BoundaryHint."
                 )]
     public static async Task<string> RechunkLibrary(RepositoryFactory repositoryFactory,
                                                     RechunkService rechunkService,

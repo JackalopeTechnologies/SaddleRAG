@@ -36,9 +36,10 @@ public static class IngestTools
                  "URL_SUSPECT (indexed content looks wrong — browse URL and call submit_url_correction), " +
                  "RECON_NEEDED (no profile — call recon_library then submit_library_profile), " +
                  "READY_TO_SCRAPE (profile cached, no chunks — call scrape_docs), " +
-                 "STALE (chunks exist but parser is outdated — call rescrub_library), " +
+                 "STALE (chunks exist but parser-derived metadata is outdated — call rescrub_library), " +
                  "READY (fully indexed and current — call search_docs or get_class_reference). " +
-                 "Each response includes NextTool and NextToolArgs so you can follow the breadcrumb without remembering the workflow."
+                 "Each response includes NextTool and NextToolArgs so you can follow the breadcrumb without remembering the workflow. " +
+                 "The auto flag is reserved and ignored today; callers should follow NextTool manually."
                 )]
     public static async Task<string> StartIngest(RepositoryFactory repositoryFactory,
                                                  [Description("Root URL of the docs site to ingest")]
@@ -48,10 +49,10 @@ public static class IngestTools
                                                  string library,
                                                  [Description("Library version (e.g. '2025.3'). Required for now.")]
                                                  string version,
-                                                 [Description("If true, auto-proceed through ready transitions (placeholder; not used yet)."
+                                                 [Description("Reserved for future auto-follow behavior. Ignored today; follow NextTool manually."
                                                              )]
                                                  bool auto = false,
-                                                 [Description("If true, force re-ingest even when status would be READY (placeholder; not used yet)."
+                                                 [Description("If true, return READY_TO_SCRAPE for an otherwise READY library so the caller can intentionally refresh via scrape_docs."
                                                              )]
                                                  bool force = false,
                                                  [Description("Optional database profile name")]
@@ -202,8 +203,9 @@ public static class IngestTools
                 Version = version,
                 Url = url,
                 NextTool = "rescrub_library",
-                Message = "Chunks exist but were extracted with an older parser. " +
-                          "Call rescrub_library to re-run the extractor over stored content (no re-crawl).",
+                Message = "Chunks exist, but their parser-derived metadata is stale. " +
+                          "Call rescrub_library to re-parse the stored chunks and rebuild metadata and indexes " +
+                          "without re-crawling, re-chunking, or re-embedding.",
                 NextToolArgs = new Dictionary<string, string>
                                    {
                                        ["library"] = library,

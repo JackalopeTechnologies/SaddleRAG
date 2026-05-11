@@ -13,6 +13,7 @@ using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Server;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using ModelContextProtocol.Protocol;
 using MudBlazor.Services;
@@ -49,6 +50,8 @@ using Serilog.Events;
 
 
 const string AppName = "SaddleRAG";
+const string McpApplicationName = "SaddleRAG.Mcp";
+const string DataProtectionKeysSubdirectory = "DataProtection-Keys";
 const string LogSubdirectory = "logs";
 const string MicrosoftAspNetCoreNamespace = "Microsoft.AspNetCore";
 const string LogFileNamePattern = "saddlerag-.log";
@@ -107,6 +110,27 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog();
 builder.Host.UseWindowsService(options => { options.ServiceName = ServiceName; });
+
+if (builder.Environment.IsDevelopment())
+{
+    var dataProtectionDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                               AppName,
+                                               DataProtectionKeysSubdirectory,
+                                               builder.Environment.EnvironmentName
+                                              );
+
+    Directory.CreateDirectory(dataProtectionDirectory);
+
+    var dataProtectionBuilder = builder.Services.AddDataProtection()
+                                       .SetApplicationName($"{McpApplicationName}.{builder.Environment.EnvironmentName}")
+                                       .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionDirectory));
+
+    if (OperatingSystem.IsWindows())
+    {
+        dataProtectionBuilder.ProtectKeysWithDpapi();
+    }
+}
+
 builder.Services.AddSingleton(levelSwitch);
 
 builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
@@ -145,6 +169,7 @@ builder.Services.AddSingleton<IReRanker>(sp => sp.GetRequiredService<ToggleableR
 // Classification
 
 builder.Services.AddSingleton<LlmClassifier>();
+builder.Services.AddSingleton<LlmQueryPlanner>();
 
 // Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
 builder.Services.AddSingleton<LibraryProfileService>();
