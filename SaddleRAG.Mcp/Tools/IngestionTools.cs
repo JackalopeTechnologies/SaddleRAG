@@ -32,7 +32,7 @@ public static class IngestionTools
                  "but does NOT store anything to the database or clone any GitHub repos. " +
                  "Returns { JobId, Status: 'Queued' } immediately; poll get_job_status for the " +
                  "full DryRunReport including page counts, crawl depth, and GitHub repos found. " +
-                 "Use this BEFORE running scrape_library on a new library to verify " +
+                 "Use this BEFORE running scrape_docs on a new library to verify " +
                  "the URL patterns are correct and the crawl scope is reasonable."
                 )]
     public static async Task<string> DryRunScrape(PageCrawler crawler,
@@ -143,7 +143,7 @@ public static class IngestionTools
                  "Poll at reasonable intervals (10–30s); the job id comes from scrape_docs or submit_url_correction."
                 )]
     public static async Task<string> GetScrapeStatus(RepositoryFactory repositoryFactory,
-                                                     [Description("Job id returned from scrape_library")]
+                                                     [Description("Job id returned from scrape_docs or submit_url_correction")]
                                                      string jobId,
                                                      [Description("Optional database profile name")]
                                                      string? profile = null,
@@ -325,7 +325,7 @@ public static class IngestionTools
     [McpServerTool(Name = "reload_profile")]
     [Description("Reload the in-memory vector index from MongoDB for a profile. " +
                  "Useful after manual data changes or to recover from index drift. " +
-                 "Normally not needed — scrape_library auto-reloads when ingestion completes."
+                 "Normally not needed — successful ingestion auto-reloads when it completes."
                 )]
     public static async Task<string> ReloadProfile(ScrapeJobRunner runner,
                                                    [Description("Optional database profile name")]

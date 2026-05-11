@@ -24,7 +24,7 @@ namespace SaddleRAG.Ingestion.Embedding;
 ///     Generate-mode LLM reranker. Per-pair (query, document) scoring
 ///     against the configured ReRankingModel (default phi4-mini:3.8b).
 ///     Each candidate gets a single Ollama call returning a continuous
-///     float in [0, 1] driven by a 3-shot corpus-anchored prompt.
+///     float in [0, 1] driven by a structured, corpus-anchored prompt.
 ///     Replaces the legacy 5-bucket categorical implementation that
 ///     plateaued at HIGH for nearly every candidate when driven by
 ///     qwen3:1.7b. Calls run concurrently via Task.WhenAll — Ollama
@@ -83,7 +83,7 @@ public class OllamaReRanker : IReRanker
 
     private async Task<ReRankResult> ScoreCandidateAsync(string query, DocChunk chunk, CancellationToken ct)
     {
-        var score = await ScoreOneAsync(query, chunk.Content, ct);
+        var score = await ScoreOneAsync(query, chunk, ct);
         var result = new ReRankResult
                          {
                              Chunk = chunk,
@@ -92,9 +92,9 @@ public class OllamaReRanker : IReRanker
         return result;
     }
 
-    private async Task<float> ScoreOneAsync(string query, string content, CancellationToken ct)
+    private async Task<float> ScoreOneAsync(string query, DocChunk chunk, CancellationToken ct)
     {
-        var prompt = BuildPrompt(query, TruncateDocument(content));
+        var prompt = BuildPrompt(query, BuildCandidateRecord(chunk));
         var responseText = await CallOllamaAsync(prompt, ct);
         var score = ParseScore(responseText);
         return score;
@@ -126,6 +126,24 @@ public class OllamaReRanker : IReRanker
         return responseBuilder.ToString().Trim();
     }
 
+    public static string BuildCandidateRecord(DocChunk chunk)
+    {
+        ArgumentNullException.ThrowIfNull(chunk);
+
+        var sectionPath = string.IsNullOrWhiteSpace(chunk.SectionPath) ? NotAvailableValue : chunk.SectionPath;
+        var qualifiedName = string.IsNullOrWhiteSpace(chunk.QualifiedName) ? NotAvailableValue : chunk.QualifiedName;
+        var content = TruncateDocument(chunk.Content);
+        var record = $$"""
+                       Library: {{chunk.LibraryId}}
+                       Title: {{chunk.PageTitle}}
+                       Category: {{chunk.Category}}
+                       SectionPath: {{sectionPath}}
+                       QualifiedName: {{qualifiedName}}
+                       Content: {{content}}
+                       """;
+        return record;
+    }
+
     private static string TruncateDocument(string content)
     {
         var result = content.Length <= MaxDocumentChars ? content : content[..MaxDocumentChars];
@@ -134,10 +152,10 @@ public class OllamaReRanker : IReRanker
 
     /// <summary>
     ///     Build the 3-shot corpus-anchored prompt for relevance scoring.
-    ///     Anchor cases lock in the calibration scale: an exact-name
-    ///     match against the canonical class doc → 0.95; a sibling-class
-    ///     mention in a related-but-not-target doc → 0.55; an entirely
-    ///     unrelated doc from a different library → 0.05. Public so unit
+    ///     The candidate input is a compact record containing title,
+    ///     category, section path, qualified name, and content so the
+    ///     model can separate exact API pages from generic member lists,
+    ///     wrong-platform siblings, and other boilerplate. Public so unit
     ///     tests can pin the prompt format without spinning Ollama.
     /// </summary>
     public static string BuildPrompt(string query, string document)
@@ -146,32 +164,53 @@ public class OllamaReRanker : IReRanker
         ArgumentNullException.ThrowIfNull(document);
 
         var prompt = $$"""
-                       You are a documentation relevance scorer. Given a search query and a documentation snippet, output ONLY a single decimal number between 0.0 and 1.0 representing how well the snippet answers the query. No explanation, no other text.
+                       You are a documentation relevance scorer. Given a search query and a candidate documentation record, output ONLY a single decimal number between 0.0 and 1.0 representing how well the record answers the query. No explanation, no other text.
+
+                       Prioritize title, qualified name, category, and section path over generic boilerplate. Downscore wrong platform or namespace siblings, member index pages, and documents that only mention related ideas without being about the requested feature.
 
                        Scale:
-                       0.9-1.0  Perfect match — the snippet IS the documentation for what the query asks
+                       0.9-1.0  Perfect match — the record IS the documentation for what the query asks
                        0.6-0.8  Strong match — closely related class, method, or concept
                        0.3-0.5  Weak match — mentions related ideas but not the focus
                        0.0-0.2  Off topic
 
                        Examples:
 
-                       Query: FastLineRenderableSeries class
-                       Document: FastLineRenderableSeries Class — Defines a Line renderable series, supporting solid, stroked (thickness 1+) lines, dashed lines and optional Point-markers. A RenderableSeries has an IDataSeries data-source.
+                       Query: cursor modifiers
+                       Candidate:
+                       Library: scichart-wpf
+                       Title: CursorModifier Class
+                       Category: ApiReference
+                       SectionPath: ChartModifier API > 2D Chart Modifiers
+                       QualifiedName: SciChart.Charting.ChartModifiers.CursorModifier
+                       Content: Provides a vertical cursor and tooltip style overlays for inspecting series values on a 2D chart surface.
                        Score: 0.95
 
-                       Query: FastLineRenderableSeries class
-                       Document: Spline Line Series — smoothing algorithm that gives charts a smooth look. Uses SplineLineRenderableSeries type to render a line with cubic-spline interpolation.
+                       Query: cursor modifiers
+                       Candidate:
+                       Library: scichart-wpf
+                       Title: RolloverModifier Class
+                       Category: ApiReference
+                       SectionPath: ChartModifier API > 2D Chart Modifiers
+                       QualifiedName: SciChart.Charting.ChartModifiers.RolloverModifier
+                       Content: Provides rollover tooltips and hit-test feedback for series inspection on a 2D chart surface.
                        Score: 0.55
 
-                       Query: FastLineRenderableSeries class
-                       Document: How to clone the Math.NET Spatial source code from GitHub. Run git clone https://github.com/mathnet/mathnet-spatial.git, then open the .sln in Visual Studio.
+                       Query: cursor modifiers
+                       Candidate:
+                       Library: scichart-wpf
+                       Title: FastLineRenderableSeries Class
+                       Category: ApiReference
+                       SectionPath: RenderableSeries API
+                       QualifiedName: SciChart.Charting.Visuals.RenderableSeries.FastLineRenderableSeries
+                       Content: Defines a line renderable series with stroke styling and optional point markers.
                        Score: 0.05
 
                        Now score this:
 
                        Query: {{query}}
-                       Document: {{document}}
+                       Candidate:
+                       {{document}}
                        Score:
                        """;
         return prompt;
@@ -201,12 +240,13 @@ public class OllamaReRanker : IReRanker
     ///     Currently informational only (rerank scores aren't cached) but
     ///     reserved for future bench-harness diffing.
     /// </summary>
-    public const string PromptVersion = "v2-continuous";
+    public const string PromptVersion = "v3-structured";
 
     private const int MaxResponseChars = 256;
     private const int MaxDocumentChars = 2000;
     private const float MinScore = 0f;
     private const float MaxScore = 1f;
+    private const string NotAvailableValue = "n/a";
 
     // Matches floats like "0.85", "0.0", ".97", "1", "1.0".
     private static readonly Regex smFloatRegex = new Regex(@"\d*\.\d+|\d+(?:\.\d+)?", RegexOptions.Compiled);
