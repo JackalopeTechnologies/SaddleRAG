@@ -32,9 +32,12 @@ namespace SaddleRAG.Ingestion.Embedding;
 /// </summary>
 public sealed class OnnxReRanker : IReRanker, IDisposable
 {
-    public OnnxReRanker(IOptions<OnnxSettings> settings, ILogger<OnnxReRanker> logger)
+    public OnnxReRanker(IOptions<OnnxSettings> settings,
+                        OnnxRuntimeCapabilities capabilities,
+                        ILogger<OnnxReRanker> logger)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(logger);
 
         mSettings = settings.Value;
@@ -62,6 +65,10 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
                 GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),
                 IntraOpNumThreads = mSettings.IntraOpNumThreads
             };
+            string actualProvider = OnnxExecutionProviderConfigurator.Configure(sessionOptions,
+                                                                                mSettings.ExecutionProvider,
+                                                                                capabilities, mLogger
+                                                                               );
             mSession = new InferenceSession(modelPath, sessionOptions);
             mModelHasTokenTypeIds = mSession.InputMetadata.ContainsKey(InputNameTokenTypeIds);
 
@@ -71,8 +78,8 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
             mPadTokenId = ResolvePadTokenId(mEntry);
 
             mLogger.LogInformation(
-                "OnnxReRanker ready: model={Name} family={Family} batchSize={Batch} hasTokenTypeIds={HasTTI}",
-                mEntry.Name, mEntry.TokenizerFamily, mSettings.RerankBatchSize, mModelHasTokenTypeIds
+                "OnnxReRanker ready: model={Name} family={Family} batchSize={Batch} hasTokenTypeIds={HasTTI} executionProvider={Ep}",
+                mEntry.Name, mEntry.TokenizerFamily, mSettings.RerankBatchSize, mModelHasTokenTypeIds, actualProvider
             );
         }
     }

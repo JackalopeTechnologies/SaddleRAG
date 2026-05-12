@@ -155,6 +155,13 @@ builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(Olla
 // to OnnxReRanker, the legacy Ollama rerankers, or pass-through.
 builder.Services.Configure<OnnxSettings>(builder.Configuration.GetSection(OnnxSettings.SectionName));
 
+// Tracks which OnnxRuntime execution providers are compiled into this build
+// flavor (USE_GPU symbol) and which one the running embedding / reranker
+// sessions actually loaded with. Surfaced via the list_execution_providers
+// MCP tool (added in a follow-up commit) so the LLM can see whether a
+// requested GPU EP took effect or fell back.
+builder.Services.AddSingleton<OnnxRuntimeCapabilities>();
+
 // Ranking configuration (BM25 weight, ReRank blend weight, ProseMentionThreshold, ReRankerStrategy)
 builder.Services.Configure<RankingSettings>(builder.Configuration.GetSection(RankingSettings.SectionName));
 

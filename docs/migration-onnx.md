@@ -228,3 +228,46 @@ Constraints:
 - New entries must specify all required fields per the existing
   defaults (RepoId, ModelFile, TokenizerFamily, plus VocabFile for
   Bert or SpmFile for SentencePiece).
+
+## GPU acceleration (DirectML / CUDA)
+
+The CPU build (default) ships with `Microsoft.ML.OnnxRuntime` and
+runs every session on CPU. To take advantage of a GPU:
+
+1. Build the project with the GPU flavor:
+
+    ```
+    dotnet build SaddleRAG.slnx -p:UseGpu=true
+    ```
+
+   This swaps the package reference to
+   `Microsoft.ML.OnnxRuntime.DirectML` and defines the `USE_GPU`
+   conditional-compilation symbol so the runtime can call
+   `AppendExecutionProvider_DML` / `AppendExecutionProvider_CUDA`.
+
+2. Edit `appsettings.json`:
+
+    ```json
+    "Onnx": {
+        "ExecutionProvider": "DirectMl"
+    }
+    ```
+
+   Valid values: `Cpu` (default), `DirectMl`, `Cuda`. Comparison is
+   case-insensitive.
+
+3. Restart SaddleRAG. The startup logs include `executionProvider=...`
+   on the `OnnxEmbeddingProvider ready` and `OnnxReRanker ready`
+   lines, reporting which EP actually loaded.
+
+If a GPU EP is requested but the build is CPU-only (or the hardware
+refuses), the session falls back to CPU silently and logs a warning.
+The `OnnxRuntimeCapabilities` singleton records the outcome — a
+follow-up commit adds the `list_execution_providers` MCP tool that
+surfaces it to the LLM.
+
+DirectML on Windows works on any DX12 GPU (Intel, AMD, NVIDIA)
+without a CUDA install. CUDA support requires a different OnnxRuntime
+NuGet (`Microsoft.ML.OnnxRuntime.Gpu`) and the CUDA Toolkit on the
+host machine — left as a follow-up because most operator scenarios
+are covered by DirectML.

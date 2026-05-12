@@ -58,7 +58,8 @@ public sealed class ToggleableReRankerTests
         // ReRankerStrategy.Onnx; the test only verifies the Strategy
         // property contract, not actual dispatched calls.
         var onnxOptions = Options.Create(new OnnxSettings());
-        var onnxReRanker = new OnnxReRanker(onnxOptions, NullLogger<OnnxReRanker>.Instance);
+        var capabilities = new OnnxRuntimeCapabilities();
+        var onnxReRanker = new OnnxReRanker(onnxOptions, capabilities, NullLogger<OnnxReRanker>.Instance);
         var result = new ToggleableReRanker(Options.Create(ranking),
                                             onnxReRanker,
                                             NullLoggerFactory.Instance

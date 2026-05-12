@@ -29,9 +29,11 @@ namespace SaddleRAG.Ingestion.Embedding;
 public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
 {
     public OnnxEmbeddingProvider(IOptions<OnnxSettings> settings,
+                                 OnnxRuntimeCapabilities capabilities,
                                  ILogger<OnnxEmbeddingProvider> logger)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(logger);
 
         mSettings = settings.Value;
@@ -55,12 +57,16 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
             GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),
             IntraOpNumThreads = mSettings.IntraOpNumThreads
         };
+        string actualProvider = OnnxExecutionProviderConfigurator.Configure(sessionOptions,
+                                                                            mSettings.ExecutionProvider,
+                                                                            capabilities, mLogger
+                                                                           );
         mSession = new InferenceSession(modelPath, sessionOptions);
         mModelHasTokenTypeIds = mSession.InputMetadata.ContainsKey(InputNameTokenTypeIds);
 
         mLogger.LogInformation(
-            "OnnxEmbeddingProvider ready: model={Name} dims={Dims} family={Family} hasTokenTypeIds={HasTTI}",
-            mEntry.Name, mEntry.Dimensions, mEntry.TokenizerFamily, mModelHasTokenTypeIds
+            "OnnxEmbeddingProvider ready: model={Name} dims={Dims} family={Family} hasTokenTypeIds={HasTTI} executionProvider={Ep}",
+            mEntry.Name, mEntry.Dimensions, mEntry.TokenizerFamily, mModelHasTokenTypeIds, actualProvider
         );
     }
 
