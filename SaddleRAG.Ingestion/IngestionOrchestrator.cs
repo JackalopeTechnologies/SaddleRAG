@@ -784,12 +784,12 @@ public class IngestionOrchestrator
         float[][] result;
         try
         {
-            result = await mEmbeddingProvider.EmbedAsync(texts, ct);
+            result = await mEmbeddingProvider.EmbedAsync(texts, ct: ct);
         }
         catch(Exception ex)
         {
             mLogger.LogWarning(ex, "Embedding failed, retrying once");
-            result = await mEmbeddingProvider.EmbedAsync(texts, ct);
+            result = await mEmbeddingProvider.EmbedAsync(texts, ct: ct);
         }
 
         return result;

@@ -152,7 +152,7 @@ public sealed class McpWarmupService : BackgroundService
             {
                 stepSw.Restart();
 
-                await embeddingProvider.EmbedAsync([WarmupProbeText], stoppingToken);
+                await embeddingProvider.EmbedAsync([WarmupProbeText], ct: stoppingToken);
 
                 mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - embedding provider warm ({Provider}/{Model})",
                                        startupSw.Elapsed.TotalSeconds,
@@ -174,7 +174,10 @@ public sealed class McpWarmupService : BackgroundService
 
                 stepSw.Restart();
 
-                var warmupEmbedding = (await embeddingProvider.EmbedAsync([WarmupSearchProbeText], stoppingToken))[0];
+                var warmupEmbedding = (await embeddingProvider.EmbedAsync([WarmupSearchProbeText],
+                                                                          EmbedRole.Query,
+                                                                          stoppingToken
+                                                                         ))[0];
 
                 var warmupFilter = new VectorSearchFilter { Profile = null };
 

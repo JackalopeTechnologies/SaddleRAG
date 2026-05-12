@@ -230,7 +230,7 @@ public static class SearchTools
     {
         var query = $"{library} overview getting started introduction";
         var embeddings = await metrics.TimeAsync(QueryMetricOperations.EmbedQuery,
-                                                 () => embeddingProvider.EmbedAsync([query], ct),
+                                                 () => embeddingProvider.EmbedAsync([query], EmbedRole.Query, ct),
                                                  note: $"library={library}"
                                                 );
 
@@ -355,7 +355,7 @@ public static class SearchTools
 
         var embedSw = Stopwatch.StartNew();
         var embeddings = await metrics.TimeAsync(QueryMetricOperations.EmbedQuery,
-                                                 () => embeddingProvider.EmbedAsync([query], ct),
+                                                 () => embeddingProvider.EmbedAsync([query], EmbedRole.Query, ct),
                                                  note: $"library={library ?? "*"}"
                                                 );
         embedSw.Stop();

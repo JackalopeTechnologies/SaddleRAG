@@ -86,11 +86,14 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
     private readonly BertTokenizer mTokenizer;
 
     /// <inheritdoc />
-    public async Task<float[][]> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
+    public async Task<float[][]> EmbedAsync(IReadOnlyList<string> texts,
+                                            EmbedRole role = EmbedRole.Document,
+                                            CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(texts);
 
         float[][] result = Array.Empty<float[]>();
+        string prefix = SelectPrefix(role);
 
         if (texts.Count > 0)
         {
@@ -98,16 +101,29 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
             for(var i = 0; i < texts.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                result[i] = EmbedSingle(texts[i]);
+                result[i] = EmbedSingle(texts[i], prefix);
                 if ((i + 1) % LogProgressInterval == 0)
-                    mLogger.LogDebug("Embedded {Count}/{Total} texts via ONNX ({Model})",
-                                     i + 1, texts.Count, mEntry.Name
+                    mLogger.LogDebug("Embedded {Count}/{Total} texts via ONNX ({Model}) as {Role}",
+                                     i + 1, texts.Count, mEntry.Name, role
                                     );
             }
-            mLogger.LogInformation("Embedded {Count} texts via ONNX ({Model})", texts.Count, mEntry.Name);
+            mLogger.LogInformation("Embedded {Count} texts via ONNX ({Model}) as {Role}",
+                                   texts.Count, mEntry.Name, role
+                                  );
         }
 
         return await Task.FromResult(result);
+    }
+
+    private string SelectPrefix(EmbedRole role)
+    {
+        string result = role switch
+        {
+            EmbedRole.Document => mEntry.DocumentPrefix,
+            EmbedRole.Query => mEntry.QueryPrefix,
+            var _ => throw new InvalidOperationException($"Unknown EmbedRole '{role}'.")
+        };
+        return result;
     }
 
     /// <inheritdoc />
@@ -116,9 +132,9 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
         mSession.Dispose();
     }
 
-    private float[] EmbedSingle(string text)
+    private float[] EmbedSingle(string text, string prefix)
     {
-        string prefixed = string.IsNullOrEmpty(mEntry.DocumentPrefix) ? text : mEntry.DocumentPrefix + text;
+        string prefixed = string.IsNullOrEmpty(prefix) ? text : prefix + text;
         IReadOnlyList<int> tokenIds = mTokenizer.EncodeToIds(prefixed);
 
         int seqLen = Math.Min(tokenIds.Count, mEntry.MaxSequenceLength);

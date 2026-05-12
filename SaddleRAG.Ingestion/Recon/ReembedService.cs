@@ -164,7 +164,7 @@ public class ReembedService
         {
             ct.ThrowIfCancellationRequested();
             var texts = batch.Select(c => c.Content).ToList();
-            var vectors = await mEmbeddingProvider.EmbedAsync(texts, ct);
+            var vectors = await mEmbeddingProvider.EmbedAsync(texts, ct: ct);
 
             foreach(var (chunk, vector) in batch.Zip(vectors))
             {
