@@ -108,6 +108,17 @@ Log.Logger = loggerConfig.CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Runtime overrides file: written by the set_active_embedding_model /
+// set_active_reranker_model / set_execution_provider MCP tools via
+// OnnxOverrideStore. Registered after appsettings.json so its values
+// take precedence on next process start. Optional + reloadOnChange so a
+// missing file is fine and edits are picked up without restart by any
+// IOptionsMonitor consumers (the in-process InferenceSession still
+// requires a restart, hence the RequiresRestart flag the tools return).
+builder.Configuration.AddJsonFile(OnnxOverrideStore.RuntimeOverridesFileName,
+                                  optional: true, reloadOnChange: true
+                                 );
+
 builder.Host.UseSerilog();
 builder.Host.UseWindowsService(options => { options.ServiceName = ServiceName; });
 
@@ -157,10 +168,14 @@ builder.Services.Configure<OnnxSettings>(builder.Configuration.GetSection(OnnxSe
 
 // Tracks which OnnxRuntime execution providers are compiled into this build
 // flavor (USE_GPU symbol) and which one the running embedding / reranker
-// sessions actually loaded with. Surfaced via the list_execution_providers
-// MCP tool (added in a follow-up commit) so the LLM can see whether a
-// requested GPU EP took effect or fell back.
+// sessions actually loaded with. The list_execution_providers MCP tool reads
+// it so the LLM can see whether a requested GPU EP took effect or fell back.
 builder.Services.AddSingleton<OnnxRuntimeCapabilities>();
+
+// Persists set_active_embedding_model / set_active_reranker_model /
+// set_execution_provider mutations to runtime-overrides.json so they survive
+// restart. Mutates the live OnnxSettings singleton for in-process visibility.
+builder.Services.AddSingleton<OnnxOverrideStore>();
 
 // Ranking configuration (BM25 weight, ReRank blend weight, ProseMentionThreshold, ReRankerStrategy)
 builder.Services.Configure<RankingSettings>(builder.Configuration.GetSection(RankingSettings.SectionName));

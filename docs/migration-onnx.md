@@ -229,6 +229,38 @@ Constraints:
   defaults (RepoId, ModelFile, TokenizerFamily, plus VocabFile for
   Bert or SpmFile for SentencePiece).
 
+## Driving the registry from the LLM (MCP tools)
+
+The model registry and execution-provider setting are surfaced as MCP
+tools so the LLM can inspect and change them without the operator
+hand-editing `appsettings.json`.
+
+Read-only:
+- `list_embedding_models` — registry + currently active entry.
+- `list_reranker_models` — same for rerankers.
+- `list_execution_providers` — what's compiled in for this build,
+  what the running session loaded with, and any fallback warning.
+
+Mutating (writes to `runtime-overrides.json` next to the executable,
+which is registered as a configuration source with higher precedence
+than `appsettings.json`; survives restart):
+- `set_active_embedding_model(name)` — switches the active embedding
+  model. Returns `RequiresRestart=true`. **Invalidates every stored
+  vector** — after restart, call `reembed_library` for every library
+  reported by `list_libraries`.
+- `set_active_reranker_model(name)` — switches reranker. Accepts
+  `"none"` to disable. Returns `RequiresRestart=true`. Does not
+  invalidate vectors.
+- `set_execution_provider(provider)` — sets `Onnx.ExecutionProvider`
+  to `Cpu`, `DirectMl`, or `Cuda`. Returns `RequiresRestart=true`.
+
+Immediate:
+- `download_onnx_model(name)` — pre-stages a registered model's files
+  into `Onnx.ModelsDir`. No restart needed.
+
+The override file is gitignored. To reset to the appsettings.json
+values, delete `runtime-overrides.json` and restart.
+
 ## GPU acceleration (DirectML / CUDA)
 
 The CPU build (default) ships with `Microsoft.ML.OnnxRuntime` and
@@ -245,7 +277,13 @@ runs every session on CPU. To take advantage of a GPU:
    conditional-compilation symbol so the runtime can call
    `AppendExecutionProvider_DML` / `AppendExecutionProvider_CUDA`.
 
-2. Edit `appsettings.json`:
+2. Set the execution provider at runtime via the MCP tool:
+
+    ```
+    set_execution_provider(provider="DirectMl")
+    ```
+
+   Or edit `appsettings.json`:
 
     ```json
     "Onnx": {
@@ -253,18 +291,24 @@ runs every session on CPU. To take advantage of a GPU:
     }
     ```
 
-   Valid values: `Cpu` (default), `DirectMl`, `Cuda`. Comparison is
-   case-insensitive.
-
 3. Restart SaddleRAG. The startup logs include `executionProvider=...`
    on the `OnnxEmbeddingProvider ready` and `OnnxReRanker ready`
    lines, reporting which EP actually loaded.
 
 If a GPU EP is requested but the build is CPU-only (or the hardware
 refuses), the session falls back to CPU silently and logs a warning.
-The `OnnxRuntimeCapabilities` singleton records the outcome — a
-follow-up commit adds the `list_execution_providers` MCP tool that
-surfaces it to the LLM.
+`list_execution_providers` reports the fallback so the LLM can
+explain it to the user:
+
+```json
+{
+    "CompiledIn": ["Cpu"],
+    "ActiveSetting": "DirectMl",
+    "ActiveProvider": "Cpu",
+    "RequestedProvider": "DirectMl",
+    "LastLoadWarning": "ExecutionProvider 'DirectMl' requested but this build is CPU-only (UseGpu=false at build time); falling back to CPU."
+}
+```
 
 DirectML on Windows works on any DX12 GPU (Intel, AMD, NVIDIA)
 without a CUDA install. CUDA support requires a different OnnxRuntime
