@@ -89,10 +89,11 @@ public static class CodeFenceScanner
     private static readonly Regex smIdentifierRegex =
         new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*", RegexOptions.Compiled);
 
-    // The three separators below are the dotted-identifier grammar surface
-    // (C# ".", C++/Rust "::", method-arrow "->"). Inline literals are
-    // intentional grammar tokens, not magic strings.
-#pragma warning disable STY0008
-    private static readonly string[] smSegmentSeparators = [".", "::", "->"];
-#pragma warning restore STY0008
+    // Dotted-identifier grammar surface: C# ".", C++/Rust "::", method-arrow "->".
+    private const string SeparatorDot = ".";
+    private const string SeparatorDoubleColon = "::";
+    private const string SeparatorArrow = "->";
+
+    private static readonly string[] smSegmentSeparators =
+        [SeparatorDot, SeparatorDoubleColon, SeparatorArrow];
 }
