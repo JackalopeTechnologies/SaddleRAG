@@ -29,11 +29,9 @@ public sealed class CopilotCliWriterTests : IDisposable
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("COPILOT_HOME", null);
+        Environment.SetEnvironmentVariable("COPILOT_HOME", value: null);
         if (Directory.Exists(mTempDir))
-        {
             Directory.Delete(mTempDir, recursive: true);
-        }
     }
 
     [Theory]

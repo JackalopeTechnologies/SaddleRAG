@@ -74,7 +74,7 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
         _ = role;
 
 
-        float[][] allEmbeddings = Array.Empty<float[]>();
+        float[][] allEmbeddings = [];
 
 
         if (texts.Count > 0)
@@ -148,7 +148,7 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
                                                        );
 
 
-                if (response?.Embeddings == null || response.Embeddings.Count == 0)
+                if (response.Embeddings == null || response.Embeddings.Count == 0)
 
                     throw new InvalidOperationException("Ollama returned null or empty embeddings for the input text.");
 

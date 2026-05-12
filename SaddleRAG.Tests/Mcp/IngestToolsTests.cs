@@ -26,7 +26,7 @@ public sealed class IngestToolsTests
                                                     );
 
         Assert.Equal(IngestStatus.ReadyToScrape, response.Status);
-        Assert.Equal(new[] { "/account/login", "/account/register" }, response.RecommendedExcludedUrlPatterns);
+        Assert.Equal(["/account/login", "/account/register"], response.RecommendedExcludedUrlPatterns);
     }
 
     [Fact]

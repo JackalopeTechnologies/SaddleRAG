@@ -14,11 +14,15 @@ public sealed record SaddleRagEndpoint(
     private const string DefaultUrl = "http://localhost:6100/mcp";
     private const int DefaultTimeoutSeconds = 300;
 
+    // The MCP tool-name strings below are the on-the-wire protocol identifiers.
+    // STY0008 (magic-string) is suppressed because these literals ARE the
+    // surface — extracting them to per-name constants would just duplicate
+    // each name without adding meaning.
+#pragma warning disable STY0008
     public static SaddleRagEndpoint Default { get; } = new(
-        Url: DefaultUrl,
-        TimeoutSeconds: DefaultTimeoutSeconds,
-        ReadOnlyToolPermissions: new[]
-        {
+        DefaultUrl,
+        DefaultTimeoutSeconds,
+        [
             "mcp__saddlerag__search_docs",
             "mcp__saddlerag__get_class_reference",
             "mcp__saddlerag__get_library_overview",
@@ -41,5 +45,7 @@ public sealed record SaddleRagEndpoint(
             "mcp__saddlerag__list_profiles",
             "mcp__saddlerag__inspect_scrape",
             "mcp__saddlerag__recon_library"
-        });
+        ]
+    );
+#pragma warning restore STY0008
 }

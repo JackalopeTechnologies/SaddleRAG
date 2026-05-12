@@ -28,9 +28,7 @@ public sealed class VsCodeMcpWriterTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(mTempDir))
-        {
             Directory.Delete(mTempDir, recursive: true);
-        }
     }
 
     [Theory]

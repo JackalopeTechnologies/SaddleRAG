@@ -146,7 +146,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
             mLogger.LogInformation("Scrape job {JobId} completed successfully", jobRecord.Id);
         }
-        catch(Exception) when(cts != null && cts.IsCancellationRequested)
+        catch(Exception) when(cts is { IsCancellationRequested: true })
         {
             mLogger.LogInformation("Scrape job {JobId} was cancelled", jobRecord.Id);
 

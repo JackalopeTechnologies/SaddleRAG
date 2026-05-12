@@ -21,7 +21,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryDryRunReportsOutcomeWithoutWriting()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         libraryRepo.GetLibraryAsync("old", Arg.Any<CancellationToken>())
                    .Returns(new LibraryRecord
@@ -30,7 +30,7 @@ public sealed class MutationToolsTests
                                     Name = "old",
                                     Hint = "h",
                                     CurrentVersion = "1.0",
-                                    AllVersions = new List<string> { "1.0" }
+                                    AllVersions = ["1.0"]
                                 }
                            );
         libraryRepo.GetLibraryAsync("new", Arg.Any<CancellationToken>())
@@ -57,7 +57,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryDryRunReportsNotFoundWhenMissing()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         libraryRepo.GetLibraryAsync("missing", Arg.Any<CancellationToken>())
                    .Returns((LibraryRecord?) null);
@@ -81,7 +81,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryApplyQueuesJobAndCallsRenameAsync()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         libraryRepo.RenameAsync("old", "new", Arg.Any<CancellationToken>())
                    .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
@@ -118,7 +118,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryApplyQueuesJobEvenOnCollision()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         libraryRepo.RenameAsync("old", "new", Arg.Any<CancellationToken>())
                    .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Collision, Counts: null));
@@ -144,7 +144,7 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -157,7 +157,7 @@ public sealed class MutationToolsTests
                                     Name = "foo",
                                     Hint = "h",
                                     CurrentVersion = "1.0",
-                                    AllVersions = new List<string> { "1.0" }
+                                    AllVersions = ["1.0"]
                                 }
                            );
         chunkRepo.GetChunkCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 123);
@@ -189,7 +189,7 @@ public sealed class MutationToolsTests
         var indexRepo = Substitute.For<ILibraryIndexRepository>();
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -230,7 +230,7 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -243,7 +243,7 @@ public sealed class MutationToolsTests
                                     Name = "foo",
                                     Hint = "h",
                                     CurrentVersion = "2.0",
-                                    AllVersions = new List<string> { "1.0", "2.0" }
+                                    AllVersions = ["1.0", "2.0"]
                                 }
                            );
         chunkRepo.GetChunkCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 50);
@@ -274,7 +274,7 @@ public sealed class MutationToolsTests
         var indexRepo = Substitute.For<ILibraryIndexRepository>();
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -291,7 +291,7 @@ public sealed class MutationToolsTests
                                     Name = "foo",
                                     Hint = "h",
                                     CurrentVersion = "2.0",
-                                    AllVersions = new List<string> { "1.0", "2.0" }
+                                    AllVersions = ["1.0", "2.0"]
                                 }
                            );
         libraryRepo.DeleteAsync("foo", Arg.Any<CancellationToken>()).Returns(returnThis: 2);

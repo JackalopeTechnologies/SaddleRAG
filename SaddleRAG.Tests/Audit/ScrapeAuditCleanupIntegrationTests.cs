@@ -34,8 +34,7 @@ public sealed class ScrapeAuditCleanupIntegrationTests
         var lib = $"lib-cleanup-{Guid.NewGuid():N}";
         var jobId = $"job-{Guid.NewGuid():N}";
 
-        await repo.InsertManyAsync(new[]
-                                       {
+        await repo.InsertManyAsync([
                                            new ScrapeAuditLogEntry
                                                {
                                                    Id = Guid.NewGuid().ToString("N"),
@@ -61,7 +60,7 @@ public sealed class ScrapeAuditCleanupIntegrationTests
                                                    Status = AuditStatus.Skipped,
                                                    SkipReason = AuditSkipReason.PatternExclude
                                                }
-                                       },
+                                       ],
                                    TestContext.Current.CancellationToken
                                   );
 

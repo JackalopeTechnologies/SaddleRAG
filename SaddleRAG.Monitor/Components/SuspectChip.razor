@@ -43,7 +43,7 @@ else
     public bool IsSuspect { get; set; }
 
     [Parameter]
-    public IReadOnlyList<string> Reasons { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> Reasons { get; set; } = [];
 
     [Parameter]
     public Size Size { get; set; } = Size.Small;

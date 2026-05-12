@@ -158,7 +158,7 @@ public class ChunkRepository : IChunkRepository
 
         var chunks = await GetChunksAsync(libraryId, version, ct);
         var names = chunks
-                    .Where(c => c.ParserVersion >= ParserVersionV2 && c.Symbols.Count > 0)
+                    .Where(c => c is { ParserVersion: >= ParserVersionV2, Symbols.Count: > 0 })
                     .SelectMany(c => c.Symbols.Where(s => s.Kind == kind).Select(s => s.Name))
                     .Where(n => !string.IsNullOrEmpty(n));
 
@@ -323,7 +323,7 @@ public class ChunkRepository : IChunkRepository
         // For legacy v1 chunks: fall back to QualifiedName so the tool stays useful
         // until a rescrub bumps them. Each chunk yields zero or more names.
         var v2Names = chunks
-                      .Where(c => c.ParserVersion >= ParserVersionV2 && c.Symbols.Count > 0)
+                      .Where(c => c is { ParserVersion: >= ParserVersionV2, Symbols.Count: > 0 })
                       .SelectMany(c => c.Symbols.Where(s => s.Kind == SymbolKind.Type).Select(s => s.Name));
 
         var legacyNames = chunks

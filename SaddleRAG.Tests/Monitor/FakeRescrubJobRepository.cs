@@ -16,7 +16,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeRescrubJobRepository : IRescrubJobRepository
 {
-    private readonly List<RescrubJobRecord> mJobs = new List<RescrubJobRecord>();
+    private readonly List<RescrubJobRecord> mJobs = [];
 
     public Task UpsertAsync(RescrubJobRecord job, CancellationToken ct = default)
     {

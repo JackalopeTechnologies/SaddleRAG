@@ -142,7 +142,7 @@ public class RescrubService
         var excludedCount = excludedEntries.Count;
 
         var indexesBuilt = false;
-        if (options.RebuildIndexes && !options.DryRun)
+        if (options is { RebuildIndexes: true, DryRun: false })
         {
             await PersistLibraryIndexAsync(indexRepo,
                                            bm25ShardRepo,
@@ -192,7 +192,7 @@ public class RescrubService
                                options.DryRun
                               );
 
-        if (!options.DryRun && options.BoundaryAudit)
+        if (options is { DryRun: false, BoundaryAudit: true })
         {
             await PersistBoundaryIssuePctAsync(libraryRepo,
                                                libraryId,

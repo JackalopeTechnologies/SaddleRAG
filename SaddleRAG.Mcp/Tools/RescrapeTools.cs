@@ -88,7 +88,7 @@ public static class RescrapeTools
         {
             var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
             var versionRecord = await libraryRepo.GetVersionAsync(library, version, ct);
-            if (versionRecord != null && versionRecord.Suspect)
+            if (versionRecord is { Suspect: true })
             {
                 var refused = new
                                   {

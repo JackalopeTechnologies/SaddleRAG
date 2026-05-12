@@ -92,7 +92,7 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
     {
         ArgumentNullException.ThrowIfNull(texts);
 
-        float[][] result = Array.Empty<float[]>();
+        float[][] result = [];
         string prefix = SelectPrefix(role);
 
         if (texts.Count > 0)

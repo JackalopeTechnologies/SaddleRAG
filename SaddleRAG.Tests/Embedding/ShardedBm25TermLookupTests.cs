@@ -62,7 +62,7 @@ public sealed class ShardedBm25TermLookupTests
 
         public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
             CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<LibraryVersionKey>>(Array.Empty<LibraryVersionKey>());
+            Task.FromResult<IReadOnlyList<LibraryVersionKey>>([]);
     }
 
     [Fact]

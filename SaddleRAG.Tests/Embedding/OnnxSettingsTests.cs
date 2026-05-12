@@ -26,7 +26,7 @@ public sealed class OnnxSettingsTests
         Assert.Equal(string.Empty, settings.ActiveEmbeddingModel);
         Assert.Equal(string.Empty, settings.ActiveRerankerModel);
         Assert.Equal(OnnxSettings.DefaultGraphOptimizationLevel, settings.GraphOptimizationLevel);
-        Assert.Equal(0, settings.IntraOpNumThreads);
+        Assert.Equal(expected: 0, settings.IntraOpNumThreads);
         Assert.Equal(OnnxSettings.DefaultRerankBatchSize, settings.RerankBatchSize);
         Assert.Empty(settings.EmbeddingModels);
         Assert.Empty(settings.RerankerModels);
@@ -161,7 +161,7 @@ public sealed class OnnxSettingsTests
         Assert.Equal(TokenizerFamily.Bert, entry.TokenizerFamily);
         Assert.Equal(string.Empty, entry.VocabFile);
         Assert.Equal(string.Empty, entry.SpmFile);
-        Assert.Equal(0, entry.Dimensions);
+        Assert.Equal(expected: 0, entry.Dimensions);
         Assert.Equal(DefaultMaxSequenceLength, entry.MaxSequenceLength);
         Assert.Equal(string.Empty, entry.DocumentPrefix);
         Assert.Equal(string.Empty, entry.QueryPrefix);

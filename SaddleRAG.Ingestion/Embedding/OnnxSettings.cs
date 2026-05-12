@@ -91,7 +91,7 @@ public class OnnxSettings
     ///     is the default</strong> when <see cref="ActiveEmbeddingModel" /> is
     ///     unset.
     /// </summary>
-    public List<EmbeddingModelEntry> EmbeddingModels { get; set; } = new();
+    public List<EmbeddingModelEntry> EmbeddingModels { get; set; } = [];
 
     /// <summary>
     ///     Ordered registry of reranker model entries. <strong>First entry
@@ -99,7 +99,7 @@ public class OnnxSettings
     ///     unset. Set <see cref="ActiveRerankerModel" /> to empty/null to
     ///     disable reranking without removing entries from the list.
     /// </summary>
-    public List<RerankerModelEntry> RerankerModels { get; set; } = new();
+    public List<RerankerModelEntry> RerankerModels { get; set; } = [];
 
     /// <summary>Configuration section name in appsettings.</summary>
     public const string SectionName = "Onnx";
@@ -137,7 +137,7 @@ public class OnnxSettings
             throw new InvalidOperationException("Onnx.EmbeddingModels registry is empty; cannot resolve an active embedding model.");
 
         EmbeddingModelEntry result = string.IsNullOrEmpty(ActiveEmbeddingModel)
-            ? EmbeddingModels[0]
+            ? EmbeddingModels[index: 0]
             : EmbeddingModels.FirstOrDefault(e => e.Name == ActiveEmbeddingModel)
               ?? throw new InvalidOperationException(
                   $"Onnx.ActiveEmbeddingModel '{ActiveEmbeddingModel}' does not match any entry in EmbeddingModels."
@@ -165,7 +165,7 @@ public class OnnxSettings
         RerankerModelEntry? result = (isExplicitlyNone, isUnset) switch
         {
             (true, _) => null,
-            (false, true) => RerankerModels.Count > 0 ? RerankerModels[0] : null,
+            (false, true) => RerankerModels.Count > 0 ? RerankerModels[index: 0] : null,
             (false, false) => RerankerModels.FirstOrDefault(e => e.Name == ActiveRerankerModel)
                               ?? throw new InvalidOperationException(
                                   $"Onnx.ActiveRerankerModel '{ActiveRerankerModel}' does not match any entry in RerankerModels. " +

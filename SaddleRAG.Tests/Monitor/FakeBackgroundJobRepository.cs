@@ -16,7 +16,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeBackgroundJobRepository : IBackgroundJobRepository
 {
-    private readonly List<BackgroundJobRecord> mJobs = new List<BackgroundJobRecord>();
+    private readonly List<BackgroundJobRecord> mJobs = [];
 
     public Task UpsertAsync(BackgroundJobRecord job, CancellationToken ct = default)
     {

@@ -126,9 +126,7 @@ if (builder.Environment.IsDevelopment())
                                        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionDirectory));
 
     if (OperatingSystem.IsWindows())
-    {
         dataProtectionBuilder.ProtectKeysWithDpapi();
-    }
 }
 
 builder.Services.AddSingleton(levelSwitch);
@@ -168,7 +166,7 @@ builder.Services.AddSingleton<OllamaBootstrapper>();
 // Embedding provider — switch between ONNX and Ollama based on Onnx.Enabled+EmbeddingEnabled.
 var onnxSettingsForDi = builder.Configuration.GetSection(OnnxSettings.SectionName).Get<OnnxSettings>()
                         ?? new OnnxSettings();
-if (onnxSettingsForDi.Enabled && onnxSettingsForDi.EmbeddingEnabled)
+if (onnxSettingsForDi is { Enabled: true, EmbeddingEnabled: true })
     builder.Services.AddSingleton<IEmbeddingProvider, OnnxEmbeddingProvider>();
 else
     builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();

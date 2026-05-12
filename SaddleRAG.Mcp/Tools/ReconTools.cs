@@ -282,8 +282,14 @@ public static class ReconTools
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 
+    // The literal hint and sample-page strings are intentional MCP tool
+    // payload — they get serialized verbatim into the recon response so
+    // callers see the same wording every time. STY0008 suppression is
+    // appropriate since extracting each to a per-hint constant would
+    // just duplicate the wording.
+#pragma warning disable STY0008
     private static readonly string[] smReconHints =
-        {
+        [
             "Look for an enum index page (e.g. *-Enums.htm) — set canonicalInventoryUrl if found.",
             "If the docs cover multiple languages, list them all in languages[] in order of prominence.",
             "Aerotech-style docs use \".\" separators in qualified names like AxisFault.Disabled.",
@@ -291,12 +297,13 @@ public static class ReconTools
             "Skip prose words (Each, When, Represents, Values, For, Use) — they are not symbols.",
             "Auth walls (login redirects, /account/* paths) and versioned URLs (?v=24.1) are crawl-scope concerns — note them in crawlHints.excludedUrlPatterns, do not try to capture them as docs.",
             "Use dryrun_scrape if the site looks complex; the report's PagesRemainingInQueue is a leading indicator of scope problems."
-        };
+        ];
 
     private static readonly string[] smSamplePages =
-        {
+        [
             "The root URL itself",
             "Any \"types\" / \"enums\" / \"reference\" landing page linked from root",
             "One sample API reference page so you see what a typical symbol shape looks like"
-        };
+        ];
+#pragma warning restore STY0008
 }

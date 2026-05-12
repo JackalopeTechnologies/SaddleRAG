@@ -30,9 +30,7 @@ public sealed class ClaudeCodeWriterTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(mTempDir))
-        {
             Directory.Delete(mTempDir, recursive: true);
-        }
     }
 
     [Theory]
@@ -45,9 +43,7 @@ public sealed class ClaudeCodeWriterTests : IDisposable
     {
         string fixtureInput = TestPaths.FixtureFile("claude-code", scenario, "input.json");
         if (File.Exists(fixtureInput))
-        {
             File.Copy(fixtureInput, mConfigPath, overwrite: true);
-        }
 
         var writer = new ClaudeCodeWriter(mConfigPath, mSkillPath);
         var result = await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
