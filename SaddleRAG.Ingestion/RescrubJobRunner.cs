@@ -19,8 +19,8 @@ using SaddleRAG.Ingestion.Recon;
 namespace SaddleRAG.Ingestion;
 
 /// <summary>
-///     Runs rescrub jobs in the background, tracking status in MongoDB so
-///     the caller can poll get_rescrub_status without blocking the MCP
+///     Runs reextract jobs in the background, tracking status in MongoDB so
+///     the caller can poll get_reextract_status without blocking the MCP
 ///     transport connection.
 /// </summary>
 public class RescrubJobRunner

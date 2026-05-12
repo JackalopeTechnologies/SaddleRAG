@@ -30,7 +30,7 @@ public static class HealthTools
     [Description("Per-version diagnostic snapshot. Returns chunk count, hostname " +
                  "distribution, language mix, boundary-issue rate, and suspect markers. " +
                  "Also returns a SuggestedNextAction field (submit_url_correction if suspect, " +
-                 "rechunk_library if boundaryIssuePct ≥ 10%, rescrub_library if parser is stale, " +
+                 "rechunk_library if boundaryIssuePct ≥ 10%, reextract_library if parser is stale, " +
                  "null if healthy). For the actual library content, use get_library_overview instead."
                 )]
     public static async Task<string> GetLibraryHealth(RepositoryFactory repositoryFactory,

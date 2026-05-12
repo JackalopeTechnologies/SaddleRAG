@@ -31,7 +31,7 @@ public enum IngestStatus
 
     /// <summary>
     ///     Chunks present but were extracted with an older parser version.
-    ///     Caller should call rescrub_library.
+    ///     Caller should call reextract_library.
     /// </summary>
     Stale,
 
