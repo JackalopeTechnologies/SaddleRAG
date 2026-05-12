@@ -74,6 +74,8 @@ public sealed class McpWarmupService : BackgroundService
 
             var bootstrapper = scope.ServiceProvider.GetRequiredService<OllamaBootstrapper>();
 
+            var onnxDownloader = scope.ServiceProvider.GetRequiredService<OnnxModelDownloader>();
+
             var vectorSearch = scope.ServiceProvider.GetRequiredService<IVectorSearchProvider>();
 
             var embeddingProvider = scope.ServiceProvider.GetRequiredService<IEmbeddingProvider>();
@@ -120,6 +122,18 @@ public sealed class McpWarmupService : BackgroundService
 
             stepSw.Restart();
 
+            await onnxDownloader.EnsureActiveModelsAsync(stoppingToken);
+
+            mWarmupState.MarkPhase(PhaseOnnxModelsReady);
+
+            mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - ONNX models ready",
+                                   startupSw.Elapsed.TotalSeconds,
+                                   stepSw.ElapsedMilliseconds
+                                  );
+
+
+            stepSw.Restart();
+
             foreach(var profile in profileNames)
 
                 await LoadChunksForProfileAsync(profile, repositoryFactory, vectorSearch, stoppingToken);
@@ -140,9 +154,11 @@ public sealed class McpWarmupService : BackgroundService
 
                 await embeddingProvider.EmbedAsync([WarmupProbeText], stoppingToken);
 
-                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - nomic-embed-text warm",
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - embedding provider warm ({Provider}/{Model})",
                                        startupSw.Elapsed.TotalSeconds,
-                                       stepSw.ElapsedMilliseconds
+                                       stepSw.ElapsedMilliseconds,
+                                       embeddingProvider.ProviderId,
+                                       embeddingProvider.ModelName
                                       );
 
 
@@ -329,6 +345,8 @@ public sealed class McpWarmupService : BackgroundService
     private const string PhaseMongoDbProfilesDiscovered = "MongoDB profiles discovered";
 
     private const string PhaseOllamaBootstrapFinished = "Ollama bootstrap finished";
+
+    private const string PhaseOnnxModelsReady = "ONNX models ready";
 
     private const string PhaseVectorIndicesLoaded = "Vector indices loaded";
 

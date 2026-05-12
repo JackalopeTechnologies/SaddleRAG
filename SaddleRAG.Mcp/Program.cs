@@ -173,6 +173,10 @@ if (onnxSettingsForDi.Enabled && onnxSettingsForDi.EmbeddingEnabled)
 else
     builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
 
+// Onnx model downloader (HuggingFace fetches into Onnx.ModelsDir during warmup).
+builder.Services.AddHttpClient(OnnxModelDownloader.HttpClientName);
+builder.Services.AddSingleton<OnnxModelDownloader>();
+
 builder.Services.AddSingleton<IVectorSearchProvider, InMemoryBruteForceVectorSearch>();
 
 // Re-ranker (toggleable at runtime via MCP tool). OnnxReRanker is registered
@@ -389,7 +393,15 @@ if (prewarmMode)
                           startupSw.Elapsed.TotalSeconds
                          );
 
-    using var prewarmCts = new CancellationTokenSource(TimeSpan.FromSeconds(seconds: 60));
+    // Scale prewarm timeout when ONNX is enabled: first install downloads
+    // ~364 MB (nomic-fp16 + mxbai-base quantized). 60s is fine for warm
+    // re-runs; cold first-install needs more.
+    const int PrewarmBaseTimeoutSeconds = 60;
+    const int PrewarmOnnxOverheadSeconds = 600;
+    int prewarmSeconds = onnxSettingsForDi.Enabled
+                             ? PrewarmBaseTimeoutSeconds + PrewarmOnnxOverheadSeconds
+                             : PrewarmBaseTimeoutSeconds;
+    using var prewarmCts = new CancellationTokenSource(TimeSpan.FromSeconds(prewarmSeconds));
 
     try
 
