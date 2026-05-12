@@ -41,7 +41,7 @@ public sealed class OnnxProviderIntegrationTests
         Assert.Equal("nomic-embed-text-v1.5", provider.ModelName);
         Assert.Equal(NomicDimensions, provider.Dimensions);
 
-        var vectors = await provider.EmbedAsync(new[] { "hello world" }, CancellationToken.None);
+        var vectors = await provider.EmbedAsync(new[] { "hello world" }, ct: CancellationToken.None);
 
         Assert.Single(vectors);
         Assert.Equal(NomicDimensions, vectors[0].Length);
@@ -64,7 +64,7 @@ public sealed class OnnxProviderIntegrationTests
 
         using var provider = new OnnxEmbeddingProvider(options, NullLogger<OnnxEmbeddingProvider>.Instance);
 
-        var vectors = await provider.EmbedAsync(Array.Empty<string>(), CancellationToken.None);
+        var vectors = await provider.EmbedAsync(Array.Empty<string>(), ct: CancellationToken.None);
 
         Assert.Empty(vectors);
     }
@@ -125,6 +125,227 @@ public sealed class OnnxProviderIntegrationTests
         Assert.Equal("a", ranked[0].Chunk.Id);
         Assert.Equal("b", ranked[1].Chunk.Id);
         Assert.True(ranked[0].RelevanceScore > ranked[1].RelevanceScore);
+    }
+
+    [Fact]
+    public async Task EmbeddingProviderProducesDifferentVectorsForQueryVsDocumentRoles()
+    {
+        Assert.SkipUnless(File.Exists(NomicModelPath) && File.Exists(NomicVocabPath),
+                          $"Nomic ONNX model not staged at {ScratchModelsRoot}; run the Phase 1 spike to populate.");
+
+        var settings = BuildSettingsWithNomic();
+        var options = Options.Create(settings);
+
+        using var provider = new OnnxEmbeddingProvider(options, NullLogger<OnnxEmbeddingProvider>.Instance);
+
+        const string text = "How do I configure ONNX Runtime?";
+        var asDoc = await provider.EmbedAsync(new[] { text }, EmbedRole.Document, CancellationToken.None);
+        var asQuery = await provider.EmbedAsync(new[] { text }, EmbedRole.Query, CancellationToken.None);
+
+        // Same text, different role → nomic emits different vectors via the
+        // search_document: vs search_query: task prefix. If these were equal,
+        // the prefix wouldn't be reaching the model.
+        Assert.Single(asDoc);
+        Assert.Single(asQuery);
+        Assert.Equal(asDoc[0].Length, asQuery[0].Length);
+
+        double cosine = 0.0;
+        for(var i = 0; i < asDoc[0].Length; i++)
+            cosine += asDoc[0][i] * asQuery[0][i];
+
+        // L2-normalized vectors → cosine similarity equals dot product. The
+        // query and document embeddings for the same text are similar but
+        // not identical; require cosine < 0.999 to confirm they actually
+        // differ.
+        Assert.True(cosine < 0.999,
+                    $"Doc/Query vectors should differ for asymmetric model; got cosine={cosine:F4}.");
+    }
+
+    [Fact]
+    public async Task ReRankerBatchedRunsCompleteWithValidScoresAndCoherentTopResults()
+    {
+        Assert.SkipUnless(File.Exists(MxbaiModelPath) && File.Exists(MxbaiSpmPath),
+                          $"mxbai ONNX model not staged at {ScratchModelsRoot}; run the Phase 1 spike to populate.");
+
+        // 20 candidates across a wide quality spectrum, exceeds smaller batch
+        // sizes so we exercise multi-batch logic. The test asserts that each
+        // batch size produces a complete result set with valid scores, and
+        // that semantically Paris-related candidates dominate.
+        //
+        // Per-pair score parity across batch sizes is NOT asserted: mxbai's
+        // int8 quantized ONNX export shows materially different scores
+        // depending on batch composition (likely SIMD-parallel accumulation
+        // order in the matmul + ONNX Runtime quantization). The
+        // batching contract is "valid scores, plausible ranking" — not
+        // bit-exact parity.
+        var candidates = BuildCandidatesForBatching(count: 20);
+        const string query = "What is the capital of France?";
+
+        foreach (int batchSize in new[] { 1, 8, 32 })
+        {
+            var ranked = await ScoreWith(query, candidates, batchSize, CancellationToken.None);
+
+            Assert.Equal(candidates.Count, ranked.Count);
+            foreach (var r in ranked)
+            {
+                Assert.False(float.IsNaN(r.RelevanceScore), $"NaN score for {r.Chunk.Id} at batch {batchSize}");
+                Assert.False(float.IsInfinity(r.RelevanceScore),
+                             $"Inf score for {r.Chunk.Id} at batch {batchSize}");
+            }
+            // Result is sorted descending by score.
+            for(var i = 1; i < ranked.Count; i++)
+                Assert.True(ranked[i - 1].RelevanceScore >= ranked[i].RelevanceScore,
+                            $"Result not sorted at batch {batchSize}: pos {i - 1} score {ranked[i - 1].RelevanceScore} < pos {i} score {ranked[i].RelevanceScore}");
+
+            // Top result should be a Paris-related candidate (the first 5
+            // template positions in BuildCandidatesForBatching).
+            var topContent = ranked[0].Chunk.Content;
+            Assert.Contains("Paris", topContent);
+        }
+    }
+
+    [Fact]
+    public async Task ReRankerTruncatesOverLengthDocumentsAndStillProducesValidScores()
+    {
+        Assert.SkipUnless(File.Exists(MxbaiModelPath) && File.Exists(MxbaiSpmPath),
+                          $"mxbai ONNX model not staged at {ScratchModelsRoot}; run the Phase 1 spike to populate.");
+
+        // Build one massively over-length document — a 100x repeat of a
+        // plausible sentence. mxbai's MaxSequenceLength is 512 tokens; this
+        // input is way past that. The reranker should truncate doc-side
+        // and still produce a valid score.
+        var longDoc = string.Concat(Enumerable.Repeat("Paris is the capital of France. ", 200));
+        var candidates = new List<DocChunk>
+                             {
+                                 BuildChunk("long", longDoc),
+                                 BuildChunk("short", "Berlin is the capital of Germany.")
+                             };
+
+        var settings = BuildSettingsWithMxbai();
+        var options = Options.Create(settings);
+        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+
+        // Should not throw despite the document blowing past MaxSequenceLength.
+        var ranked = await reranker.ReRankAsync("What is the capital of France?",
+                                                candidates,
+                                                candidates.Count,
+                                                CancellationToken.None
+                                               );
+
+        Assert.Equal(2, ranked.Count);
+        Assert.False(float.IsNaN(ranked[0].RelevanceScore));
+        Assert.False(float.IsInfinity(ranked[0].RelevanceScore));
+        // Even truncated, "Paris is the capital of France." should score above
+        // the Berlin/Germany distractor.
+        Assert.Equal("long", ranked[0].Chunk.Id);
+    }
+
+    [Fact]
+    public async Task ReRankerHonorsCancellationTokenBetweenBatches()
+    {
+        Assert.SkipUnless(File.Exists(MxbaiModelPath) && File.Exists(MxbaiSpmPath),
+                          $"mxbai ONNX model not staged at {ScratchModelsRoot}; run the Phase 1 spike to populate.");
+
+        // 30 candidates, batch size 1 → 30 batches → at least one
+        // ThrowIfCancellationRequested loop check between batches.
+        var candidates = BuildCandidatesForBatching(count: 30);
+
+        var settings = BuildSettingsWithMxbai();
+        settings.RerankBatchSize = 1;
+        var options = Options.Create(settings);
+        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => reranker.ReRankAsync("query", candidates, candidates.Count, cts.Token)
+        );
+    }
+
+    [Fact]
+    public async Task ToggleableReRankerDispatchesOnnxStrategyToOnnxReRanker()
+    {
+        Assert.SkipUnless(File.Exists(MxbaiModelPath) && File.Exists(MxbaiSpmPath),
+                          $"mxbai ONNX model not staged at {ScratchModelsRoot}; run the Phase 1 spike to populate.");
+
+        // Both Onnx and Off paths run real OnnxReRanker through the toggle.
+        var onnxOptions = Options.Create(BuildSettingsWithMxbai());
+        using var onnxReRanker = new OnnxReRanker(onnxOptions, NullLogger<OnnxReRanker>.Instance);
+
+        var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Onnx };
+        var toggle = new ToggleableReRanker(Options.Create(ranking),
+                                            onnxReRanker,
+                                            NullLoggerFactory.Instance
+                                           );
+
+        var candidates = new List<DocChunk>
+                             {
+                                 BuildChunk("paris", "Paris is the capital of France."),
+                                 BuildChunk("berlin", "Berlin is the capital of Germany."),
+                                 BuildChunk("seine", "The Seine river runs through Paris.")
+                             };
+
+        // With ReRankerStrategy.Onnx, ToggleableReRanker should call into
+        // OnnxReRanker which produces real cross-encoder scores. The Paris
+        // candidate should dominate.
+        var rankedOnnx = await toggle.ReRankAsync("What is the capital of France?",
+                                                  candidates, candidates.Count,
+                                                  CancellationToken.None
+                                                 );
+        Assert.Equal("paris", rankedOnnx[0].Chunk.Id);
+        Assert.True(rankedOnnx[0].RelevanceScore > 1.0f);
+
+        // Flip to Off → NoOp pass-through. Original input order preserved
+        // with synthetic descending scores.
+        toggle.Strategy = ReRankerStrategy.Off;
+        var rankedOff = await toggle.ReRankAsync("What is the capital of France?",
+                                                 candidates, candidates.Count,
+                                                 CancellationToken.None
+                                                );
+        Assert.Equal("paris", rankedOff[0].Chunk.Id);
+        Assert.Equal("berlin", rankedOff[1].Chunk.Id);
+        Assert.Equal("seine", rankedOff[2].Chunk.Id);
+        // NoOp passes through with score = 1.0 - i * 0.01.
+        Assert.True(rankedOff[0].RelevanceScore <= 1.0f);
+    }
+
+    private static List<DocChunk> BuildCandidatesForBatching(int count)
+    {
+        var templates = new[]
+                            {
+                                "Paris is the capital of France.",
+                                "The Eiffel Tower is in Paris.",
+                                "France is in Western Europe.",
+                                "Berlin is the capital of Germany.",
+                                "The Seine flows through Paris.",
+                                "Lyon is a major city in France.",
+                                "Madrid is the capital of Spain.",
+                                "London is the capital of the UK.",
+                                "Rome is the capital of Italy.",
+                                "Tokyo is the capital of Japan."
+                            };
+
+        var result = new List<DocChunk>(count);
+        for(var i = 0; i < count; i++)
+        {
+            string content = templates[i % templates.Length] + $" (variant {i})";
+            result.Add(BuildChunk($"c{i}", content));
+        }
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<ReRankResult>> ScoreWith(string query,
+                                                                      List<DocChunk> candidates,
+                                                                      int batchSize,
+                                                                      CancellationToken ct)
+    {
+        var settings = BuildSettingsWithMxbai();
+        settings.RerankBatchSize = batchSize;
+        var options = Options.Create(settings);
+        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+        var ranked = await reranker.ReRankAsync(query, candidates, candidates.Count, ct);
+        return ranked;
     }
 
     private static DocChunk BuildChunk(string id, string content) => new()

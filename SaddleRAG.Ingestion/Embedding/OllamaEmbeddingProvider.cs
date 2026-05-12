@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 
 #endregion
@@ -61,10 +62,16 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
 
 
     /// <inheritdoc />
-    public async Task<float[][]> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
+    public async Task<float[][]> EmbedAsync(IReadOnlyList<string> texts,
+                                            EmbedRole role = EmbedRole.Document,
+                                            CancellationToken ct = default)
 
     {
         ArgumentNullException.ThrowIfNull(texts);
+        // OllamaEmbeddingProvider does not apply task prefixes; the role
+        // parameter is honored by asymmetric ONNX models only. Reading
+        // the value silences any "unused parameter" lint.
+        _ = role;
 
 
         float[][] allEmbeddings = Array.Empty<float[]>();

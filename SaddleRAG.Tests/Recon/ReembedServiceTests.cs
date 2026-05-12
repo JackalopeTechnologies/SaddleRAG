@@ -49,7 +49,7 @@ public sealed class ReembedServiceTests
         Assert.Equal("nomic-embed-text", result.PreviousEmbeddingModelName);
         Assert.Equal(expected: 768, result.PreviousEmbeddingDimensions);
         await embeddingProvider.DidNotReceive()
-                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>());
         await chunkRepo.DidNotReceive()
                        .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
     }
@@ -83,7 +83,7 @@ public sealed class ReembedServiceTests
         Assert.True(result.DryRun);
         Assert.Equal(expected: 1, result.Processed);
         await embeddingProvider.DidNotReceive()
-                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>());
         await chunkRepo.DidNotReceive()
                        .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
         await vectorSearch.DidNotReceive()
@@ -134,6 +134,7 @@ public sealed class ReembedServiceTests
 
         await embeddingProvider.Received(requiredNumberOfCalls: 1)
                                .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x.Count == 2),
+                                           Arg.Any<EmbedRole>(),
                                            Arg.Any<CancellationToken>()
                                           );
         await chunkRepo.Received(requiredNumberOfCalls: 1)
@@ -186,6 +187,7 @@ public sealed class ReembedServiceTests
         Assert.Equal(expected: 2, result.Processed);
         await embeddingProvider.Received()
                                .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x.Count == 2),
+                                           Arg.Any<EmbedRole>(),
                                            Arg.Any<CancellationToken>()
                                           );
     }
@@ -198,7 +200,7 @@ public sealed class ReembedServiceTests
         provider.ProviderId.Returns(providerId);
         provider.ModelName.Returns(modelName);
         provider.Dimensions.Returns(dims);
-        provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+        provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>())
                 .Returns(call =>
                 {
                     var texts = call.Arg<IReadOnlyList<string>>();
