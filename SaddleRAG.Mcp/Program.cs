@@ -149,6 +149,14 @@ builder.Services.AddSaddleRagDatabase(builder.Configuration);
 
 builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(OllamaSettings.SectionName));
 
+// ONNX configuration (in-process embedding + reranking via Microsoft.ML.OnnxRuntime).
+// When Onnx.Enabled && Onnx.EmbeddingEnabled, the OnnxEmbeddingProvider is
+// registered as IEmbeddingProvider; otherwise the OllamaEmbeddingProvider
+// stays as the active embedder. ToggleableReRanker reads
+// RankingSettings.ReRankerStrategy per-call to decide whether to dispatch
+// to OnnxReRanker, the legacy Ollama rerankers, or pass-through.
+builder.Services.Configure<OnnxSettings>(builder.Configuration.GetSection(OnnxSettings.SectionName));
+
 // Ranking configuration (BM25 weight, ReRank blend weight, ProseMentionThreshold, ReRankerStrategy)
 builder.Services.Configure<RankingSettings>(builder.Configuration.GetSection(RankingSettings.SectionName));
 
@@ -157,11 +165,21 @@ builder.Services.Configure<RankingSettings>(builder.Configuration.GetSection(Ran
 
 builder.Services.AddSingleton<OllamaBootstrapper>();
 
-builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
+// Embedding provider — switch between ONNX and Ollama based on Onnx.Enabled+EmbeddingEnabled.
+var onnxSettingsForDi = builder.Configuration.GetSection(OnnxSettings.SectionName).Get<OnnxSettings>()
+                        ?? new OnnxSettings();
+if (onnxSettingsForDi.Enabled && onnxSettingsForDi.EmbeddingEnabled)
+    builder.Services.AddSingleton<IEmbeddingProvider, OnnxEmbeddingProvider>();
+else
+    builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
 
 builder.Services.AddSingleton<IVectorSearchProvider, InMemoryBruteForceVectorSearch>();
 
-// Re-ranker (toggleable at runtime via MCP tool)
+// Re-ranker (toggleable at runtime via MCP tool). OnnxReRanker is registered
+// regardless of Onnx.Enabled because ToggleableReRanker holds a reference
+// to it; if Onnx.ActiveRerankerModel resolves to null at construction the
+// reranker behaves as pass-through.
+builder.Services.AddSingleton<OnnxReRanker>();
 builder.Services.AddSingleton<ToggleableReRanker>();
 builder.Services.AddSingleton<IReRanker>(sp => sp.GetRequiredService<ToggleableReRanker>());
 
