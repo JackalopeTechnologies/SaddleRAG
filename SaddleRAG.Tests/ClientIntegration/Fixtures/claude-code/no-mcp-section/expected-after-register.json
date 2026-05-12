@@ -20,6 +20,7 @@
       "mcp__saddlerag__get_job_status",
       "mcp__saddlerag__get_scrape_status",
       "mcp__saddlerag__get_reextract_status",
+      "mcp__saddlerag__get_reembed_status",
       "mcp__saddlerag__list_libraries",
       "mcp__saddlerag__list_pages",
       "mcp__saddlerag__list_symbols",
@@ -27,6 +28,7 @@
       "mcp__saddlerag__list_jobs",
       "mcp__saddlerag__list_scrape_jobs",
       "mcp__saddlerag__list_reextract_jobs",
+      "mcp__saddlerag__list_reembed_jobs",
       "mcp__saddlerag__list_profiles",
       "mcp__saddlerag__inspect_scrape",
       "mcp__saddlerag__recon_library"

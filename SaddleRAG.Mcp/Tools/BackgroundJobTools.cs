@@ -128,8 +128,8 @@ public static class BackgroundJobTools
                  "dryrun_scrape, index_project_dependencies, submit_url_correction), most recent first. " +
                  "Filter by jobType to narrow results. " +
                  "Use get_job_status(jobId) to poll a specific job. " +
-                 "Does NOT list scrape_docs or reextract_library jobs — " +
-                 "use list_scrape_jobs and list_reextract_jobs for those."
+                 "Does NOT list scrape_docs, reextract_library, or reembed_library jobs — " +
+                 "use list_scrape_jobs, list_reextract_jobs, and list_reembed_jobs for those."
                 )]
     public static async Task<string> ListJobs(RepositoryFactory repositoryFactory,
                                               [Description("Optional job type filter (e.g. 'rechunk', 'rename_library', 'delete_version', " +
