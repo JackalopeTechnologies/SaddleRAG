@@ -14,8 +14,20 @@ public sealed record RegisterResult(
     string? SkillPath = null)
 {
     public static RegisterResult Ok(string clientName, string configPath, string message, string? skillPath = null)
-        => new(clientName, true, configPath, message, skillPath);
+    {
+        ArgumentException.ThrowIfNullOrEmpty(clientName);
+        ArgumentException.ThrowIfNullOrEmpty(configPath);
+        ArgumentException.ThrowIfNullOrEmpty(message);
+        var result = new RegisterResult(clientName, true, configPath, message, skillPath);
+        return result;
+    }
 
     public static RegisterResult Failed(string clientName, string configPath, string message)
-        => new(clientName, false, configPath, message);
+    {
+        ArgumentException.ThrowIfNullOrEmpty(clientName);
+        ArgumentNullException.ThrowIfNull(configPath);
+        ArgumentException.ThrowIfNullOrEmpty(message);
+        var result = new RegisterResult(clientName, false, configPath, message);
+        return result;
+    }
 }

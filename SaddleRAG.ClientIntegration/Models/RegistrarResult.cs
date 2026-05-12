@@ -14,8 +14,16 @@ public sealed record RegistrarResult(
     public bool AllUnregisterSucceeded => UnregisterResults.All(r => r.Success);
 
     public static RegistrarResult ForRegister(IReadOnlyList<RegisterResult> results)
-        => new(results, Array.Empty<UnregisterResult>());
+    {
+        ArgumentNullException.ThrowIfNull(results);
+        var result = new RegistrarResult(results, Array.Empty<UnregisterResult>());
+        return result;
+    }
 
     public static RegistrarResult ForUnregister(IReadOnlyList<UnregisterResult> results)
-        => new(Array.Empty<RegisterResult>(), results);
+    {
+        ArgumentNullException.ThrowIfNull(results);
+        var result = new RegistrarResult(Array.Empty<RegisterResult>(), results);
+        return result;
+    }
 }

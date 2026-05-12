@@ -19,7 +19,8 @@ public sealed class LlmQueryPlannerTests
         Assert.True(result.PenalizeMemberPages);
         Assert.True(result.Penalize3D);
         Assert.Equal(2, result.BoostTerms.Count);
-        Assert.Equal(2, result.PenalizeTerms.Count);
+        Assert.Equal(3, result.PenalizeTerms.Count);
+        Assert.Contains("SetMouseCursor", result.PenalizeTerms);
         Assert.Equal(0.82f, result.Confidence, precision: 2);
     }
 

@@ -14,11 +14,29 @@ public sealed record UnregisterResult(
     bool WasNoOp)
 {
     public static UnregisterResult Removed(string clientName, string configPath, string message)
-        => new(clientName, true, configPath, message, WasNoOp: false);
+    {
+        ArgumentException.ThrowIfNullOrEmpty(clientName);
+        ArgumentException.ThrowIfNullOrEmpty(configPath);
+        ArgumentException.ThrowIfNullOrEmpty(message);
+        var result = new UnregisterResult(clientName, true, configPath, message, WasNoOp: false);
+        return result;
+    }
 
     public static UnregisterResult NoOp(string clientName, string configPath, string reason)
-        => new(clientName, true, configPath, reason, WasNoOp: true);
+    {
+        ArgumentException.ThrowIfNullOrEmpty(clientName);
+        ArgumentException.ThrowIfNullOrEmpty(configPath);
+        ArgumentException.ThrowIfNullOrEmpty(reason);
+        var result = new UnregisterResult(clientName, true, configPath, reason, WasNoOp: true);
+        return result;
+    }
 
     public static UnregisterResult Failed(string clientName, string configPath, string message)
-        => new(clientName, false, configPath, message, WasNoOp: false);
+    {
+        ArgumentException.ThrowIfNullOrEmpty(clientName);
+        ArgumentNullException.ThrowIfNull(configPath);
+        ArgumentException.ThrowIfNullOrEmpty(message);
+        var result = new UnregisterResult(clientName, false, configPath, message, WasNoOp: false);
+        return result;
+    }
 }
