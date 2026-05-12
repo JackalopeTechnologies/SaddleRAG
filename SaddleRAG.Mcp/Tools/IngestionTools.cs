@@ -322,6 +322,93 @@ public static class IngestionTools
         return new { pct, hint };
     }
 
+    [McpServerTool(Name = "get_reembed_status")]
+    [Description("Check the status of a reembed job by its id. " +
+                 "Status values: Queued (waiting), Running (in progress — ChunksProcessed updates as chunks are re-embedded), " +
+                 "Completed (done — Result contains counts plus the active and prior EmbeddingProviderId / ModelName / Dimensions), " +
+                 "Failed (error — check ErrorMessage, then get_server_logs), " +
+                 "Cancelled (stopped mid-run — partial chunk updates may have been written). " +
+                 "Poll at reasonable intervals (10–30s); the job id comes from reembed_library."
+                )]
+    public static async Task<string> GetReembedStatus(RepositoryFactory repositoryFactory,
+                                                      [Description("Job id returned from reembed_library")]
+                                                      string jobId,
+                                                      [Description("Optional database profile name")]
+                                                      string? profile = null,
+                                                      CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+
+        var jobRepo = repositoryFactory.GetReembedJobRepository(profile);
+        var job = await jobRepo.GetAsync(jobId, ct);
+
+        string result;
+        if (job == null)
+            result = $"No reembed job found with id '{jobId}'.";
+        else
+        {
+            var response = new
+                               {
+                                   job.Id,
+                                   job.Status,
+                                   job.PipelineState,
+                                   job.LibraryId,
+                                   job.Version,
+                                   job.ChunksTotal,
+                                   job.ChunksProcessed,
+                                   job.ErrorMessage,
+                                   job.CreatedAt,
+                                   job.StartedAt,
+                                   job.CompletedAt,
+                                   job.LastProgressAt,
+                                   job.Result
+                               };
+
+            result = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        return result;
+    }
+
+    [McpServerTool(Name = "list_reembed_jobs")]
+    [Description("List recent reembed jobs, most recent first. " +
+                 "Use job ids from this list with get_reembed_status to poll progress. " +
+                 "Running jobs show ChunksProcessed / ChunksTotal for in-flight progress. " +
+                 "Completed jobs include EmbeddingProviderId and EmbeddingModelName so you can confirm which provider was used."
+                )]
+    public static async Task<string> ListReembedJobs(RepositoryFactory repositoryFactory,
+                                                     [Description("Maximum jobs to return (default 20)")]
+                                                     int limit = 20,
+                                                     [Description("Optional database profile name")]
+                                                     string? profile = null,
+                                                     CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+
+        var jobRepo = repositoryFactory.GetReembedJobRepository(profile);
+        var jobs = await jobRepo.ListRecentAsync(limit, ct);
+
+        var response = jobs.Select(j => new
+                                            {
+                                                j.Id,
+                                                j.Status,
+                                                j.PipelineState,
+                                                j.LibraryId,
+                                                j.Version,
+                                                j.ChunksTotal,
+                                                j.ChunksProcessed,
+                                                j.CreatedAt,
+                                                j.CompletedAt,
+                                                EmbeddingProviderId = j.Result?.EmbeddingProviderId,
+                                                EmbeddingModelName = j.Result?.EmbeddingModelName
+                                            }
+                                  );
+
+        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        return json;
+    }
+
     [McpServerTool(Name = "reload_profile")]
     [Description("Reload the in-memory vector index from MongoDB for a profile. " +
                  "Useful after manual data changes or to recover from index drift. " +
