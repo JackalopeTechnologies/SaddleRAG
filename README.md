@@ -247,8 +247,8 @@ SaddleRAG exposes 33 tools through the MCP protocol. Six load eagerly into every
 
 | Tool | Description |
 |---|---|
-| `rechunk_library` | Re-run the chunker over stored pages, replace all chunks, and re-embed. Requires `rescrub_library` as a follow-up |
-| `rescrub_library` | Re-run the symbol extractor and classifier over existing chunks without re-crawling or re-embedding |
+| `rechunk_library` | Re-run the chunker over stored pages, replace all chunks, and re-embed. Requires `reextract_library` as a follow-up |
+| `reextract_library` | Re-run the symbol extractor and classifier over existing chunks without re-crawling or re-embedding |
 | `recon_library` | Get the instructions and JSON schema needed to characterize a docs site before scraping (LLM-assisted reconnaissance) |
 | `submit_library_profile` | Submit the reconnaissance JSON produced by `recon_library` to persist it as the LibraryProfile |
 
@@ -466,7 +466,7 @@ SaddleRAG.Ingestion/              # Scraping, classification, chunking, embeddin
   Chunking/                    #   Category-aware semantic chunker
   Embedding/                   #   Ollama embedding provider
   Symbols/                     #   Symbol extraction and stoplist management
-  Recon/                       #   LLM-assisted library profiling (recon/rescrub)
+  Recon/                       #   LLM-assisted library profiling (recon/reextract)
   Scanning/                    #   Project dependency scanner
   Ecosystems/                  #   NuGet, npm, pip registry clients
 SaddleRAG.Mcp/                    # ASP.NET Core MCP server (HTTP transport)

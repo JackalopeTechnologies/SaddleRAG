@@ -7,7 +7,7 @@
 namespace SaddleRAG.Core.Models;
 
 /// <summary>
-///     Summary returned by rescrub_library. Counts what was processed,
+///     Summary returned by reextract_library. Counts what was processed,
 ///     what changed, whether classification re-ran, whether indexes were
 ///     rebuilt, and a sample of per-chunk diffs (full list for dry-run,
 ///     first ten otherwise).

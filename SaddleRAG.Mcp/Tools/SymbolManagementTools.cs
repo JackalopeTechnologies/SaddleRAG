@@ -26,7 +26,7 @@ namespace SaddleRAG.Mcp.Tools;
 ///     even when it lacks structural signal).
 ///     — add_to_stoplist: demote a token (extractor will reject it
 ///     regardless of signal).
-///     All three are optional. The rescrub_library tool's Hints field
+///     All three are optional. The reextract_library tool's Hints field
 ///     suggests using them when the rejection count looks suspicious.
 /// </summary>
 [McpServerToolType]
@@ -101,14 +101,14 @@ public static class SymbolManagementTools
     ///     Promote one or more tokens to LibraryProfile.LikelySymbols so the
     ///     extractor keeps them even without other structural signal. Auto-removes
     ///     any case-equivalent variant from LibraryProfile.Stoplist (last call wins).
-    ///     Returns a summary of what changed plus a hint to call rescrub_library.
+    ///     Returns a summary of what changed plus a hint to call reextract_library.
     /// </summary>
     [McpServerTool(Name = "add_to_likely_symbols")]
     [Description("Call list_excluded_symbols first to identify tokens the extractor rejected that should be kept. " +
                  "Promote one or more tokens to LibraryProfile.LikelySymbols so the " +
                  "extractor keeps them even without other structural signal. Auto-removes " +
                  "any case-equivalent variant from LibraryProfile.Stoplist (last call wins). " +
-                 "Returns a summary of what changed plus a hint to call rescrub_library."
+                 "Returns a summary of what changed plus a hint to call reextract_library."
                 )]
     public static async Task<string> AddToLikelySymbols(RepositoryFactory repositoryFactory,
                                                         [Description("Library identifier")] string library,
@@ -167,7 +167,7 @@ public static class SymbolManagementTools
                                                       Promoted = promoted,
                                                       AlreadyInLikelySymbols = alreadyInLikely,
                                                       RemovedFromStoplist = removedFromStoplist,
-                                                      Hints = new[] { "Call rescrub_library to apply the changes." }
+                                                      Hints = new[] { "Call reextract_library to apply the changes." }
                                                   },
                                               smJsonOptions
                                              );
@@ -181,7 +181,7 @@ public static class SymbolManagementTools
     ///     rejects them regardless of structural signal. Case-insensitive — adding
     ///     'foo' blocks 'Foo', 'FOO', etc. Auto-removes case-equivalent entries
     ///     from LibraryProfile.LikelySymbols (last call wins). Returns a summary
-    ///     of what changed plus a hint to call rescrub_library.
+    ///     of what changed plus a hint to call reextract_library.
     /// </summary>
     [McpServerTool(Name = "add_to_stoplist")]
     [Description("Call list_excluded_symbols first to identify tokens the extractor accepted that should be rejected. " +
@@ -189,7 +189,7 @@ public static class SymbolManagementTools
                  "rejects them regardless of structural signal. Case-insensitive — adding " +
                  "'foo' blocks 'Foo', 'FOO', etc. Auto-removes case-equivalent entries " +
                  "from LibraryProfile.LikelySymbols (last call wins). Returns a summary " +
-                 "of what changed plus a hint to call rescrub_library."
+                 "of what changed plus a hint to call reextract_library."
                 )]
     public static async Task<string> AddToStoplist(RepositoryFactory repositoryFactory,
                                                    [Description("Library identifier")] string library,
@@ -250,7 +250,7 @@ public static class SymbolManagementTools
                                                       Demoted = demoted,
                                                       AlreadyInStoplist = alreadyInStoplist,
                                                       RemovedFromLikelySymbols = removedFromLikely,
-                                                      Hints = new[] { "Call rescrub_library to apply the changes." }
+                                                      Hints = new[] { "Call reextract_library to apply the changes." }
                                                   },
                                               smJsonOptions
                                              );

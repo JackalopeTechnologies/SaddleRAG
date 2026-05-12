@@ -11,7 +11,7 @@ namespace SaddleRAG.Ingestion.Symbols;
 ///     a single chunk: "appears in code fence anywhere in the corpus" and
 ///     "appears N+ times capitalized in prose across the library". On the
 ///     first ingest pass, the corpus index does not yet exist so these
-///     rules are skipped; rescrub_library populates the index and re-runs
+///     rules are skipped; reextract_library populates the index and re-runs
 ///     extraction with a populated context.
 /// </summary>
 public record CorpusContext
