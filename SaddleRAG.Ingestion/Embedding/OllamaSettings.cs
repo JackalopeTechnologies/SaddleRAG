@@ -32,32 +32,10 @@ public class OllamaSettings
     public string ClassificationModel { get; set; } = DefaultClassificationModel;
 
     /// <summary>
-    ///     Model name for the legacy LLM categorical reranker
-    ///     (ReRankerStrategy = Llm). Default is phi4-mini:3.8b
-    ///     (Microsoft, Western supply chain). Smaller instruction-
-    ///     following models work for this prompt-based categorical
-    ///     scoring approach. Currently dispatches to NoOp until
-    ///     calibration is verified — see ToggleableReRanker.
-    /// </summary>
-    public string ReRankingModel { get; set; } = DefaultReRankingModel;
-
-    /// <summary>
-    ///     Model name for the cross-encoder reranker
-    ///     (ReRankerStrategy = CrossEncoder). Defaults to the Mixedbread
-    ///     mxbai-rerank-large-v2 community port. Mixedbread AI is registered
-    ///     in Berlin; non-Chinese supply chain. The community Ollama port
-    ///     was originally hosted as a generate model emitting continuous
-    ///     0.0–1.0 floats but has since been republished as embed-only,
-    ///     which is why ToggleableReRanker currently routes the
-    ///     CrossEncoder strategy to NoOp.
-    /// </summary>
-    public string CrossEncoderModel { get; set; } = DefaultCrossEncoderModel;
-
-    /// <summary>
     ///     Model name used by the CLI's recon fallback when no calling LLM is
-    ///     available. A larger model than the classification/reranking ones is
-    ///     preferred because recon does broader reasoning ("what language is
-    ///     this", "what's the casing convention"). The CLI refuses to silently
+    ///     available. A larger model than the classification one is preferred
+    ///     because recon does broader reasoning ("what language is this",
+    ///     "what's the casing convention"). The CLI refuses to silently
     ///     fall back to a smaller model when this one is not pulled.
     /// </summary>
     public string ReconModel { get; set; } = DefaultReconModel;
@@ -92,8 +70,6 @@ public class OllamaSettings
     public const string DefaultEndpoint = "http://localhost:11434";
     public const string DefaultEmbeddingModel = "nomic-embed-text";
     public const string DefaultClassificationModel = "phi4-mini:3.8b";
-    public const string DefaultReRankingModel = "phi4-mini:3.8b";
-    public const string DefaultCrossEncoderModel = "rjmalagon/mxbai-rerank-large-v2:1.5b-fp16";
     public const string DefaultReconModel = "phi4:14b";
     public const int DefaultEmbeddingDimensions = 768;
     public const int DefaultModelPullTimeoutSeconds = 600;

@@ -54,13 +54,6 @@ public class RankingSettings
     public int MaxReRankCandidates { get; set; } = DefaultMaxReRankCandidates;
 
     /// <summary>
-    ///     Active query-planning strategy. Off keeps the original caller
-    ///     query untouched. Llm performs one local planning call before
-    ///     hybrid retrieval to produce conservative search hints.
-    /// </summary>
-    public QueryPlannerStrategy QueryPlannerStrategy { get; set; } = QueryPlannerStrategy.Off;
-
-    /// <summary>
     ///     Threshold for the SymbolExtractor's prose-mention backstop.
     ///     A capitalized identifier appearing this many times in prose
     ///     (outside code fences) survives extraction even when no other

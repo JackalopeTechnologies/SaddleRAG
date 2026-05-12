@@ -17,30 +17,25 @@ using SaddleRAG.Core.Models;
 namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
-///     Strategy-aware reranker dispatcher. Holds three concrete rerankers
-///     (NoOp, Ollama LLM, CrossEncoder) and dispatches per call to the
-///     strategy named in RankingSettings.ReRankerStrategy. The Strategy
-///     property is a runtime-mutable view over the same setting; writing
-///     to it is visible to every consumer that reads RankingSettings
-///     (e.g. SearchTools' diagnostic Strategy field). Use the
-///     set_rerank_strategy MCP tool to flip strategies without a restart.
+///     Strategy-aware reranker dispatcher. Holds the active rerankers
+///     (NoOp pass-through and the ONNX cross-encoder) and routes each
+///     ReRankAsync call per <see cref="RankingSettings.ReRankerStrategy" />.
+///     The <see cref="Strategy" /> property is a runtime-mutable view over
+///     the same setting; writing to it is visible to every other consumer
+///     of RankingSettings. Use the <c>set_rerank_strategy</c> MCP tool to
+///     flip between Off and Onnx without a restart.
 /// </summary>
 public class ToggleableReRanker : IReRanker
 {
-    public ToggleableReRanker(IOptions<OllamaSettings> ollamaSettings,
-                              IOptions<RankingSettings> rankingSettings,
+    public ToggleableReRanker(IOptions<RankingSettings> rankingSettings,
                               OnnxReRanker onnxReRanker,
                               ILoggerFactory loggerFactory)
     {
-        ArgumentNullException.ThrowIfNull(ollamaSettings);
         ArgumentNullException.ThrowIfNull(rankingSettings);
         ArgumentNullException.ThrowIfNull(onnxReRanker);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         mRankingSettings = rankingSettings.Value;
-        mOllamaReRanker = new OllamaReRanker(ollamaSettings, loggerFactory.CreateLogger<OllamaReRanker>());
-        mCrossEncoderReRanker =
-            new CrossEncoderReRanker(ollamaSettings, loggerFactory.CreateLogger<CrossEncoderReRanker>());
         mOnnxReRanker = onnxReRanker;
         mNoOpReRanker = new NoOpReRanker();
         mLogger = loggerFactory.CreateLogger<ToggleableReRanker>();
@@ -61,11 +56,8 @@ public class ToggleableReRanker : IReRanker
         }
     }
 
-    private readonly CrossEncoderReRanker mCrossEncoderReRanker;
     private readonly ILogger<ToggleableReRanker> mLogger;
     private readonly NoOpReRanker mNoOpReRanker;
-
-    private readonly OllamaReRanker mOllamaReRanker;
     private readonly OnnxReRanker mOnnxReRanker;
     private readonly RankingSettings mRankingSettings;
 
@@ -85,28 +77,13 @@ public class ToggleableReRanker : IReRanker
 
     private IReRanker ResolveActive()
     {
-        // Llm dispatch is re-enabled with the rewritten OllamaReRanker
-        // (per-pair continuous-float scoring against phi4-mini, replacing
-        // the legacy 5-bucket categorical plateau). CrossEncoder stays
-        // routed to NoOp because the rjmalagon/mxbai-rerank-large-v2
-        // Ollama port lost its generate capability upstream — re-enable
-        // when a real cross-encoder runtime is wired up (HuggingFace TEI
-        // sidecar with /api/rerank).
         var strategy = Strategy;
-        var result = strategy switch
+        IReRanker result = strategy switch
             {
-                ReRankerStrategy.Off => (IReRanker) mNoOpReRanker,
-                ReRankerStrategy.Llm => mOllamaReRanker,
-                ReRankerStrategy.CrossEncoder => mNoOpReRanker,
+                ReRankerStrategy.Off => mNoOpReRanker,
                 ReRankerStrategy.Onnx => mOnnxReRanker,
                 var _ => mNoOpReRanker
             };
-        // mCrossEncoderReRanker is kept instantiated for future
-        // re-enable; discard read silences the unused-field warning
-        // without #pragma suppression. Phase 5 of the ONNX migration
-        // plan deletes both Llm/CrossEncoder strategies; the Onnx
-        // branch will become the only non-Off branch then.
-        _ = mCrossEncoderReRanker;
         return result;
     }
 }

@@ -12,8 +12,6 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
-using SaddleRAG.Core.Enums;
-using SaddleRAG.Core.Models;
 
 #endregion
 
@@ -26,20 +24,16 @@ namespace SaddleRAG.Ingestion.Embedding;
 public class OllamaBootstrapper
 {
     public OllamaBootstrapper(IOptions<OllamaSettings> settings,
-                              IOptions<RankingSettings> rankingSettings,
                               ILogger<OllamaBootstrapper> logger)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(rankingSettings);
         ArgumentNullException.ThrowIfNull(logger);
 
         mSettings = settings.Value;
-        mRankingSettings = rankingSettings.Value;
         mLogger = logger;
     }
 
     private readonly ILogger<OllamaBootstrapper> mLogger;
-    private readonly RankingSettings mRankingSettings;
     private readonly OllamaSettings mSettings;
 
     /// <summary>
@@ -59,17 +53,13 @@ public class OllamaBootstrapper
     ///     Pre-load the configured generate-capable models (classification +
     ///     reranking) into Ollama VRAM so the first user request doesn't
     ///     pay a multi-second cold-load penalty. Uses keep_alive=-1 so the
-    ///     models stay resident across idle gaps. Decoupled from the
-    ///     reranker dispatch strategy on purpose: even when ToggleableReRanker
-    ///     routes Llm/CrossEncoder to NoOp, the configured model is still
-    ///     warmed so re-enabling the dispatch is instant.
+    ///     models stay resident across idle gaps.
     /// </summary>
     public async Task WarmModelsAsync(CancellationToken ct = default)
     {
         var candidates = new[]
                              {
-                                 mSettings.ClassificationModel,
-                                 mSettings.ReRankingModel
+                                 mSettings.ClassificationModel
                              };
         var distinct = candidates
                        .Where(m => !string.IsNullOrWhiteSpace(m))
@@ -131,7 +121,6 @@ public class OllamaBootstrapper
     internal static string OllamaExeName =>
         RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? OllamaExeNameWindows : OllamaExeNamePosix;
     private const int MaxStartWaitSeconds = 30;
-    private const int MaxInstallWaitSeconds = 120;
     private const int PostInstallDelayMs = 3000;
     private const int ServicePollDelayMs = 1000;
     private const int ProgressLogInterval = 10;
@@ -426,10 +415,6 @@ public class OllamaBootstrapper
         if (!string.IsNullOrEmpty(mSettings.ClassificationModel))
             required.Add(mSettings.ClassificationModel);
 
-        var rerankerModel = ResolveRerankerModel();
-        if (rerankerModel != null)
-            required.Add(rerankerModel);
-
         if (additionalModels != null)
         {
             foreach(string model in additionalModels.Where(m => !string.IsNullOrEmpty(m)))
@@ -437,29 +422,6 @@ public class OllamaBootstrapper
         }
 
         return required;
-    }
-
-    /// <summary>
-    ///     Pick which reranker model (if any) to pull at startup based on
-    ///     the configured ReRankerStrategy. Off → no reranker model.
-    ///     Llm → pull ReRankingModel (default phi4-mini:3.8b).
-    ///     CrossEncoder → pull CrossEncoderModel (Mixedbread mxbai).
-    /// </summary>
-    private string? ResolveRerankerModel()
-    {
-        var strategy = mRankingSettings.ReRankerStrategy;
-        var model = strategy switch
-            {
-                ReRankerStrategy.Off => null,
-                ReRankerStrategy.Llm => string.IsNullOrEmpty(mSettings.ReRankingModel)
-                                            ? null
-                                            : mSettings.ReRankingModel,
-                ReRankerStrategy.CrossEncoder => string.IsNullOrEmpty(mSettings.CrossEncoderModel)
-                                                     ? null
-                                                     : mSettings.CrossEncoderModel,
-                var _ => null
-            };
-        return model;
     }
 
     private async Task PullModelAsync(OllamaApiClient client, string model, CancellationToken ct)

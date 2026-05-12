@@ -21,16 +21,15 @@ public sealed class ToggleableReRankerTests
     [Fact]
     public void StrategyDefaultsToConfiguredValue()
     {
-        var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Llm };
+        var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Onnx };
         var reranker = BuildReranker(ranking);
 
-        Assert.Equal(ReRankerStrategy.Llm, reranker.Strategy);
+        Assert.Equal(ReRankerStrategy.Onnx, reranker.Strategy);
     }
 
     [Theory]
     [InlineData(ReRankerStrategy.Off)]
-    [InlineData(ReRankerStrategy.Llm)]
-    [InlineData(ReRankerStrategy.CrossEncoder)]
+    [InlineData(ReRankerStrategy.Onnx)]
     public void StrategySetterMutatesAtRuntime(ReRankerStrategy newStrategy)
     {
         var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Off };
@@ -47,20 +46,20 @@ public sealed class ToggleableReRankerTests
         var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Off };
         var reranker = BuildReranker(ranking);
 
-        reranker.Strategy = ReRankerStrategy.CrossEncoder;
+        reranker.Strategy = ReRankerStrategy.Onnx;
 
-        Assert.Equal(ReRankerStrategy.CrossEncoder, ranking.ReRankerStrategy);
+        Assert.Equal(ReRankerStrategy.Onnx, ranking.ReRankerStrategy);
     }
 
     private static ToggleableReRanker BuildReranker(RankingSettings ranking)
     {
         // Empty Onnx settings → OnnxReRanker resolves to null entry and acts
-        // as pass-through. ToggleableReRanker dispatches to it only for
-        // ReRankerStrategy.Onnx, which these tests don't exercise.
+        // as pass-through. ToggleableReRanker dispatches to it on
+        // ReRankerStrategy.Onnx; the test only verifies the Strategy
+        // property contract, not actual dispatched calls.
         var onnxOptions = Options.Create(new OnnxSettings());
         var onnxReRanker = new OnnxReRanker(onnxOptions, NullLogger<OnnxReRanker>.Instance);
-        var result = new ToggleableReRanker(Options.Create(new OllamaSettings()),
-                                            Options.Create(ranking),
+        var result = new ToggleableReRanker(Options.Create(ranking),
                                             onnxReRanker,
                                             NullLoggerFactory.Instance
                                            );

@@ -191,7 +191,6 @@ builder.Services.AddSingleton<IReRanker>(sp => sp.GetRequiredService<ToggleableR
 // Classification
 
 builder.Services.AddSingleton<LlmClassifier>();
-builder.Services.AddSingleton<LlmQueryPlanner>();
 
 // Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
 builder.Services.AddSingleton<LibraryProfileService>();
