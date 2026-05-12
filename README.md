@@ -204,7 +204,8 @@ SaddleRAG exposes 33 tools through the MCP protocol. Six load eagerly into every
 | Tool | Description |
 |---|---|
 | `start_ingest` | Single ingestion entry point — inspects (library, version) state and returns the next recommended action |
-| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware: skips already-indexed libraries unless `force=true` |
+| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware: skips already-indexed libraries unless `force=true`. Use for first-time ingest or URL/pattern overrides |
+| `rescrape_library` | Re-scrape an already-indexed library from its source. Takes library + version only — reuses the prior scrape's config and seeds the crawler from stored page URLs so dead/changed/new pages are all picked up |
 | `dryrun_scrape` | Test a scrape configuration without writing to the database. Reports page counts, depth distribution, and GitHub repos that would be cloned |
 | `index_project_dependencies` | Scan a project's NuGet/npm/pip dependencies and auto-index their documentation |
 

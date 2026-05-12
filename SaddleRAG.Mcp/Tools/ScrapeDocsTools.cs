@@ -34,12 +34,13 @@ public static class ScrapeDocsTools
     [McpServerTool(Name = "scrape_docs")]
     [Description("Fetch documentation from a URL and run the full ingest pipeline against the live source site: " +
                  "crawl, classify, chunk, embed, and persist the refreshed indexable content. Cache-aware: returns " +
-                 "AlreadyCached unless force=true. Use this for first-time ingest, for a real re-scrape when the source " +
-                 "docs changed, or when you want a full rebuild from the upstream site rather than from stored content. " +
-                 "Pass allowedUrlPatterns / excludedUrlPatterns only if the auto-derived host filter is too narrow or too " +
-                 "broad. resume=true reuses the most recent ScrapeJob's rootUrl and patterns when url is omitted. If the " +
-                 "library is flagged URL_SUSPECT, resume=true returns Status=Refused — call submit_url_correction(library, " +
-                 "version, newUrl) first to clear the flag and re-queue with a corrected URL."
+                 "AlreadyCached unless force=true. Use this for first-time ingest, or when you need to override the " +
+                 "URL or crawl patterns. For routine refreshes of an already-scraped library, prefer rescrape_library " +
+                 "(library + version only — config is pulled from the most recent scrape job and stored pages seed " +
+                 "the crawl). Pass allowedUrlPatterns / excludedUrlPatterns only if the auto-derived host filter is too " +
+                 "narrow or too broad. resume=true reuses the most recent ScrapeJob's rootUrl and patterns when url is " +
+                 "omitted. If the library is flagged URL_SUSPECT, resume=true returns Status=Refused — call " +
+                 "submit_url_correction(library, version, newUrl) first to clear the flag and re-queue with a corrected URL."
                 )]
     public static async Task<string> ScrapeDocs(ScrapeJobRunner runner,
                                                 RepositoryFactory repositoryFactory,

@@ -740,6 +740,7 @@ public class PageCrawler
                                  ChannelWriter<PageRecord> output,
                                  string jobId = "",
                                  IReadOnlySet<string>? resumeUrls = null,
+                                 IReadOnlyList<string>? seedUrls = null,
                                  Action<int>? onPageFetched = null,
                                  Action<int>? onQueued = null,
                                  Action? onFetchError = null,
@@ -798,6 +799,28 @@ public class PageCrawler
         var rootEntry = new CrawlEntry(normalizedRoot, InScopeDepth: 0, SameHostDepth: 0, OffSiteDepth: 0);
         ctx.IncrementInFlight();
         ctx.InScopeEntries.Writer.TryWrite(rootEntry);
+
+        if (seedUrls != null)
+        {
+            var seedCount = 0;
+            foreach(string seedUrl in seedUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+            {
+                string normalizedSeed = NormalizeUrl(seedUrl) ?? seedUrl;
+                if (!string.Equals(normalizedSeed, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    var seedEntry = new CrawlEntry(normalizedSeed,
+                                                    InScopeDepth: 0,
+                                                    SameHostDepth: 0,
+                                                    OffSiteDepth: 0
+                                                   );
+                    ctx.IncrementInFlight();
+                    ctx.InScopeEntries.Writer.TryWrite(seedEntry);
+                    seedCount++;
+                }
+            }
+
+            mLogger.LogInformation("Seeded crawl queue with {Count} stored URLs (in addition to RootUrl)", seedCount);
+        }
 
         int workerCount = Math.Max(val1: 1, MaxParallelWorkers);
         await RunWorkerPoolAsync(ctx, browser, workerCount, ct);

@@ -93,10 +93,22 @@ public class IngestionOrchestrator
 
         mLogger.LogInformation("Starting streaming ingestion for {LibraryId} v{Version}", job.LibraryId, job.Version);
 
-        // Build resume URL set from existing pages in DB
+        // Build resume URL set from existing pages in DB. SeedFromStoredPages
+        // flips this from "skip already-fetched URLs" to "use stored URLs as
+        // extra crawl seeds and re-fetch every one of them."
         var existingPages = await mPageRepository.GetPagesAsync(job.LibraryId, job.Version, ct);
         IReadOnlySet<string>? resumeUrls = null;
-        if (existingPages.Count > 0 && !forceClean)
+        IReadOnlyList<string>? seedUrls = null;
+
+        if (existingPages.Count > 0 && job.SeedFromStoredPages)
+        {
+            seedUrls = existingPages.Select(p => p.Url).ToList();
+            mLogger.LogInformation("Seed-from-stored-pages mode: {Count} stored URLs will be re-fetched",
+                                   seedUrls.Count
+                                  );
+        }
+
+        if (existingPages.Count > 0 && !job.SeedFromStoredPages && !forceClean)
         {
             resumeUrls = existingPages.Select(p => p.Url).ToHashSet(StringComparer.OrdinalIgnoreCase);
             mLogger.LogInformation("Resume mode: {Count} existing pages found", resumeUrls.Count);
@@ -151,6 +163,7 @@ public class IngestionOrchestrator
         var crawlTask = RunCrawlStageAsync(job,
                                            crawlToClassify.Writer,
                                            resumeUrls,
+                                           seedUrls,
                                            progress,
                                            onProgress,
                                            cts
@@ -217,6 +230,7 @@ public class IngestionOrchestrator
     private async Task RunCrawlStageAsync(ScrapeJob job,
                                           ChannelWriter<PageRecord> output,
                                           IReadOnlySet<string>? resumeUrls,
+                                          IReadOnlyList<string>? seedUrls,
                                           ScrapeJobRecord progress,
                                           Action<ScrapeJobRecord>? onProgress,
                                           CancellationTokenSource cts)
@@ -227,6 +241,7 @@ public class IngestionOrchestrator
                                       output,
                                       progress.Id,
                                       resumeUrls,
+                                      seedUrls,
                                       pageCount =>
                                       {
                                           progress.PagesFetched = pageCount;
