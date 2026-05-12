@@ -36,7 +36,7 @@ public static class IngestTools
                  "URL_SUSPECT (indexed content looks wrong — browse URL and call submit_url_correction), " +
                  "RECON_NEEDED (no profile — call recon_library then submit_library_profile), " +
                  "READY_TO_SCRAPE (profile cached, no chunks — call scrape_docs), " +
-                 "STALE (chunks exist but parser-derived metadata is outdated — call rescrub_library), " +
+                 "STALE (chunks exist but parser-derived metadata is outdated — call reextract_library), " +
                  "READY (fully indexed and current — call search_docs or get_class_reference). " +
                  "Each response includes NextTool and NextToolArgs so you can follow the breadcrumb without remembering the workflow. " +
                  "The auto flag is reserved and ignored today; callers should follow NextTool manually."
@@ -202,9 +202,9 @@ public static class IngestTools
                 LibraryId = library,
                 Version = version,
                 Url = url,
-                NextTool = "rescrub_library",
+                NextTool = "reextract_library",
                 Message = "Chunks exist, but their parser-derived metadata is stale. " +
-                          "Call rescrub_library to re-parse the stored chunks and rebuild metadata and indexes " +
+                          "Call reextract_library to re-extract metadata from the stored chunks and rebuild indexes " +
                           "without re-crawling, re-chunking, or re-embedding.",
                 NextToolArgs = new Dictionary<string, string>
                                    {

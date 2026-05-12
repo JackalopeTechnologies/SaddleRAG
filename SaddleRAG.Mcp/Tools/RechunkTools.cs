@@ -30,7 +30,7 @@ public static class RechunkTools
     [Description("Reuse pages already stored for (library, version), run the current chunker over them again, replace all " +
                  "chunks, and re-embed those new chunks. Does NOT fetch the source site again. Use this when chunk boundaries " +
                  "or the chunk-to-embedding input changed and you want a local rebuild from stored pages instead of a full " +
-                 "re-scrape. This currently requires a rescrub_library follow-up to refresh parser-derived metadata and rebuild " +
+                 "re-scrape. This currently requires a reextract_library follow-up to refresh parser-derived metadata and rebuild " +
                  "library_indexes. Returns { JobId, Status: 'Queued' } immediately; poll get_job_status for progress and " +
                  "results including BoundaryHint."
                 )]

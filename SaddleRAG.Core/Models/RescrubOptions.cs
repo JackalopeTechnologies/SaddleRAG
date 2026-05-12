@@ -7,7 +7,7 @@
 namespace SaddleRAG.Core.Models;
 
 /// <summary>
-///     Caller-supplied options for rescrub_library. Defaults match the
+///     Caller-supplied options for reextract_library. Defaults match the
 ///     "common case": re-extract symbols, auto-decide whether to
 ///     reclassify based on manifest history, scan chunk boundaries,
 ///     rebuild library_indexes.
