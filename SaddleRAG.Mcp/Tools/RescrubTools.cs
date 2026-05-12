@@ -18,19 +18,19 @@ using SaddleRAG.Ingestion;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tool exposing rescrub_library — the lightweight metadata-refresh path
+///     MCP tool exposing reextract_library — the lightweight metadata-refresh path
 ///     over chunks already stored in MongoDB.
 /// </summary>
 [McpServerToolType]
 public static class RescrubTools
 {
-    [McpServerTool(Name = "rescrub_library")]
-    [Description("Queue a background job that re-parses chunks already stored for (library, version) and refreshes " +
-                 "parser-derived metadata only. Does NOT re-crawl, re-chunk, or re-embed. Updates Symbols[], " +
-                 "QualifiedName, ParserVersion, optional Category reclassification, and the derived library_indexes " +
+    [McpServerTool(Name = "reextract_library")]
+    [Description("Queue a background job that re-extracts parser-derived metadata from chunks already stored for " +
+                 "(library, version). Does NOT re-crawl, re-chunk, or re-embed. Updates Symbols[], QualifiedName, " +
+                 "ParserVersion, optional Category reclassification, and the derived library_indexes " +
                  "(CodeFenceSymbols + Manifest). Use this when parser, extractor, classifier, or index-building logic " +
                  "changed but the stored chunk text is still valid. Returns a JobId immediately — poll " +
-                 "get_rescrub_status(jobId) for completion. When done the result includes counts, a sample of per-chunk " +
+                 "get_reextract_status(jobId) for completion. When done the result includes counts, a sample of per-chunk " +
                  "diffs, and a BoundaryHint field: null (healthy), 'rechunk_library may help' (5%–10% boundary issues), " +
                  "or 'rechunk_library recommended' (≥10%). Act on the hint before calling search_docs. Idempotent and " +
                  "resumable. If no LibraryProfile exists yet, the completed result will contain RECON_NEEDED — call " +

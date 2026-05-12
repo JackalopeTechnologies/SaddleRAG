@@ -21,13 +21,13 @@ using SaddleRAG.Ingestion.Symbols;
 namespace SaddleRAG.Ingestion.Recon;
 
 /// <summary>
-///     Workhorse for rescrub_library. Re-runs the symbol extractor (and
+///     Workhorse for reextract_library. Re-runs the symbol extractor (and
 ///     optionally the classifier) over chunks already stored in MongoDB,
 ///     without re-crawling the source pages or re-embedding chunk text.
 ///     Builds or rebuilds CodeFenceSymbols (the per-library identifier
 ///     index for the SymbolExtractor's "appears in code fence" keep
 ///     rule). Updates the LibraryManifest tracking parser/profile/
-///     classifier versions so future rescrubs can auto-detect what
+///     classifier versions so future reextract runs can auto-detect what
 ///     changed.
 /// </summary>
 public class RescrubService
@@ -463,12 +463,12 @@ public class RescrubService
         IReadOnlyList<string> result = trigger
                                            ? new[]
                                                  {
-                                                     $"Rescrub complete: {processedChunks} chunks, {keptCount} candidate tokens kept, {excludedCount} excluded as likely noise.",
+                                                     $"Reextract complete: {processedChunks} chunks, {keptCount} candidate tokens kept, {excludedCount} excluded as likely noise.",
                                                      "If list_classes/list_functions output looks off, refine per-library:",
                                                      $"  list_excluded_symbols(library='{libraryId}', version='{version}') — review rejections with sample sentences",
                                                      "  add_to_likely_symbols(...) — promote tokens that ARE real symbols",
                                                      "  add_to_stoplist(...) — demote tokens that are noise",
-                                                     "  Then call rescrub_library again to apply.",
+                                                     "  Then call reextract_library again to apply.",
                                                      "These steps are OPTIONAL — only worth running if symbol coverage looks wrong on spot-check."
                                                  }
                                            : Array.Empty<string>();

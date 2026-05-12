@@ -34,7 +34,7 @@ namespace SaddleRAG.Ingestion.Recon;
 ///     - Re-classify pages (that's the <c>reclassify</c> CLI command)
 ///     - Build the full corpus-aware Symbols[] / QualifiedName — the
 ///     freshly-chunked symbols are first-pass shape-only. Call
-///     <c>rescrub_library</c> after rechunk to populate corpus-aware
+///     <c>reextract_library</c> after rechunk to populate corpus-aware
 ///     Symbols and update the library_indexes (Bm25, CodeFenceSymbols,
 ///     Manifest).
 /// </summary>
@@ -200,5 +200,5 @@ public class RechunkService
         "Dry run — no chunks written, no embeddings generated. Re-run without dryRun to apply.";
 
     private const string AppliedMessage =
-        "Rechunk complete. Call rescrub_library to populate corpus-aware Symbols[] and rebuild library_indexes.";
+        "Rechunk complete. Call reextract_library to populate corpus-aware Symbols[] and rebuild library_indexes.";
 }

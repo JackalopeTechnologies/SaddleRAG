@@ -175,10 +175,10 @@ builder.Services.AddSingleton<LlmQueryPlanner>();
 builder.Services.AddSingleton<LibraryProfileService>();
 builder.Services.AddSingleton<CliReconFallback>();
 
-// Identifier-aware extractor (consumed by CategoryAwareChunker and rescrub_library)
+// Identifier-aware extractor (consumed by CategoryAwareChunker and reextract_library)
 builder.Services.AddSingleton<SymbolExtractor>();
 
-// Rescrub service and background job runner (consumed by rescrub_library MCP tool)
+// Reextract service and background job runner (consumed by reextract_library MCP tool)
 builder.Services.AddSingleton<RescrubService>();
 builder.Services.AddSingleton<RescrubJobRunner>();
 builder.Services.AddSingleton<BackgroundJobRunner>();

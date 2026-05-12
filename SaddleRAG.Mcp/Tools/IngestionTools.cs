@@ -221,16 +221,16 @@ public static class IngestionTools
         return json;
     }
 
-    [McpServerTool(Name = "get_rescrub_status")]
-    [Description("Check the status of a rescrub job by its id. " +
+    [McpServerTool(Name = "get_reextract_status")]
+    [Description("Check the status of a reextract job by its id. " +
                  "Status values: Queued (waiting), Running (in progress — ChunksProcessed updates as chunks are examined), " +
                  "Completed (done — Result contains counts, diffs, and BoundaryHint), " +
                  "Failed (error — check ErrorMessage, then get_server_logs), " +
                  "Cancelled (stopped mid-run — partial index changes may have been applied). " +
-                 "Poll at reasonable intervals (10–30s); the job id comes from rescrub_library."
+                 "Poll at reasonable intervals (10–30s); the job id comes from reextract_library."
                 )]
     public static async Task<string> GetRescrubStatus(RepositoryFactory repositoryFactory,
-                                                      [Description("Job id returned from rescrub_library")]
+                                                      [Description("Job id returned from reextract_library")]
                                                       string jobId,
                                                       [Description("Optional database profile name")]
                                                       string? profile = null,
@@ -244,7 +244,7 @@ public static class IngestionTools
 
         string result;
         if (job == null)
-            result = $"No rescrub job found with id '{jobId}'.";
+            result = $"No reextract job found with id '{jobId}'.";
         else
         {
             var boundaryHint = job.Result != null ? ResolveBoundaryHint(job.Result) : null;
@@ -273,9 +273,9 @@ public static class IngestionTools
         return result;
     }
 
-    [McpServerTool(Name = "list_rescrub_jobs")]
-    [Description("List recent rescrub jobs, most recent first. " +
-                 "Use job ids from this list with get_rescrub_status to poll progress. " +
+    [McpServerTool(Name = "list_reextract_jobs")]
+    [Description("List recent reextract jobs, most recent first. " +
+                 "Use job ids from this list with get_reextract_status to poll progress. " +
                  "Running jobs show ChunksProcessed / ChunksTotal for in-flight progress. " +
                  "Completed jobs include a BoundaryHint to act on before calling search_docs."
                 )]
