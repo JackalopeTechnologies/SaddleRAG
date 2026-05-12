@@ -1,7 +1,0 @@
-{
-  "name": "saddlerag",
-  "description": "SaddleRAG — query indexed documentation before answering coding questions. Registers the SaddleRAG MCP server and bundles a saddlerag-first skill that triggers on coding tasks.",
-  "author": {
-    "name": "Doug Gerard"
-  }
-}

@@ -138,10 +138,10 @@ public static class HealthTools
     [McpMeta("anthropic/alwaysLoad", value: true)]
     [Description("Start here in any fresh or disoriented session. Returns a single-call " +
                  "SaddleRAG status overview: library/version counts, recent scrape jobs (with " +
-                 "Stale flags for Running jobs that haven't progressed in 4+ hours), and up to " +
+                 "recentJobs[].Stale=true for Running jobs that haven't progressed in 4+ hours), and up to " +
                  "20 suspect libraries. The SuggestedNextAction field always contains the highest-priority " +
                  "tool to call next (scrape_docs for empty DB, submit_url_correction for suspect libraries, " +
-                 "cancel_scrape for stale-running jobs, null when healthy). Act on SuggestedNextAction " +
+                 "cancel_scrape for stale-running jobs, null when healthy). If a recent job is marked Stale, call cancel_scrape with that job id. Act on SuggestedNextAction " +
                  "before doing anything else."
                 )]
     public static async Task<string> GetDashboardIndex(RepositoryFactory repositoryFactory,

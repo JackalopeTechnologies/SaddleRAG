@@ -76,10 +76,14 @@ public class OllamaBootstrapper
                        .Distinct(StringComparer.OrdinalIgnoreCase)
                        .ToList();
 
+        var timeoutSeconds = mSettings.WarmModelTimeoutSeconds;
+        if (timeoutSeconds < MinimumWarmModelTimeoutSeconds)
+            timeoutSeconds = OllamaSettings.DefaultWarmModelTimeoutSeconds;
+
         if (distinct.Count > 0)
         {
             using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromMinutes(WarmupTimeoutMinutes);
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
             var endpoint = new Uri(new Uri(mSettings.Endpoint), GenerateEndpointPath);
 
             foreach(string model in distinct)
@@ -99,6 +103,16 @@ public class OllamaBootstrapper
                     sw.Stop();
                     mLogger.LogInformation("Warmed {Model} in {Ms}ms", model, sw.ElapsedMilliseconds);
                 }
+                catch(OperationCanceledException ex) when(!ct.IsCancellationRequested)
+                {
+                    sw.Stop();
+                    mLogger.LogWarning(ex,
+                                       "Timed out warming {Model} after {Ms}ms (timeout {TimeoutSeconds}s)",
+                                       model,
+                                       sw.ElapsedMilliseconds,
+                                       timeoutSeconds
+                                      );
+                }
                 catch(Exception ex) when(ex is not OperationCanceledException)
                 {
                     sw.Stop();
@@ -111,16 +125,23 @@ public class OllamaBootstrapper
     private const string GenerateEndpointPath = "/api/generate";
     private const string WarmupPrompt = ".";
     private const int KeepAliveForever = -1;
-    private const int WarmupTimeoutMinutes = 5;
+    private const int MinimumWarmModelTimeoutSeconds = 1;
 
     private const string OllamaWindowsInstallerUrl = "https://ollama.com/download/OllamaSetup.exe";
-    private const string OllamaExeName = "ollama.exe";
+    internal static string OllamaExeName =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? OllamaExeNameWindows : OllamaExeNamePosix;
     private const int MaxStartWaitSeconds = 30;
     private const int MaxInstallWaitSeconds = 120;
     private const int PostInstallDelayMs = 3000;
     private const int ServicePollDelayMs = 1000;
     private const int ProgressLogInterval = 10;
 
+    private const string OllamaExeNameWindows = "ollama.exe";
+    private const string OllamaExeNamePosix = "ollama";
+    private const string OllamaPathLocalBin = "/usr/local/bin/ollama";
+    private const string OllamaPathUsrBin = "/usr/bin/ollama";
+    private const string OllamaDotDir = ".ollama";
+    private const string OllamaBinDir = "bin";
     private const string InstallOnlyWindowsMessage = "Automatic Ollama installation is only supported on Windows. ";
     private const string InstallManuallyMessage = "Install Ollama manually from https://ollama.com";
     private const string InstallCompletedNotFoundMessage = "Ollama installation completed but executable not found. ";
@@ -183,19 +204,23 @@ public class OllamaBootstrapper
 
         if (result == null)
         {
-            string[] commonPaths =
-                [
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                 ProgramsFolderName,
-                                 OllamaFolderName,
-                                 OllamaExeName
-                                ),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                                 OllamaFolderName,
-                                 OllamaExeName
-                                ),
-                    @"C:\Program Files\Ollama\ollama.exe"
-                ];
+            string[] commonPaths = OperatingSystem.IsWindows()
+                ? [
+                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                   ProgramsFolderName,
+                                   OllamaFolderName,
+                                   OllamaExeName),
+                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                                   OllamaFolderName,
+                                   OllamaExeName),
+                      @"C:\Program Files\Ollama\ollama.exe"
+                  ]
+                : [
+                      OllamaPathLocalBin,
+                      OllamaPathUsrBin,
+                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                                   OllamaDotDir, OllamaBinDir, OllamaExeNamePosix)
+                  ];
 
             foreach(string path in commonPaths)
             {

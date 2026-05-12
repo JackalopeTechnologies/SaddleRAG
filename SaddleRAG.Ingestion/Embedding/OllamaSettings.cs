@@ -78,6 +78,13 @@ public class OllamaSettings
     public int ModelPullTimeoutSeconds { get; set; } = DefaultModelPullTimeoutSeconds;
 
     /// <summary>
+    ///     Timeout in seconds for warming a generate-capable model.
+    ///     Warmup should fail fast enough that startup is not blocked for minutes
+    ///     when Ollama is unhealthy or a model load stalls.
+    /// </summary>
+    public int WarmModelTimeoutSeconds { get; set; } = DefaultWarmModelTimeoutSeconds;
+
+    /// <summary>
     ///     Configuration section name in appsettings.
     /// </summary>
     public const string SectionName = "Ollama";
@@ -90,5 +97,6 @@ public class OllamaSettings
     public const string DefaultReconModel = "phi4:14b";
     public const int DefaultEmbeddingDimensions = 768;
     public const int DefaultModelPullTimeoutSeconds = 600;
+    public const int DefaultWarmModelTimeoutSeconds = 30;
     public const float DefaultReconMinConfidence = 0.6f;
 }

@@ -2,9 +2,9 @@
   "mcpServers": {
     "saddlerag": {
       "type": "http",
-      "url": "http://localhost:6100/mcp",
+      "url": "http://localhost:9999/mcp",
       "timeout": 60,
-      "alwaysLoad": true
+      "extraGarbage": "should-be-removed"
     }
   }
 }
