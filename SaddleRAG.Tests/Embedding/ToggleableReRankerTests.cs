@@ -52,9 +52,18 @@ public sealed class ToggleableReRankerTests
         Assert.Equal(ReRankerStrategy.CrossEncoder, ranking.ReRankerStrategy);
     }
 
-    private static ToggleableReRanker BuildReranker(RankingSettings ranking) =>
-        new ToggleableReRanker(Options.Create(new OllamaSettings()),
-                               Options.Create(ranking),
-                               NullLoggerFactory.Instance
-                              );
+    private static ToggleableReRanker BuildReranker(RankingSettings ranking)
+    {
+        // Empty Onnx settings → OnnxReRanker resolves to null entry and acts
+        // as pass-through. ToggleableReRanker dispatches to it only for
+        // ReRankerStrategy.Onnx, which these tests don't exercise.
+        var onnxOptions = Options.Create(new OnnxSettings());
+        var onnxReRanker = new OnnxReRanker(onnxOptions, NullLogger<OnnxReRanker>.Instance);
+        var result = new ToggleableReRanker(Options.Create(new OllamaSettings()),
+                                            Options.Create(ranking),
+                                            onnxReRanker,
+                                            NullLoggerFactory.Instance
+                                           );
+        return result;
+    }
 }

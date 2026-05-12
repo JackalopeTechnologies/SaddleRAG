@@ -29,16 +29,19 @@ public class ToggleableReRanker : IReRanker
 {
     public ToggleableReRanker(IOptions<OllamaSettings> ollamaSettings,
                               IOptions<RankingSettings> rankingSettings,
+                              OnnxReRanker onnxReRanker,
                               ILoggerFactory loggerFactory)
     {
         ArgumentNullException.ThrowIfNull(ollamaSettings);
         ArgumentNullException.ThrowIfNull(rankingSettings);
+        ArgumentNullException.ThrowIfNull(onnxReRanker);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
         mRankingSettings = rankingSettings.Value;
         mOllamaReRanker = new OllamaReRanker(ollamaSettings, loggerFactory.CreateLogger<OllamaReRanker>());
         mCrossEncoderReRanker =
             new CrossEncoderReRanker(ollamaSettings, loggerFactory.CreateLogger<CrossEncoderReRanker>());
+        mOnnxReRanker = onnxReRanker;
         mNoOpReRanker = new NoOpReRanker();
         mLogger = loggerFactory.CreateLogger<ToggleableReRanker>();
     }
@@ -63,6 +66,7 @@ public class ToggleableReRanker : IReRanker
     private readonly NoOpReRanker mNoOpReRanker;
 
     private readonly OllamaReRanker mOllamaReRanker;
+    private readonly OnnxReRanker mOnnxReRanker;
     private readonly RankingSettings mRankingSettings;
 
     /// <inheritdoc />
@@ -94,11 +98,14 @@ public class ToggleableReRanker : IReRanker
                 ReRankerStrategy.Off => (IReRanker) mNoOpReRanker,
                 ReRankerStrategy.Llm => mOllamaReRanker,
                 ReRankerStrategy.CrossEncoder => mNoOpReRanker,
+                ReRankerStrategy.Onnx => mOnnxReRanker,
                 var _ => mNoOpReRanker
             };
         // mCrossEncoderReRanker is kept instantiated for future
         // re-enable; discard read silences the unused-field warning
-        // without #pragma suppression.
+        // without #pragma suppression. Phase 5 of the ONNX migration
+        // plan deletes both Llm/CrossEncoder strategies; the Onnx
+        // branch will become the only non-Off branch then.
         _ = mCrossEncoderReRanker;
         return result;
     }
