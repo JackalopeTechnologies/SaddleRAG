@@ -79,7 +79,7 @@ public sealed class ScrapeJobThresholdsTests
                               LibraryHint = "h",
                               LibraryId = "foo",
                               Version = "1.0",
-                              AllowedUrlPatterns = Array.Empty<string>()
+                              AllowedUrlPatterns = []
                           },
                 Status = status,
                 CreatedAt = createdAt,

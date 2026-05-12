@@ -162,7 +162,7 @@ else
 
     private string? Filter { get; set; }
 
-    private IEnumerable<string> FilteredSymbols => Profile is null                   ? Enumerable.Empty<string>() :
+    private IEnumerable<string> FilteredSymbols => Profile is null                   ? [] :
                                                    string.IsNullOrWhiteSpace(Filter) ? Profile.LikelySymbols : Profile.LikelySymbols.Where(s => s.Contains(Filter, StringComparison.OrdinalIgnoreCase));
 
     private Color ConfidenceColor => Profile is null

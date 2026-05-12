@@ -100,7 +100,7 @@ public class PageCrawler
         ///     ultimately dropped. Surfaced for diagnostics so the caller
         ///     can log or report which pages slipped through.
         /// </summary>
-        public ConcurrentBag<string> DroppedInScopeUrls { get; } = new ConcurrentBag<string>();
+        public ConcurrentBag<string> DroppedInScopeUrls { get; } = [];
 
         public SiteExtensionState ExtensionState { get; } = new SiteExtensionState();
 
@@ -680,7 +680,7 @@ public class PageCrawler
         try
         {
             var response = await NavigateAndPreparePageAsync(page, url, ct);
-            if (response != null && response.Ok)
+            if (response is { Ok: true })
                 result = await BuildAndPersistPageRecordAsync(page, libraryId, version, url, ct);
             else
             {
@@ -1555,7 +1555,7 @@ public class PageCrawler
                                               }
                                          );
 
-        if (result != null && result.Ok)
+        if (result is { Ok: true })
             await WaitForPageAndFramesAsync(page, url, ct);
 
         return result;
@@ -1942,7 +1942,7 @@ public class PageCrawler
                                                                            """
                                                               );
 
-            if (stats != null && stats.TextLength > 0)
+            if (stats is { TextLength: > 0 })
             {
                 // Text length score (more text = more likely content)
                 float textScore = Math.Min(stats.TextLength / 1000f, ContentFrameMaxTextScore);
@@ -2179,7 +2179,7 @@ public class PageCrawler
         string fetchUrl = MaybeApplyKnownExtension(url, extensionState.Value);
         var response = await NavigateAndPreparePageAsync(page, fetchUrl, ct);
 
-        if (response != null && response.Status == HttpNotFound && extensionState.Value == null)
+        if (response is { Status: HttpNotFound } && extensionState.Value == null)
             (page, response, fetchUrl) = await RetryWithExtensionsAsync(url, page, browser, extensionState, ct);
 
         return (page, response, fetchUrl);
@@ -2242,7 +2242,7 @@ public class PageCrawler
             page = await browser.NewPageAsync();
             response = await NavigateAndPreparePageAsync(page, retryUrl, ct);
 
-            if (response != null && response.Ok)
+            if (response is { Ok: true })
             {
                 extensionState.Value = ext;
                 fetchUrl = retryUrl;

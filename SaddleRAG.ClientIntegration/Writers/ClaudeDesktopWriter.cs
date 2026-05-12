@@ -109,9 +109,7 @@ public sealed class ClaudeDesktopWriter : IClientWriter
                     res = UnregisterResult.Removed(Name, mConfigPath, MsgSaddleRagRemoved);
                 }
                 else
-                {
                     res = UnregisterResult.NoOp(Name, mConfigPath, MsgSaddleRagNotPresent);
-                }
             }
             catch (JsonException ex)
             {
@@ -140,9 +138,7 @@ public sealed class ClaudeDesktopWriter : IClientWriter
                 JsonObject? entry = servers?[SaddleRagKey] as JsonObject;
                 entryPresent = entry is not null;
                 if (entry is not null)
-                {
                     endpointMatches = ArgsContainUrl(entry[ArgsKey] as JsonArray, SaddleRagEndpoint.Default.Url);
-                }
             }
             catch (JsonException ex)
             {
@@ -150,13 +146,13 @@ public sealed class ClaudeDesktopWriter : IClientWriter
             }
         }
         return new StatusResult(
-            ClientName: Name,
-            ConfigPath: mConfigPath,
-            ConfigFileExists: fileExists,
-            SaddleRagEntryPresent: entryPresent,
-            EndpointMatchesCanonical: endpointMatches,
+            Name,
+            mConfigPath,
+            fileExists,
+            entryPresent,
+            endpointMatches,
             SkillFilePresent: null,
-            Notes: notes);
+            notes);
     }
 
     private async Task<JsonObject> LoadRootAsync(CancellationToken ct)
@@ -169,9 +165,7 @@ public sealed class ClaudeDesktopWriter : IClientWriter
             {
                 JsonNode? parsed = JsonNode.Parse(text);
                 if (parsed is JsonObject obj)
-                {
                     root = obj;
-                }
             }
         }
         return root;
@@ -181,9 +175,7 @@ public sealed class ClaudeDesktopWriter : IClientWriter
     {
         string? dir = Path.GetDirectoryName(mConfigPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
             Directory.CreateDirectory(dir);
-        }
         string tmp = mConfigPath + TmpSuffix;
         string serialized = root.ToJsonString(smWriteOptions);
         await File.WriteAllTextAsync(tmp, serialized, smUtf8NoBom, ct);

@@ -8,10 +8,8 @@
 
 using System.ComponentModel;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
-using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Embedding;
 using Serilog.Core;
 using Serilog.Events;

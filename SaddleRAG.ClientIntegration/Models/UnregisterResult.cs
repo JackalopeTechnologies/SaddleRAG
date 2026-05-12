@@ -18,7 +18,7 @@ public sealed record UnregisterResult(
         ArgumentException.ThrowIfNullOrEmpty(clientName);
         ArgumentException.ThrowIfNullOrEmpty(configPath);
         ArgumentException.ThrowIfNullOrEmpty(message);
-        var result = new UnregisterResult(clientName, true, configPath, message, WasNoOp: false);
+        var result = new UnregisterResult(clientName, Success: true, configPath, message, WasNoOp: false);
         return result;
     }
 
@@ -27,7 +27,7 @@ public sealed record UnregisterResult(
         ArgumentException.ThrowIfNullOrEmpty(clientName);
         ArgumentException.ThrowIfNullOrEmpty(configPath);
         ArgumentException.ThrowIfNullOrEmpty(reason);
-        var result = new UnregisterResult(clientName, true, configPath, reason, WasNoOp: true);
+        var result = new UnregisterResult(clientName, Success: true, configPath, reason, WasNoOp: true);
         return result;
     }
 
@@ -36,7 +36,7 @@ public sealed record UnregisterResult(
         ArgumentException.ThrowIfNullOrEmpty(clientName);
         ArgumentNullException.ThrowIfNull(configPath);
         ArgumentException.ThrowIfNullOrEmpty(message);
-        var result = new UnregisterResult(clientName, false, configPath, message, WasNoOp: false);
+        var result = new UnregisterResult(clientName, Success: false, configPath, message, WasNoOp: false);
         return result;
     }
 }

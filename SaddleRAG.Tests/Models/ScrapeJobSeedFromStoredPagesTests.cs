@@ -77,5 +77,5 @@ public sealed class ScrapeJobSeedFromStoredPagesTests
     private const string TestHint = "example library";
     private const string TestLibraryId = "example-lib";
     private const string TestVersion = "1.0";
-    private static readonly IReadOnlyList<string> TestPatterns = new[] { "docs.example.com" };
+    private static readonly IReadOnlyList<string> TestPatterns = ["docs.example.com"];
 }

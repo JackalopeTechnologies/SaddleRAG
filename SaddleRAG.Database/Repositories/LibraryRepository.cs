@@ -230,7 +230,7 @@ public class LibraryRepository : ILibraryRepository
                                                      );
         var update = Builders<LibraryVersionRecord>.Update
                                                    .Set(v => v.Suspect, value: false)
-                                                   .Set(v => v.SuspectReasons, Array.Empty<string>())
+                                                   .Set(v => v.SuspectReasons, [])
                                                    .Set(v => v.LastSuspectEvaluatedAt, DateTime.UtcNow);
         await mContext.LibraryVersions.UpdateOneAsync(filter, update, cancellationToken: ct);
     }

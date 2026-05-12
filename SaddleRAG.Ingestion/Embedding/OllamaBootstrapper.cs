@@ -23,6 +23,9 @@ namespace SaddleRAG.Ingestion.Embedding;
 /// </summary>
 public class OllamaBootstrapper
 {
+    private static readonly HttpClient smHttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(minutes: 5) };
+    private static readonly HttpClient smClient = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 5) };
+
     public OllamaBootstrapper(IOptions<OllamaSettings> settings,
                               ILogger<OllamaBootstrapper> logger)
     {
@@ -230,8 +233,7 @@ public class OllamaBootstrapper
         try
         {
             mLogger.LogInformation("Downloading Ollama installer...");
-            using var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(minutes: 5) };
-            var response = await httpClient.GetAsync(OllamaWindowsInstallerUrl, ct);
+            var response = await smHttpClient.GetAsync(OllamaWindowsInstallerUrl, ct);
             response.EnsureSuccessStatusCode();
 
             await using var fileStream = File.Create(installerPath);
@@ -354,8 +356,7 @@ public class OllamaBootstrapper
         var result = false;
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 5) };
-            var response = await client.GetAsync(mSettings.Endpoint, ct);
+            var response = await smClient.GetAsync(mSettings.Endpoint, ct);
             result = response.IsSuccessStatusCode;
         }
         catch

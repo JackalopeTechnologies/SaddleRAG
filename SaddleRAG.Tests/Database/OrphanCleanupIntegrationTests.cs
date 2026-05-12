@@ -88,12 +88,11 @@ public sealed class OrphanCleanupIntegrationTests : IAsyncLifetime
         var repo = new ChunkRepository(mContext);
         var lib = $"int-chunks-{Guid.NewGuid():N}";
 
-        await repo.InsertChunksAsync(new[]
-                                         {
+        await repo.InsertChunksAsync([
                                              MakeChunk(lib, "1.0"),
                                              MakeChunk(lib, "1.0"),
                                              MakeChunk(lib, "2.0")
-                                         },
+                                         ],
                                      TestContext.Current.CancellationToken
                                     );
 
@@ -156,12 +155,12 @@ public sealed class OrphanCleanupIntegrationTests : IAsyncLifetime
 
         await repo.ReplaceShardsAsync(lib,
                                       "1.0",
-                                      new[] { MakeShard(lib, "1.0", shardIndex: 0) },
+                                          [MakeShard(lib, "1.0", shardIndex: 0)],
                                       TestContext.Current.CancellationToken
                                      );
         await repo.ReplaceShardsAsync(lib,
                                       "2.0",
-                                      new[] { MakeShard(lib, "2.0", shardIndex: 0) },
+                                          [MakeShard(lib, "2.0", shardIndex: 0)],
                                       TestContext.Current.CancellationToken
                                      );
 
@@ -182,12 +181,11 @@ public sealed class OrphanCleanupIntegrationTests : IAsyncLifetime
         var repo = new ExcludedSymbolsRepository(mContext);
         var lib = $"int-excluded-{Guid.NewGuid():N}";
 
-        await repo.UpsertManyAsync(new[]
-                                       {
+        await repo.UpsertManyAsync([
                                            MakeExcluded(lib, "1.0", "Foo"),
                                            MakeExcluded(lib, "1.0", "Bar"),
                                            MakeExcluded(lib, "2.0", "Foo")
-                                       },
+                                       ],
                                    TestContext.Current.CancellationToken
                                   );
 
@@ -208,12 +206,11 @@ public sealed class OrphanCleanupIntegrationTests : IAsyncLifetime
         var repo = new ScrapeAuditRepository(mContext);
         var lib = $"int-audit-{Guid.NewGuid():N}";
 
-        await repo.InsertManyAsync(new[]
-                                       {
+        await repo.InsertManyAsync([
                                            MakeAudit(lib, "1.0", "https://a.com/1"),
                                            MakeAudit(lib, "1.0", "https://a.com/2"),
                                            MakeAudit(lib, "2.0", "https://a.com/3")
-                                       },
+                                       ],
                                    TestContext.Current.CancellationToken
                                   );
 
@@ -290,7 +287,7 @@ public sealed class OrphanCleanupIntegrationTests : IAsyncLifetime
                 Version = version,
                 Name = name,
                 Reason = SymbolRejectionReason.GlobalStoplist,
-                SampleSentences = Array.Empty<string>(),
+                SampleSentences = [],
                 ChunkCount = 1,
                 CapturedUtc = DateTime.UtcNow
             };

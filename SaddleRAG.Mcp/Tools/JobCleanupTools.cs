@@ -144,7 +144,7 @@ public static class JobCleanupTools
 
         var parsedKind = ParseKind(kind);
         var parsedStatus = ParseStatus(status);
-        var idList = jobIds?.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray() ?? Array.Empty<string>();
+        var idList = jobIds?.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToArray() ?? [];
         bool hasFilter = idList.Length > 0 ||
                          parsedStatus.HasValue ||
                          !string.IsNullOrWhiteSpace(library) ||
@@ -381,7 +381,7 @@ public static class JobCleanupTools
                                                                   string? version,
                                                                   CancellationToken ct)
     {
-        var slice = new DryRunSlice(Count: 0, Array.Empty<object>());
+        var slice = new DryRunSlice(Count: 0, []);
         if (InScope(kind, JobKind.Scrape))
         {
             var repo = repositoryFactory.GetScrapeJobRepository(profile);
@@ -406,7 +406,7 @@ public static class JobCleanupTools
                                                                       string? version,
                                                                       CancellationToken ct)
     {
-        var slice = new DryRunSlice(Count: 0, Array.Empty<object>());
+        var slice = new DryRunSlice(Count: 0, []);
         if (InScope(kind, JobKind.Background))
         {
             var repo = repositoryFactory.GetBackgroundJobRepository(profile);
@@ -431,7 +431,7 @@ public static class JobCleanupTools
                                                                    string? version,
                                                                    CancellationToken ct)
     {
-        var slice = new DryRunSlice(Count: 0, Array.Empty<object>());
+        var slice = new DryRunSlice(Count: 0, []);
         if (InScope(kind, JobKind.Rescrub))
         {
             var repo = repositoryFactory.GetRescrubJobRepository(profile);

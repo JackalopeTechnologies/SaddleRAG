@@ -114,7 +114,7 @@ public class BackgroundJobRepository : IBackgroundJobRepository
         CancellationToken ct = default)
     {
         var filter = BuildDeleteFilter(status, libraryId, version);
-        IReadOnlyList<BackgroundJobRecord> result = Array.Empty<BackgroundJobRecord>();
+        IReadOnlyList<BackgroundJobRecord> result = [];
         if (filter != null)
         {
             result = await mContext.BackgroundJobs.Find(filter)

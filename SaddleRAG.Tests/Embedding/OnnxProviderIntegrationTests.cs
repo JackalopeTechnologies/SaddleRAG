@@ -41,7 +41,7 @@ public sealed class OnnxProviderIntegrationTests
         Assert.Equal("nomic-embed-text-v1.5", provider.ModelName);
         Assert.Equal(NomicDimensions, provider.Dimensions);
 
-        var vectors = await provider.EmbedAsync(new[] { "hello world" }, ct: CancellationToken.None);
+        var vectors = await provider.EmbedAsync(["hello world"], ct: CancellationToken.None);
 
         Assert.Single(vectors);
         Assert.Equal(NomicDimensions, vectors[0].Length);
@@ -50,7 +50,7 @@ public sealed class OnnxProviderIntegrationTests
         foreach (var v in vectors[0])
             norm += (double) v * v;
         norm = Math.Sqrt(norm);
-        Assert.InRange(norm, 0.99, 1.01);
+        Assert.InRange(norm, low: 0.99, high: 1.01);
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class OnnxProviderIntegrationTests
 
         using var provider = new OnnxEmbeddingProvider(options, NullLogger<OnnxEmbeddingProvider>.Instance);
 
-        var vectors = await provider.EmbedAsync(Array.Empty<string>(), ct: CancellationToken.None);
+        var vectors = await provider.EmbedAsync([], ct: CancellationToken.None);
 
         Assert.Empty(vectors);
     }
@@ -95,8 +95,8 @@ public sealed class OnnxProviderIntegrationTests
                                                 CancellationToken.None
                                                );
 
-        Assert.Equal(3, ranked.Count);
-        Assert.Equal("paris", ranked[0].Chunk.Id);
+        Assert.Equal(expected: 3, ranked.Count);
+        Assert.Equal("paris", ranked[index: 0].Chunk.Id);
         Assert.Equal("berlin", ranked[^1].Chunk.Id);
     }
 
@@ -119,12 +119,12 @@ public sealed class OnnxProviderIntegrationTests
                                  BuildChunk("c", "third")
                              };
 
-        var ranked = await reranker.ReRankAsync("any query", candidates, 2, CancellationToken.None);
+        var ranked = await reranker.ReRankAsync("any query", candidates, maxResults: 2, CancellationToken.None);
 
-        Assert.Equal(2, ranked.Count);
-        Assert.Equal("a", ranked[0].Chunk.Id);
-        Assert.Equal("b", ranked[1].Chunk.Id);
-        Assert.True(ranked[0].RelevanceScore > ranked[1].RelevanceScore);
+        Assert.Equal(expected: 2, ranked.Count);
+        Assert.Equal("a", ranked[index: 0].Chunk.Id);
+        Assert.Equal("b", ranked[index: 1].Chunk.Id);
+        Assert.True(ranked[index: 0].RelevanceScore > ranked[index: 1].RelevanceScore);
     }
 
     [Fact]
@@ -139,8 +139,8 @@ public sealed class OnnxProviderIntegrationTests
         using var provider = new OnnxEmbeddingProvider(options, NullLogger<OnnxEmbeddingProvider>.Instance);
 
         const string text = "How do I configure ONNX Runtime?";
-        var asDoc = await provider.EmbedAsync(new[] { text }, EmbedRole.Document, CancellationToken.None);
-        var asQuery = await provider.EmbedAsync(new[] { text }, EmbedRole.Query, CancellationToken.None);
+        var asDoc = await provider.EmbedAsync([text], EmbedRole.Document, CancellationToken.None);
+        var asQuery = await provider.EmbedAsync([text], EmbedRole.Query, CancellationToken.None);
 
         // Same text, different role → nomic emits different vectors via the
         // search_document: vs search_query: task prefix. If these were equal,
@@ -199,7 +199,7 @@ public sealed class OnnxProviderIntegrationTests
 
             // Top result should be a Paris-related candidate (the first 5
             // template positions in BuildCandidatesForBatching).
-            var topContent = ranked[0].Chunk.Content;
+            var topContent = ranked[index: 0].Chunk.Content;
             Assert.Contains("Paris", topContent);
         }
     }
@@ -214,7 +214,7 @@ public sealed class OnnxProviderIntegrationTests
         // plausible sentence. mxbai's MaxSequenceLength is 512 tokens; this
         // input is way past that. The reranker should truncate doc-side
         // and still produce a valid score.
-        var longDoc = string.Concat(Enumerable.Repeat("Paris is the capital of France. ", 200));
+        var longDoc = string.Concat(Enumerable.Repeat("Paris is the capital of France. ", count: 200));
         var candidates = new List<DocChunk>
                              {
                                  BuildChunk("long", longDoc),
@@ -232,12 +232,12 @@ public sealed class OnnxProviderIntegrationTests
                                                 CancellationToken.None
                                                );
 
-        Assert.Equal(2, ranked.Count);
-        Assert.False(float.IsNaN(ranked[0].RelevanceScore));
-        Assert.False(float.IsInfinity(ranked[0].RelevanceScore));
+        Assert.Equal(expected: 2, ranked.Count);
+        Assert.False(float.IsNaN(ranked[index: 0].RelevanceScore));
+        Assert.False(float.IsInfinity(ranked[index: 0].RelevanceScore));
         // Even truncated, "Paris is the capital of France." should score above
         // the Berlin/Germany distractor.
-        Assert.Equal("long", ranked[0].Chunk.Id);
+        Assert.Equal("long", ranked[index: 0].Chunk.Id);
     }
 
     [Fact]
@@ -293,8 +293,8 @@ public sealed class OnnxProviderIntegrationTests
                                                   candidates, candidates.Count,
                                                   CancellationToken.None
                                                  );
-        Assert.Equal("paris", rankedOnnx[0].Chunk.Id);
-        Assert.True(rankedOnnx[0].RelevanceScore > 1.0f);
+        Assert.Equal("paris", rankedOnnx[index: 0].Chunk.Id);
+        Assert.True(rankedOnnx[index: 0].RelevanceScore > 1.0f);
 
         // Flip to Off → NoOp pass-through. Original input order preserved
         // with synthetic descending scores.
@@ -303,11 +303,11 @@ public sealed class OnnxProviderIntegrationTests
                                                  candidates, candidates.Count,
                                                  CancellationToken.None
                                                 );
-        Assert.Equal("paris", rankedOff[0].Chunk.Id);
-        Assert.Equal("berlin", rankedOff[1].Chunk.Id);
-        Assert.Equal("seine", rankedOff[2].Chunk.Id);
+        Assert.Equal("paris", rankedOff[index: 0].Chunk.Id);
+        Assert.Equal("berlin", rankedOff[index: 1].Chunk.Id);
+        Assert.Equal("seine", rankedOff[index: 2].Chunk.Id);
         // NoOp passes through with score = 1.0 - i * 0.01.
-        Assert.True(rankedOff[0].RelevanceScore <= 1.0f);
+        Assert.True(rankedOff[index: 0].RelevanceScore <= 1.0f);
     }
 
     private static List<DocChunk> BuildCandidatesForBatching(int count)

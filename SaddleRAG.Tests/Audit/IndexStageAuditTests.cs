@@ -36,7 +36,7 @@ public sealed class IndexStageAuditTests
 
     private sealed class SpyAuditWriter : IScrapeAuditWriter
     {
-        public List<IndexedCall> IndexedCalls { get; } = new List<IndexedCall>();
+        public List<IndexedCall> IndexedCalls { get; } = [];
 
         public void RecordSkipped(AuditContext ctx,
                                   string url,
@@ -257,10 +257,10 @@ public sealed class IndexStageAuditTests
 
         Assert.Equal(expected: 2, auditWriter.IndexedCalls.Count);
         Assert.Contains(auditWriter.IndexedCalls,
-                        c => c.Url == PageAUrl && c.Outcome.ChunkCount == 5
+                        c => c is { Url: PageAUrl, Outcome.ChunkCount: 5 }
                        );
         Assert.Contains(auditWriter.IndexedCalls,
-                        c => c.Url == PageBUrl && c.Outcome.ChunkCount == 3
+                        c => c is { Url: PageBUrl, Outcome.ChunkCount: 3 }
                        );
     }
 

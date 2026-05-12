@@ -80,7 +80,7 @@ public static class IngestTools
         var versionRecord = await libraryRepo.GetVersionAsync(library, version, ct);
 
         bool isInProgress = activeJob != null;
-        bool isSuspect = versionRecord != null && versionRecord.Suspect;
+        bool isSuspect = versionRecord is { Suspect: true };
         string activeJobId = activeJob?.Id ?? string.Empty;
         var suspectReasons = versionRecord?.SuspectReasons ?? [];
 

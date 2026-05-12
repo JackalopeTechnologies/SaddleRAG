@@ -107,7 +107,7 @@ public static class ScrapeDocsTools
             else
             {
                 var versionRecord = await libraryRepo.GetVersionAsync(libraryId, version, ct);
-                if (versionRecord != null && versionRecord.Suspect)
+                if (versionRecord is { Suspect: true })
                 {
                     var refused = new
                                       {

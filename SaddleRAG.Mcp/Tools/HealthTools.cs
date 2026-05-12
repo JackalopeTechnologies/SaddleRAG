@@ -167,7 +167,7 @@ public static class HealthTools
             {
                 versionCount++;
                 var versionRecord = await libraryRepo.GetVersionAsync(lib.Id, v, ct);
-                if (versionRecord != null && versionRecord.Suspect && suspectList.Count < SuspectListCap)
+                if (versionRecord is { Suspect: true } && suspectList.Count < SuspectListCap)
                     suspectList.Add(new { library = lib.Id, version = v, reasons = versionRecord.SuspectReasons });
             }
         }

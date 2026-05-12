@@ -48,8 +48,8 @@ public sealed class NpmProjectFileParserTests
             var result = await mParser.ParseAsync(path, TestContext.Current.CancellationToken);
 
             Assert.Equal(expected: 2, result.Count);
-            Assert.Contains(result, d => d.PackageId == "express" && d.Version == "4.18.2");
-            Assert.Contains(result, d => d.PackageId == "lodash" && d.Version == "4.17.21");
+            Assert.Contains(result, d => d is { PackageId: "express", Version: "4.18.2" });
+            Assert.Contains(result, d => d is { PackageId: "lodash", Version: "4.17.21" });
         }
         finally
         {
@@ -76,8 +76,8 @@ public sealed class NpmProjectFileParserTests
             var result = await mParser.ParseAsync(path, TestContext.Current.CancellationToken);
 
             Assert.Equal(expected: 2, result.Count);
-            Assert.Contains(result, d => d.PackageId == "jest" && d.Version == "29.0.0");
-            Assert.Contains(result, d => d.PackageId == "webpack" && d.Version == "5.88.0");
+            Assert.Contains(result, d => d is { PackageId: "jest", Version: "29.0.0" });
+            Assert.Contains(result, d => d is { PackageId: "webpack", Version: "5.88.0" });
         }
         finally
         {
@@ -200,8 +200,8 @@ public sealed class NpmProjectFileParserTests
             var result = await mParser.ParseAsync(path, TestContext.Current.CancellationToken);
 
             Assert.Equal(expected: 2, result.Count);
-            Assert.Contains(result, d => d.PackageId == "react" && d.Version == "^18.2.0");
-            Assert.Contains(result, d => d.PackageId == "axios" && d.Version == "~1.4.0");
+            Assert.Contains(result, d => d is { PackageId: "react", Version: "^18.2.0" });
+            Assert.Contains(result, d => d is { PackageId: "axios", Version: "~1.4.0" });
         }
         finally
         {

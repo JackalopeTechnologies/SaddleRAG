@@ -23,12 +23,12 @@ public sealed record LibraryDetailData
     public required int PageCount { get; init; }
     public required bool IsSuspect { get; init; }
     public string Hint { get; init; } = string.Empty;
-    public IReadOnlyList<string> SuspectReasons { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> SuspectReasons { get; init; } = [];
     public DateTime? LastScrapedAt { get; init; }
     public DateTime? LastSuspectEvaluatedAt { get; init; }
     public double? BoundaryIssuePct { get; init; }
     public string? EmbeddingProviderId { get; init; }
     public string? EmbeddingModelName { get; init; }
-    public IReadOnlyList<HostBucket> HostnameDistribution { get; init; } = Array.Empty<HostBucket>();
+    public IReadOnlyList<HostBucket> HostnameDistribution { get; init; } = [];
     public IReadOnlyDictionary<string, double> LanguageMix { get; init; } = new Dictionary<string, double>();
 }

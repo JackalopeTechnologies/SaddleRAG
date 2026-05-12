@@ -59,7 +59,7 @@ public class OllamaSettings
     ///     is the default</strong> when <see cref="ActiveClassificationModel" />
     ///     is unset.
     /// </summary>
-    public List<OllamaModelEntry> ClassificationModels { get; set; } = new();
+    public List<OllamaModelEntry> ClassificationModels { get; set; } = [];
 
     /// <summary>
     ///     Ordered registry of recon models. <strong>First entry is the
@@ -68,7 +68,7 @@ public class OllamaSettings
     ///     the casing convention") than classification and typically wants
     ///     a larger model.
     /// </summary>
-    public List<OllamaModelEntry> ReconModels { get; set; } = new();
+    public List<OllamaModelEntry> ReconModels { get; set; } = [];
 
     /// <summary>
     ///     Minimum self-reported confidence required before a recon-produced
@@ -128,7 +128,7 @@ public class OllamaSettings
 
         OllamaModelEntry result;
         if (string.IsNullOrEmpty(activeName))
-            result = registry[0];
+            result = registry[index: 0];
         else
             result = registry.FirstOrDefault(e => e.Name == activeName)
                      ?? throw new InvalidOperationException(

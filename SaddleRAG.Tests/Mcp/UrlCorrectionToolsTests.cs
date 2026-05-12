@@ -64,7 +64,7 @@ public sealed class UrlCorrectionToolsTests
         var harness = MakeFactory();
         var orphan = MakeJobRecord("orphan-1", "foo", "1.0", ScrapeJobStatus.Running);
         harness.ScrapeJobRepo.ListActiveJobsAsync("foo", "1.0", Arg.Any<CancellationToken>())
-               .Returns(new[] { orphan });
+               .Returns([orphan]);
 
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
@@ -127,7 +127,7 @@ public sealed class UrlCorrectionToolsTests
         var first = MakeJobRecord("running-1", "foo", "1.0", ScrapeJobStatus.Running);
         var second = MakeJobRecord("running-2", "foo", "1.0", ScrapeJobStatus.Running);
         harness.ScrapeJobRepo.ListActiveJobsAsync("foo", "1.0", Arg.Any<CancellationToken>())
-               .Returns(new[] { first, second });
+               .Returns([first, second]);
         harness.Runner.CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                .Returns(CancelScrapeOutcome.Signalled);
         harness.Runner.QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
@@ -160,7 +160,7 @@ public sealed class UrlCorrectionToolsTests
                               LibraryHint = library,
                               LibraryId = library,
                               Version = version,
-                              AllowedUrlPatterns = Array.Empty<string>()
+                              AllowedUrlPatterns = []
                           },
                 Status = status,
                 CreatedAt = DateTime.UtcNow - TimeSpan.FromMinutes(minutes: 10)
@@ -168,7 +168,7 @@ public sealed class UrlCorrectionToolsTests
 
     private static TestHarness MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
@@ -177,7 +177,7 @@ public sealed class UrlCorrectionToolsTests
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var scrapeJobRepo = Substitute.For<IScrapeJobRepository>();
         scrapeJobRepo.ListActiveJobsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                     .Returns(Array.Empty<ScrapeJobRecord>());
+                     .Returns([]);
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);

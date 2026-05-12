@@ -60,7 +60,7 @@ public sealed class OnnxModelDownloaderTests : IDisposable
 
         await downloader.EnsureActiveModelsAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(expected: 2, handler.Requests.Count);
         string modelPath = Path.Combine(mTempRoot, "nomic", "model.onnx");
         string vocabPath = Path.Combine(mTempRoot, "nomic", "vocab.txt");
         Assert.True(File.Exists(modelPath));
@@ -80,7 +80,7 @@ public sealed class OnnxModelDownloaderTests : IDisposable
 
         await downloader.EnsureActiveModelsAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(expected: 2, handler.Requests.Count);
         Assert.True(File.Exists(Path.Combine(mTempRoot, "mxbai", "model.onnx")));
         Assert.True(File.Exists(Path.Combine(mTempRoot, "mxbai", "spm.model")));
     }
@@ -122,7 +122,7 @@ public sealed class OnnxModelDownloaderTests : IDisposable
 
         await downloader.EnsureActiveModelsAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(expected: 2, handler.Requests.Count);
         Assert.False(Directory.Exists(Path.Combine(mTempRoot, "mxbai")));
     }
 
@@ -241,7 +241,7 @@ public sealed class OnnxModelDownloaderTests : IDisposable
         }
 
         private readonly Func<HttpRequestMessage, HttpResponseMessage> mResponder;
-        public List<HttpRequestMessage> Requests { get; } = new();
+        public List<HttpRequestMessage> Requests { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {

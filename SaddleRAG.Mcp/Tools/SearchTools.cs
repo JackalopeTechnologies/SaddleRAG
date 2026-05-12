@@ -16,7 +16,6 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
-using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Embedding;
 
@@ -441,7 +440,7 @@ public static class SearchTools
             var indexRepo = repositoryFactory.GetLibraryIndexRepository(profile);
             var bm25ShardRepo = repositoryFactory.GetBm25ShardRepository(profile);
             var index = await indexRepo.GetAsync(library, resolvedVersion, ct);
-            if (index != null && index.Bm25.DocumentCount > 0)
+            if (index is { Bm25.DocumentCount: > 0 })
             {
                 var lookup = new ShardedBm25TermLookup(bm25ShardRepo, library, resolvedVersion, index.Bm25.ShardCount);
                 result = await Bm25Scorer.ScoreAsync(lookup, index.Bm25, query, ct);
@@ -709,9 +708,6 @@ public static class SearchTools
     private const int MinimumCandidateCount = 1;
     private const int MinimumCandidateMultiplier = 2;
     private const int MaxOverviewResults = 5;
-    private const float QueryRewriteConfidenceThreshold = 0.85f;
-    private const float PreferredCategoryConfidenceThreshold = 0.8f;
-
     private static readonly IReadOnlyDictionary<string, double> smEmptyBm25Scores =
         new Dictionary<string, double>(StringComparer.Ordinal);
 

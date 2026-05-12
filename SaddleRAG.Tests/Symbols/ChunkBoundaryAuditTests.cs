@@ -145,7 +145,7 @@ public sealed class ChunkBoundaryAuditTests
     [Fact]
     public void ReturnsZeroForEmptyInput()
     {
-        var count = ChunkBoundaryAudit.CountIssues(Array.Empty<DocChunk>());
+        var count = ChunkBoundaryAudit.CountIssues([]);
 
         Assert.Equal(expected: 0, count);
     }

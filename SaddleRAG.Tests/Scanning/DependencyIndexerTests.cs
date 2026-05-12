@@ -65,9 +65,9 @@ public sealed class DependencyIndexerTests
                                            IEnumerable<IPackageRegistryClient>? registryClients = null,
                                            IEnumerable<IDocUrlResolver>? urlResolvers = null)
     {
-        var indexer = new DependencyIndexer(parsers ?? new[] { mNugetParser },
-                                            registryClients ?? new[] { mRegistryClient },
-                                            urlResolvers ?? new[] { mUrlResolver },
+        var indexer = new DependencyIndexer(parsers ?? [mNugetParser],
+                                            registryClients ?? [mRegistryClient],
+                                            urlResolvers ?? [mUrlResolver],
                                             new PackageFilter(),
                                             mJobQueue,
                                             mRepoFactory,
@@ -130,7 +130,7 @@ public sealed class DependencyIndexerTests
         Assert.Equal(expected: 1, report.FilteredOut);
         Assert.Contains(report.Packages,
                         p =>
-                            p.PackageId == "Microsoft.Extensions.Logging" && p.Status == "filtered"
+                            p is { PackageId: "Microsoft.Extensions.Logging", Status: "filtered" }
                        );
     }
 
@@ -152,7 +152,7 @@ public sealed class DependencyIndexerTests
                              Name = "Newtonsoft.Json",
                              Hint = "JSON framework",
                              CurrentVersion = "13.0.3",
-                             AllVersions = new List<string> { "13.0.3" }
+                             AllVersions = ["13.0.3"]
                          };
         mLibraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
                     .Returns(new List<LibraryRecord> { cached });
@@ -166,7 +166,7 @@ public sealed class DependencyIndexerTests
         Assert.Equal(expected: 1, report.AlreadyCached);
         Assert.Contains(report.Packages,
                         p =>
-                            p.PackageId == "Newtonsoft.Json" && p.Status == "cached"
+                            p is { PackageId: "Newtonsoft.Json", Status: "cached" }
                        );
     }
 
@@ -188,7 +188,7 @@ public sealed class DependencyIndexerTests
                              Name = "Newtonsoft.Json",
                              Hint = "JSON framework",
                              CurrentVersion = "13.0.3",
-                             AllVersions = new List<string> { "13.0.3" }
+                             AllVersions = ["13.0.3"]
                          };
         mLibraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
                     .Returns(new List<LibraryRecord> { cached });
@@ -202,9 +202,7 @@ public sealed class DependencyIndexerTests
         Assert.Equal(expected: 1, report.CachedDifferentVersion);
         Assert.Contains(report.Packages,
                         p =>
-                            p.PackageId == "Newtonsoft.Json" &&
-                            p.Status == "cached-different-version" &&
-                            p.CachedVersion == "13.0.3"
+                            p is { PackageId: "Newtonsoft.Json", Status: "cached-different-version", CachedVersion: "13.0.3" }
                        );
     }
 
@@ -232,10 +230,7 @@ public sealed class DependencyIndexerTests
         Assert.Equal(expected: 1, report.NewlyQueued);
         Assert.Contains(report.Packages,
                         p =>
-                            p.PackageId == "Serilog" &&
-                            p.Status == "queued" &&
-                            p.JobId == "job-42" &&
-                            p.DocUrl == "https://serilog.net/docs"
+                            p is { PackageId: "Serilog", Status: "queued", JobId: "job-42", DocUrl: "https://serilog.net/docs" }
                        );
     }
 
@@ -262,7 +257,7 @@ public sealed class DependencyIndexerTests
         Assert.Equal(expected: 1, report.ResolutionFailed);
         Assert.Contains(report.Packages,
                         p =>
-                            p.PackageId == "ObscureLib" && p.Status == "failed"
+                            p is { PackageId: "ObscureLib", Status: "failed" }
                        );
     }
 
@@ -304,7 +299,7 @@ public sealed class DependencyIndexerTests
         Assert.Equal(expected: 1, report.ResolutionFailed);
         Assert.Contains(report.Packages,
                         p =>
-                            p.PackageId == "SomeLib" && p.Status == "failed"
+                            p is { PackageId: "SomeLib", Status: "failed" }
                        );
     }
 
@@ -394,9 +389,9 @@ public sealed class DependencyIndexerTests
 
         try
         {
-            var indexer = BuildIndexer(new[] { mNugetParser, mNpmParser },
-                                       new[] { mRegistryClient, npmRegistryClient },
-                                       new[] { mUrlResolver, npmResolver }
+            var indexer = BuildIndexer([mNugetParser, mNpmParser],
+                                           [mRegistryClient, npmRegistryClient],
+                                           [mUrlResolver, npmResolver]
                                       );
 
             // Act

@@ -91,7 +91,7 @@ public sealed class MonitorJobServiceTests
                                        Version = "1",
                                        RootUrl = "https://x/",
                                        LibraryHint = string.Empty,
-                                       AllowedUrlPatterns = Array.Empty<string>()
+                                       AllowedUrlPatterns = []
                                    },
                          Status = ScrapeJobStatus.Completed,
                          CreatedAt = T(sec: 9),
@@ -138,7 +138,7 @@ public sealed class MonitorJobServiceTests
                               Version = ver,
                               RootUrl = "https://x/",
                               LibraryHint = string.Empty,
-                              AllowedUrlPatterns = Array.Empty<string>()
+                              AllowedUrlPatterns = []
                           },
                 Status = status,
                 CreatedAt = createdAt

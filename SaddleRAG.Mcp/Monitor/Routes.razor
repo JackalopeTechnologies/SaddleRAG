@@ -1,6 +1,6 @@
 @* SaddleRAG.Mcp/Monitor/Routes.razor *@
 <Router AppAssembly="@typeof(App).Assembly"
-        AdditionalAssemblies="@(new[] { typeof(WyomingTheme).Assembly })">
+        AdditionalAssemblies="@([typeof(WyomingTheme).Assembly])">
     <Found Context="routeData">
         <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)"/>
     </Found>

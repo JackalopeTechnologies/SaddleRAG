@@ -22,23 +22,15 @@ internal static class ClientFlagParser
         bool copilotCli)
     {
         if (claudeCode)
-        {
             yield return ClaudeCodeWriter.ForCurrentUser();
-        }
 
         if (claudeDesktop)
-        {
             yield return ClaudeDesktopWriter.ForCurrentUser();
-        }
 
         if (vscodeMcp)
-        {
             yield return VsCodeMcpWriter.ForCurrentUser();
-        }
 
         if (copilotCli)
-        {
             yield return CopilotCliWriter.ForCurrentUser();
-        }
     }
 }

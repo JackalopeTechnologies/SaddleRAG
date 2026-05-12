@@ -15,7 +15,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeLibraryRepository : ILibraryRepository
 {
-    private readonly List<LibraryRecord> mLibraries = new List<LibraryRecord>();
+    private readonly List<LibraryRecord> mLibraries = [];
 
     private readonly Dictionary<string, LibraryVersionRecord>
         mVersions = new Dictionary<string, LibraryVersionRecord>();

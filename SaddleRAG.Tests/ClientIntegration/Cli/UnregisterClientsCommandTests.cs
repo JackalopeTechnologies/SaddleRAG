@@ -20,20 +20,18 @@ public sealed class UnregisterClientsCommandTests
     {
         Command cmd = UnregisterClientsCommand.Build();
 
-        IReadOnlyCollection<string> expected = new[]
-        {
-            "--claude-code",
+        IReadOnlyCollection<string> expected =
+            [
+                "--claude-code",
             "--claude-desktop",
             "--vscode-mcp",
             "--copilot-cli",
             "--quiet",
             "--log-file"
-        };
+            ];
 
         foreach (string opt in expected)
-        {
             Assert.Contains(cmd.Options, o => o.Name == opt || o.Aliases.Contains(opt));
-        }
     }
 
     [Fact]

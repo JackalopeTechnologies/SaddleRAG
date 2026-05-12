@@ -28,7 +28,7 @@ public sealed class QueryMetricsRecorder : IQueryMetrics
 
     private readonly int mCapacity;
     private readonly object mLock = new object();
-    private readonly LinkedList<QuerySample> mSamples = new LinkedList<QuerySample>();
+    private readonly LinkedList<QuerySample> mSamples = [];
 
     public DateTime ProcessStartedUtc { get; }
 

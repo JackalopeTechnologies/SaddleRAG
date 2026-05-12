@@ -165,8 +165,8 @@ public sealed class FileScrapeAuditTests
 
     private sealed class SpyAuditWriter : IScrapeAuditWriter
     {
-        public List<AuditCall> FetchedCalls { get; } = new List<AuditCall>();
-        public List<AuditCall> SkippedCalls { get; } = new List<AuditCall>();
+        public List<AuditCall> FetchedCalls { get; } = [];
+        public List<AuditCall> SkippedCalls { get; } = [];
 
         public void RecordSkipped(AuditContext ctx,
                                   string url,
@@ -215,7 +215,7 @@ public sealed class FileScrapeAuditTests
         public Task<IReadOnlyList<PageRecord>> GetPagesAsync(string libraryId,
                                                              string version,
                                                              CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<PageRecord>>(Array.Empty<PageRecord>());
+            => Task.FromResult<IReadOnlyList<PageRecord>>([]);
 
         public Task<PageRecord?> GetPageByUrlAsync(string libraryId,
                                                    string version,
@@ -231,7 +231,7 @@ public sealed class FileScrapeAuditTests
 
         public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
             CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<LibraryVersionKey>>(Array.Empty<LibraryVersionKey>());
+            => Task.FromResult<IReadOnlyList<LibraryVersionKey>>([]);
     }
 
     #endregion

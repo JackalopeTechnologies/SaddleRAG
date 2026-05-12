@@ -123,7 +123,7 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
                                                      int maxResults,
                                                      CancellationToken ct)
     {
-        IReadOnlyList<ReRankResult> result = Array.Empty<ReRankResult>();
+        IReadOnlyList<ReRankResult> result = [];
 
         if (candidates.Count > 0)
         {
@@ -133,7 +133,7 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
             long[] queryTokens = TokenizeWithoutSpecials(entry, query);
             float[] scores = new float[candidates.Count];
 
-            int batchSize = Math.Max(1, mSettings.RerankBatchSize);
+            int batchSize = Math.Max(val1: 1, mSettings.RerankBatchSize);
             for(var start = 0; start < candidates.Count; start += batchSize)
             {
                 ct.ThrowIfCancellationRequested();
@@ -146,12 +146,12 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
                 ranked.Add(new ReRankResult { Chunk = candidates[i], RelevanceScore = scores[i] });
 
             ranked.Sort((a, b) => b.RelevanceScore.CompareTo(a.RelevanceScore));
-            result = ranked.Count > maxResults ? ranked.GetRange(0, maxResults) : ranked;
+            result = ranked.Count > maxResults ? ranked.GetRange(index: 0, maxResults) : ranked;
 
             mLogger.LogDebug(
                 "OnnxReRanker scored {Count} candidates in {Batches} batch(es); top score={Top:F4}",
                 candidates.Count, (candidates.Count + batchSize - 1) / batchSize,
-                result.Count > 0 ? result[0].RelevanceScore : float.NaN
+                result.Count > 0 ? result[index: 0].RelevanceScore : float.NaN
             );
         }
 
@@ -236,7 +236,7 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
         var logitsOut = results.First();
         Tensor<float> logits = logitsOut.AsTensor<float>();
         ReadOnlySpan<int> dims = logits.Dimensions;
-        if (dims.Length != LogitsRank || dims[0] != batchCount || dims[1] != LogitsPerPair)
+        if (dims.Length != LogitsRank || dims[index: 0] != batchCount || dims[index: 1] != LogitsPerPair)
             throw new InvalidOperationException(
                 $"ONNX reranker '{entry.Name}' produced unexpected output shape [{string.Join(",", dims.ToArray())}]; expected [{batchCount}, {LogitsPerPair}]."
             );
@@ -251,8 +251,8 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
         int sepId = LookupSpecialToken(entry, SepTokenName);
 
         int overhead = SpecialTokenOverhead;
-        int qBudget = Math.Min(queryTokens.Length, Math.Max(0, maxLen - overhead - MinDocTokens));
-        int dBudget = Math.Min(docTokens.Length, Math.Max(0, maxLen - overhead - qBudget));
+        int qBudget = Math.Min(queryTokens.Length, Math.Max(val1: 0, maxLen - overhead - MinDocTokens));
+        int dBudget = Math.Min(docTokens.Length, Math.Max(val1: 0, maxLen - overhead - qBudget));
 
         long[] result = new long[overhead + qBudget + dBudget];
         var idx = 0;
