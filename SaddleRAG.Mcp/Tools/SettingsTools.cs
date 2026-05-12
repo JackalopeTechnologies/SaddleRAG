@@ -61,37 +61,6 @@ public static class SettingsTools
         return result;
     }
 
-    [McpServerTool(Name = "set_query_planner_strategy")]
-    [Description("Set the active query-planner strategy at runtime. " +
-                 "'Off' = no local planning; the caller query flows straight to retrieval. " +
-                 "'Llm' = one local LLM call produces conservative search hints before retrieval. " +
-                 "Omit strategy to read current state."
-                )]
-    public static string SetQueryPlannerStrategy(IOptions<RankingSettings> rankingOptions,
-                                                 [Description("Query planner strategy: Off or Llm. Omit to read current state.")]
-                                                 string? strategy = null)
-    {
-        ArgumentNullException.ThrowIfNull(rankingOptions);
-
-        var rankingSettings = rankingOptions.Value;
-        string? warning = null;
-        if (!string.IsNullOrEmpty(strategy))
-        {
-            if (Enum.TryParse<QueryPlannerStrategy>(strategy, ignoreCase: true, out var parsed))
-                rankingSettings.QueryPlannerStrategy = parsed;
-            else
-                warning = string.Format(InvalidQueryPlannerStrategyWarningFormat, strategy);
-        }
-
-        var response = new
-                           {
-                               Strategy = rankingSettings.QueryPlannerStrategy.ToString(),
-                               Warning = warning
-                           };
-        var result = JsonSerializer.Serialize(response, smJsonOptions);
-        return result;
-    }
-
     [McpServerTool(Name = "toggle_logging")]
     [Description("Change the minimum log level at runtime. " +
                  "Use 'Warning' or 'Error' for quiet production operation. " +
@@ -127,10 +96,7 @@ public static class SettingsTools
         "Unknown level '{0}'. Valid values: Verbose, Debug, Information, Warning, Error, Fatal. Current level unchanged.";
 
     private const string InvalidStrategyWarningFormat =
-        "Unknown strategy '{0}'. Valid values: Off, Llm, CrossEncoder. Current strategy unchanged.";
-
-    private const string InvalidQueryPlannerStrategyWarningFormat =
-        "Unknown strategy '{0}'. Valid values: Off, Llm. Current query planner strategy unchanged.";
+        "Unknown strategy '{0}'. Valid values: Off, Onnx. Current strategy unchanged.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

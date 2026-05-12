@@ -7,12 +7,11 @@
 namespace SaddleRAG.Core.Enums;
 
 /// <summary>
-///     Selects which reranker strategy SearchTools.search_docs uses after
-///     hybrid scoring (vector ∥ BM25). Default is Off — the reviewer's
-///     bench showed that the legacy LLM categorical reranker hurts
-///     identifier queries more often than it helps; flip to a non-Off
-///     strategy only after the bench harness confirms a net-positive
-///     nDCG@5 for your corpus.
+///     Selects which reranker SearchTools.search_docs uses after hybrid
+///     scoring (vector ∥ BM25). Two states: Off (recommended for
+///     identifier-shape queries; fastest, no plateau artifacts) and Onnx
+///     (in-process cross-encoder via Microsoft.ML.OnnxRuntime, default
+///     model mxbai-rerank-base-v1, ~150ms batched on CPU).
 /// </summary>
 public enum ReRankerStrategy
 {
@@ -24,34 +23,11 @@ public enum ReRankerStrategy
     Off,
 
     /// <summary>
-    ///     Categorical LLM reranker (Ollama prompt-based). Default model
-    ///     is phi4-mini:3.8b (Microsoft, Western supply chain). Currently
-    ///     dispatches to NoOp in ToggleableReRanker until calibration is
-    ///     verified — small instruction-tuned LLMs tend to plateau on
-    ///     the 5-bucket score scale (1.0/0.8/0.5/0.2/0.0) without a
-    ///     bench harness to tune the prompt against.
-    /// </summary>
-    Llm,
-
-    /// <summary>
-    ///     Cross-encoder-style reranker hosting Mixedbread mxbai-rerank-
-    ///     large-v2 on Ollama. The community Ollama port was originally
-    ///     hosted as a generate model emitting continuous floats, but
-    ///     has since been republished as embed-only — so this strategy
-    ///     also currently dispatches to NoOp. Re-enable when a real
-    ///     cross-encoder runtime is wired up (e.g. HuggingFace TEI
-    ///     sidecar with an /api/rerank endpoint).
-    /// </summary>
-    CrossEncoder,
-
-    /// <summary>
     ///     In-process ONNX cross-encoder reranker. Loads the model named
     ///     by <c>OnnxSettings.ActiveRerankerModel</c> (default
     ///     <c>mxbai-rerank-base-v1</c>) via Microsoft.ML.OnnxRuntime and
     ///     scores (query, doc) pairs in a batched single forward pass per
     ///     search. Produces continuous floats — no plateau artifacts.
-    ///     Replaces the legacy Llm and CrossEncoder strategies once Phase 5
-    ///     removes their dead code.
     /// </summary>
     Onnx
 }
