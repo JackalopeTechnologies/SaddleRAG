@@ -106,6 +106,18 @@ public record ScrapeJob
     public bool ForceClean { get; init; }
 
     /// <summary>
+    ///     If true, the orchestrator seeds the crawl queue from every
+    ///     stored page URL for (LibraryId, Version) and the resume
+    ///     skip-set is disabled so every seeded URL is re-fetched.
+    ///     Used by <c>rescrape_library</c> to refresh an existing library
+    ///     without needing the original RootUrl or crawl patterns — the
+    ///     stored pages themselves drive the crawl, with link-following
+    ///     picking up any newly added pages. Has no effect when
+    ///     (LibraryId, Version) has no stored pages. Default false.
+    /// </summary>
+    public bool SeedFromStoredPages { get; init; }
+
+    /// <summary>
     ///     Default per-page fetch delay. Zero means "no fixed delay" — pacing is
     ///     handled adaptively by <c>HostRateLimiter</c> based on per-host response
     ///     status (slows down on 429/503, speeds up on sustained success). A
