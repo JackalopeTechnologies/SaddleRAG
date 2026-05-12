@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/tmp"
+      ]
+    },
+    "saddlerag": {
+      "type": "sse",
+      "url": "http://localhost:6100/mcp"
+    }
+  }
+}

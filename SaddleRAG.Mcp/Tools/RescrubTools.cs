@@ -18,28 +18,23 @@ using SaddleRAG.Ingestion;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tool exposing rescrub_library — the "scrub what we know"
-///     entrypoint. Re-runs the symbol extractor (and optionally the
-///     classifier) over chunks already stored in MongoDB. No re-crawling
-///     the source pages, no re-chunking, no re-embedding. Used when the
-///     parser changes and existing chunks need their Symbols[] /
-///     QualifiedName / ParserVersion refreshed without paying crawl cost.
-///     Runs as a background job; poll get_rescrub_status for completion.
+///     MCP tool exposing rescrub_library — the lightweight metadata-refresh path
+///     over chunks already stored in MongoDB.
 /// </summary>
 [McpServerToolType]
 public static class RescrubTools
 {
     [McpServerTool(Name = "rescrub_library")]
-    [Description("Queue a background job that re-runs the identifier-aware extractor over chunks " +
-                 "already stored for (library, version). Does NOT re-crawl, re-chunk, or re-embed. " +
-                 "Updates Symbols[], QualifiedName, ParserVersion (and Category if reclassification " +
-                 "is enabled). Bootstraps or rebuilds library_indexes (CodeFenceSymbols + Manifest). " +
-                 "Returns a JobId immediately — poll get_rescrub_status(jobId) for completion. " +
-                 "When done the result includes counts, a sample of per-chunk diffs, and a BoundaryHint " +
-                 "field: null (healthy), 'rechunk_library may help' (5%–10% boundary issues), or " +
-                 "'rechunk_library recommended' (≥10%). Act on the hint before calling search_docs. " +
-                 "Idempotent and resumable. If no LibraryProfile exists yet, the completed result " +
-                 "will contain RECON_NEEDED — call recon_library and submit_library_profile first."
+    [Description("Queue a background job that re-parses chunks already stored for (library, version) and refreshes " +
+                 "parser-derived metadata only. Does NOT re-crawl, re-chunk, or re-embed. Updates Symbols[], " +
+                 "QualifiedName, ParserVersion, optional Category reclassification, and the derived library_indexes " +
+                 "(CodeFenceSymbols + Manifest). Use this when parser, extractor, classifier, or index-building logic " +
+                 "changed but the stored chunk text is still valid. Returns a JobId immediately — poll " +
+                 "get_rescrub_status(jobId) for completion. When done the result includes counts, a sample of per-chunk " +
+                 "diffs, and a BoundaryHint field: null (healthy), 'rechunk_library may help' (5%–10% boundary issues), " +
+                 "or 'rechunk_library recommended' (≥10%). Act on the hint before calling search_docs. Idempotent and " +
+                 "resumable. If no LibraryProfile exists yet, the completed result will contain RECON_NEEDED — call " +
+                 "recon_library and submit_library_profile first."
                 )]
     public static async Task<string> RescrubLibrary(RescrubJobRunner runner,
                                                     [Description("Library identifier (e.g. 'aerotech-aeroscript')")]

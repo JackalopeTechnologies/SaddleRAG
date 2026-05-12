@@ -6,6 +6,8 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -114,6 +116,14 @@ public sealed class OllamaReRankerTests
     }
 
     [Fact]
+    public void BuildPromptUsesCandidateLabel()
+    {
+        var prompt = OllamaReRanker.BuildPrompt("q", "d");
+
+        Assert.Contains("Candidate:", prompt);
+    }
+
+    [Fact]
     public void BuildPromptContainsFewShotAnchors()
     {
         var prompt = OllamaReRanker.BuildPrompt("q", "d");
@@ -130,6 +140,32 @@ public sealed class OllamaReRankerTests
 
         Assert.Contains("ONLY", prompt);
         Assert.Contains("No explanation", prompt);
+    }
+
+    [Fact]
+    public void BuildCandidateRecordIncludesStructuredMetadata()
+    {
+        var chunk = new DocChunk
+                        {
+                            Id = "chunk-1",
+                            LibraryId = "scichart-wpf",
+                            Version = "current",
+                            PageUrl = "https://example.test/cursormodifier",
+                            PageTitle = "CursorModifier Class",
+                            Category = DocCategory.ApiReference,
+                            Content = "Provides tooltip overlays for cursor inspection.",
+                            SectionPath = "ChartModifier API > 2D Chart Modifiers",
+                            QualifiedName = "SciChart.Charting.ChartModifiers.CursorModifier"
+                        };
+
+        var record = OllamaReRanker.BuildCandidateRecord(chunk);
+
+        Assert.Contains("Library: scichart-wpf", record);
+        Assert.Contains("Title: CursorModifier Class", record);
+        Assert.Contains("Category: ApiReference", record);
+        Assert.Contains("SectionPath: ChartModifier API > 2D Chart Modifiers", record);
+        Assert.Contains("QualifiedName: SciChart.Charting.ChartModifiers.CursorModifier", record);
+        Assert.Contains("Content: Provides tooltip overlays for cursor inspection.", record);
     }
 
     [Fact]

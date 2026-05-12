@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "saddlerag": {
+      "command": "node",
+      "args": ["custom-script.js"],
+      "env": { "OLD": "1" }
+    }
+  }
+}

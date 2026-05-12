@@ -25,8 +25,10 @@
         <Property Id="MONGOTEST_PASS" Value="0" Secure="yes" />
         <Property Id="OLLAMASTATUS" Secure="yes" />
         <Property Id="OLLAMATEST_PASS" Value="0" Secure="yes" />
-        <Property Id="REGISTER_CLAUDE_PLUGIN" Value="1" />
-        <Property Id="CLAUDEPLUGINSTATUS" Secure="yes" />
+        <Property Id="REGISTER_CLAUDE_CODE"    Value="1" Secure="yes" />
+        <Property Id="REGISTER_CLAUDE_DESKTOP" Value="1" Secure="yes" />
+        <Property Id="REGISTER_VSCODE_MCP"     Value="1" Secure="yes" />
+        <Property Id="REGISTER_COPILOT_CLI"    Value="1" Secure="yes" />
 
         <!-- Ollama keep-alive detection: CheckOllamaKeepAlive CA populates these -->
         <!-- in the UI sequence so the Ollama dialog can show or hide a notice. -->
@@ -36,19 +38,12 @@
 
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
-            <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp">
-                <Directory Id="PLUGINFOLDER" Name="plugin" />
-            </Directory>
+            <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp" />
         </StandardDirectory>
 
         <!-- Published files -->
         <ComponentGroup Id="PublishOutput" Directory="MCPFOLDER">
             <Files Include="$(var.PublishDir)\**" />
-        </ComponentGroup>
-
-        <!-- Plugin files (always installed; registration is opt-in via dialog) -->
-        <ComponentGroup Id="PluginFiles" Directory="PLUGINFOLDER">
-            <Files Include="$(var.PluginSourceDir)\**" />
         </ComponentGroup>
 
         <!-- Windows service -->
@@ -79,15 +74,12 @@
         <!-- via -File "[MCPFOLDER]Script.ps1" without any inline PowerShell that    -->
         <!-- would be mangled by MSI's property formatter eating [...] expressions.  -->
         <Component Id="HelperScripts" Directory="MCPFOLDER" Guid="B3A1F2E4-9C7D-4E8B-A5F1-2D3E4F5A6B7C">
-            <File Source="RegisterClaudePlugin.ps1" />
-            <File Source="UnregisterClaudePlugin.ps1" />
             <File Source="SetOllamaKeepAlive.ps1" />
             <File Source="UnsetOllamaKeepAlive.ps1" />
         </Component>
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
             <ComponentGroupRef Id="PublishOutput" />
-            <ComponentGroupRef Id="PluginFiles" />
             <ComponentRef Id="ServiceComponent" />
             <ComponentRef Id="HelperScripts" />
         </Feature>
@@ -147,28 +139,28 @@
                       Return="ignore"
                       Impersonate="no" />
 
-        <!-- Register Claude Code plugin: copy files + patch ~/.claude/settings.json -->
-        <!-- Impersonate="yes": runs as the installing user so $env:USERPROFILE resolves correctly. -->
-        <!-- [MCPFOLDER] is expanded at SetProperty time (elevated context) before impersonation. -->
-        <SetProperty Id="RegisterClaudePlugin"
-                     Before="RegisterClaudePlugin"
+        <!-- Register SaddleRAG with selected AI tools via the SaddleRAG.Cli subcommand. -->
+        <!-- Impersonate="yes" so $USERPROFILE / $APPDATA resolve to the installing user. -->
+        <SetProperty Id="RegisterAiClients"
+                     Before="RegisterAiClients"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]RegisterClaudePlugin.ps1&quot;" />
+                     Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients --claude-code=[REGISTER_CLAUDE_CODE] --claude-desktop=[REGISTER_CLAUDE_DESKTOP] --vscode-mcp=[REGISTER_VSCODE_MCP] --copilot-cli=[REGISTER_COPILOT_CLI] --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
 
-        <CustomAction Id="RegisterClaudePlugin"
+        <CustomAction Id="RegisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
                       DllEntry="WixQuietExec"
                       Execute="deferred"
                       Return="ignore"
                       Impersonate="yes" />
 
-        <!-- Unregister Claude Code plugin on uninstall: remove files + remove mcpServers entry -->
-        <SetProperty Id="UnregisterClaudePlugin"
-                     Before="UnregisterClaudePlugin"
+        <!-- Unregister SaddleRAG from all four AI tools on uninstall. Always runs against -->
+        <!-- the full set; per-tool selection at install time does not affect uninstall.   -->
+        <SetProperty Id="UnregisterAiClients"
+                     Before="UnregisterAiClients"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]UnregisterClaudePlugin.ps1&quot;" />
+                     Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; unregister-clients --quiet --log-file &quot;%TEMP%\SaddleRAG-unregister.log&quot;" />
 
-        <CustomAction Id="UnregisterClaudePlugin"
+        <CustomAction Id="UnregisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
                       DllEntry="WixQuietExec"
                       Execute="deferred"
@@ -244,10 +236,10 @@
 
         <InstallExecuteSequence>
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
-            <Custom Action="RegisterClaudePlugin" After="PatchAppSettings" Condition="NOT Installed AND REGISTER_CLAUDE_PLUGIN = &quot;1&quot;" />
-            <Custom Action="SetOllamaKeepAlive" After="RegisterClaudePlugin" Condition="NOT Installed OR REINSTALL" />
-            <Custom Action="UnsetOllamaKeepAlive" Before="UnregisterClaudePlugin" Condition="REMOVE = &quot;ALL&quot;" />
-            <Custom Action="UnregisterClaudePlugin" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+            <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="SetOllamaKeepAlive" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="UnsetOllamaKeepAlive" Before="UnregisterAiClients" Condition="REMOVE = &quot;ALL&quot;" />
+            <Custom Action="UnregisterAiClients" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="PrewarmService" Before="StartAndMonitorService" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="StartAndMonitorService" Before="StartServices" Condition="NOT Installed OR REINSTALL" />
         </InstallExecuteSequence>
@@ -274,8 +266,8 @@
             <ProgressText Action="StopServices" Message="Stopping Windows service..." />
             <ProgressText Action="DeleteServices" Message="Removing Windows service..." />
             <ProgressText Action="PatchAppSettings" Message="Writing configuration..." />
-            <ProgressText Action="RegisterClaudePlugin" Message="Registering Claude Code plugin..." />
-            <ProgressText Action="UnregisterClaudePlugin" Message="Removing Claude Code plugin registration..." />
+            <ProgressText Action="RegisterAiClients" Message="Registering AI tool integrations..." />
+            <ProgressText Action="UnregisterAiClients" Message="Removing AI tool integrations..." />
             <ProgressText Action="SetOllamaKeepAlive" Message="Configuring Ollama keep-alive..." />
             <ProgressText Action="UnsetOllamaKeepAlive" Message="Removing Ollama keep-alive setting..." />
             <ProgressText Action="PrewarmService" Message="Warming up runtime, please wait (this takes 15-30 seconds)..." />
@@ -401,33 +393,42 @@
                     <Publish Event="NewDialog" Value="MongoDbDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
-                    <Publish Event="NewDialog" Value="ClaudePluginDlg" />
+                    <Publish Event="NewDialog" Value="AiClientsDlg" />
                 </Control>
                 <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
                     <Publish Event="SpawnDialog" Value="CancelDlg" />
                 </Control>
             </Dialog>
 
-            <!-- Claude Code plugin registration dialog -->
-            <Dialog Id="ClaudePluginDlg" Width="370" Height="270" Title="Claude Code Integration">
+            <!-- AI Tools Integration dialog: four checkboxes, all pre-checked -->
+            <Dialog Id="AiClientsDlg" Width="370" Height="270" Title="AI Tools Integration">
                 <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
                 <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
 
                 <Control Id="Title" Type="Text" X="20" Y="10" Width="290" Height="14"
                          Transparent="yes" NoPrefix="yes"
-                         Text="{\WixUI_Font_Title}Claude Code Integration" />
+                         Text="{\WixUI_Font_Title}AI Tools Integration" />
 
-                <Control Id="Description" Type="Text" X="25" Y="55" Width="320" Height="50"
+                <Control Id="Description" Type="Text" X="25" Y="55" Width="320" Height="40"
                          Transparent="yes" NoPrefix="yes"
-                         Text="SaddleRAG can register itself as a Claude Code plugin so its documentation tools are available in every Claude Code session automatically." />
+                         Text="SaddleRAG can register itself with these AI tools so its tools and skill are available automatically in every session. All recommended." />
 
-                <Control Id="ClaudePluginCheck" Type="CheckBox" X="25" Y="115" Width="320" Height="17"
-                         Property="REGISTER_CLAUDE_PLUGIN" CheckBoxValue="1"
-                         Text="Register as a Claude Code plugin (recommended)" />
+                <Control Id="ChkClaudeCode" Type="CheckBox" X="25" Y="100" Width="320" Height="17"
+                         Property="REGISTER_CLAUDE_CODE" CheckBoxValue="1"
+                         Text="Claude Code (terminal + VSCode extension)" />
+                <Control Id="ChkClaudeDesktop" Type="CheckBox" X="25" Y="120" Width="320" Height="17"
+                         Property="REGISTER_CLAUDE_DESKTOP" CheckBoxValue="1"
+                         Text="Claude Desktop" />
+                <Control Id="ChkVsCodeMcp" Type="CheckBox" X="25" Y="140" Width="320" Height="17"
+                         Property="REGISTER_VSCODE_MCP" CheckBoxValue="1"
+                         Text="VSCode (Copilot Chat MCP)" />
+                <Control Id="ChkCopilotCli" Type="CheckBox" X="25" Y="160" Width="320" Height="17"
+                         Property="REGISTER_COPILOT_CLI" CheckBoxValue="1"
+                         Text="GitHub Copilot CLI" />
 
-                <Control Id="InfoText" Type="Text" X="25" Y="140" Width="320" Height="55"
+                <Control Id="InfoText" Type="Text" X="25" Y="185" Width="320" Height="35"
                          Transparent="yes" NoPrefix="yes"
-                         Text="This adds a plugin entry to %USERPROFILE%\.claude\settings.json and copies the plugin files to %USERPROFILE%\.claude\plugins\saddlerag\. It works whether or not Claude Code is currently installed. Uninstalling SaddleRAG will remove the registration." />
+                         Text="Touches per-user config files only: %USERPROFILE%\.claude.json, %APPDATA%\Claude\claude_desktop_config.json, %APPDATA%\Code\User\mcp.json, and the Copilot CLI per-user config." />
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
@@ -443,7 +444,7 @@
 
             <!-- Wire custom dialogs into the install flow -->
             <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="MongoDbDlg" Order="5" />
-            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="ClaudePluginDlg" Order="4" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="AiClientsDlg" Order="4" />
         </UI>
 
     </Package>

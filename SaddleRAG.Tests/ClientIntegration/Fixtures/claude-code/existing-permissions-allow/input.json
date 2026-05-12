@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__saddlerag__search_docs",
+      "Bash(./customscript.sh)",
+      "Edit"
+    ]
+  }
+}

@@ -31,11 +31,12 @@ public static class BackgroundJobTools
                  "submit_url_correction (apply). " +
                  "Status values: Queued, Running (ItemsProcessed/ItemsTotal show progress where applicable), " +
                  "Completed (Result contains the full output), Failed (check ErrorMessage), Cancelled. " +
+                 "Completed rechunk jobs may also include BoundaryHint ('rechunk_library may help' or 'rechunk_library recommended'); act on that before calling search_docs. " +
                  "Poll at 10–30s intervals. " +
                  "Job id comes from the tool that queued the operation."
                 )]
     public static async Task<string> GetJobStatus(RepositoryFactory repositoryFactory,
-                                                  [Description("Job id returned by the tool that queued the operation."
+                                                  [Description("Job id returned by dryrun_scrape, index_project_dependencies, submit_url_correction, rechunk_library, rename_library, delete_version, or delete_library."
                                                               )]
                                                   string jobId,
                                                   [Description("Optional database profile name (use list_profiles to discover)."

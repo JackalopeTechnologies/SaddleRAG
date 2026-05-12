@@ -35,6 +35,32 @@ public class RankingSettings
     public float ReRankBlendWeight { get; set; } = DefaultReRankBlendWeight;
 
     /// <summary>
+    ///     Multiplier applied to maxResults to decide how many vector
+    ///     candidates to fetch before hybrid blending. Larger values
+    ///     improve recall on large corpora at the cost of more local work.
+    /// </summary>
+    public int VectorCandidateMultiplier { get; set; } = DefaultVectorCandidateMultiplier;
+
+    /// <summary>
+    ///     Minimum number of vector candidates to fetch regardless of the
+    ///     caller's requested result count.
+    /// </summary>
+    public int MinVectorCandidateCount { get; set; } = DefaultMinVectorCandidateCount;
+
+    /// <summary>
+    ///     Maximum number of top hybrid candidates to send through the
+    ///     local reranker. Remaining candidates stay hybrid-only.
+    /// </summary>
+    public int MaxReRankCandidates { get; set; } = DefaultMaxReRankCandidates;
+
+    /// <summary>
+    ///     Active query-planning strategy. Off keeps the original caller
+    ///     query untouched. Llm performs one local planning call before
+    ///     hybrid retrieval to produce conservative search hints.
+    /// </summary>
+    public QueryPlannerStrategy QueryPlannerStrategy { get; set; } = QueryPlannerStrategy.Off;
+
+    /// <summary>
     ///     Threshold for the SymbolExtractor's prose-mention backstop.
     ///     A capitalized identifier appearing this many times in prose
     ///     (outside code fences) survives extraction even when no other
@@ -46,11 +72,8 @@ public class RankingSettings
     ///     Active reranker strategy. Mutable at runtime via the
     ///     set_rerank_strategy MCP tool; SearchTools and the dispatcher
     ///     both read this property per-call, so writes flow through
-    ///     immediately. Off skips reranking; Llm and CrossEncoder are
-    ///     currently commented out at the dispatch sites and fall
-    ///     through to NoOp — see ToggleableReRanker.ResolveActive and
-    ///     SearchTools.ShouldRerank. Default kept at Off until a
-    ///     calibrated Western reranker pipeline is wired up.
+    ///     immediately. Off skips reranking; Llm dispatches to the
+    ///     Ollama reranker; CrossEncoder currently falls through to NoOp.
     /// </summary>
     public ReRankerStrategy ReRankerStrategy { get; set; } = ReRankerStrategy.Off;
 
@@ -61,5 +84,8 @@ public class RankingSettings
 
     public const float DefaultBm25Weight = 0.4f;
     public const float DefaultReRankBlendWeight = 0.6f;
+    public const int DefaultVectorCandidateMultiplier = 5;
+    public const int DefaultMinVectorCandidateCount = 25;
+    public const int DefaultMaxReRankCandidates = 12;
     public const int DefaultProseMentionThreshold = 3;
 }

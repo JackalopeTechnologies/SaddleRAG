@@ -6,6 +6,7 @@
     <File Path="nuget.config" />
   </Folder>
   <Project Path="SaddleRAG.Cli/SaddleRAG.Cli.csproj" />
+  <Project Path="SaddleRAG.ClientIntegration/SaddleRAG.ClientIntegration.csproj" />
   <Project Path="SaddleRAG.Core/SaddleRAG.Core.csproj" />
   <Project Path="SaddleRAG.Database/SaddleRAG.Database.csproj" />
   <Project Path="SaddleRAG.Ingestion/SaddleRAG.Ingestion.csproj" />

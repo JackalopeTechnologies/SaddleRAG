@@ -65,6 +65,9 @@ jobs:
       - name: Publish
         run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ env.PackageVersion }}/publish -p:Version=${{ env.PackageVersion }}
 
+      - name: Publish CLI
+        run: dotnet publish SaddleRAG.Cli/SaddleRAG.Cli.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ env.PackageVersion }}/publish -p:Version=${{ env.PackageVersion }}
+
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
 
@@ -74,7 +77,7 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
 
       - name: Build MSI
-        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ env.PackageVersion }}/publish -d Version=${{ env.MsiVersion }} -d PluginSourceDir=${{ github.workspace }}/plugin -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
+        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ env.PackageVersion }}/publish -d Version=${{ env.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v5

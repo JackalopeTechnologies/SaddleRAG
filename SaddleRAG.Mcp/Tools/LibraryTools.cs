@@ -151,7 +151,7 @@ public static class LibraryTools
     private const string KindParameter = "parameter";
 
     private const string EmptyDatabaseHint =
-        "Database is empty. Call get_dashboard_index for orientation, or use index_project_dependencies(path=...) / scrape_docs(url=..., libraryId=..., version=...) to ingest.";
+        "Database is empty. Call get_dashboard_index for orientation first. Then either call index_project_dependencies(path=...) to auto-discover a local project's dependencies, or call scrape_docs(url=..., libraryId=..., version=...) to ingest a documentation site directly.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }
