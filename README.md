@@ -204,7 +204,8 @@ SaddleRAG exposes 33 tools through the MCP protocol. Six load eagerly into every
 | Tool | Description |
 |---|---|
 | `start_ingest` | Single ingestion entry point — inspects (library, version) state and returns the next recommended action |
-| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware: skips already-indexed libraries unless `force=true` |
+| `scrape_docs` | Scrape a documentation URL with auto-derived crawl settings. Cache-aware: skips already-indexed libraries unless `force=true`. Use for first-time ingest or URL/pattern overrides |
+| `rescrape_library` | Re-scrape an already-indexed library from its source. Takes library + version only — reuses the prior scrape's config and seeds the crawler from stored page URLs so dead/changed/new pages are all picked up |
 | `dryrun_scrape` | Test a scrape configuration without writing to the database. Reports page counts, depth distribution, and GitHub repos that would be cloned |
 | `index_project_dependencies` | Scan a project's NuGet/npm/pip dependencies and auto-index their documentation |
 
@@ -248,6 +249,7 @@ SaddleRAG exposes 33 tools through the MCP protocol. Six load eagerly into every
 | Tool | Description |
 |---|---|
 | `rechunk_library` | Re-run the chunker over stored pages, replace all chunks, and re-embed. Requires `reextract_library` as a follow-up |
+| `reembed_library` | Re-embed every stored chunk via the current embedding provider; updates the version's provider/model/dimensions. Use after swapping embedding provider or model |
 | `reextract_library` | Re-run the symbol extractor and classifier over existing chunks without re-crawling or re-embedding |
 | `recon_library` | Get the instructions and JSON schema needed to characterize a docs site before scraping (LLM-assisted reconnaissance) |
 | `submit_library_profile` | Submit the reconnaissance JSON produced by `recon_library` to persist it as the LibraryProfile |

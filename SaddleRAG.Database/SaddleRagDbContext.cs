@@ -52,6 +52,9 @@ public class SaddleRagDbContext
     public IMongoCollection<RescrubJobRecord> RescrubJobs =>
         mDatabase.GetCollection<RescrubJobRecord>(CollectionRescrubJobs);
 
+    public IMongoCollection<ReembedJobRecord> ReembedJobs =>
+        mDatabase.GetCollection<ReembedJobRecord>(CollectionReembedJobs);
+
     public IMongoCollection<BackgroundJobRecord> BackgroundJobs =>
         mDatabase.GetCollection<BackgroundJobRecord>(CollectionBackgroundJobs);
 
@@ -292,6 +295,20 @@ public class SaddleRagDbContext
                                                    ),
                                                cancellationToken: ct
                                               );
+
+        // ReembedJobs: TTL on CompletedAt with the same Running-skip semantics.
+        var reembedJobKeys = Builders<ReembedJobRecord>.IndexKeys;
+        await
+            ReembedJobs.Indexes.CreateOneAsync(new CreateIndexModel<ReembedJobRecord>(reembedJobKeys.Ascending(j => j
+                                                                .CompletedAt
+                                                            ),
+                                                        new CreateIndexOptions
+                                                            {
+                                                                ExpireAfter = smJobRetention
+                                                            }
+                                                   ),
+                                               cancellationToken: ct
+                                              );
     }
 
     private const int JobRetentionDays = 30;
@@ -304,6 +321,7 @@ public class SaddleRagDbContext
     private const string CollectionProjectProfiles = "projectProfiles";
     private const string CollectionScrapeJobs = "scrapeJobs";
     private const string CollectionRescrubJobs = "rescrubJobs";
+    private const string CollectionReembedJobs = "reembedJobs";
     private const string CollectionBackgroundJobs = "backgroundJobs";
     private const string CollectionLibraryProfiles = "libraryProfiles";
     private const string CollectionLibraryIndexes = "libraryIndexes";
