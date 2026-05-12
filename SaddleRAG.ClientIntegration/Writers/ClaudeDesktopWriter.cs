@@ -63,6 +63,7 @@ public sealed class ClaudeDesktopWriter : IClientWriter
 
     public async Task<RegisterResult> RegisterAsync(SaddleRagEndpoint endpoint, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(endpoint);
         RegisterResult res = RegisterResult.Failed(Name, mConfigPath, MsgRegisterDidNotRun);
         try
         {

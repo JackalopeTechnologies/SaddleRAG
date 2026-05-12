@@ -25,6 +25,7 @@ public sealed class ClientRegistrar
 
     public async Task<RegistrarResult> RegisterAsync(SaddleRagEndpoint endpoint, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(endpoint);
         List<RegisterResult> results = new();
         foreach (IClientWriter writer in mWriters)
         {
