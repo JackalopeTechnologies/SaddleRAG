@@ -43,7 +43,7 @@ public class LlmClassifier
     ///     by RescrubService to populate the manifest and decide whether
     ///     reclassification is needed on a future rescrub.
     /// </summary>
-    public string GetCurrentVersion() => $"{mSettings.ClassificationModel}-{PromptVersion}";
+    public string GetCurrentVersion() => $"{mSettings.GetActiveClassificationModel().Name}-{PromptVersion}";
 
     /// <summary>
     ///     Classify a page using the LLM. Returns category and confidence.
@@ -90,7 +90,7 @@ public class LlmClassifier
         {
             var request = new GenerateRequest
                               {
-                                  Model = mSettings.ClassificationModel,
+                                  Model = mSettings.GetActiveClassificationModel().Name,
                                   Prompt = prompt,
                                   Stream = true
                               };
