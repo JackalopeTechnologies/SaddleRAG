@@ -4,6 +4,19 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      ONNX Runtime execution-provider toggle. When UseGpu is true, this project
+      references the DirectML-flavored OnnxRuntime package instead of the
+      CPU-only one and defines the USE_GPU conditional-compilation symbol so
+      OnnxExecutionProviderConfigurator can call AppendExecutionProvider_DML /
+      _CUDA. Default is CPU-only — match the production MSI flavor by setting
+      UseGpu=true on the dotnet publish command for the GPU build. The runtime
+      Onnx.ExecutionProvider setting picks which compiled-in EP to load; CPU
+      is always the fallback when the requested EP is unavailable.
+      Override at build time: dotnet build -p:UseGpu=true
+    -->
+    <UseGpu Condition="'$(UseGpu)' == ''">false</UseGpu>
+    <DefineConstants Condition="'$(UseGpu)' == 'true'">$(DefineConstants);USE_GPU</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,7 +28,14 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
     <PackageReference Include="SharpCompress" Version="0.48.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.26.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.26.0" Condition="'$(UseGpu)' != 'true'" />
+    <!--
+      Microsoft.ML.OnnxRuntime.DirectML lags Microsoft.ML.OnnxRuntime on
+      NuGet — DirectML releases are gated on the upstream DirectML.dll
+      cadence. 1.24.4 is the latest DirectML build at time of writing; the
+      CPU build can stay at 1.26.0. Bump this when DirectML 1.26+ ships.
+    -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" Condition="'$(UseGpu)' == 'true'" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
   </ItemGroup>
 

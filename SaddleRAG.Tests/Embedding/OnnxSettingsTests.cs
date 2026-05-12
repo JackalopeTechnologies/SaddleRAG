@@ -30,6 +30,29 @@ public sealed class OnnxSettingsTests
         Assert.Equal(OnnxSettings.DefaultRerankBatchSize, settings.RerankBatchSize);
         Assert.Empty(settings.EmbeddingModels);
         Assert.Empty(settings.RerankerModels);
+        Assert.Equal(OnnxSettings.ExecutionProviderCpu, settings.ExecutionProvider);
+    }
+
+    [Fact]
+    public void ExecutionProviderConstantsCoverKnownValues()
+    {
+        Assert.Equal("Cpu", OnnxSettings.ExecutionProviderCpu);
+        Assert.Equal("DirectMl", OnnxSettings.ExecutionProviderDirectMl);
+        Assert.Equal("Cuda", OnnxSettings.ExecutionProviderCuda);
+    }
+
+    [Theory]
+    [InlineData("Cpu", true)]
+    [InlineData("cpu", true)]
+    [InlineData("DirectMl", true)]
+    [InlineData("directml", true)]
+    [InlineData("Cuda", true)]
+    [InlineData("cuda", true)]
+    [InlineData("", false)]
+    [InlineData("OpenVino", false)]
+    public void IsKnownExecutionProviderRecognizesValidValuesOnly(string input, bool expected)
+    {
+        Assert.Equal(expected, OnnxSettings.IsKnownExecutionProvider(input));
     }
 
     [Fact]

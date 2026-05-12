@@ -87,6 +87,22 @@ public class OnnxSettings
     public int RerankBatchSize { get; set; } = DefaultRerankBatchSize;
 
     /// <summary>
+    ///     Preferred ONNX Runtime execution provider for the embedding and
+    ///     reranker sessions. Accepted values: <c>"Cpu"</c> (default),
+    ///     <c>"DirectMl"</c> (Windows DX12 GPU via the DirectML EP),
+    ///     <c>"Cuda"</c> (NVIDIA GPU via the CUDA EP). Comparison is
+    ///     case-insensitive. CPU is always available; the GPU providers
+    ///     only take effect when the build was published with
+    ///     <c>UseGpu=true</c> (which swaps the OnnxRuntime NuGet to the
+    ///     matching GPU package). If a GPU provider is requested but the
+    ///     compiled-in runtime doesn't support it, the session falls back
+    ///     to CPU and a warning is logged; <see cref="OnnxRuntimeCapabilities" />
+    ///     records the outcome so the <c>list_execution_providers</c> MCP
+    ///     tool can report it. Changes take effect on next process start.
+    /// </summary>
+    public string ExecutionProvider { get; set; } = ExecutionProviderCpu;
+
+    /// <summary>
     ///     Ordered registry of embedding model entries. <strong>First entry
     ///     is the default</strong> when <see cref="ActiveEmbeddingModel" /> is
     ///     unset.
@@ -114,6 +130,15 @@ public class OnnxSettings
 
     public const int DefaultRerankBatchSize = 64;
 
+    /// <summary>CPU execution provider sentinel. Always available regardless of build flavor.</summary>
+    public const string ExecutionProviderCpu = "Cpu";
+
+    /// <summary>DirectML execution provider sentinel. Only effective when built with <c>UseGpu=true</c> against the DirectML NuGet.</summary>
+    public const string ExecutionProviderDirectMl = "DirectMl";
+
+    /// <summary>CUDA execution provider sentinel. Only effective when built with <c>UseGpu=true</c> against the CUDA NuGet.</summary>
+    public const string ExecutionProviderCuda = "Cuda";
+
     public static string DefaultModelsDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                      ModelsDirAppName,
@@ -124,6 +149,21 @@ public class OnnxSettings
     private const string ModelsDirAppName = "SaddleRAG";
     private const string ModelsDirModelsSegment = "models";
     private const string ModelsDirOnnxSegment = "onnx";
+
+    /// <summary>
+    ///     Returns true if <paramref name="value" /> matches one of the
+    ///     supported execution-provider sentinels case-insensitively. Used
+    ///     by the <c>set_execution_provider</c> MCP tool to validate input
+    ///     before mutating the setting.
+    /// </summary>
+    public static bool IsKnownExecutionProvider(string? value)
+    {
+        bool result = !string.IsNullOrEmpty(value)
+                      && (string.Equals(value, ExecutionProviderCpu, StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(value, ExecutionProviderDirectMl, StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(value, ExecutionProviderCuda, StringComparison.OrdinalIgnoreCase));
+        return result;
+    }
 
     /// <summary>
     ///     Resolves the active <see cref="EmbeddingModelEntry" /> per the

@@ -35,7 +35,7 @@ public sealed class OnnxProviderIntegrationTests
         var settings = BuildSettingsWithNomic();
         var options = Options.Create(settings);
 
-        using var provider = new OnnxEmbeddingProvider(options, NullLogger<OnnxEmbeddingProvider>.Instance);
+        using var provider = new OnnxEmbeddingProvider(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
         Assert.Equal("onnx", provider.ProviderId);
         Assert.Equal("nomic-embed-text-v1.5", provider.ModelName);
@@ -62,7 +62,7 @@ public sealed class OnnxProviderIntegrationTests
         var settings = BuildSettingsWithNomic();
         var options = Options.Create(settings);
 
-        using var provider = new OnnxEmbeddingProvider(options, NullLogger<OnnxEmbeddingProvider>.Instance);
+        using var provider = new OnnxEmbeddingProvider(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
         var vectors = await provider.EmbedAsync([], ct: CancellationToken.None);
 
@@ -78,7 +78,7 @@ public sealed class OnnxProviderIntegrationTests
         var settings = BuildSettingsWithMxbai();
         var options = Options.Create(settings);
 
-        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+        using var reranker = new OnnxReRanker(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         Assert.Equal("mxbai-rerank-base-v1", reranker.ModelName);
 
@@ -108,7 +108,7 @@ public sealed class OnnxProviderIntegrationTests
         var settings = new OnnxSettings();
         var options = Options.Create(settings);
 
-        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+        using var reranker = new OnnxReRanker(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         Assert.Equal(string.Empty, reranker.ModelName);
 
@@ -136,7 +136,7 @@ public sealed class OnnxProviderIntegrationTests
         var settings = BuildSettingsWithNomic();
         var options = Options.Create(settings);
 
-        using var provider = new OnnxEmbeddingProvider(options, NullLogger<OnnxEmbeddingProvider>.Instance);
+        using var provider = new OnnxEmbeddingProvider(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
         const string text = "How do I configure ONNX Runtime?";
         var asDoc = await provider.EmbedAsync([text], EmbedRole.Document, CancellationToken.None);
@@ -223,7 +223,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var settings = BuildSettingsWithMxbai();
         var options = Options.Create(settings);
-        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+        using var reranker = new OnnxReRanker(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         // Should not throw despite the document blowing past MaxSequenceLength.
         var ranked = await reranker.ReRankAsync("What is the capital of France?",
@@ -253,7 +253,7 @@ public sealed class OnnxProviderIntegrationTests
         var settings = BuildSettingsWithMxbai();
         settings.RerankBatchSize = 1;
         var options = Options.Create(settings);
-        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+        using var reranker = new OnnxReRanker(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -271,7 +271,7 @@ public sealed class OnnxProviderIntegrationTests
 
         // Both Onnx and Off paths run real OnnxReRanker through the toggle.
         var onnxOptions = Options.Create(BuildSettingsWithMxbai());
-        using var onnxReRanker = new OnnxReRanker(onnxOptions, NullLogger<OnnxReRanker>.Instance);
+        using var onnxReRanker = new OnnxReRanker(onnxOptions, new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Onnx };
         var toggle = new ToggleableReRanker(Options.Create(ranking),
@@ -318,7 +318,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var settings = BuildSettingsWithNomic();
         using var provider = new OnnxEmbeddingProvider(Options.Create(settings),
-                                                       NullLogger<OnnxEmbeddingProvider>.Instance);
+                                                       new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
         string[] texts =
             [
@@ -348,7 +348,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var settings = BuildSettingsWithNomic();
         using var provider = new OnnxEmbeddingProvider(Options.Create(settings),
-                                                       NullLogger<OnnxEmbeddingProvider>.Instance);
+                                                       new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
         const string text = "Paris is the capital of France.";
         var first = await provider.EmbedAsync([text], ct: CancellationToken.None);
@@ -369,7 +369,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var settings = BuildSettingsWithNomic();
         using var provider = new OnnxEmbeddingProvider(Options.Create(settings),
-                                                       NullLogger<OnnxEmbeddingProvider>.Instance);
+                                                       new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
         var vectors = await provider.EmbedAsync(
             [
@@ -397,7 +397,7 @@ public sealed class OnnxProviderIntegrationTests
         // Force a small cap to exercise truncation deterministically.
         settings.EmbeddingModels[0].MaxSequenceLength = 64;
         using var provider = new OnnxEmbeddingProvider(Options.Create(settings),
-                                                       NullLogger<OnnxEmbeddingProvider>.Instance);
+                                                       new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
         string longText = string.Concat(Enumerable.Repeat("Paris is the capital of France. ", count: 100));
 
@@ -421,7 +421,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var ex = Assert.Throws<FileNotFoundException>(
             () => new OnnxEmbeddingProvider(Options.Create(settings),
-                                             NullLogger<OnnxEmbeddingProvider>.Instance)
+                                             new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance)
         );
         Assert.Contains("does-not-exist-model", ex.Message);
     }
@@ -434,7 +434,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var candidates = BuildCandidatesForBatching(count: 20);
         using var reranker = new OnnxReRanker(Options.Create(BuildSettingsWithMxbai()),
-                                              NullLogger<OnnxReRanker>.Instance);
+                                              new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         var ranked = await reranker.ReRankAsync("What is the capital of France?",
                                                 candidates,
@@ -454,7 +454,7 @@ public sealed class OnnxProviderIntegrationTests
                           $"mxbai ONNX model not staged at {ScratchModelsRoot}; run the Phase 1 spike to populate.");
 
         using var reranker = new OnnxReRanker(Options.Create(BuildSettingsWithMxbai()),
-                                              NullLogger<OnnxReRanker>.Instance);
+                                              new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         var emptyRanked = await reranker.ReRankAsync("query",
                                                       Array.Empty<DocChunk>(),
@@ -486,7 +486,7 @@ public sealed class OnnxProviderIntegrationTests
 
         // Same settings, same batch size — same scores on repeat.
         using var reranker = new OnnxReRanker(Options.Create(BuildSettingsWithMxbai()),
-                                              NullLogger<OnnxReRanker>.Instance);
+                                              new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         var first = await reranker.ReRankAsync("What is the capital of France?",
                                                 candidates, candidates.Count,
@@ -507,7 +507,7 @@ public sealed class OnnxProviderIntegrationTests
         // No model files needed — empty registry → pass-through.
         var candidates = BuildCandidatesForBatching(count: 20);
         using var reranker = new OnnxReRanker(Options.Create(new OnnxSettings()),
-                                              NullLogger<OnnxReRanker>.Instance);
+                                              new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         var ranked = await reranker.ReRankAsync("any query",
                                                 candidates,
@@ -533,7 +533,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var ex = Assert.Throws<FileNotFoundException>(
             () => new OnnxReRanker(Options.Create(settings),
-                                    NullLogger<OnnxReRanker>.Instance)
+                                    new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance)
         );
         Assert.Contains("does-not-exist-reranker", ex.Message);
     }
@@ -545,7 +545,7 @@ public sealed class OnnxProviderIntegrationTests
                           $"mxbai ONNX model not staged at {ScratchModelsRoot}; run the Phase 1 spike to populate.");
 
         using var onnxReRanker = new OnnxReRanker(Options.Create(BuildSettingsWithMxbai()),
-                                                  NullLogger<OnnxReRanker>.Instance);
+                                                  new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
         var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Off };
         var toggle = new ToggleableReRanker(Options.Create(ranking),
                                             onnxReRanker,
@@ -627,7 +627,7 @@ public sealed class OnnxProviderIntegrationTests
         var settings = BuildSettingsWithMxbai();
         settings.RerankBatchSize = batchSize;
         var options = Options.Create(settings);
-        using var reranker = new OnnxReRanker(options, NullLogger<OnnxReRanker>.Instance);
+        using var reranker = new OnnxReRanker(options, new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
         var ranked = await reranker.ReRankAsync(query, candidates, candidates.Count, ct);
         return ranked;
     }

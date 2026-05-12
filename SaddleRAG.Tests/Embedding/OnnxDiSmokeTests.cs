@@ -93,6 +93,8 @@ public sealed class OnnxDiSmokeTests
                                          });
         });
 
+        services.AddSingleton<OnnxRuntimeCapabilities>();
+
         // Mirror Program.cs's conditional registration.
         var onnxSettings = new OnnxSettings { Enabled = enabled, EmbeddingEnabled = embeddingEnabled };
         if (onnxSettings.Enabled && onnxSettings.EmbeddingEnabled)
