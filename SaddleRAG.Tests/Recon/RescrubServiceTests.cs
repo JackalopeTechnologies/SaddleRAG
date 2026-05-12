@@ -211,7 +211,9 @@ public sealed class RescrubServiceTests
 
     private static LlmClassifier MakeClassifier()
     {
-        var settings = Options.Create(new OllamaSettings());
+        var ollamaSettings = new OllamaSettings();
+        ollamaSettings.ClassificationModels.Add(new OllamaModelEntry { Name = "test-classifier:latest" });
+        var settings = Options.Create(ollamaSettings);
         var result = new LlmClassifier(settings,
                                        NullLogger<LlmClassifier>.Instance
                                       );

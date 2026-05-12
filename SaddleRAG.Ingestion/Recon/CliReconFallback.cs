@@ -63,7 +63,7 @@ public class CliReconFallback
         try
         {
             var models = await mClient.ListLocalModelsAsync(ct);
-            available = models.Any(m => string.Equals(m.Name, mSettings.ReconModel, StringComparison.OrdinalIgnoreCase)
+            available = models.Any(m => string.Equals(m.Name, mSettings.GetActiveReconModel().Name, StringComparison.OrdinalIgnoreCase)
                                   );
         }
         catch(Exception ex)
@@ -111,7 +111,7 @@ public class CliReconFallback
     {
         var request = new GenerateRequest
                           {
-                              Model = mSettings.ReconModel,
+                              Model = mSettings.GetActiveReconModel().Name,
                               Prompt = prompt,
                               Stream = true
                           };

@@ -59,7 +59,7 @@ public class OllamaBootstrapper
     {
         var candidates = new[]
                              {
-                                 mSettings.ClassificationModel
+                                 mSettings.GetActiveClassificationModel().Name
                              };
         var distinct = candidates
                        .Where(m => !string.IsNullOrWhiteSpace(m))
@@ -412,8 +412,9 @@ public class OllamaBootstrapper
                                mSettings.EmbeddingModel
                            };
 
-        if (!string.IsNullOrEmpty(mSettings.ClassificationModel))
-            required.Add(mSettings.ClassificationModel);
+        var classificationModelName = mSettings.GetActiveClassificationModel().Name;
+        if (!string.IsNullOrEmpty(classificationModelName))
+            required.Add(classificationModelName);
 
         if (additionalModels != null)
         {
