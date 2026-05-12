@@ -42,5 +42,16 @@ public enum ReRankerStrategy
     ///     cross-encoder runtime is wired up (e.g. HuggingFace TEI
     ///     sidecar with an /api/rerank endpoint).
     /// </summary>
-    CrossEncoder
+    CrossEncoder,
+
+    /// <summary>
+    ///     In-process ONNX cross-encoder reranker. Loads the model named
+    ///     by <c>OnnxSettings.ActiveRerankerModel</c> (default
+    ///     <c>mxbai-rerank-base-v1</c>) via Microsoft.ML.OnnxRuntime and
+    ///     scores (query, doc) pairs in a batched single forward pass per
+    ///     search. Produces continuous floats — no plateau artifacts.
+    ///     Replaces the legacy Llm and CrossEncoder strategies once Phase 5
+    ///     removes their dead code.
+    /// </summary>
+    Onnx
 }
