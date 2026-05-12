@@ -143,6 +143,16 @@ public class RepositoryFactory
     }
 
     /// <summary>
+    ///     Get a reembed job repository for the specified profile.
+    /// </summary>
+    public virtual IReembedJobRepository GetReembedJobRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new ReembedJobRepository(context);
+        return result;
+    }
+
+    /// <summary>
     ///     Get a background job repository for the specified profile.
     /// </summary>
     public virtual IBackgroundJobRepository GetBackgroundJobRepository(string? profile = null)

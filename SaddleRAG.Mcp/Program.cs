@@ -181,6 +181,11 @@ builder.Services.AddSingleton<SymbolExtractor>();
 // Reextract service and background job runner (consumed by reextract_library MCP tool)
 builder.Services.AddSingleton<RescrubService>();
 builder.Services.AddSingleton<RescrubJobRunner>();
+
+// Reembed service and background job runner (consumed by reembed_library MCP tool)
+builder.Services.AddSingleton<ReembedService>();
+builder.Services.AddSingleton<ReembedJobRunner>();
+
 builder.Services.AddSingleton<BackgroundJobRunner>();
 builder.Services.AddSingleton<IBackgroundJobRunner>(sp =>
                                                         sp.GetRequiredService<BackgroundJobRunner>()
