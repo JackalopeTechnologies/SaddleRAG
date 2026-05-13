@@ -211,6 +211,19 @@ public sealed class McpWarmupService : BackgroundService
                                        startupSw.Elapsed.TotalSeconds,
                                        stepSw.ElapsedMilliseconds
                                       );
+
+
+                stepSw.Restart();
+
+                var onnxReRanker = scope.ServiceProvider.GetRequiredService<OnnxReRanker>();
+
+                await WarmReRankerAsync(onnxReRanker, stoppingToken);
+
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - rerank session warm ({Model})",
+                                       startupSw.Elapsed.TotalSeconds,
+                                       stepSw.ElapsedMilliseconds,
+                                       string.IsNullOrEmpty(onnxReRanker.ModelName) ? RerankerPassThroughLabel : onnxReRanker.ModelName
+                                      );
             }
 
             catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
@@ -391,6 +404,44 @@ public sealed class McpWarmupService : BackgroundService
         return result;
     }
 
+    /// <summary>
+    ///     Drives one rerank inference at startup so the first user
+    ///     search doesn't pay the cold-path cost. The ONNX cross-encoder
+    ///     session triggers graph optimization, kernel selection, and
+    ///     SentencePiece tokenizer initialization on its first
+    ///     <c>session.Run</c>; without this probe that overhead (~6 s on
+    ///     CPU for mxbai-rerank-base-v1 in Phase 4 testing) lands on the
+    ///     first user query. The probe sends one synthetic (query, doc)
+    ///     pair through the supplied reranker; when the active reranker
+    ///     entry resolves to null (Onnx.ActiveRerankerModel = "none" or
+    ///     Onnx.Enabled = false) the pass-through path executes and the
+    ///     probe is effectively a no-op. Exposed as <c>internal</c> so
+    ///     SaddleRAG.Tests can invoke it with a fake
+    ///     <see cref="IReRanker" /> without rebuilding the full warmup
+    ///     dependency graph.
+    /// </summary>
+    internal static async Task WarmReRankerAsync(IReRanker reRanker, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(reRanker);
+
+        var probeChunk = new DocChunk
+                             {
+                                 Id = WarmupRerankProbeChunkId,
+                                 LibraryId = WarmupRerankProbeLibraryId,
+                                 Version = WarmupRerankProbeVersion,
+                                 PageUrl = WarmupRerankProbePageUrl,
+                                 PageTitle = WarmupRerankProbePageTitle,
+                                 Category = DocCategory.Sample,
+                                 Content = WarmupRerankProbeContent
+                             };
+
+        await reRanker.ReRankAsync(WarmupRerankProbeQuery,
+                                   [probeChunk],
+                                   maxResults: 1,
+                                   ct
+                                  );
+    }
+
 
     private const string PhaseStarting = "Starting";
 
@@ -413,4 +464,20 @@ public sealed class McpWarmupService : BackgroundService
     private const string WarmupSearchProbeText = "warmup search";
 
     private const string WarmupCanceledMessage = "Warmup canceled during shutdown.";
+
+    private const string WarmupRerankProbeQuery = "warmup rerank probe";
+
+    private const string WarmupRerankProbeChunkId = "warmup-rerank-probe";
+
+    private const string WarmupRerankProbeLibraryId = "warmup";
+
+    private const string WarmupRerankProbeVersion = "warmup";
+
+    private const string WarmupRerankProbePageUrl = "https://warmup.local";
+
+    private const string WarmupRerankProbePageTitle = "warmup";
+
+    private const string WarmupRerankProbeContent = "warmup rerank probe content for cold-path elimination";
+
+    private const string RerankerPassThroughLabel = "pass-through";
 }
