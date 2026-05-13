@@ -78,7 +78,7 @@ public sealed class OnnxDiSmokeTests
             opts.EmbeddingEnabled = embeddingEnabled;
             opts.ModelsDir = includeFiles ? ScratchModelsRoot : Path.GetTempPath();
             opts.ActiveEmbeddingModel = "nomic-embed-text-v1.5";
-            opts.GraphOptimizationLevel = "Basic";
+            opts.GraphOptimizationLevel = OnnxGraphOptimizationLevel.Basic;
             opts.EmbeddingModels.Add(new EmbeddingModelEntry
                                          {
                                              Name = "nomic-embed-text-v1.5",

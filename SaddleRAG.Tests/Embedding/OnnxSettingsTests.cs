@@ -25,7 +25,7 @@ public sealed class OnnxSettingsTests
         Assert.False(settings.EmbeddingEnabled);
         Assert.Equal(string.Empty, settings.ActiveEmbeddingModel);
         Assert.Equal(string.Empty, settings.ActiveRerankerModel);
-        Assert.Equal(OnnxSettings.DefaultGraphOptimizationLevel, settings.GraphOptimizationLevel);
+        Assert.Equal(OnnxGraphOptimizationLevel.Basic, settings.GraphOptimizationLevel);
         Assert.Equal(expected: 0, settings.IntraOpNumThreads);
         Assert.Equal(OnnxSettings.DefaultRerankBatchSize, settings.RerankBatchSize);
         Assert.Empty(settings.EmbeddingModels);

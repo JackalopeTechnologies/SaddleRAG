@@ -65,14 +65,18 @@ public class OnnxSettings
     public string ModelsDir { get; set; } = DefaultModelsDir;
 
     /// <summary>
-    ///     ONNX Runtime graph optimization level. Default <c>"Basic"</c>
-    ///     maps to <c>ORT_ENABLE_BASIC</c>. <c>ORT_ENABLE_ALL</c> triggers
-    ///     a <c>SimplifiedLayerNormFusion</c> bug in ORT 1.26 against the
-    ///     precision-cast nodes both nomic-fp16 and mxbai exports contain.
-    ///     Do not change without testing every entry in the registry.
-    ///     Allowed: <c>"Disable"</c>, <c>"Basic"</c>, <c>"Extended"</c>, <c>"All"</c>.
+    ///     ONNX Runtime graph optimization level. Default
+    ///     <see cref="OnnxGraphOptimizationLevel.Basic" /> maps to
+    ///     <c>ORT_ENABLE_BASIC</c>. <see cref="OnnxGraphOptimizationLevel.All" />
+    ///     triggers a <c>SimplifiedLayerNormFusion</c> bug in ORT 1.26
+    ///     against the precision-cast nodes both nomic-fp16 and mxbai
+    ///     exports contain — do not change without testing every entry
+    ///     in the registry. Bound from a case-insensitive string in
+    ///     appsettings.json (e.g. <c>"Basic"</c>); the configuration
+    ///     binder rejects unknown values at startup so a typo fails
+    ///     fast rather than throwing deep inside session creation.
     /// </summary>
-    public string GraphOptimizationLevel { get; set; } = DefaultGraphOptimizationLevel;
+    public OnnxGraphOptimizationLevel GraphOptimizationLevel { get; set; } = OnnxGraphOptimizationLevel.Basic;
 
     /// <summary>
     ///     ONNX Runtime intra-op thread count. 0 lets ORT pick based on
@@ -126,7 +130,14 @@ public class OnnxSettings
     /// </summary>
     public const string RerankerNoneSentinel = "none";
 
-    public const string DefaultGraphOptimizationLevel = "Basic";
+    /// <summary>
+    ///     String form of the default <see cref="GraphOptimizationLevel" />
+    ///     for JSON serialization in MCP tool responses. The enum's own
+    ///     <see cref="OnnxGraphOptimizationLevel.Basic" /> is the source
+    ///     of truth; this constant exists so callers don't have to
+    ///     ToString an enum value in JSON-emitting code paths.
+    /// </summary>
+    public const string DefaultGraphOptimizationLevel = nameof(OnnxGraphOptimizationLevel.Basic);
 
     public const int DefaultRerankBatchSize = 64;
 

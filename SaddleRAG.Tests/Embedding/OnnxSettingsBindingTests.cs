@@ -85,4 +85,57 @@ public sealed class OnnxSettingsBindingTests
     }
 
     private const string ConfigKey = "Onnx:ExecutionProvider";
+
+    [Theory]
+    [InlineData("Disable", OnnxGraphOptimizationLevel.Disable)]
+    [InlineData("Basic", OnnxGraphOptimizationLevel.Basic)]
+    [InlineData("basic", OnnxGraphOptimizationLevel.Basic)]
+    [InlineData("BASIC", OnnxGraphOptimizationLevel.Basic)]
+    [InlineData("Extended", OnnxGraphOptimizationLevel.Extended)]
+    [InlineData("All", OnnxGraphOptimizationLevel.All)]
+    public void GraphOptimizationLevelBindsCaseInsensitivelyFromConfigurationString(
+        string configValue, OnnxGraphOptimizationLevel expected)
+    {
+        var configuration = new ConfigurationBuilder()
+                            .AddInMemoryCollection(new Dictionary<string, string?>
+                                                       {
+                                                           [GraphOptimizationLevelKey] = configValue
+                                                       })
+                            .Build();
+
+        var settings = configuration.GetSection(OnnxSettings.SectionName).Get<OnnxSettings>();
+
+        Assert.NotNull(settings);
+        Assert.Equal(expected, settings.GraphOptimizationLevel);
+    }
+
+    [Fact]
+    public void GraphOptimizationLevelDefaultsToBasicWhenConfigKeyMissing()
+    {
+        var configuration = new ConfigurationBuilder()
+                            .AddInMemoryCollection(new Dictionary<string, string?>())
+                            .Build();
+
+        var settings = configuration.GetSection(OnnxSettings.SectionName).Get<OnnxSettings>()
+                       ?? new OnnxSettings();
+
+        Assert.Equal(OnnxGraphOptimizationLevel.Basic, settings.GraphOptimizationLevel);
+    }
+
+    [Fact]
+    public void GraphOptimizationLevelUnknownValueIsRejectedAtBindTime()
+    {
+        var configuration = new ConfigurationBuilder()
+                            .AddInMemoryCollection(new Dictionary<string, string?>
+                                                       {
+                                                           [GraphOptimizationLevelKey] = "Aggressive"
+                                                       })
+                            .Build();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            configuration.GetSection(OnnxSettings.SectionName).Get<OnnxSettings>()
+        );
+    }
+
+    private const string GraphOptimizationLevelKey = "Onnx:GraphOptimizationLevel";
 }
