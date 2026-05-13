@@ -44,6 +44,8 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
             var failures = new List<string>();
             CollectEmbeddingFailures(options, failures);
             CollectRerankerFailures(options, failures);
+            CollectDuplicateNames(EmbeddingRegistryLabel, options.EmbeddingModels.Select(e => e.Name), failures);
+            CollectDuplicateNames(RerankerRegistryLabel, options.RerankerModels.Select(e => e.Name), failures);
             result = failures.Count == 0
                          ? ValidateOptionsResult.Success
                          : ValidateOptionsResult.Fail(failures);
@@ -77,6 +79,18 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
                                            OnnxReRanker.MinViableSequenceLength
                                           ));
         }
+    }
+
+    private static void CollectDuplicateNames(string registryLabel,
+                                              IEnumerable<string> names,
+                                              List<string> failures)
+    {
+        var duplicates = names.Where(n => !string.IsNullOrEmpty(n))
+                              .GroupBy(n => n, StringComparer.Ordinal)
+                              .Where(g => g.Count() > 1)
+                              .Select(g => g.Key);
+        foreach(var duplicate in duplicates)
+            failures.Add(string.Format(DuplicateNameFormat, registryLabel, duplicate));
     }
 
     private static void ValidateEntry(string name,
@@ -120,4 +134,7 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
     private const string SentencePieceMissingSpmFormat = "Onnx registry entry '{0}' has TokenizerFamily=SentencePiece but no SpmFile. SentencePiece tokenization requires an spm.model path.";
     private const string UnknownFamilyFormat = "Onnx registry entry '{0}' has unsupported TokenizerFamily '{1}'.";
     private const string MaxSequenceLengthTooSmallFormat = "Onnx reranker entry '{0}' has MaxSequenceLength={1}, which is below the minimum viable value ({2}). At this size the [CLS]/[SEP] overhead and doc-side floor consume the entire window, leaving zero room for query tokens; the cross-encoder would silently score 'empty query vs doc' and tank recall.";
+    private const string DuplicateNameFormat = "Onnx {0} registry has duplicate entries with Name='{1}'. Names must be unique within a registry — OnnxSettings.GetActiveModel resolves by name and FirstOrDefault would silently bind one of the duplicates.";
+    private const string EmbeddingRegistryLabel = "EmbeddingModels";
+    private const string RerankerRegistryLabel = "RerankerModels";
 }
