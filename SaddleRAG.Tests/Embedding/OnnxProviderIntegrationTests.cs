@@ -287,14 +287,26 @@ public sealed class OnnxProviderIntegrationTests
                              };
 
         // With ReRankerStrategy.Onnx, ToggleableReRanker should call into
-        // OnnxReRanker which produces real cross-encoder scores. The Paris
-        // candidate should dominate.
+        // OnnxReRanker which produces real cross-encoder scores
+        // (sigmoid-mapped, so within (0, 1) — see OnnxReRanker.NormalizeLogit).
+        // The Paris candidate should dominate AND the score gap between
+        // top-1 (very relevant) and a clearly off-topic candidate (Berlin
+        // is a different country) should be much larger than NoOp's
+        // synthetic 0.01 step — that gap is the discriminator that proves
+        // a real cross-encoder ran rather than the pass-through fallback.
         var rankedOnnx = await toggle.ReRankAsync("What is the capital of France?",
                                                   candidates, candidates.Count,
                                                   CancellationToken.None
                                                  );
         Assert.Equal("paris", rankedOnnx[index: 0].Chunk.Id);
-        Assert.True(rankedOnnx[index: 0].RelevanceScore > 1.0f);
+        Assert.InRange(rankedOnnx[index: 0].RelevanceScore, low: 0f, high: 1f);
+        var berlinIndex = rankedOnnx
+            .Select((r, i) => (r, i))
+            .First(t => t.r.Chunk.Id == BerlinChunkId).i;
+        var realRerankGap = rankedOnnx[index: 0].RelevanceScore - rankedOnnx[berlinIndex].RelevanceScore;
+        Assert.True(realRerankGap > MinCrossEncoderTopGap,
+                    $"Cross-encoder gap top→{BerlinChunkId} should be > {MinCrossEncoderTopGap:F2} (NoOp step is 0.01); got {realRerankGap:F4}"
+                   );
 
         // Flip to Off → NoOp pass-through. Original input order preserved
         // with synthetic descending scores.
@@ -571,11 +583,19 @@ public sealed class OnnxProviderIntegrationTests
         var secondRun = await toggle.ReRankAsync("What is the capital of France?",
                                                   candidates, candidates.Count,
                                                   CancellationToken.None);
-        // Real cross-encoder produces scores well outside the 0.9-1.0 synthetic
-        // range — Paris-of-France typically scores > 1.0 on mxbai.
-        Assert.True(secondRun[0].RelevanceScore > 1.0f,
-                    $"Onnx dispatch should produce real cross-encoder scores; got {secondRun[0].RelevanceScore}");
+        // Real cross-encoder is sigmoid-mapped (see OnnxReRanker.NormalizeLogit)
+        // so scores live in (0, 1) just like NoOp pass-through. What
+        // distinguishes "real ran" from "fell through to pass-through" is
+        // the SEMANTIC gap between the top relevant chunk (paris) and a
+        // clearly off-topic one (berlin = different country). NoOp's
+        // synthetic step is 0.01; a real cross-encoder gap on this query
+        // is much larger.
         Assert.Equal("paris", secondRun[0].Chunk.Id);
+        Assert.InRange(secondRun[0].RelevanceScore, low: 0f, high: 1f);
+        var realRerankGap = secondRun[0].RelevanceScore - secondRun[1].RelevanceScore;
+        Assert.True(realRerankGap > MinCrossEncoderTopGap,
+                    $"Cross-encoder gap top→{BerlinChunkId} should be > {MinCrossEncoderTopGap:F2} (NoOp step is 0.01); got {realRerankGap:F4}"
+                   );
 
         // Flip back to Off → synthetic scores again.
         toggle.Strategy = ReRankerStrategy.Off;
@@ -718,4 +738,15 @@ public sealed class OnnxProviderIntegrationTests
 
     private const int NomicDimensions = 768;
     private const string RepoMarker = "SaddleRAG.slnx";
+    private const string BerlinChunkId = "berlin";
+
+    /// <summary>
+    ///     Minimum acceptable score gap between top-1 (a strongly relevant
+    ///     chunk) and a clearly off-topic chunk in cross-encoder output.
+    ///     NoOp pass-through emits a 0.01 synthetic step between successive
+    ///     items, so a gap of at least 0.1 (10x the NoOp step) proves the
+    ///     real cross-encoder ran and produced a semantic ranking rather
+    ///     than the input order falling through.
+    /// </summary>
+    private const float MinCrossEncoderTopGap = 0.1f;
 }
