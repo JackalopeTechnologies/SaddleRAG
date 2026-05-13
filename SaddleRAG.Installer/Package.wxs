@@ -12,6 +12,19 @@
                       AllowSameVersionUpgrades="yes" />
         <MediaTemplate EmbedCab="yes" />
 
+        <!-- DirectML requires Windows 10 version 1903 (build 18362) or later.    -->
+        <!-- CheckGpuCapability CA sets WINDOWSBUILDNUMBER as a numeric property  -->
+        <!-- from HKLM\...\CurrentVersion\CurrentBuildNumber before this check    -->
+        <!-- fires (scheduled Before="LaunchConditions" in both sequences). The   -->
+        <!-- "WINDOWSBUILDNUMBER = 0" branch lets install proceed when the CA     -->
+        <!-- couldn't read the registry — the runtime EP-append fallback         -->
+        <!-- (OnnxExecutionProviderConfigurator) catches DirectML load failures  -->
+        <!-- and degrades to CPU with a recorded warning, so a permissive launch -->
+        <!-- gate is safer than blocking a legitimate install on flaky WMI/Reg.  -->
+        <!-- "Installed" branch keeps existing installs upgradable.              -->
+        <Launch Condition="Installed OR WINDOWSBUILDNUMBER = &quot;0&quot; OR WINDOWSBUILDNUMBER &gt;= 18362"
+                Message="SaddleRAG requires Windows 10 version 1903 (build 18362) or later for DirectML support. Please update Windows and try again." />
+
         <!-- Always emit a verbose Windows Installer log so install/repair/upgrade -->
         <!-- failures are diagnosable without having to remember `msiexec /L*v`. -->
         <!-- Log lands in %TEMP%\MSI*.log; runtime path is exposed in MsiLogFileLocation. -->
@@ -35,6 +48,20 @@
         <Property Id="OLLAMA_KEEPALIVE_EXISTING" Secure="yes" />
         <Property Id="OLLAMA_KEEPALIVE_WILL_SET" Value="0" Secure="yes" />
         <Property Id="OLLAMA_KEEPALIVE_NOTICE" Secure="yes" />
+
+        <!-- GPU detection: CheckGpuCapability CA populates these before -->
+        <!-- LaunchConditions in both sequences. WINDOWSBUILDNUMBER gates  -->
+        <!-- the launch condition; GPU_DETECTED + GPU_DETECTION_REASON     -->
+        <!-- drive ExecutionModeDlg's radio default and helper text;       -->
+        <!-- ONNX_EXECUTION_PROVIDER is intentionally declared without a   -->
+        <!-- Value attribute so "empty == auto-detect" is unambiguous --  -->
+        <!-- the CA only writes it when empty so command-line overrides   -->
+        <!-- (msiexec ... ONNX_EXECUTION_PROVIDER=Cpu) survive both UI and -->
+        <!-- Execute-sequence invocations of the CA.                       -->
+        <Property Id="WINDOWSBUILDNUMBER" Value="0" Secure="yes" />
+        <Property Id="GPU_DETECTED" Value="0" Secure="yes" />
+        <Property Id="GPU_DETECTION_REASON" Secure="yes" />
+        <Property Id="ONNX_EXECUTION_PROVIDER" Secure="yes" />
 
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
@@ -126,11 +153,27 @@
                       Execute="immediate"
                       Return="ignore" />
 
-        <!-- Patch appsettings.json with user-provided values (deferred, after file install) -->
+        <!-- Detect GPU/DirectML capability so ExecutionModeDlg can pre-select the    -->
+        <!-- right radio and silent installs default sensibly. Also reads OS build    -->
+        <!-- number so the LaunchCondition above can block on Windows < 18362.        -->
+        <!-- Scheduled Before="LaunchConditions" in both InstallUISequence and        -->
+        <!-- InstallExecuteSequence so silent installs get the same gate. Return is   -->
+        <!-- "ignore" so a JScript/WMI hiccup never aborts the install — the          -->
+        <!-- LaunchCondition's "WINDOWSBUILDNUMBER = 0" branch covers that case.      -->
+        <CustomAction Id="CheckGpuCapability"
+                      Script="jscript"
+                      ScriptSourceFile="CheckGpuCapability.js"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <!-- Patch appsettings.json with user-provided values (deferred, after file install). -->
+        <!-- Onnx.ExecutionProvider falls back to 'Cpu' if [ONNX_EXECUTION_PROVIDER] expands  -->
+        <!-- to empty (CheckGpuCapability didn't run + no command-line override) so the     -->
+        <!-- written config is always a valid OnnxExecutionProvider enum value.             -->
         <SetProperty Id="PatchAppSettings"
                      Before="PatchAppSettings"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$f = Join-Path '[MCPFOLDER]' 'appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.MongoDB.Profiles.local.ConnectionString = '[MONGOCONNECTION]'; $j.MongoDB.Profiles.local.DatabaseName = '[MONGODATABASE]'; $j.Ollama.Endpoint = '[OLLAMAENDPOINT]'; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8&quot;" />
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$f = Join-Path '[MCPFOLDER]' 'appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.MongoDB.Profiles.local.ConnectionString = '[MONGOCONNECTION]'; $j.MongoDB.Profiles.local.DatabaseName = '[MONGODATABASE]'; $j.Ollama.Endpoint = '[OLLAMAENDPOINT]'; $ep = '[ONNX_EXECUTION_PROVIDER]'; if ([string]::IsNullOrWhiteSpace($ep)) { $ep = 'Cpu' }; $j.Onnx.ExecutionProvider = $ep; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8&quot;" />
 
         <CustomAction Id="PatchAppSettings"
                       BinaryRef="Wix4UtilCA_X86"
@@ -235,6 +278,9 @@
                       Impersonate="no" />
 
         <InstallExecuteSequence>
+            <!-- Must precede LaunchConditions: the launch gate reads -->
+            <!-- WINDOWSBUILDNUMBER that this CA populates.            -->
+            <Custom Action="CheckGpuCapability" Before="LaunchConditions" />
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="SetOllamaKeepAlive" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
@@ -246,7 +292,12 @@
 
         <!-- Run CheckOllamaKeepAlive in the UI sequence so the Ollama dialog -->
         <!-- can hide its keep-alive notice when the user already has a value. -->
+        <!-- CheckGpuCapability must precede LaunchConditions for the build-  -->
+        <!-- number gate, and its property writes (GPU_DETECTED,              -->
+        <!-- GPU_DETECTION_REASON, ONNX_EXECUTION_PROVIDER) feed              -->
+        <!-- ExecutionModeDlg later in the UI flow.                           -->
         <InstallUISequence>
+            <Custom Action="CheckGpuCapability" Before="LaunchConditions" />
             <Custom Action="CheckOllamaKeepAlive" After="CostFinalize" />
         </InstallUISequence>
 
@@ -393,6 +444,55 @@
                     <Publish Event="NewDialog" Value="MongoDbDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                    <Publish Event="NewDialog" Value="ExecutionModeDlg" />
+                </Control>
+                <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+            </Dialog>
+
+            <!-- ONNX execution-mode dialog. RadioButtonGroup reads/writes        -->
+            <!-- ONNX_EXECUTION_PROVIDER, which CheckGpuCapability seeded with    -->
+            <!-- "DirectMl" or "Cpu" based on WMI detection. GPU_DETECTION_REASON -->
+            <!-- is rendered verbatim as helper text so the user knows what was   -->
+            <!-- (or wasn't) detected and can override if needed.                 -->
+            <Dialog Id="ExecutionModeDlg" Width="370" Height="270" Title="Execution Mode">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+                <Control Id="Title" Type="Text" X="20" Y="10" Width="290" Height="14"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="{\WixUI_Font_Title}Execution Mode" />
+
+                <Control Id="Description" Type="Text" X="25" Y="55" Width="320" Height="35"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="SaddleRAG can run the embedding and reranker models on the CPU or on a DirectX 12 GPU via DirectML. GPU is typically 5-20x faster for search queries. Choose CPU if you'd rather not use a GPU on this machine." />
+
+                <Control Id="ModeGroup" Type="RadioButtonGroup" X="25" Y="100" Width="320" Height="40"
+                         Property="ONNX_EXECUTION_PROVIDER">
+                    <RadioButtonGroup Property="ONNX_EXECUTION_PROVIDER">
+                        <RadioButton Value="DirectMl" X="0" Y="0"  Width="320" Height="17"
+                                     Text="GPU (DirectML) - recommended when a DirectX 12 GPU is present" />
+                        <RadioButton Value="Cpu"      X="0" Y="20" Width="320" Height="17"
+                                     Text="CPU - works everywhere, slower" />
+                    </RadioButtonGroup>
+                </Control>
+
+                <Control Id="DetectionLabel" Type="Text" X="25" Y="150" Width="320" Height="12"
+                         Transparent="yes" NoPrefix="yes" Text="Detection result:" />
+                <Control Id="DetectionText" Type="Text" X="25" Y="164" Width="320" Height="40"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="[GPU_DETECTION_REASON]" />
+
+                <Control Id="InfoText" Type="Text" X="25" Y="206" Width="320" Height="20"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="You can switch later with the set_execution_provider MCP tool; no reinstall required." />
+
+                <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
+                    <Publish Event="NewDialog" Value="OllamaDlg" />
+                </Control>
+                <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="AiClientsDlg" />
                 </Control>
                 <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
@@ -432,7 +532,7 @@
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
-                    <Publish Event="NewDialog" Value="OllamaDlg" />
+                    <Publish Event="NewDialog" Value="ExecutionModeDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="VerifyReadyDlg" />
