@@ -30,7 +30,7 @@ public sealed class OnnxSettingsTests
         Assert.Equal(OnnxSettings.DefaultRerankBatchSize, settings.RerankBatchSize);
         Assert.Empty(settings.EmbeddingModels);
         Assert.Empty(settings.RerankerModels);
-        Assert.Equal(OnnxSettings.ExecutionProviderCpu, settings.ExecutionProvider);
+        Assert.Equal(OnnxExecutionProvider.Cpu, settings.ExecutionProvider);
     }
 
     [Fact]

@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -97,11 +98,10 @@ public class OnnxOverrideStore
     }
 
     /// <summary>Sets the ONNX execution provider and persists it.</summary>
-    public void SetExecutionProvider(string provider)
+    public void SetExecutionProvider(OnnxExecutionProvider provider)
     {
-        ArgumentException.ThrowIfNullOrEmpty(provider);
         mSettings.ExecutionProvider = provider;
-        WriteOverride(ExecutionProviderKey, provider);
+        WriteOverride(ExecutionProviderKey, provider.ToString());
     }
 
     private void WriteOverride(string key, string value)

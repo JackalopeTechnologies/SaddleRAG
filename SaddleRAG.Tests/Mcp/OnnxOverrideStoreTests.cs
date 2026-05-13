@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Mcp.Tools;
 
@@ -63,12 +64,12 @@ public sealed class OnnxOverrideStoreTests : IDisposable
     [Fact]
     public void SetExecutionProviderPersistsAndMutates()
     {
-        var settings = new OnnxSettings { ExecutionProvider = OnnxSettings.ExecutionProviderCpu };
+        var settings = new OnnxSettings { ExecutionProvider = OnnxExecutionProvider.Cpu };
         var store = BuildStore(settings);
 
-        store.SetExecutionProvider(OnnxSettings.ExecutionProviderDirectMl);
+        store.SetExecutionProvider(OnnxExecutionProvider.DirectMl);
 
-        Assert.Equal(OnnxSettings.ExecutionProviderDirectMl, settings.ExecutionProvider);
+        Assert.Equal(OnnxExecutionProvider.DirectMl, settings.ExecutionProvider);
         AssertOverride("ExecutionProvider", OnnxSettings.ExecutionProviderDirectMl);
     }
 
@@ -79,7 +80,7 @@ public sealed class OnnxOverrideStoreTests : IDisposable
         var store = BuildStore(settings);
 
         store.SetActiveEmbeddingModel("foo");
-        store.SetExecutionProvider(OnnxSettings.ExecutionProviderDirectMl);
+        store.SetExecutionProvider(OnnxExecutionProvider.DirectMl);
 
         AssertOverride("ActiveEmbeddingModel", "foo");
         AssertOverride("ExecutionProvider", OnnxSettings.ExecutionProviderDirectMl);

@@ -8,6 +8,7 @@
 
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.ML.OnnxRuntime;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -16,38 +17,19 @@ namespace SaddleRAG.Tests.Embedding;
 
 public sealed class OnnxExecutionProviderConfiguratorTests
 {
-    [Theory]
-    [InlineData("")]
-    [InlineData("Cpu")]
-    [InlineData("cpu")]
-    public void ConfigureWithCpuSentinelRecordsCpuAndNoWarning(string requested)
-    {
-        var capabilities = new OnnxRuntimeCapabilities();
-        var options = new SessionOptions();
-
-        OnnxExecutionProviderConfigurator.Configure(options, requested, capabilities,
-                                                    NullLogger.Instance
-                                                   );
-
-        Assert.Equal(OnnxSettings.ExecutionProviderCpu, capabilities.ActiveProvider);
-        Assert.Equal(OnnxSettings.ExecutionProviderCpu, capabilities.RequestedProvider);
-        Assert.Null(capabilities.LastLoadWarning);
-    }
-
     [Fact]
-    public void ConfigureWithUnknownValueFallsBackToCpuAndWarns()
+    public void ConfigureWithCpuRecordsCpuAndNoWarning()
     {
         var capabilities = new OnnxRuntimeCapabilities();
         var options = new SessionOptions();
 
-        OnnxExecutionProviderConfigurator.Configure(options, requested: "Vulkan",
+        OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.Cpu,
                                                     capabilities, NullLogger.Instance
                                                    );
 
-        Assert.Equal(OnnxSettings.ExecutionProviderCpu, capabilities.ActiveProvider);
-        Assert.Equal("Vulkan", capabilities.RequestedProvider);
-        Assert.NotNull(capabilities.LastLoadWarning);
-        Assert.Contains("Vulkan", capabilities.LastLoadWarning);
+        Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
+        Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.RequestedProvider);
+        Assert.Null(capabilities.LastLoadWarning);
     }
 
     [Fact]
@@ -59,13 +41,12 @@ public sealed class OnnxExecutionProviderConfiguratorTests
         var capabilities = new OnnxRuntimeCapabilities();
         var options = new SessionOptions();
 
-        OnnxExecutionProviderConfigurator.Configure(options,
-                                                    OnnxSettings.ExecutionProviderDirectMl,
+        OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
                                                     capabilities, NullLogger.Instance
                                                    );
 
-        Assert.Equal(OnnxSettings.ExecutionProviderCpu, capabilities.ActiveProvider);
-        Assert.Equal(OnnxSettings.ExecutionProviderDirectMl, capabilities.RequestedProvider);
+        Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
+        Assert.Equal(OnnxExecutionProvider.DirectMl, capabilities.RequestedProvider);
         Assert.NotNull(capabilities.LastLoadWarning);
         Assert.Contains("CPU-only", capabilities.LastLoadWarning);
 #endif
@@ -80,13 +61,12 @@ public sealed class OnnxExecutionProviderConfiguratorTests
         var capabilities = new OnnxRuntimeCapabilities();
         var options = new SessionOptions();
 
-        OnnxExecutionProviderConfigurator.Configure(options,
-                                                    OnnxSettings.ExecutionProviderCuda,
+        OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.Cuda,
                                                     capabilities, NullLogger.Instance
                                                    );
 
-        Assert.Equal(OnnxSettings.ExecutionProviderCpu, capabilities.ActiveProvider);
-        Assert.Equal(OnnxSettings.ExecutionProviderCuda, capabilities.RequestedProvider);
+        Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
+        Assert.Equal(OnnxExecutionProvider.Cuda, capabilities.RequestedProvider);
         Assert.NotNull(capabilities.LastLoadWarning);
 #endif
     }

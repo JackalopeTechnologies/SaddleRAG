@@ -8,8 +8,10 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Embedding;
 
@@ -226,20 +228,19 @@ public static class OnnxTools
                 )]
     public static string SetExecutionProvider(OnnxOverrideStore store,
                                               IOptions<OnnxSettings> settings,
-                                              [Description("Execution provider: Cpu, DirectMl, or Cuda")]
+                                              [Description("Execution provider: Cpu or DirectMl. Cuda is reserved for future use and rejected today."
+                                                          )]
                                               string provider)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentException.ThrowIfNullOrEmpty(provider);
 
-        bool isKnown = OnnxSettings.IsKnownExecutionProvider(provider);
+        bool parsed = Enum.TryParse<OnnxExecutionProvider>(provider, ignoreCase: true, out var parsedValue)
+                      && OnnxSettings.IsSupportedByBuild(parsedValue);
         string? warning = null;
-        if (isKnown)
-        {
-            string canonical = CanonicalizeProvider(provider);
-            store.SetExecutionProvider(canonical);
-        }
+        if (parsed)
+            store.SetExecutionProvider(parsedValue);
         else
             warning = string.Format(UnknownExecutionProviderWarningFormat, provider,
                                     OnnxSettings.ExecutionProviderCpu,
@@ -249,8 +250,8 @@ public static class OnnxTools
 
         var response = new
                            {
-                               ExecutionProvider = settings.Value.ExecutionProvider,
-                               RequiresRestart = isKnown,
+                               ExecutionProvider = settings.Value.ExecutionProvider.ToString(),
+                               RequiresRestart = parsed,
                                OverridesFile = store.FilePath,
                                Warning = warning
                            };
@@ -380,18 +381,6 @@ public static class OnnxTools
                    };
     }
 
-    private static string CanonicalizeProvider(string provider)
-    {
-        string result = provider.ToUpperInvariant() switch
-        {
-            CpuUpperKey => OnnxSettings.ExecutionProviderCpu,
-            DirectMlUpperKey => OnnxSettings.ExecutionProviderDirectMl,
-            CudaUpperKey => OnnxSettings.ExecutionProviderCuda,
-            var _ => provider
-        };
-        return result;
-    }
-
     private const string UnknownEmbeddingWarningFormat =
         "Unknown embedding model '{0}'. Call list_embedding_models for valid Names. Active model unchanged.";
 
@@ -404,13 +393,13 @@ public static class OnnxTools
     private const string UnknownDownloadNameWarningFormat =
         "Unknown model name '{0}'. Call list_embedding_models or list_reranker_models for valid Names. No download performed.";
 
-    private const string CpuUpperKey = "CPU";
-    private const string DirectMlUpperKey = "DIRECTML";
-    private const string CudaUpperKey = "CUDA";
-
     private const string DownloadKindEmbedding = "Embedding";
     private const string DownloadKindReranker = "Reranker";
     private const string DownloadKindNone = "None";
 
-    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
+    private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions
+                                                                  {
+                                                                      WriteIndented = true,
+                                                                      Converters = { new JsonStringEnumConverter() }
+                                                                  };
 }
