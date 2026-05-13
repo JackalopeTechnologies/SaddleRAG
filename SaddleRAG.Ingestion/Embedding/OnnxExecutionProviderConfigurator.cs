@@ -29,6 +29,11 @@ namespace SaddleRAG.Ingestion.Embedding;
 ///     but the underlying hardware refuses (e.g. DirectML on a non-DX12
 ///     system). The native ORT side will throw at append time; we catch
 ///     it and fall back so the service stays up.
+///     The internal <see cref="Configure(SessionOptions, OnnxExecutionProvider,
+///     OnnxRuntimeCapabilities, ILogger, Action{SessionOptions, int}?,
+///     Action{SessionOptions, int}?)" /> overload accepts injectable
+///     append delegates so tests can exercise the runtime-exception
+///     fallback path without needing actual ORT GPU bindings.
 /// </summary>
 public static class OnnxExecutionProviderConfigurator
 {
@@ -48,11 +53,43 @@ public static class OnnxExecutionProviderConfigurator
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(logger);
 
+        return Configure(options, requested, capabilities, logger,
+                         smDefaultDmlAppender, smDefaultCudaAppender
+                        );
+    }
+
+    /// <summary>
+    ///     Test-friendly overload that accepts injectable EP-append
+    ///     delegates. Production callers should use the four-arg overload
+    ///     which forwards to the real <see cref="SessionOptions" />
+    ///     methods (gated on <c>USE_GPU</c>). Tests pass delegates that
+    ///     throw <see cref="OnnxRuntimeException" /> to exercise the
+    ///     runtime-fallback branch otherwise unreachable from a CPU-only
+    ///     test build.
+    /// </summary>
+    internal static OnnxExecutionProvider Configure(SessionOptions options,
+                                                    OnnxExecutionProvider requested,
+                                                    OnnxRuntimeCapabilities capabilities,
+                                                    ILogger logger,
+                                                    Action<SessionOptions, int>? dmlAppender,
+                                                    Action<SessionOptions, int>? cudaAppender,
+                                                    Func<Exception, bool>? isRecoverable = null)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(capabilities);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        Func<Exception, bool> recoverable = isRecoverable ?? IsRecoverableEpAppendFailure;
+
         (OnnxExecutionProvider actual, string? warning) = requested switch
         {
             OnnxExecutionProvider.Cpu => (OnnxExecutionProvider.Cpu, (string?) null),
-            OnnxExecutionProvider.DirectMl => TryAppendDirectMl(options, logger),
-            OnnxExecutionProvider.Cuda => TryAppendCuda(options, logger),
+            OnnxExecutionProvider.DirectMl => TryAppendGpuProvider(
+                options, OnnxExecutionProvider.DirectMl, dmlAppender, recoverable, logger
+            ),
+            OnnxExecutionProvider.Cuda => TryAppendGpuProvider(
+                options, OnnxExecutionProvider.Cuda, cudaAppender, recoverable, logger
+            ),
             var _ => HandleUnknown(requested, logger)
         };
 
@@ -69,57 +106,37 @@ public static class OnnxExecutionProviderConfigurator
         return result;
     }
 
-    private static (OnnxExecutionProvider Actual, string? Warning) TryAppendDirectMl(SessionOptions options,
-                                                                                      ILogger logger)
+    private static (OnnxExecutionProvider Actual, string? Warning) TryAppendGpuProvider(
+        SessionOptions options,
+        OnnxExecutionProvider provider,
+        Action<SessionOptions, int>? appender,
+        Func<Exception, bool> isRecoverable,
+        ILogger logger)
     {
         (OnnxExecutionProvider Actual, string? Warning) result;
-#if USE_GPU
-        try
+        if (appender == null)
         {
-            options.AppendExecutionProvider_DML(DefaultGpuDeviceId);
-            logger.LogInformation("OnnxExecutionProviderConfigurator: DirectML EP appended (device {DeviceId}).",
-                                  DefaultGpuDeviceId
-                                 );
-            result = (OnnxExecutionProvider.DirectMl, null);
-        }
-        catch(Exception ex) when(IsRecoverableEpAppendFailure(ex))
-        {
-            string warn = string.Format(GpuAppendFailedWarningFormat, OnnxExecutionProvider.DirectMl, ex.Message);
-            logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
+            string warn = string.Format(GpuNotCompiledInWarningFormat, provider);
+            logger.LogWarning("OnnxExecutionProviderConfigurator: {Warning}", warn);
             result = (OnnxExecutionProvider.Cpu, warn);
         }
-#else
-        string warnCpuOnly = string.Format(GpuNotCompiledInWarningFormat, OnnxExecutionProvider.DirectMl);
-        logger.LogWarning("OnnxExecutionProviderConfigurator: {Warning}", warnCpuOnly);
-        result = (OnnxExecutionProvider.Cpu, warnCpuOnly);
-#endif
-        return result;
-    }
-
-    private static (OnnxExecutionProvider Actual, string? Warning) TryAppendCuda(SessionOptions options,
-                                                                                  ILogger logger)
-    {
-        (OnnxExecutionProvider Actual, string? Warning) result;
-#if USE_GPU
-        try
+        else
         {
-            options.AppendExecutionProvider_CUDA(DefaultGpuDeviceId);
-            logger.LogInformation("OnnxExecutionProviderConfigurator: CUDA EP appended (device {DeviceId}).",
-                                  DefaultGpuDeviceId
-                                 );
-            result = (OnnxExecutionProvider.Cuda, null);
+            try
+            {
+                appender(options, DefaultGpuDeviceId);
+                logger.LogInformation("OnnxExecutionProviderConfigurator: {Provider} EP appended (device {DeviceId}).",
+                                      provider, DefaultGpuDeviceId
+                                     );
+                result = (provider, null);
+            }
+            catch(Exception ex) when(isRecoverable(ex))
+            {
+                string warn = string.Format(GpuAppendFailedWarningFormat, provider, ex.Message);
+                logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
+                result = (OnnxExecutionProvider.Cpu, warn);
+            }
         }
-        catch(Exception ex) when(IsRecoverableEpAppendFailure(ex))
-        {
-            string warn = string.Format(GpuAppendFailedWarningFormat, OnnxExecutionProvider.Cuda, ex.Message);
-            logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
-            result = (OnnxExecutionProvider.Cpu, warn);
-        }
-#else
-        string warnCpuOnly = string.Format(GpuNotCompiledInWarningFormat, OnnxExecutionProvider.Cuda);
-        logger.LogWarning("OnnxExecutionProviderConfigurator: {Warning}", warnCpuOnly);
-        result = (OnnxExecutionProvider.Cpu, warnCpuOnly);
-#endif
         return result;
     }
 
@@ -137,6 +154,17 @@ public static class OnnxExecutionProviderConfigurator
         bool result = ex is OnnxRuntimeException;
         return result;
     }
+
+#if USE_GPU
+    private static readonly Action<SessionOptions, int> smDefaultDmlAppender =
+        (opts, deviceId) => opts.AppendExecutionProvider_DML(deviceId);
+
+    private static readonly Action<SessionOptions, int> smDefaultCudaAppender =
+        (opts, deviceId) => opts.AppendExecutionProvider_CUDA(deviceId);
+#else
+    private static readonly Action<SessionOptions, int>? smDefaultDmlAppender = null;
+    private static readonly Action<SessionOptions, int>? smDefaultCudaAppender = null;
+#endif
 
     private const string UnknownProviderWarningFormat =
         "Unknown OnnxExecutionProvider '{0}'; falling back to CPU.";

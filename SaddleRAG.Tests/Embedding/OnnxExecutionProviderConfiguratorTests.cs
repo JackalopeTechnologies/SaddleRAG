@@ -70,4 +70,119 @@ public sealed class OnnxExecutionProviderConfiguratorTests
         Assert.NotNull(capabilities.LastLoadWarning);
 #endif
     }
+
+    // The four tests below exercise the internal Configure overload with
+    // injected EP-append delegates. This reaches the runtime-fallback
+    // branch (OnnxRuntimeException caught, fall back to CPU, log error)
+    // that the public overload's #if USE_GPU compile-time gate hides on
+    // CPU-only builds. Without these tests, the catch was effectively
+    // dead test surface on the default build flavor.
+
+    [Fact]
+    public void ConfigureWithInjectedDmlAppenderThatThrowsFallsBackToCpuAndWarns()
+    {
+        var capabilities = new OnnxRuntimeCapabilities();
+        var options = new SessionOptions();
+        Action<SessionOptions, int> failingAppender = (_, _) =>
+            throw new SimulatedEpUnavailableException("no DX12 device");
+
+        OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
+                                                    capabilities, NullLogger.Instance,
+                                                    failingAppender, cudaAppender: null,
+                                                    isRecoverable: ex => ex is SimulatedEpUnavailableException
+                                                   );
+
+        Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
+        Assert.Equal(OnnxExecutionProvider.DirectMl, capabilities.RequestedProvider);
+        Assert.NotNull(capabilities.LastLoadWarning);
+        Assert.Contains("no DX12 device", capabilities.LastLoadWarning);
+    }
+
+    [Fact]
+    public void ConfigureWithInjectedDmlAppenderThatSucceedsRecordsDirectMl()
+    {
+#if !USE_GPU
+        // On CPU-only builds the OnnxRuntimeCapabilities invariant rejects
+        // actual=DirectMl because it isn't in CompiledInProviders. The
+        // delegate path can still succeed at the appender level — but the
+        // recording layer (issue #18) refuses to lie about what loaded.
+        // The test confirms that contract.
+        var capabilities = new OnnxRuntimeCapabilities();
+        var options = new SessionOptions();
+        Action<SessionOptions, int> noopAppender = (_, _) => { };
+
+        Assert.Throws<InvalidOperationException>(() =>
+            OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
+                                                        capabilities, NullLogger.Instance,
+                                                        noopAppender, cudaAppender: null
+                                                       )
+        );
+#else
+        // On GPU builds DirectMl is in CompiledInProviders, so the no-op
+        // appender path records the success cleanly.
+        var capabilities = new OnnxRuntimeCapabilities();
+        var options = new SessionOptions();
+        Action<SessionOptions, int> noopAppender = (_, _) => { };
+
+        OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
+                                                    capabilities, NullLogger.Instance,
+                                                    noopAppender, cudaAppender: null
+                                                   );
+
+        Assert.Equal(OnnxExecutionProvider.DirectMl, capabilities.ActiveProvider);
+        Assert.Null(capabilities.LastLoadWarning);
+#endif
+    }
+
+    [Fact]
+    public void ConfigureWithInjectedCudaAppenderThatThrowsFallsBackToCpuAndWarns()
+    {
+        var capabilities = new OnnxRuntimeCapabilities();
+        var options = new SessionOptions();
+        Action<SessionOptions, int> failingAppender = (_, _) =>
+            throw new SimulatedEpUnavailableException("CUDA driver too old");
+
+        OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.Cuda,
+                                                    capabilities, NullLogger.Instance,
+                                                    dmlAppender: null, failingAppender,
+                                                    isRecoverable: ex => ex is SimulatedEpUnavailableException
+                                                   );
+
+        Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
+        Assert.Equal(OnnxExecutionProvider.Cuda, capabilities.RequestedProvider);
+        Assert.NotNull(capabilities.LastLoadWarning);
+        Assert.Contains("CUDA driver too old", capabilities.LastLoadWarning);
+    }
+
+    [Fact]
+    public void ConfigureRethrowsNonRecoverableExceptionsFromAppender()
+    {
+        var capabilities = new OnnxRuntimeCapabilities();
+        var options = new SessionOptions();
+        Action<SessionOptions, int> brokenAppender = (_, _) =>
+            throw new DllNotFoundException("DirectML.dll missing");
+
+        // DllNotFoundException is a deployment defect, not an EP-unavailable
+        // signal — the production predicate (and our test's narrow one) must
+        // not silently downgrade.
+        Assert.Throws<DllNotFoundException>(() =>
+            OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
+                                                        capabilities, NullLogger.Instance,
+                                                        brokenAppender, cudaAppender: null,
+                                                        isRecoverable: ex => ex is SimulatedEpUnavailableException
+                                                       )
+        );
+    }
+
+    /// <summary>
+    ///     Stand-in for OnnxRuntimeException (whose constructor is
+    ///     internal to Microsoft.ML.OnnxRuntime). The injected
+    ///     isRecoverable predicate in the test treats this type the
+    ///     same way the production predicate treats
+    ///     OnnxRuntimeException: caught, fall back to CPU.
+    /// </summary>
+    private sealed class SimulatedEpUnavailableException : Exception
+    {
+        public SimulatedEpUnavailableException(string message) : base(message) { }
+    }
 }
