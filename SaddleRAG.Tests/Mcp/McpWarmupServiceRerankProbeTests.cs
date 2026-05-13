@@ -30,20 +30,45 @@ public sealed class McpWarmupServiceRerankProbeTests
     {
         var fake = new CountingReRanker();
 
-        await McpWarmupService.WarmReRankerAsync(fake, CancellationToken.None);
+        await McpWarmupService.WarmReRankerAsync(fake, ProductionCandidateCount, CancellationToken.None);
 
         Assert.Equal(expected: 1, fake.CallCount);
     }
 
     [Fact]
-    public async Task WarmReRankerAsyncSuppliesAtLeastOneCandidate()
+    public async Task WarmReRankerAsyncSuppliesCandidateCountMatchingProductionBatch()
     {
         var fake = new CountingReRanker();
 
-        await McpWarmupService.WarmReRankerAsync(fake, CancellationToken.None);
+        await McpWarmupService.WarmReRankerAsync(fake, ProductionCandidateCount, CancellationToken.None);
+
+        Assert.NotNull(fake.LastCandidates);
+        Assert.Equal(ProductionCandidateCount, fake.LastCandidates.Count);
+    }
+
+    [Fact]
+    public async Task WarmReRankerAsyncClampsZeroOrNegativeCountToAtLeastOneCandidate()
+    {
+        var fake = new CountingReRanker();
+
+        await McpWarmupService.WarmReRankerAsync(fake, candidateCount: 0, CancellationToken.None);
 
         Assert.NotNull(fake.LastCandidates);
         Assert.NotEmpty(fake.LastCandidates);
+    }
+
+    [Fact]
+    public async Task WarmReRankerAsyncSuppliesLongDocContentToMatchProductionSequenceLength()
+    {
+        var fake = new CountingReRanker();
+
+        await McpWarmupService.WarmReRankerAsync(fake, ProductionCandidateCount, CancellationToken.None);
+
+        Assert.NotNull(fake.LastCandidates);
+        foreach(var chunk in fake.LastCandidates)
+            Assert.True(chunk.Content.Length >= MinProbeContentLength,
+                        $"Warmup probe chunk content too short ({chunk.Content.Length} chars); ORT kernel selection won't cover production input shape."
+                       );
     }
 
     [Fact]
@@ -51,7 +76,7 @@ public sealed class McpWarmupServiceRerankProbeTests
     {
         var fake = new CountingReRanker();
 
-        await McpWarmupService.WarmReRankerAsync(fake, CancellationToken.None);
+        await McpWarmupService.WarmReRankerAsync(fake, ProductionCandidateCount, CancellationToken.None);
 
         Assert.False(string.IsNullOrWhiteSpace(fake.LastQuery));
     }
@@ -64,9 +89,12 @@ public sealed class McpWarmupServiceRerankProbeTests
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => McpWarmupService.WarmReRankerAsync(fake, cts.Token)
+            () => McpWarmupService.WarmReRankerAsync(fake, ProductionCandidateCount, cts.Token)
         );
     }
+
+    private const int ProductionCandidateCount = 12;
+    private const int MinProbeContentLength = 1500;
 
     /// <summary>
     ///     Test double for <see cref="IReRanker" /> that records what
