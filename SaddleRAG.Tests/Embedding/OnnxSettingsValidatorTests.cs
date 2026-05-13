@@ -159,6 +159,86 @@ public sealed class OnnxSettingsValidatorTests
     }
 
     [Fact]
+    public void EnabledWithEmbeddingMaxSequenceLengthZeroFailsValidation()
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings { Enabled = true };
+        settings.EmbeddingModels.Add(new EmbeddingModelEntry
+                                         {
+                                             Name = "bad-maxseq",
+                                             RepoId = "test/bad",
+                                             ModelFile = "model.onnx",
+                                             TokenizerFamily = TokenizerFamily.Bert,
+                                             VocabFile = "vocab.txt",
+                                             MaxSequenceLength = 0
+                                         });
+
+        var result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("MaxSequenceLength", result.FailureMessage);
+        Assert.Contains("bad-maxseq", result.FailureMessage);
+    }
+
+    [Fact]
+    public void EnabledWithActiveEmbeddingModelNotInRegistryFailsValidation()
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings { Enabled = true, ActiveEmbeddingModel = "does-not-exist" };
+        settings.EmbeddingModels.Add(new EmbeddingModelEntry
+                                         {
+                                             Name = "nomic",
+                                             RepoId = "test/nomic",
+                                             ModelFile = "model.onnx",
+                                             TokenizerFamily = TokenizerFamily.Bert,
+                                             VocabFile = "vocab.txt"
+                                         });
+
+        var result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("does-not-exist", result.FailureMessage);
+        Assert.Contains("ActiveEmbeddingModel", result.FailureMessage);
+    }
+
+    [Fact]
+    public void EnabledWithActiveRerankerModelNotInRegistryFailsValidation()
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings { Enabled = true, ActiveRerankerModel = "typo-reranker" };
+        settings.RerankerModels.Add(new RerankerModelEntry
+                                        {
+                                            Name = "mxbai",
+                                            RepoId = "test/mxbai",
+                                            ModelFile = "model.onnx",
+                                            TokenizerFamily = TokenizerFamily.SentencePiece,
+                                            SpmFile = "spm.model"
+                                        });
+
+        var result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("typo-reranker", result.FailureMessage);
+        Assert.Contains("ActiveRerankerModel", result.FailureMessage);
+    }
+
+    [Fact]
+    public void EnabledWithActiveRerankerModelNoneSentinelPasses()
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings
+                           {
+                               Enabled = true,
+                               ActiveRerankerModel = OnnxSettings.RerankerNoneSentinel
+                           };
+        // Empty reranker registry is fine when explicitly disabled via "none".
+
+        var result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
     public void EnabledWithWellFormedRegistryPasses()
     {
         var validator = new OnnxSettingsValidator();

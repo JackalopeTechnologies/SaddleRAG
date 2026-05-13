@@ -46,6 +46,7 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
             CollectRerankerFailures(options, failures);
             CollectDuplicateNames(EmbeddingRegistryLabel, options.EmbeddingModels.Select(e => e.Name), failures);
             CollectDuplicateNames(RerankerRegistryLabel, options.RerankerModels.Select(e => e.Name), failures);
+            CollectActiveModelResolution(options, failures);
             result = failures.Count == 0
                          ? ValidateOptionsResult.Success
                          : ValidateOptionsResult.Fail(failures);
@@ -60,9 +61,16 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
             failures.Add(EmptyEmbeddingRegistryMessage);
 
         foreach(var entry in options.EmbeddingModels)
+        {
             ValidateEntry(entry.Name, entry.RepoId, entry.ModelFile, entry.TokenizerFamily,
                           entry.VocabFile, entry.SpmFile, failures
                          );
+
+            if (entry.MaxSequenceLength <= 0)
+                failures.Add(string.Format(EmbeddingMaxSequenceLengthFormat, entry.Name,
+                                           entry.MaxSequenceLength
+                                          ));
+        }
     }
 
     private static void CollectRerankerFailures(OnnxSettings options, List<string> failures)
@@ -77,6 +85,40 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
                 failures.Add(string.Format(MaxSequenceLengthTooSmallFormat, entry.Name,
                                            entry.MaxSequenceLength,
                                            OnnxReRanker.MinViableSequenceLength
+                                          ));
+        }
+    }
+
+    private static void CollectActiveModelResolution(OnnxSettings options, List<string> failures)
+    {
+        if (!string.IsNullOrEmpty(options.ActiveEmbeddingModel))
+        {
+            bool resolves = options.EmbeddingModels.Any(
+                e => string.Equals(e.Name, options.ActiveEmbeddingModel, StringComparison.Ordinal)
+            );
+            if (!resolves)
+                failures.Add(string.Format(ActiveEmbeddingDoesNotResolveFormat,
+                                           options.ActiveEmbeddingModel,
+                                           string.Join(",", options.EmbeddingModels.Select(e => e.Name))
+                                          ));
+        }
+
+        bool rerankerUnset = string.IsNullOrEmpty(options.ActiveRerankerModel);
+        bool rerankerIsNone = !rerankerUnset
+                              && string.Equals(options.ActiveRerankerModel,
+                                               OnnxSettings.RerankerNoneSentinel,
+                                               StringComparison.OrdinalIgnoreCase
+                                              );
+        if (!rerankerUnset && !rerankerIsNone)
+        {
+            bool resolves = options.RerankerModels.Any(
+                e => string.Equals(e.Name, options.ActiveRerankerModel, StringComparison.Ordinal)
+            );
+            if (!resolves)
+                failures.Add(string.Format(ActiveRerankerDoesNotResolveFormat,
+                                           options.ActiveRerankerModel,
+                                           OnnxSettings.RerankerNoneSentinel,
+                                           string.Join(",", options.RerankerModels.Select(e => e.Name))
                                           ));
         }
     }
@@ -137,4 +179,7 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
     private const string DuplicateNameFormat = "Onnx {0} registry has duplicate entries with Name='{1}'. Names must be unique within a registry — OnnxSettings.GetActiveModel resolves by name and FirstOrDefault would silently bind one of the duplicates.";
     private const string EmbeddingRegistryLabel = "EmbeddingModels";
     private const string RerankerRegistryLabel = "RerankerModels";
+    private const string EmbeddingMaxSequenceLengthFormat = "Onnx embedding entry '{0}' has MaxSequenceLength={1}. Must be > 0; OnnxEmbeddingProvider's Math.Min(tokenIds.Count, MaxSequenceLength) would silently zero out every embedding otherwise.";
+    private const string ActiveEmbeddingDoesNotResolveFormat = "Onnx.ActiveEmbeddingModel='{0}' does not match any entry in EmbeddingModels (registered names: [{1}]). Either leave it unset (first entry becomes the default) or set it to a registered name.";
+    private const string ActiveRerankerDoesNotResolveFormat = "Onnx.ActiveRerankerModel='{0}' does not match any entry in RerankerModels and is not the '{1}' sentinel (registered names: [{2}]). Either leave it unset (first entry becomes the default), set it to a registered name, or set it to '{1}' to disable reranking.";
 }
