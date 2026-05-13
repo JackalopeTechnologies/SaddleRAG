@@ -101,6 +101,64 @@ public sealed class OnnxSettingsValidatorTests
     }
 
     [Fact]
+    public void EnabledWithDuplicateEmbeddingNameFailsValidation()
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings { Enabled = true };
+        settings.EmbeddingModels.Add(new EmbeddingModelEntry
+                                         {
+                                             Name = "duplicate-name",
+                                             RepoId = "test/a",
+                                             ModelFile = "model.onnx",
+                                             TokenizerFamily = TokenizerFamily.Bert,
+                                             VocabFile = "vocab.txt"
+                                         });
+        settings.EmbeddingModels.Add(new EmbeddingModelEntry
+                                         {
+                                             Name = "duplicate-name",
+                                             RepoId = "test/b",
+                                             ModelFile = "model.onnx",
+                                             TokenizerFamily = TokenizerFamily.Bert,
+                                             VocabFile = "vocab.txt"
+                                         });
+
+        var result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("duplicate-name", result.FailureMessage);
+        Assert.Contains("EmbeddingModels", result.FailureMessage);
+    }
+
+    [Fact]
+    public void EnabledWithDuplicateRerankerNameFailsValidation()
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings { Enabled = true };
+        settings.RerankerModels.Add(new RerankerModelEntry
+                                        {
+                                            Name = "duplicate-reranker",
+                                            RepoId = "test/c",
+                                            ModelFile = "model.onnx",
+                                            TokenizerFamily = TokenizerFamily.SentencePiece,
+                                            SpmFile = "spm.model"
+                                        });
+        settings.RerankerModels.Add(new RerankerModelEntry
+                                        {
+                                            Name = "duplicate-reranker",
+                                            RepoId = "test/d",
+                                            ModelFile = "model.onnx",
+                                            TokenizerFamily = TokenizerFamily.SentencePiece,
+                                            SpmFile = "spm.model"
+                                        });
+
+        var result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("duplicate-reranker", result.FailureMessage);
+        Assert.Contains("RerankerModels", result.FailureMessage);
+    }
+
+    [Fact]
     public void EnabledWithWellFormedRegistryPasses()
     {
         var validator = new OnnxSettingsValidator();
