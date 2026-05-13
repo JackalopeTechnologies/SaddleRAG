@@ -45,6 +45,10 @@ public class ToggleableReRanker : IReRanker
     ///     The active reranker strategy. Backed by
     ///     RankingSettings.ReRankerStrategy so reads and writes are
     ///     consistent with every other consumer of that setting.
+    ///     Setting the property resets the
+    ///     <c>Strategy=Onnx but no active entry</c> warning dedupe so a
+    ///     toggle back into the bad state re-emits the warning instead
+    ///     of staying silent for the singleton's lifetime.
     /// </summary>
     public ReRankerStrategy Strategy
     {
@@ -52,6 +56,7 @@ public class ToggleableReRanker : IReRanker
         set
         {
             mRankingSettings.ReRankerStrategy = value;
+            Interlocked.Exchange(ref mOnnxWithoutEntryWarned, value: 0);
             mLogger.LogInformation("Re-ranking strategy set to {Strategy}", value);
         }
     }
