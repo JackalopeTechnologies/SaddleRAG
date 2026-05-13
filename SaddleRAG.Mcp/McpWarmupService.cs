@@ -78,8 +78,11 @@ public sealed class McpWarmupService : BackgroundService
 
             var vectorSearch = scope.ServiceProvider.GetRequiredService<IVectorSearchProvider>();
 
-            var embeddingProvider = scope.ServiceProvider.GetRequiredService<IEmbeddingProvider>();
-
+            // IEmbeddingProvider is resolved *after* EnsureActiveModelsAsync below:
+            // OnnxEmbeddingProvider's constructor opens model.onnx + vocab.txt from
+            // disk, so on the first start after Onnx.Enabled flips to true the
+            // files have to be downloaded first. Resolving here would throw
+            // FileNotFoundException before the downloader runs.
 
             var profileNames = GetProfilesToBootstrap(contextFactory, dbSettings);
 
@@ -130,6 +133,9 @@ public sealed class McpWarmupService : BackgroundService
                                    startupSw.Elapsed.TotalSeconds,
                                    stepSw.ElapsedMilliseconds
                                   );
+
+
+            var embeddingProvider = scope.ServiceProvider.GetRequiredService<IEmbeddingProvider>();
 
 
             stepSw.Restart();
