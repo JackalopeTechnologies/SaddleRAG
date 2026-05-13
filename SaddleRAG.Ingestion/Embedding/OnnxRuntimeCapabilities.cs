@@ -69,15 +69,47 @@ public class OnnxRuntimeCapabilities
     /// <summary>
     ///     Records the outcome of an EP-append attempt. Called by
     ///     <see cref="OnnxExecutionProviderConfigurator" /> after each
-    ///     attempted session-options configuration.
+    ///     attempted session-options configuration. Enforces two invariants:
+    ///     <list type="bullet">
+    ///         <item>
+    ///             <paramref name="actual" /> must be one of the EPs this
+    ///             build is capable of loading (CPU is always allowed, GPU
+    ///             providers are allowed only when <c>USE_GPU</c> is
+    ///             defined — see <see cref="CompiledInProviders" />). A
+    ///             caller recording <c>actual="Cuda"</c> on a CPU-only
+    ///             build would corrupt diagnostic state.
+    ///         </item>
+    ///         <item>
+    ///             If <paramref name="actual" /> differs from
+    ///             <paramref name="requested" /> (i.e., a fallback
+    ///             occurred), <paramref name="warning" /> must be
+    ///             populated. Falling back silently is a bug.
+    ///         </item>
+    ///     </list>
     /// </summary>
     public void RecordLoadOutcome(string requested, string actual, string? warning)
     {
         ArgumentException.ThrowIfNullOrEmpty(requested);
         ArgumentException.ThrowIfNullOrEmpty(actual);
 
+        bool actualIsCompiledIn = mCompiledInProviders.Any(
+            p => string.Equals(p, actual, StringComparison.OrdinalIgnoreCase)
+        );
+        if (!actualIsCompiledIn)
+            throw new InvalidOperationException(
+                string.Format(ActualNotCompiledInFormat, actual, string.Join(",", mCompiledInProviders))
+            );
+
+        bool fellBack = !string.Equals(requested, actual, StringComparison.OrdinalIgnoreCase);
+        if (fellBack && string.IsNullOrEmpty(warning))
+            throw new InvalidOperationException(string.Format(SilentFallbackFormat, requested, actual));
+
         RequestedProvider = requested;
         ActiveProvider = actual;
         LastLoadWarning = warning;
     }
+
+    private const string ActualNotCompiledInFormat = "OnnxRuntimeCapabilities.RecordLoadOutcome: actual='{0}' is not in CompiledInProviders [{1}]. The configurator must only record EPs the build actually supports.";
+
+    private const string SilentFallbackFormat = "OnnxRuntimeCapabilities.RecordLoadOutcome: fallback from requested='{0}' to actual='{1}' without an explanatory warning. Silent fallbacks are a bug.";
 }

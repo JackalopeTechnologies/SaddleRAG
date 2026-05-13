@@ -68,4 +68,35 @@ public sealed class OnnxRuntimeCapabilitiesTests
 
         Assert.Null(capabilities.LastLoadWarning);
     }
+
+    [Fact]
+    public void RecordLoadOutcomeRejectsActualNotInCompiledInProviders()
+    {
+        var capabilities = new OnnxRuntimeCapabilities();
+
+        // CPU-only build can't legitimately have recorded actual=Cuda;
+        // GPU build doesn't compile in Cuda either (only DirectMl). Either
+        // way recording Cuda as the actual loaded EP is a bug.
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            capabilities.RecordLoadOutcome(requested: OnnxSettings.ExecutionProviderCuda,
+                                           actual: OnnxSettings.ExecutionProviderCuda,
+                                           warning: null
+                                          )
+        );
+        Assert.Contains("CompiledInProviders", ex.Message);
+    }
+
+    [Fact]
+    public void RecordLoadOutcomeRejectsSilentFallback()
+    {
+        var capabilities = new OnnxRuntimeCapabilities();
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            capabilities.RecordLoadOutcome(requested: OnnxSettings.ExecutionProviderDirectMl,
+                                           actual: OnnxSettings.ExecutionProviderCpu,
+                                           warning: null
+                                          )
+        );
+        Assert.Contains("Silent fallbacks", ex.Message);
+    }
 }
