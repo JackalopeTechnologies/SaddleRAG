@@ -66,9 +66,17 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
     private static void CollectRerankerFailures(OnnxSettings options, List<string> failures)
     {
         foreach(var entry in options.RerankerModels)
+        {
             ValidateEntry(entry.Name, entry.RepoId, entry.ModelFile, entry.TokenizerFamily,
                           entry.VocabFile, entry.SpmFile, failures
                          );
+
+            if (entry.MaxSequenceLength < OnnxReRanker.MinViableSequenceLength)
+                failures.Add(string.Format(MaxSequenceLengthTooSmallFormat, entry.Name,
+                                           entry.MaxSequenceLength,
+                                           OnnxReRanker.MinViableSequenceLength
+                                          ));
+        }
     }
 
     private static void ValidateEntry(string name,
@@ -111,4 +119,5 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
     private const string BertMissingVocabFormat = "Onnx registry entry '{0}' has TokenizerFamily=Bert but no VocabFile. BERT tokenization requires a vocab.txt path.";
     private const string SentencePieceMissingSpmFormat = "Onnx registry entry '{0}' has TokenizerFamily=SentencePiece but no SpmFile. SentencePiece tokenization requires an spm.model path.";
     private const string UnknownFamilyFormat = "Onnx registry entry '{0}' has unsupported TokenizerFamily '{1}'.";
+    private const string MaxSequenceLengthTooSmallFormat = "Onnx reranker entry '{0}' has MaxSequenceLength={1}, which is below the minimum viable value ({2}). At this size the [CLS]/[SEP] overhead and doc-side floor consume the entire window, leaving zero room for query tokens; the cross-encoder would silently score 'empty query vs doc' and tank recall.";
 }
