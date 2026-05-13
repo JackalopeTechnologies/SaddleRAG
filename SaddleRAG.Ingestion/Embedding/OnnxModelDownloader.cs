@@ -145,28 +145,70 @@ public class OnnxModelDownloader
         if (alreadyPresent)
             mLogger.LogDebug("Skipping download (already present): {Dest}", destPath);
         else
+            await PerformDownloadAsync(repoId, sourcePath, destPath, ct);
+    }
+
+    private async Task PerformDownloadAsync(string repoId,
+                                            string sourcePath,
+                                            string destPath,
+                                            CancellationToken ct)
+    {
+        string url = $"{HuggingFaceBase}/{repoId}/{HuggingFaceResolveSegment}/{sourcePath}";
+        string tmpPath = destPath + TempSuffix;
+
+        mLogger.LogInformation("Downloading {Url} -> {Dest}", url, destPath);
+        try
         {
-            string url = $"{HuggingFaceBase}/{repoId}/{HuggingFaceResolveSegment}/{sourcePath}";
-            string tmpPath = destPath + TempSuffix;
-
-            mLogger.LogInformation("Downloading {Url} -> {Dest}", url, destPath);
-            var client = mHttpClientFactory.CreateClient(HttpClientName);
-            using HttpResponseMessage response =
-                await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.EnsureSuccessStatusCode();
-
-            await using (Stream src = await response.Content.ReadAsStreamAsync(ct))
-            await using (FileStream dst = File.Create(tmpPath))
-                await src.CopyToAsync(dst, ct);
-
+            await StreamResponseToTmpAsync(url, tmpPath, ct);
+            EnsureNonEmpty(tmpPath, url);
             File.Move(tmpPath, destPath, overwrite: true);
 
             long sizeKb = new FileInfo(destPath).Length / BytesPerKb;
             mLogger.LogInformation("Downloaded {Dest} ({SizeKb} KB)", destPath, sizeKb);
         }
+        finally
+        {
+            DeleteIfExists(tmpPath);
+        }
+    }
+
+    private async Task StreamResponseToTmpAsync(string url, string tmpPath, CancellationToken ct)
+    {
+        var client = mHttpClientFactory.CreateClient(HttpClientName);
+        using HttpResponseMessage response =
+            await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+
+        await using Stream src = await response.Content.ReadAsStreamAsync(ct);
+        await using FileStream dst = File.Create(tmpPath);
+        await src.CopyToAsync(dst, ct);
+    }
+
+    private static void EnsureNonEmpty(string tmpPath, string url)
+    {
+        long downloaded = new FileInfo(tmpPath).Length;
+        if (downloaded == 0)
+            throw new InvalidOperationException(string.Format(EmptyResponseFormat, url));
+    }
+
+    private void DeleteIfExists(string tmpPath)
+    {
+        if (File.Exists(tmpPath))
+        {
+            try
+            {
+                File.Delete(tmpPath);
+            }
+            catch(IOException ex)
+            {
+                mLogger.LogWarning(ex, "Failed to delete temp download file {TmpPath}; this may leave an orphan that the next download will retry past.", tmpPath);
+            }
+        }
     }
 
     public const string HttpClientName = "OnnxModelDownloader";
+
+    private const string EmptyResponseFormat = "Download from '{0}' returned a 200 OK but the response body was empty. Refusing to write a zero-byte model file. Verify the RepoId/ModelFile combination resolves on HuggingFace.";
 
     private const string HuggingFaceBase = "https://huggingface.co";
     private const string HuggingFaceResolveSegment = "resolve/main";

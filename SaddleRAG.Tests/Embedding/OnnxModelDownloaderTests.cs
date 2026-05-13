@@ -162,6 +162,42 @@ public sealed class OnnxModelDownloaderTests : IDisposable
         Assert.False(File.Exists(modelPath));
     }
 
+    [Fact]
+    public async Task DownloadFailureCleansUpOrphanTempFile()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var settings = BuildSettings(enabled: true, embeddingEnabled: true, rerankerEntries: 0);
+        var downloader = BuildDownloader(handler, settings);
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => downloader.EnsureActiveModelsAsync(TestContext.Current.CancellationToken)
+        );
+
+        // No .tmp left behind in the model directory — try/finally guarantees cleanup.
+        string nomicDir = Path.Combine(mTempRoot, "nomic");
+        if (Directory.Exists(nomicDir))
+            Assert.Empty(Directory.GetFiles(nomicDir, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task DownloadZeroByteResponseThrowsAndLeavesNothingBehind()
+    {
+        var handler = new RecordingHandler(_ => Make200(string.Empty));
+        var settings = BuildSettings(enabled: true, embeddingEnabled: true, rerankerEntries: 0);
+        var downloader = BuildDownloader(handler, settings);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => downloader.EnsureActiveModelsAsync(TestContext.Current.CancellationToken)
+        );
+        Assert.Contains("empty", ex.Message, StringComparison.OrdinalIgnoreCase);
+
+        string nomicDir = Path.Combine(mTempRoot, "nomic");
+        string modelPath = Path.Combine(nomicDir, "model.onnx");
+        Assert.False(File.Exists(modelPath));
+        if (Directory.Exists(nomicDir))
+            Assert.Empty(Directory.GetFiles(nomicDir, "*.tmp"));
+    }
+
     private OnnxSettings BuildSettings(bool enabled = true,
                                        bool embeddingEnabled = true,
                                        int rerankerEntries = 1)
