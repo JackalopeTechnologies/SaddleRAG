@@ -26,15 +26,6 @@ public class RankingSettings
     public float Bm25Weight { get; set; } = DefaultBm25Weight;
 
     /// <summary>
-    ///     Weight applied to the reranker score when blending with the
-    ///     hybrid score. Final score is ReRankBlendWeight * rerank +
-    ///     (1 - ReRankBlendWeight) * hybrid. Pure replacement (1.0) is
-    ///     what makes the legacy LLM reranker's mistakes unrecoverable;
-    ///     0.6 is the sweet spot per the bench harness.
-    /// </summary>
-    public float ReRankBlendWeight { get; set; } = DefaultReRankBlendWeight;
-
-    /// <summary>
     ///     Multiplier applied to maxResults to decide how many vector
     ///     candidates to fetch before hybrid blending. Larger values
     ///     improve recall on large corpora at the cost of more local work.
@@ -82,7 +73,6 @@ public class RankingSettings
     public const string SectionName = "Ranking";
 
     public const float DefaultBm25Weight = 0.4f;
-    public const float DefaultReRankBlendWeight = 0.6f;
     public const int DefaultVectorCandidateMultiplier = 5;
     public const int DefaultMinVectorCandidateCount = 25;
     public const int DefaultMaxReRankCandidates = 12;

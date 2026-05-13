@@ -248,7 +248,25 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
             );
 
         for(var i = 0; i < batchCount; i++)
-            scores[start + i] = logits[i, 0];
+            scores[start + i] = NormalizeLogit(logits[i, 0]);
+    }
+
+    /// <summary>
+    ///     Sigmoid-maps a raw cross-encoder logit into the (0, 1) range.
+    ///     mxbai-rerank-base-v1 emits unbounded logits (typically -10..+10);
+    ///     the (0, 1) normalization makes the score directly usable as a
+    ///     <c>RankedResult.FinalScore</c> in
+    ///     <c>SearchTools.ApplyRerankerOrderingAsync</c> and keeps it
+    ///     commensurable with the [0, 1] hybrid score on pass-through
+    ///     items. Sigmoid is monotonic, so per-batch ordering inside the
+    ///     reranker is unchanged; only the scale changes. Exposed
+    ///     <c>internal</c> so unit tests can lock in the (0, 1) contract
+    ///     without spinning up an InferenceSession.
+    /// </summary>
+    internal static float NormalizeLogit(float logit)
+    {
+        float result = 1f / (1f + MathF.Exp(-logit));
+        return result;
     }
 
     /// <summary>

@@ -402,7 +402,6 @@ public static class SearchTools
                                                            hybrid,
                                                            maxResults,
                                                            rerankActive,
-                                                           rankingSettings.ReRankBlendWeight,
                                                            rankingSettings.MaxReRankCandidates,
                                                            ct
                                                           );
@@ -508,7 +507,6 @@ public static class SearchTools
         IReadOnlyList<HybridCandidate> hybrid,
         int maxResults,
         bool rerankActive,
-        float blendWeight,
         int maxReRankCandidates,
         CancellationToken ct)
     {
@@ -530,26 +528,36 @@ public static class SearchTools
         }
         else
         {
-            result = await BlendWithRerankerAsync(reRanker,
-                                                  metrics,
-                                                  query,
-                                                  hybrid,
-                                                  maxResults,
-                                                  blendWeight,
-                                                  maxReRankCandidates,
-                                                  ct
-                                                 );
+            result = await ApplyRerankerOrderingAsync(reRanker,
+                                                     metrics,
+                                                     query,
+                                                     hybrid,
+                                                     maxResults,
+                                                     maxReRankCandidates,
+                                                     ct
+                                                    );
         }
 
         return result;
     }
 
-    private static async Task<IReadOnlyList<RankedResult>> BlendWithRerankerAsync(IReRanker reRanker,
+    /// <summary>
+    ///     Cross-encoder is authoritative on the candidates it scored.
+    ///     The top <paramref name="maxReRankCandidates" /> hybrid items
+    ///     are fed to the reranker and ordered by its score
+    ///     (sigmoid-mapped logits ∈ (0, 1), see
+    ///     <see cref="OnnxReRanker.NormalizeLogit" />). The pass-through
+    ///     tail keeps its hybrid score and is appended below the reranked
+    ///     tier — never interleaved. This replaces the pre-Phase-4 linear
+    ///     blend, which mixed unbounded raw logits with [0, 1] hybrid
+    ///     scores and let pass-through items leapfrog low-rerank items
+    ///     into the top-N.
+    /// </summary>
+    private static async Task<IReadOnlyList<RankedResult>> ApplyRerankerOrderingAsync(IReRanker reRanker,
         IQueryMetrics metrics,
         string query,
         IReadOnlyList<HybridCandidate> hybrid,
         int maxResults,
-        float blendWeight,
         int maxReRankCandidates,
         CancellationToken ct)
     {
@@ -566,16 +574,15 @@ public static class SearchTools
                                                     r => r.Count
                                                    );
 
-        var hybridWeight = 1.0f - blendWeight;
         var reranked = rerankResults
-                      .Select(rr => BlendRankedResult(rr, hybridByChunkId, blendWeight, hybridWeight));
+                      .Select(rr => CreateReRankedResult(rr, hybridByChunkId))
+                      .OrderByDescending(r => r.FinalScore);
         var passThrough = hybrid.Skip(reRankCandidateCount)
                                 .Select(CreatePassThroughRankedResult);
-        var blended = reranked.Concat(passThrough)
-                      .OrderByDescending(r => r.FinalScore)
+        var ordered = reranked.Concat(passThrough)
                       .Take(maxResults)
                       .ToList();
-        return blended;
+        return ordered;
     }
 
     private static RankedResult CreatePassThroughRankedResult(HybridCandidate candidate)
@@ -591,21 +598,17 @@ public static class SearchTools
         return result;
     }
 
-    private static RankedResult BlendRankedResult(ReRankResult rr,
-                                                  IReadOnlyDictionary<string, HybridCandidate> hybridByChunkId,
-                                                  float blendWeight,
-                                                  float hybridWeight)
+    private static RankedResult CreateReRankedResult(ReRankResult rr,
+                                                     IReadOnlyDictionary<string, HybridCandidate> hybridByChunkId)
     {
         var hybridCandidate = hybridByChunkId.TryGetValue(rr.Chunk.Id, out var hc) ? hc : null;
-        var hybridScore = hybridCandidate?.HybridScore ?? 0.0;
         var vectorScore = hybridCandidate?.VectorScore ?? 0f;
         var bm25Score = hybridCandidate != null ? (float) hybridCandidate.Bm25Score : 0f;
-        var final = (blendWeight * rr.RelevanceScore) + (hybridWeight * (float) hybridScore);
 
         var result = new RankedResult
                          {
                              Chunk = rr.Chunk,
-                             FinalScore = final,
+                             FinalScore = rr.RelevanceScore,
                              VectorScore = vectorScore,
                              Bm25Score = bm25Score,
                              RerankScore = rr.RelevanceScore
@@ -662,8 +665,7 @@ public static class SearchTools
                                                   RerankActive = rerankActive,
                                                   QueryIsIdentifierShape = queryIsIdentifierShape,
                                                   Category = categoryFilter?.ToString(),
-                                                  rankingSettings.Bm25Weight,
-                                                  rankingSettings.ReRankBlendWeight
+                                                  rankingSettings.Bm25Weight
                                               }
                            };
 
