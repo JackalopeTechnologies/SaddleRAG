@@ -195,11 +195,17 @@ public class OnnxModelDownloader
     {
         if (File.Exists(tmpPath))
         {
+            // Widened from IOException-only to also cover the Windows reality
+            // that File.Delete can throw UnauthorizedAccessException (AV
+            // quarantine stripping delete rights, read-only attribute, ACL
+            // denial) — a narrower catch would let that propagate out of the
+            // enclosing try/finally and mask the original download failure.
             try
             {
                 File.Delete(tmpPath);
             }
-            catch(IOException ex)
+            catch(Exception ex) when(ex is IOException or UnauthorizedAccessException
+                                        or System.Security.SecurityException)
             {
                 mLogger.LogWarning(ex, "Failed to delete temp download file {TmpPath}; this may leave an orphan that the next download will retry past.", tmpPath);
             }
