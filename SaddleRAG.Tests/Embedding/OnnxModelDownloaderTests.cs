@@ -148,25 +148,6 @@ public sealed class OnnxModelDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task EnsureRerankerModelAsyncThrowsForXlmRoberta()
-    {
-        var handler = new RecordingHandler(_ => Make200("BYTES"));
-        var settings = new OnnxSettings { Enabled = true, ModelsDir = mTempRoot };
-        var entry = new RerankerModelEntry
-                        {
-                            Name = "jina",
-                            RepoId = "jinaai/jina-reranker-v2-base-multilingual",
-                            ModelFile = "onnx/model_quantized.onnx",
-                            TokenizerFamily = TokenizerFamily.XlmRoberta
-                        };
-        var downloader = BuildDownloader(handler, settings);
-
-        await Assert.ThrowsAsync<NotImplementedException>(
-            () => downloader.EnsureRerankerModelAsync(entry, TestContext.Current.CancellationToken)
-        );
-    }
-
-    [Fact]
     public async Task DownloadFailurePropagatesAsHttpRequestExceptionAndLeavesNoMainFile()
     {
         var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));

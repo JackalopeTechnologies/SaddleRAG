@@ -208,9 +208,6 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
             TokenizerFamily.SentencePiece => throw new NotSupportedException(
                 $"Embedding model '{entry.Name}' has TokenizerFamily=SentencePiece, but the embedding provider only supports Bert tokenization in v1. Move SentencePiece embedding models to a follow-up."
             ),
-            TokenizerFamily.XlmRoberta => throw new NotImplementedException(
-                $"Embedding model '{entry.Name}' has TokenizerFamily=XlmRoberta. XlmRoberta tokenization is not yet implemented; deferred to a follow-up phase."
-            ),
             var _ => throw new InvalidOperationException(
                 $"Unknown TokenizerFamily '{entry.TokenizerFamily}' for embedding model '{entry.Name}'."
             )
