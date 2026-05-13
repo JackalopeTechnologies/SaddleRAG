@@ -291,9 +291,11 @@ public sealed class McpWarmupService : BackgroundService
             {
                 var version = await libRepo.GetVersionAsync(lib.Id, lib.CurrentVersion, stoppingToken);
 
-                if (version != null && !string.IsNullOrEmpty(version.EmbeddingModelName))
+                string? modelName = ResolveOllamaModelName(version);
 
-                    requiredModels.Add(version.EmbeddingModelName);
+                if (modelName != null)
+
+                    requiredModels.Add(modelName);
             }
         }
 
@@ -302,6 +304,39 @@ public sealed class McpWarmupService : BackgroundService
         {
             mLogger.LogWarning(ex, "Failed to inspect profile {Profile}, skipping at startup", profile ?? "(default)");
         }
+    }
+
+
+    /// <summary>
+    ///     Returns <paramref name="version" />'s
+    ///     <c>EmbeddingModelName</c> when the library was embedded under
+    ///     Ollama (so it should be added to the set passed to
+    ///     <c>OllamaBootstrapper.BootstrapAsync</c>); otherwise null
+    ///     (skip). ONNX-embedded libraries persist their Hugging Face
+    ///     model name (e.g. <c>"nomic-embed-text-v1.5"</c>) which Ollama's
+    ///     manifest lookup returns 404 on — pulling that into the Ollama
+    ///     required-models set throws and aborts the entire warmup before
+    ///     chunk loading, leaving the in-memory vector index empty. Filter
+    ///     to <see cref="OllamaEmbeddingProvider.ProviderIdName" /> here
+    ///     so ONNX libraries are skipped silently and only Ollama-embedded
+    ///     names reach the bootstrapper. Exposed as <c>internal</c> so
+    ///     SaddleRAG.Tests can lock in the contract without spinning up a
+    ///     full MongoDB-backed repository graph.
+    /// </summary>
+    internal static string? ResolveOllamaModelName(LibraryVersionRecord? version)
+    {
+        string? result = null;
+
+        if (version != null
+            && !string.IsNullOrEmpty(version.EmbeddingModelName)
+            && string.Equals(version.EmbeddingProviderId,
+                             OllamaEmbeddingProvider.ProviderIdName,
+                             StringComparison.OrdinalIgnoreCase
+                            )
+           )
+            result = version.EmbeddingModelName;
+
+        return result;
     }
 
 

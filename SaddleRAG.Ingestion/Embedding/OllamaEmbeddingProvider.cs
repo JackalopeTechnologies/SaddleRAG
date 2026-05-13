@@ -173,7 +173,16 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
     }
 
 
-    private const string ProviderIdName = "ollama";
+    /// <summary>
+    ///     Public identifier persisted to <c>LibraryVersionRecord.EmbeddingProviderId</c>
+    ///     so other components (notably <c>McpWarmupService</c>) can detect which
+    ///     stored libraries were embedded under Ollama and route their model names
+    ///     through <c>OllamaBootstrapper</c> at startup. ONNX-embedded libraries
+    ///     persist their own provider id (<c>"onnx"</c>) and must be skipped by
+    ///     the Ollama bootstrap path — Ollama would 404 on Hugging Face names like
+    ///     <c>nomic-embed-text-v1.5</c>.
+    /// </summary>
+    public const string ProviderIdName = "ollama";
     private const int MaxRetryAttempts = 3;
 
     private const int InitialRetryDelayMs = 1000;
