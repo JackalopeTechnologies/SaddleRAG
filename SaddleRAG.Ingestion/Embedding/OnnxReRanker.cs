@@ -279,9 +279,6 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
         {
             TokenizerFamily.Bert => TokenizeWithBert(entry, text),
             TokenizerFamily.SentencePiece => TokenizeWithSp(entry, text),
-            TokenizerFamily.XlmRoberta => throw new NotImplementedException(
-                $"Reranker '{entry.Name}' uses XlmRoberta tokenization which is not yet implemented."
-            ),
             var _ => throw new InvalidOperationException(
                 $"Unknown TokenizerFamily '{entry.TokenizerFamily}' for reranker '{entry.Name}'."
             )
@@ -336,9 +333,6 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
         {
             TokenizerFamily.Bert => (LoadBert(entry, modelDir), null),
             TokenizerFamily.SentencePiece => (null, LoadSentencePiece(entry, modelDir)),
-            TokenizerFamily.XlmRoberta => throw new NotImplementedException(
-                $"Reranker '{entry.Name}' uses XlmRoberta tokenization which is not yet implemented."
-            ),
             var _ => throw new InvalidOperationException(
                 $"Unknown TokenizerFamily '{entry.TokenizerFamily}' for reranker '{entry.Name}'."
             )

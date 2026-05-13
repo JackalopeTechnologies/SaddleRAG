@@ -29,15 +29,5 @@ public enum TokenizerFamily
     ///     Does NOT auto-add special tokens; the provider must manually frame
     ///     [CLS] query [SEP] doc [SEP] using SpecialTokens from the entry.
     /// </summary>
-    SentencePiece,
-
-    /// <summary>
-    ///     XLM-Roberta (e.g. jinaai/jina-reranker-v2-base-multilingual). The
-    ///     SentencePiece model is embedded inside tokenizer.json rather than
-    ///     shipped as a standalone spm file. Not yet implemented — selecting
-    ///     this family at runtime throws <see cref="System.NotImplementedException" />.
-    ///     Tracked as future work: extract the SP model from tokenizer.json
-    ///     once at install time, or write a custom XLM-Roberta wrapper.
-    /// </summary>
-    XlmRoberta
+    SentencePiece
 }

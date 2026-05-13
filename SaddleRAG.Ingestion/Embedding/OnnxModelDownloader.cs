@@ -132,10 +132,6 @@ public class OnnxModelDownloader
                                              Path.Combine(modelDir, SpmModelFileName), ct
                                             );
                 break;
-            case TokenizerFamily.XlmRoberta:
-                throw new NotImplementedException(
-                    $"Onnx entry '{entryName}' uses TokenizerFamily=XlmRoberta which is not yet implemented; downloader cannot stage its tokenizer."
-                );
             default:
                 throw new InvalidOperationException(
                     $"Onnx entry '{entryName}' has unknown TokenizerFamily '{family}'."
