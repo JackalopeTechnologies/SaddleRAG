@@ -149,8 +149,7 @@ public sealed class InspectScrapeToolTests
         var repo = new ScrapeAuditRepository(ctx);
         var jobId = $"job-{Guid.NewGuid():N}";
         var targetUrl = "https://example.com/find-me";
-        await repo.InsertManyAsync(new[]
-                                       {
+        await repo.InsertManyAsync([
                                            new ScrapeAuditLogEntry
                                                {
                                                    Id = Guid.NewGuid().ToString("N"),
@@ -164,7 +163,7 @@ public sealed class InspectScrapeToolTests
                                                    DiscoveredAt = DateTime.UtcNow,
                                                    Status = AuditStatus.Indexed
                                                }
-                                       },
+                                       ],
                                    TestContext.Current.CancellationToken
                                   );
         var factory = BuildTestFactory(ctx);

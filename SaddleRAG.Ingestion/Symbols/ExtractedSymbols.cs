@@ -42,6 +42,6 @@ public record ExtractedSymbols
     /// </summary>
     public static ExtractedSymbols Empty { get; } = new ExtractedSymbols
                                                         {
-                                                            Symbols = Array.Empty<Symbol>()
+                                                            Symbols = []
                                                         };
 }

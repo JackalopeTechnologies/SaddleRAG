@@ -25,8 +25,8 @@ public sealed class SuspectDetectorTests
                                             distinctHostCount: 1,
                                             distinctLinkTargets: 50,
                                             new Dictionary<string, double> { ["csharp"] = 1.0 },
-                                            new[] { "csharp" },
-                                            new[] { "About" },
+                                                ["csharp"],
+                                                ["About"],
                                             TestContext.Current.CancellationToken
                                            );
 
@@ -44,8 +44,8 @@ public sealed class SuspectDetectorTests
                                             distinctHostCount: 1,
                                             distinctLinkTargets: 50,
                                             new Dictionary<string, double> { ["go"] = 0.5, ["ruby"] = 0.5 },
-                                            new[] { "csharp" },
-                                            new[] { "Some doc" },
+                                                ["csharp"],
+                                                ["Some doc"],
                                             TestContext.Current.CancellationToken
                                            );
 
@@ -63,8 +63,8 @@ public sealed class SuspectDetectorTests
                                             distinctHostCount: 3,
                                             distinctLinkTargets: 1000,
                                             new Dictionary<string, double> { ["csharp"] = 0.9 },
-                                            new[] { "csharp" },
-                                            new[] { "Tutorial", "Reference" },
+                                                ["csharp"],
+                                                ["Tutorial", "Reference"],
                                             TestContext.Current.CancellationToken
                                            );
 
@@ -82,8 +82,8 @@ public sealed class SuspectDetectorTests
                                             distinctHostCount: 1,
                                             distinctLinkTargets: 50,
                                             new Dictionary<string, double> { ["csharp"] = 1.0 },
-                                            new[] { "csharp" },
-                                            new[] { "README - foo/bar" },
+                                                ["csharp"],
+                                                ["README - foo/bar"],
                                             TestContext.Current.CancellationToken
                                            );
 
@@ -101,8 +101,8 @@ public sealed class SuspectDetectorTests
                                             distinctHostCount: 2,
                                             distinctLinkTargets: 5,
                                             new Dictionary<string, double> { ["csharp"] = 0.9 },
-                                            new[] { "csharp" },
-                                            new[] { "Tutorial" },
+                                                ["csharp"],
+                                                ["Tutorial"],
                                             TestContext.Current.CancellationToken
                                            );
 
@@ -135,12 +135,11 @@ public sealed class SuspectDetectorTests
                                                     ["javascript"] = 0.05,
                                                     ["csharp"] = 0.05
                                                 },
-                                            new[] { "csharp" },
-                                            new[]
-                                                {
+                                                ["csharp"],
+                                                [
                                                     "MongoDB Go Driver", "MongoDB Ruby Driver",
                                                     "MongoDB Python Driver"
-                                                },
+                                                ],
                                             TestContext.Current.CancellationToken
                                            );
 

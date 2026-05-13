@@ -84,7 +84,7 @@ public class ScrapeJobRepository : IScrapeJobRepository
             Builders<ScrapeJobRecord>.Filter.And(Builders<ScrapeJobRecord>.Filter.Eq(JobLibraryIdPath, libraryId),
                                                  Builders<ScrapeJobRecord>.Filter.Eq(JobVersionPath, version),
                                                  Builders<ScrapeJobRecord>.Filter.In(j => j.Status,
-                                                          new[] { ScrapeJobStatus.Queued, ScrapeJobStatus.Running }
+                                                              [ScrapeJobStatus.Queued, ScrapeJobStatus.Running]
                                                      )
                                                 );
         var results = await mContext.ScrapeJobs.Find(filter)
@@ -154,7 +154,7 @@ public class ScrapeJobRepository : IScrapeJobRepository
         CancellationToken ct = default)
     {
         var filter = BuildDeleteFilter(status, libraryId, version);
-        IReadOnlyList<ScrapeJobRecord> result = Array.Empty<ScrapeJobRecord>();
+        IReadOnlyList<ScrapeJobRecord> result = [];
         if (filter != null)
         {
             result = await mContext.ScrapeJobs.Find(filter)

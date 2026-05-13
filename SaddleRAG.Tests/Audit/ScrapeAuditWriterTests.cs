@@ -20,7 +20,7 @@ public sealed class ScrapeAuditWriterTests
 {
     private sealed class SpyRepository : IScrapeAuditRepository
     {
-        public List<ScrapeAuditLogEntry> Inserted { get; } = new List<ScrapeAuditLogEntry>();
+        public List<ScrapeAuditLogEntry> Inserted { get; } = [];
 
         public Task InsertManyAsync(IEnumerable<ScrapeAuditLogEntry> entries, CancellationToken ct = default)
         {
@@ -35,7 +35,7 @@ public sealed class ScrapeAuditWriterTests
                                                                    string? urlSubstring,
                                                                    int limit,
                                                                    CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<ScrapeAuditLogEntry>>(Array.Empty<ScrapeAuditLogEntry>());
+            => Task.FromResult<IReadOnlyList<ScrapeAuditLogEntry>>([]);
 
         public Task<ScrapeAuditLogEntry?> GetByUrlAsync(string jobId, string url, CancellationToken ct = default)
             => Task.FromResult<ScrapeAuditLogEntry?>(result: null);
@@ -53,7 +53,7 @@ public sealed class ScrapeAuditWriterTests
 
         public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
             CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<LibraryVersionKey>>(Array.Empty<LibraryVersionKey>());
+            => Task.FromResult<IReadOnlyList<LibraryVersionKey>>([]);
     }
 
     [Fact]

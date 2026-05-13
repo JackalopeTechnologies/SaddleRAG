@@ -70,7 +70,7 @@ public sealed class MonitorDataService
                                               ChunkCount = ver?.ChunkCount ?? 0,
                                               PageCount = ver?.PageCount ?? 0,
                                               IsSuspect = ver?.Suspect ?? false,
-                                              SuspectReasons = ver?.SuspectReasons ?? Array.Empty<string>(),
+                                              SuspectReasons = ver?.SuspectReasons ?? [],
                                               LastScrapedAt = ver?.ScrapedAt,
                                               Hint = lib.Hint
                                           }
@@ -95,7 +95,7 @@ public sealed class MonitorDataService
                                 ? null
                                 : await mLibraries.GetVersionAsync(lib.Id, version, ct);
 
-            IReadOnlyList<HostBucket> hosts = Array.Empty<HostBucket>();
+            IReadOnlyList<HostBucket> hosts = [];
             IReadOnlyDictionary<string, double> langs = new Dictionary<string, double>();
             if (!string.IsNullOrEmpty(version))
             {
@@ -115,7 +115,7 @@ public sealed class MonitorDataService
                              PageCount = verRecord?.PageCount ?? 0,
                              IsSuspect = verRecord?.Suspect ?? false,
                              Hint = lib.Hint,
-                             SuspectReasons = verRecord?.SuspectReasons ?? Array.Empty<string>(),
+                             SuspectReasons = verRecord?.SuspectReasons ?? [],
                              LastScrapedAt = verRecord?.ScrapedAt,
                              LastSuspectEvaluatedAt = verRecord?.LastSuspectEvaluatedAt,
                              BoundaryIssuePct = verRecord?.BoundaryIssuePct,

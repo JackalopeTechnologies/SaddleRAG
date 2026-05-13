@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 
 #endregion
@@ -61,13 +62,19 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
 
 
     /// <inheritdoc />
-    public async Task<float[][]> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
+    public async Task<float[][]> EmbedAsync(IReadOnlyList<string> texts,
+                                            EmbedRole role = EmbedRole.Document,
+                                            CancellationToken ct = default)
 
     {
         ArgumentNullException.ThrowIfNull(texts);
+        // OllamaEmbeddingProvider does not apply task prefixes; the role
+        // parameter is honored by asymmetric ONNX models only. Reading
+        // the value silences any "unused parameter" lint.
+        _ = role;
 
 
-        float[][] allEmbeddings = Array.Empty<float[]>();
+        float[][] allEmbeddings = [];
 
 
         if (texts.Count > 0)
@@ -141,7 +148,7 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
                                                        );
 
 
-                if (response?.Embeddings == null || response.Embeddings.Count == 0)
+                if (response.Embeddings == null || response.Embeddings.Count == 0)
 
                     throw new InvalidOperationException("Ollama returned null or empty embeddings for the input text.");
 
@@ -166,7 +173,16 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
     }
 
 
-    private const string ProviderIdName = "ollama";
+    /// <summary>
+    ///     Public identifier persisted to <c>LibraryVersionRecord.EmbeddingProviderId</c>
+    ///     so other components (notably <c>McpWarmupService</c>) can detect which
+    ///     stored libraries were embedded under Ollama and route their model names
+    ///     through <c>OllamaBootstrapper</c> at startup. ONNX-embedded libraries
+    ///     persist their own provider id (<c>"onnx"</c>) and must be skipped by
+    ///     the Ollama bootstrap path — Ollama would 404 on Hugging Face names like
+    ///     <c>nomic-embed-text-v1.5</c>.
+    /// </summary>
+    public const string ProviderIdName = "ollama";
     private const int MaxRetryAttempts = 3;
 
     private const int InitialRetryDelayMs = 1000;

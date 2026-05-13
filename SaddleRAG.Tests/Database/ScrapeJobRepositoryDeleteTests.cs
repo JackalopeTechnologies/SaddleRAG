@@ -159,7 +159,7 @@ public sealed class ScrapeJobRepositoryDeleteTests
                               Version = version,
                               RootUrl = ExampleRootUrl,
                               LibraryHint = libraryId,
-                              AllowedUrlPatterns = new[] { ExampleRootUrl }
+                              AllowedUrlPatterns = [ExampleRootUrl]
                           }
             };
 

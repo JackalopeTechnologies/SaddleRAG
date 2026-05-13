@@ -547,7 +547,7 @@ public class IngestionOrchestrator
             await mChunkRepository.GetSampleTitlesAsync(job.LibraryId, job.Version, SuspectSampleTitleLimit, ct);
 
         var profile = await mLibraryProfileRepository.GetAsync(job.LibraryId, job.Version, ct);
-        var declaredLanguages = profile?.Languages ?? Array.Empty<string>();
+        var declaredLanguages = profile?.Languages ?? [];
 
         // distinctLinkTargets: SparseLinkGraph disabled until an outbound-link count helper exists.
         // Passed as int.MaxValue so it never triggers; the other four reasons cover the common cases.
@@ -784,12 +784,12 @@ public class IngestionOrchestrator
         float[][] result;
         try
         {
-            result = await mEmbeddingProvider.EmbedAsync(texts, ct);
+            result = await mEmbeddingProvider.EmbedAsync(texts, ct: ct);
         }
         catch(Exception ex)
         {
             mLogger.LogWarning(ex, "Embedding failed, retrying once");
-            result = await mEmbeddingProvider.EmbedAsync(texts, ct);
+            result = await mEmbeddingProvider.EmbedAsync(texts, ct: ct);
         }
 
         return result;

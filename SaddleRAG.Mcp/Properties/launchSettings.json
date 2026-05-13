@@ -20,24 +20,14 @@
         "Kestrel__Endpoints__Http__Url": "http://localhost:6101"
       }
     },
-    "DevCrossEncoder": {
+    "DevOnnxRerank": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
       "applicationUrl": "http://localhost:6100",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "Ranking__ReRankerStrategy": "CrossEncoder"
-      }
-    },
-    "DevLlmRerank": {
-      "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": false,
-      "applicationUrl": "http://localhost:6100",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "Ranking__ReRankerStrategy": "Llm"
+        "Ranking__ReRankerStrategy": "Onnx"
       }
     }
   }

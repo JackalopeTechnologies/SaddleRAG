@@ -159,8 +159,8 @@ public sealed class PipProjectFileParserTests
             var result = await mParser.ParseAsync(path, TestContext.Current.CancellationToken);
 
             Assert.Equal(expected: 2, result.Count);
-            Assert.Contains(result, d => d.PackageId == "requests" && d.Version == "2.31.0");
-            Assert.Contains(result, d => d.PackageId == "flask" && d.Version == "2.3.0");
+            Assert.Contains(result, d => d is { PackageId: "requests", Version: "2.31.0" });
+            Assert.Contains(result, d => d is { PackageId: "flask", Version: "2.3.0" });
         }
         finally
         {

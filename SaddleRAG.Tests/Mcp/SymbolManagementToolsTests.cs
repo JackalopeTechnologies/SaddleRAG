@@ -24,11 +24,10 @@ public sealed class SymbolManagementToolsTests
         (var factory, var profileRepo, var excludedRepo) = MakeFactory();
         profileRepo.GetAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns(MakeProfile([], []));
         excludedRepo.ListAsync("lib", "1.0", reason: null, limit: 50, Arg.Any<CancellationToken>())
-                    .Returns(new[]
-                                 {
+                    .Returns([
                                      MakeExcluded("along", SymbolRejectionReason.NoStructureSignal, chunkCount: 47),
                                      MakeExcluded("data", SymbolRejectionReason.NoStructureSignal, chunkCount: 32)
-                                 }
+                                 ]
                             );
         excludedRepo.CountAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 2);
 
@@ -183,7 +182,7 @@ public sealed class SymbolManagementToolsTests
     {
         var profileRepo = Substitute.For<ILibraryProfileRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(profileRepo);
         factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excludedRepo);
         return (factory, profileRepo, excludedRepo);

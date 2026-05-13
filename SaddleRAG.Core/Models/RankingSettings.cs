@@ -26,15 +26,6 @@ public class RankingSettings
     public float Bm25Weight { get; set; } = DefaultBm25Weight;
 
     /// <summary>
-    ///     Weight applied to the reranker score when blending with the
-    ///     hybrid score. Final score is ReRankBlendWeight * rerank +
-    ///     (1 - ReRankBlendWeight) * hybrid. Pure replacement (1.0) is
-    ///     what makes the legacy LLM reranker's mistakes unrecoverable;
-    ///     0.6 is the sweet spot per the bench harness.
-    /// </summary>
-    public float ReRankBlendWeight { get; set; } = DefaultReRankBlendWeight;
-
-    /// <summary>
     ///     Multiplier applied to maxResults to decide how many vector
     ///     candidates to fetch before hybrid blending. Larger values
     ///     improve recall on large corpora at the cost of more local work.
@@ -54,13 +45,6 @@ public class RankingSettings
     public int MaxReRankCandidates { get; set; } = DefaultMaxReRankCandidates;
 
     /// <summary>
-    ///     Active query-planning strategy. Off keeps the original caller
-    ///     query untouched. Llm performs one local planning call before
-    ///     hybrid retrieval to produce conservative search hints.
-    /// </summary>
-    public QueryPlannerStrategy QueryPlannerStrategy { get; set; } = QueryPlannerStrategy.Off;
-
-    /// <summary>
     ///     Threshold for the SymbolExtractor's prose-mention backstop.
     ///     A capitalized identifier appearing this many times in prose
     ///     (outside code fences) survives extraction even when no other
@@ -72,8 +56,14 @@ public class RankingSettings
     ///     Active reranker strategy. Mutable at runtime via the
     ///     set_rerank_strategy MCP tool; SearchTools and the dispatcher
     ///     both read this property per-call, so writes flow through
-    ///     immediately. Off skips reranking; Llm dispatches to the
-    ///     Ollama reranker; CrossEncoder currently falls through to NoOp.
+    ///     immediately. <see cref="ReRankerStrategy.Off" /> skips
+    ///     reranking entirely (NoOpReRanker pass-through). <see cref="ReRankerStrategy.Onnx" />
+    ///     dispatches to <c>OnnxReRanker</c>, which scores via the active
+    ///     entry in <c>OnnxSettings.RerankerModels</c>, or falls back to
+    ///     pass-through if <c>OnnxSettings.ActiveRerankerModel</c> resolves
+    ///     to null (e.g., set to <c>"none"</c>). The legacy <c>Llm</c> and
+    ///     <c>CrossEncoder</c> values were removed in Phase 5 of the ONNX
+    ///     migration.
     /// </summary>
     public ReRankerStrategy ReRankerStrategy { get; set; } = ReRankerStrategy.Off;
 
@@ -83,7 +73,6 @@ public class RankingSettings
     public const string SectionName = "Ranking";
 
     public const float DefaultBm25Weight = 0.4f;
-    public const float DefaultReRankBlendWeight = 0.6f;
     public const int DefaultVectorCandidateMultiplier = 5;
     public const int DefaultMinVectorCandidateCount = 25;
     public const int DefaultMaxReRankCandidates = 12;

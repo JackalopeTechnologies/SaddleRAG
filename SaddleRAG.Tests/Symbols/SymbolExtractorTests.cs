@@ -288,7 +288,7 @@ public sealed class SymbolExtractorTests
 
         var result = extractor.Extract("The axis homes to the marker.", profile);
 
-        Assert.Contains(result.Rejected, r => r.Name == "The" && r.Reason == SymbolRejectionReason.GlobalStoplist);
+        Assert.Contains(result.Rejected, r => r is { Name: "The", Reason: SymbolRejectionReason.GlobalStoplist });
     }
 
     [Fact]
@@ -299,7 +299,7 @@ public sealed class SymbolExtractorTests
 
         var result = extractor.Extract("Use BrandX hardware to drive the axis.", profile);
 
-        Assert.Contains(result.Rejected, r => r.Name == "BrandX" && r.Reason == SymbolRejectionReason.LibraryStoplist);
+        Assert.Contains(result.Rejected, r => r is { Name: "BrandX", Reason: SymbolRejectionReason.LibraryStoplist });
         Assert.DoesNotContain(result.Symbols, s => s.Name == "BrandX");
     }
 
@@ -311,7 +311,7 @@ public sealed class SymbolExtractorTests
 
         var result = extractor.Extract("The signal is 100 GHz at peak.", profile);
 
-        Assert.Contains(result.Rejected, r => r.Name == "GHz" && r.Reason == SymbolRejectionReason.Unit);
+        Assert.Contains(result.Rejected, r => r is { Name: "GHz", Reason: SymbolRejectionReason.Unit });
     }
 
     [Fact]
@@ -326,7 +326,7 @@ public sealed class SymbolExtractorTests
 
         var result = extractor.Extract("The _ value is set.", profile);
 
-        Assert.Contains(result.Rejected, r => r.Name == "_" && r.Reason == SymbolRejectionReason.BelowMinLength);
+        Assert.Contains(result.Rejected, r => r is { Name: "_", Reason: SymbolRejectionReason.BelowMinLength });
     }
 
     [Fact]
@@ -342,7 +342,7 @@ public sealed class SymbolExtractorTests
 
         var result = extractor.Extract("The RAM stores the data.", profile, corpus);
 
-        Assert.Contains(result.Rejected, r => r.Name == "RAM" && r.Reason == SymbolRejectionReason.LikelyAbbreviation);
+        Assert.Contains(result.Rejected, r => r is { Name: "RAM", Reason: SymbolRejectionReason.LikelyAbbreviation });
     }
 
     [Fact]
@@ -357,7 +357,7 @@ public sealed class SymbolExtractorTests
         var result = extractor.Extract("alongthing.", profile);
 
         Assert.Contains(result.Rejected,
-                        r => r.Name == "alongthing" && r.Reason == SymbolRejectionReason.NoStructureSignal
+                        r => r is { Name: "alongthing", Reason: SymbolRejectionReason.NoStructureSignal }
                        );
     }
 
@@ -380,7 +380,7 @@ public sealed class SymbolExtractorTests
         var result = extractor.Extract("Configure the Foo widget.", profile);
 
         Assert.DoesNotContain(result.Symbols, s => s.Name == "Foo");
-        Assert.Contains(result.Rejected, r => r.Name == "Foo" && r.Reason == SymbolRejectionReason.LibraryStoplist);
+        Assert.Contains(result.Rejected, r => r is { Name: "Foo", Reason: SymbolRejectionReason.LibraryStoplist });
     }
 
     private static LibraryProfile MakeProfile(IReadOnlyList<string> likelySymbols)

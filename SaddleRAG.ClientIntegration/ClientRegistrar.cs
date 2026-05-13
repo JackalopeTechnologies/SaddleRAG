@@ -26,7 +26,7 @@ public sealed class ClientRegistrar
     public async Task<RegistrarResult> RegisterAsync(SaddleRagEndpoint endpoint, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
-        List<RegisterResult> results = new();
+        List<RegisterResult> results = [];
         foreach (IClientWriter writer in mWriters)
         {
             RegisterResult result = await SafeRegisterAsync(writer, endpoint, ct);
@@ -37,7 +37,7 @@ public sealed class ClientRegistrar
 
     public async Task<RegistrarResult> UnregisterAsync(CancellationToken ct)
     {
-        List<UnregisterResult> results = new();
+        List<UnregisterResult> results = [];
         foreach (IClientWriter writer in mWriters)
         {
             UnregisterResult result = await SafeUnregisterAsync(writer, ct);
@@ -48,7 +48,7 @@ public sealed class ClientRegistrar
 
     public async Task<IReadOnlyList<StatusResult>> GetStatusAsync(CancellationToken ct)
     {
-        List<StatusResult> results = new();
+        List<StatusResult> results = [];
         foreach (IClientWriter writer in mWriters)
         {
             StatusResult result = await writer.GetStatusAsync(ct);
@@ -66,7 +66,7 @@ public sealed class ClientRegistrar
         }
         catch (Exception ex)
         {
-            res = RegisterResult.Failed(writer.ClientName, configPath: string.Empty, $"{UnhandledExceptionPrefix}{ex.Message}");
+            res = RegisterResult.Failed(writer.ClientName, string.Empty, $"{UnhandledExceptionPrefix}{ex.Message}");
         }
         return res;
     }
@@ -80,7 +80,7 @@ public sealed class ClientRegistrar
         }
         catch (Exception ex)
         {
-            res = UnregisterResult.Failed(writer.ClientName, configPath: string.Empty, $"{UnhandledExceptionPrefix}{ex.Message}");
+            res = UnregisterResult.Failed(writer.ClientName, string.Empty, $"{UnhandledExceptionPrefix}{ex.Message}");
         }
         return res;
     }

@@ -50,9 +50,7 @@ public static class StatusCommand
         IReadOnlyList<StatusResult> results = await registrar.GetStatusAsync(ct);
 
         if (emitJson)
-        {
             Console.WriteLine(JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
-        }
         else
         {
             foreach (StatusResult r in results)

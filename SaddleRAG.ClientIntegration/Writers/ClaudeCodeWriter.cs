@@ -105,9 +105,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
                     res = UnregisterResult.Removed(Name, mConfigPath, MsgSaddleRagRemoved);
                 }
                 else
-                {
                     res = UnregisterResult.NoOp(Name, mConfigPath, MsgSaddleRagNotPresent);
-                }
             }
             catch (JsonException ex)
             {
@@ -123,9 +121,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
             File.Delete(mSkillPath);
             string? skillDir = Path.GetDirectoryName(mSkillPath);
             if (!string.IsNullOrEmpty(skillDir) && Directory.Exists(skillDir) && !Directory.EnumerateFileSystemEntries(skillDir).Any())
-            {
                 Directory.Delete(skillDir);
-            }
         }
         return res;
     }
@@ -156,13 +152,13 @@ public sealed class ClaudeCodeWriter : IClientWriter
             }
         }
         return new StatusResult(
-            ClientName: Name,
-            ConfigPath: mConfigPath,
-            ConfigFileExists: fileExists,
-            SaddleRagEntryPresent: entryPresent,
-            EndpointMatchesCanonical: endpointMatches,
-            SkillFilePresent: File.Exists(mSkillPath),
-            Notes: notes);
+            Name,
+            mConfigPath,
+            fileExists,
+            entryPresent,
+            endpointMatches,
+            File.Exists(mSkillPath),
+            notes);
     }
 
     private async Task<JsonObject> LoadRootAsync(CancellationToken ct)
@@ -175,9 +171,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
             {
                 JsonNode? parsed = JsonNode.Parse(text);
                 if (parsed is JsonObject obj)
-                {
                     root = obj;
-                }
             }
         }
         return root;
@@ -187,9 +181,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
     {
         string? dir = Path.GetDirectoryName(mConfigPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
             Directory.CreateDirectory(dir);
-        }
         string tmp = mConfigPath + TmpSuffix;
         string serialized = root.ToJsonString(smWriteOptions);
         await File.WriteAllTextAsync(tmp, serialized, smUtf8NoBom, ct);
@@ -217,14 +209,10 @@ public sealed class ClaudeCodeWriter : IClientWriter
         {
             string? value = node?.GetValue<string>();
             if (value is not null)
-            {
                 existing.Add(value);
-            }
         }
         foreach (string tool in tools.Where(t => !existing.Contains(t)))
-        {
             allow.Add(tool);
-        }
         permissions[KeyAllow] = allow;
         root[KeyPermissions] = permissions;
     }
@@ -243,9 +231,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
                 .Where(n => n?.GetValue<string>().Contains(KeySaddleRag, StringComparison.Ordinal) == true)
                 .ToList();
             foreach (JsonNode? node in toRemove)
-            {
                 allow.Remove(node);
-            }
         }
         return removed;
     }
@@ -254,9 +240,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
     {
         string? dir = Path.GetDirectoryName(mSkillPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
             Directory.CreateDirectory(dir);
-        }
         Assembly asm = typeof(ClaudeCodeWriter).Assembly;
         await using Stream? stream = asm.GetManifestResourceStream(SkillResourceName)
                                      ?? throw new InvalidOperationException($"Embedded resource not found: {SkillResourceName}");

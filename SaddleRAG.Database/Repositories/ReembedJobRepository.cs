@@ -109,7 +109,7 @@ public class ReembedJobRepository : IReembedJobRepository
         CancellationToken ct = default)
     {
         var filter = BuildDeleteFilter(status, libraryId, version);
-        IReadOnlyList<ReembedJobRecord> result = Array.Empty<ReembedJobRecord>();
+        IReadOnlyList<ReembedJobRecord> result = [];
         if (filter != null)
         {
             result = await mContext.ReembedJobs.Find(filter)

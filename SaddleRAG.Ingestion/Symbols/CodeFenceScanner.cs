@@ -89,5 +89,11 @@ public static class CodeFenceScanner
     private static readonly Regex smIdentifierRegex =
         new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*", RegexOptions.Compiled);
 
-    private static readonly string[] smSegmentSeparators = { ".", "::", "->" };
+    // Dotted-identifier grammar surface: C# ".", C++/Rust "::", method-arrow "->".
+    private const string SeparatorDot = ".";
+    private const string SeparatorDoubleColon = "::";
+    private const string SeparatorArrow = "->";
+
+    private static readonly string[] smSegmentSeparators =
+        [SeparatorDot, SeparatorDoubleColon, SeparatorArrow];
 }

@@ -18,7 +18,7 @@ public sealed record RegisterResult(
         ArgumentException.ThrowIfNullOrEmpty(clientName);
         ArgumentException.ThrowIfNullOrEmpty(configPath);
         ArgumentException.ThrowIfNullOrEmpty(message);
-        var result = new RegisterResult(clientName, true, configPath, message, skillPath);
+        var result = new RegisterResult(clientName, Success: true, configPath, message, skillPath);
         return result;
     }
 
@@ -27,7 +27,7 @@ public sealed record RegisterResult(
         ArgumentException.ThrowIfNullOrEmpty(clientName);
         ArgumentNullException.ThrowIfNull(configPath);
         ArgumentException.ThrowIfNullOrEmpty(message);
-        var result = new RegisterResult(clientName, false, configPath, message);
+        var result = new RegisterResult(clientName, Success: false, configPath, message);
         return result;
     }
 }

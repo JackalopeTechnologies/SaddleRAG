@@ -90,7 +90,7 @@ public sealed class ScrapeAuditRepositoryTests
         var jobId = $"test-{Guid.NewGuid():N}";
         var lib = $"lib-{Guid.NewGuid():N}";
 
-        await repo.InsertManyAsync(new[] { MakeEntry(jobId, "https://a.com/", AuditStatus.Indexed, libraryId: lib) },
+        await repo.InsertManyAsync([MakeEntry(jobId, "https://a.com/", AuditStatus.Indexed, libraryId: lib)],
                                    TestContext.Current.CancellationToken
                                   );
 

@@ -16,7 +16,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeScrapeJobRepository : IScrapeJobRepository
 {
-    private readonly List<ScrapeJobRecord> mJobs = new List<ScrapeJobRecord>();
+    private readonly List<ScrapeJobRecord> mJobs = [];
 
     public Task<IReadOnlyList<ScrapeJobRecord>> ListRecentAsync(int limit = 20, CancellationToken ct = default)
     {

@@ -16,7 +16,7 @@ namespace SaddleRAG.Tests.Monitor;
 
 internal sealed class FakeScrapeAuditRepository : IScrapeAuditRepository
 {
-    private readonly List<ScrapeAuditLogEntry> mEntries = new List<ScrapeAuditLogEntry>();
+    private readonly List<ScrapeAuditLogEntry> mEntries = [];
     private readonly Dictionary<string, AuditSummary> mSummaries = new Dictionary<string, AuditSummary>();
 
     public Task<AuditSummary> SummarizeAsync(string jobId, CancellationToken ct = default) =>

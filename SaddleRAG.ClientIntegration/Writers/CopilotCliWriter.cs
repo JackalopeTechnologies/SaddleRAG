@@ -109,9 +109,7 @@ public sealed class CopilotCliWriter : IClientWriter
                     res = UnregisterResult.Removed(Name, mConfigPath, MsgSaddleRagRemoved);
                 }
                 else
-                {
                     res = UnregisterResult.NoOp(Name, mConfigPath, MsgSaddleRagNotPresent);
-                }
             }
             catch (JsonException ex)
             {
@@ -127,9 +125,7 @@ public sealed class CopilotCliWriter : IClientWriter
             File.Delete(mSkillPath);
             string? skillDir = Path.GetDirectoryName(mSkillPath);
             if (!string.IsNullOrEmpty(skillDir) && Directory.Exists(skillDir) && !Directory.EnumerateFileSystemEntries(skillDir).Any())
-            {
                 Directory.Delete(skillDir);
-            }
         }
         return res;
     }
@@ -160,13 +156,13 @@ public sealed class CopilotCliWriter : IClientWriter
             }
         }
         return new StatusResult(
-            ClientName: Name,
-            ConfigPath: mConfigPath,
-            ConfigFileExists: fileExists,
-            SaddleRagEntryPresent: entryPresent,
-            EndpointMatchesCanonical: endpointMatches,
-            SkillFilePresent: File.Exists(mSkillPath),
-            Notes: notes);
+            Name,
+            mConfigPath,
+            fileExists,
+            entryPresent,
+            endpointMatches,
+            File.Exists(mSkillPath),
+            notes);
     }
 
     private async Task<JsonObject> LoadRootAsync(CancellationToken ct)
@@ -179,9 +175,7 @@ public sealed class CopilotCliWriter : IClientWriter
             {
                 JsonNode? parsed = JsonNode.Parse(text);
                 if (parsed is JsonObject obj)
-                {
                     root = obj;
-                }
             }
         }
         return root;
@@ -191,9 +185,7 @@ public sealed class CopilotCliWriter : IClientWriter
     {
         string? dir = Path.GetDirectoryName(mConfigPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
             Directory.CreateDirectory(dir);
-        }
         string tmp = mConfigPath + TmpSuffix;
         string serialized = root.ToJsonString(smWriteOptions);
         await File.WriteAllTextAsync(tmp, serialized, smUtf8NoBom, ct);
@@ -226,9 +218,7 @@ public sealed class CopilotCliWriter : IClientWriter
     {
         string? dir = Path.GetDirectoryName(mSkillPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
             Directory.CreateDirectory(dir);
-        }
         Assembly asm = typeof(CopilotCliWriter).Assembly;
         await using Stream? stream = asm.GetManifestResourceStream(SkillResourceName)
                                      ?? throw new InvalidOperationException($"Embedded resource not found: {SkillResourceName}");
