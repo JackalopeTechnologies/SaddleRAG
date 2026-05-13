@@ -129,6 +129,35 @@ public sealed class OnnxOverrideStoreTests : IDisposable
     }
 
     [Fact]
+    public void WriteAtomicCleansUpOrphanTmpFileWhenMoveFails()
+    {
+        // Force File.Move(tmpPath, mFilePath, overwrite:true) to throw by
+        // holding an exclusive FileStream on mFilePath while a Set* call
+        // runs. The Round 2 fix in bd9b412 wraps WriteAtomic's body in
+        // try/finally + DeleteIfExists so the .tmp produced by
+        // File.WriteAllText doesn't outlive the failed Move. Without that
+        // cleanup the .tmp would accumulate in the content root on every
+        // failed write.
+        var settings = BuildSettingsWithRegistry();
+        var store = BuildStore(settings);
+
+        // Seed the override file so File.Move has something to overwrite.
+        store.SetActiveEmbeddingModel("nomic-v2");
+
+        using var lockHandle = new FileStream(mFilePath, FileMode.Open, FileAccess.Read,
+                                              FileShare.None
+                                             );
+
+        var ex = Assert.ThrowsAny<IOException>(() => store.SetActiveEmbeddingModel("all-minilm-l6-v2"));
+        Assert.NotNull(ex);
+
+        // The tmp file produced by File.WriteAllText must not survive the
+        // failed Move.
+        string tmpPath = mFilePath + ".tmp";
+        Assert.False(File.Exists(tmpPath));
+    }
+
+    [Fact]
     public void SetExecutionProviderRejectsCudaOnCurrentBuilds()
     {
         var store = BuildStore(new OnnxSettings());
