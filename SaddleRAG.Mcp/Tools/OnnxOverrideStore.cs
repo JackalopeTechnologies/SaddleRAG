@@ -147,9 +147,7 @@ public class OnnxOverrideStore
         string tmpPath = mFilePath + TempSuffix;
         string serialized = root.ToJsonString(smWriteOptions);
         File.WriteAllText(tmpPath, serialized);
-        if (File.Exists(mFilePath))
-            File.Delete(mFilePath);
-        File.Move(tmpPath, mFilePath);
+        File.Move(tmpPath, mFilePath, overwrite: true);
     }
 
     private static string GetContentRoot(IHostEnvironment env)

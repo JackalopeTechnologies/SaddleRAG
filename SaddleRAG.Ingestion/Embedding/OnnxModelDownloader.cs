@@ -159,9 +159,7 @@ public class OnnxModelDownloader
             await using (FileStream dst = File.Create(tmpPath))
                 await src.CopyToAsync(dst, ct);
 
-            if (File.Exists(destPath))
-                File.Delete(destPath);
-            File.Move(tmpPath, destPath);
+            File.Move(tmpPath, destPath, overwrite: true);
 
             long sizeKb = new FileInfo(destPath).Length / BytesPerKb;
             mLogger.LogInformation("Downloaded {Dest} ({SizeKb} KB)", destPath, sizeKb);
