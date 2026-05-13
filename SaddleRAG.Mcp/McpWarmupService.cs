@@ -240,10 +240,7 @@ public sealed class McpWarmupService : BackgroundService
             // specific phase (e.g., PhaseOnnxDownloadFailed). Otherwise this
             // would overwrite the actionable phase the monitor UI shows
             // and emit a second LogError line for the same incident.
-            bool alreadyFailedWithSpecificPhase =
-                string.Equals(mWarmupState.Status, nameof(ScrapeJobStatus.Failed), StringComparison.Ordinal);
-
-            if (!alreadyFailedWithSpecificPhase)
+            if (!HasInnerCatchAlreadyMarkedFailure(mWarmupState))
             {
                 mWarmupState.MarkFailed(nameof(ScrapeJobStatus.Failed), ex.Message);
 
@@ -374,6 +371,24 @@ public sealed class McpWarmupService : BackgroundService
 
 
         return distinctProfiles;
+    }
+
+
+    /// <summary>
+    ///     Decision predicate the outer warmup catch uses to detect that
+    ///     an inner catch already recorded a more-specific failure phase
+    ///     (e.g., <see cref="PhaseOnnxDownloadFailed" />). When true, the
+    ///     outer catch must NOT call <see cref="McpWarmupState.MarkFailed" />
+    ///     again — doing so would overwrite the specific phase string the
+    ///     monitor UI surfaces and double-log the same exception. Exposed
+    ///     as <c>internal</c> so SaddleRAG.Tests can lock in the contract
+    ///     without rebuilding the full warmup dependency graph.
+    /// </summary>
+    internal static bool HasInnerCatchAlreadyMarkedFailure(McpWarmupState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        bool result = string.Equals(state.Status, nameof(ScrapeJobStatus.Failed), StringComparison.Ordinal);
+        return result;
     }
 
 
