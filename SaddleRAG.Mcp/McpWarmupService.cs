@@ -487,7 +487,7 @@ public sealed class McpWarmupService : BackgroundService
                        PageUrl = WarmupRerankProbePageUrl,
                        PageTitle = WarmupRerankProbePageTitle,
                        Category = DocCategory.Sample,
-                       Content = WarmupRerankProbeLongContent
+                       Content = smWarmupRerankProbeLongContent
                    };
     }
 
@@ -527,41 +527,33 @@ public sealed class McpWarmupService : BackgroundService
     private const string WarmupRerankProbePageTitle = "warmup";
 
     /// <summary>
-    ///     Synthetic doc content sized to fill the cross-encoder's
-    ///     <c>MaxSequenceLength</c> after tokenization. SentencePiece on
-    ///     English text averages ~4–5 chars/token; ~3500 chars reliably
-    ///     produces enough tokens that <c>OnnxReRanker.BuildPair</c>
-    ///     clamps at <c>MaxSequenceLength</c> (512 for
-    ///     mxbai-rerank-base-v1), so the warmup session.Run shape
-    ///     <c>[MaxReRankCandidates, ~512]</c> matches what production
-    ///     queries hit. A shorter probe would warm a different ORT
-    ///     kernel and leave the production shape cold.
+    ///     Base sentence repeated <see cref="WarmupRerankProbeRepeatCount" />
+    ///     times to build <see cref="smWarmupRerankProbeLongContent" />.
+    ///     The content itself doesn't matter for warmup quality —
+    ///     only the post-tokenization length does. SentencePiece on
+    ///     English averages ~4-5 chars/token, so ~100 chars × ~30
+    ///     repetitions ≈ 600+ tokens reliably hits
+    ///     <c>MaxSequenceLength=512</c> after
+    ///     <c>OnnxReRanker.BuildPair</c> clamps.
     /// </summary>
-    private const string WarmupRerankProbeLongContent =
-        "The Math.NET Numerics library provides probability distributions, linear algebra, " +
-        "matrix decompositions including Cholesky LU QR SVD and EVD, iterative solvers, " +
-        "preconditioners, optimization routines, statistics, distance metrics, special " +
-        "functions, integration, interpolation, regression, and curve fitting. The reranker " +
-        "warmup probe sends this synthetic content as a representative document so the ONNX " +
-        "Runtime cross-encoder session can perform graph optimization and kernel selection " +
-        "for the production-typical input shape during startup rather than on the first " +
-        "user query. SentencePiece tokenization on English text averages around five " +
-        "characters per token, so this paragraph repeated produces enough tokens to fill " +
-        "the model's maximum sequence length and exercise the longest input path. " +
-        "Numerical methods documentation covers dense and sparse matrices, vector storage " +
-        "formats, Gram-Schmidt orthogonalization, biconjugate gradient solvers, MILU " +
-        "preconditioning, Newton and trust region minimizers, Levenberg Marquardt, Markov " +
-        "chain Monte Carlo samplers, Mersenne Twister random number generation, Fourier " +
-        "transforms, polynomial root finding, descriptive and inferential statistics, " +
-        "kernel density estimation, quantile computation, correlation analysis, and " +
-        "moving statistics over streaming data. Native providers including Intel MKL can " +
-        "accelerate dense linear algebra and FFT. The library targets dotnet and supports " +
-        "both csharp and fsharp callers with idiomatic extensions and builder patterns " +
-        "for matrix and vector construction from arrays sequences enumerables nested " +
-        "enumerables or initializer lambdas without unnecessary copying. Performance work " +
-        "and storage rework across releases have made common operations significantly " +
-        "faster on both dense and sparse data through tuned parallelization and more " +
-        "storage-aware algorithms throughout the entire numerics package.";
+    private const string WarmupRerankProbeSentence =
+        "Math.NET Numerics provides distributions linear algebra decompositions iterative solvers optimization statistics. ";
+
+    /// <summary>
+    ///     Number of <see cref="WarmupRerankProbeSentence" /> copies that
+    ///     compose the long warmup-probe doc content.
+    /// </summary>
+    private const int WarmupRerankProbeRepeatCount = 30;
+
+    /// <summary>
+    ///     Synthetic doc content sized to fill the cross-encoder's
+    ///     <c>MaxSequenceLength</c> after tokenization, so the warmup
+    ///     session.Run shape <c>[MaxReRankCandidates, ~512]</c> matches
+    ///     what production queries hit. A shorter probe would warm a
+    ///     different ORT kernel and leave the production shape cold.
+    /// </summary>
+    private static readonly string smWarmupRerankProbeLongContent =
+        string.Concat(Enumerable.Repeat(WarmupRerankProbeSentence, WarmupRerankProbeRepeatCount));
 
     private const string RerankerPassThroughLabel = "pass-through";
 }
