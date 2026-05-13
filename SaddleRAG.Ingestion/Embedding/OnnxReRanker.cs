@@ -251,7 +251,19 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
             scores[start + i] = logits[i, 0];
     }
 
-    private static long[] BuildPair(RerankerModelEntry entry, long[] queryTokens, long[] docTokens, int maxLen)
+    /// <summary>
+    ///     Assembles a single <c>[CLS] query [SEP] doc [SEP]</c> token
+    ///     sequence honoring <paramref name="maxLen" />. Exposed
+    ///     <c>internal</c> for direct unit testing of the budget math:
+    ///     when <paramref name="maxLen" /> drops below
+    ///     <see cref="MinViableSequenceLength" /> the query budget
+    ///     clamps to zero and the cross-encoder ends up scoring an empty
+    ///     query, which would silently nuke recall in production.
+    ///     <see cref="OnnxSettingsValidator" /> rejects such entries
+    ///     before they reach this method; the test exists to lock in
+    ///     that contract.
+    /// </summary>
+    internal static long[] BuildPair(RerankerModelEntry entry, long[] queryTokens, long[] docTokens, int maxLen)
     {
         int clsId = LookupSpecialToken(entry, ClsTokenName);
         int sepId = LookupSpecialToken(entry, SepTokenName);
@@ -394,8 +406,17 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
     private const string LevelExtended = "Extended";
     private const string LevelAll = "All";
     private const int InputCapacity = 3;
-    private const int SpecialTokenOverhead = 3;
-    private const int MinDocTokens = 4;
+    internal const int SpecialTokenOverhead = 3;
+    internal const int MinDocTokens = 4;
+
+    /// <summary>
+    ///     Minimum <c>MaxSequenceLength</c> that still leaves room for at
+    ///     least one query token after subtracting the [CLS]/[SEP]/[SEP]
+    ///     overhead and the reserved doc-side floor. Anything below this
+    ///     would clamp the query budget to zero and silently score
+    ///     "empty query vs doc."
+    /// </summary>
+    internal const int MinViableSequenceLength = SpecialTokenOverhead + MinDocTokens + 1;
     private const int LogitsRank = 2;
     private const int LogitsPerPair = 1;
     private const long DefaultPadTokenId = 0L;
