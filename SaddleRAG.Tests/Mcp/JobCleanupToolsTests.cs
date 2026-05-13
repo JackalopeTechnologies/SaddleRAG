@@ -23,7 +23,7 @@ public sealed class JobCleanupToolsTests
     public async Task CleanupAuditLogDryRunReportsCountWithoutDeleting()
     {
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
         auditRepo.SummarizeAsync(JobIdAlpha, Arg.Any<CancellationToken>())
@@ -57,7 +57,7 @@ public sealed class JobCleanupToolsTests
     public async Task CleanupAuditLogApplyQueuesJobAndCallsDeleteByJobId()
     {
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
         auditRepo.DeleteByJobIdAsync(JobIdAlpha, Arg.Any<CancellationToken>()).Returns(returnThis: 7_400_000L);
@@ -79,7 +79,7 @@ public sealed class JobCleanupToolsTests
     [Fact]
     public async Task CleanupJobsRefusesWithoutFilter()
     {
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         var json = await JobCleanupTools.CleanupJobs(factory,
                                                      MakeNoopRunner(),
@@ -103,7 +103,7 @@ public sealed class JobCleanupToolsTests
         var scrapeRepo = Substitute.For<IScrapeJobRepository>();
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -115,7 +115,7 @@ public sealed class JobCleanupToolsTests
                                              Arg.Any<int>(),
                                              Arg.Any<CancellationToken>()
                                             )
-                  .Returns(new[] { MakeScrapeJob(JobIdAlpha, ScrapeJobStatus.Cancelled, "actipro-wpf", "25.1") });
+                  .Returns([MakeScrapeJob(JobIdAlpha, ScrapeJobStatus.Cancelled, "actipro-wpf", "25.1")]);
         scrapeRepo.CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
                                               Arg.Any<string?>(),
                                               Arg.Any<string?>(),
@@ -129,7 +129,7 @@ public sealed class JobCleanupToolsTests
                                          Arg.Any<int>(),
                                          Arg.Any<CancellationToken>()
                                         )
-              .Returns(Array.Empty<BackgroundJobRecord>());
+              .Returns([]);
         bgRepo.CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
                                           Arg.Any<string?>(),
                                           Arg.Any<string?>(),
@@ -143,7 +143,7 @@ public sealed class JobCleanupToolsTests
                                               Arg.Any<int>(),
                                               Arg.Any<CancellationToken>()
                                              )
-                   .Returns(Array.Empty<RescrubJobRecord>());
+                   .Returns([]);
         rescrubRepo.CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
                                                Arg.Any<string?>(),
                                                Arg.Any<string?>(),
@@ -178,7 +178,7 @@ public sealed class JobCleanupToolsTests
         var scrapeRepo = Substitute.For<IScrapeJobRepository>();
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -190,7 +190,7 @@ public sealed class JobCleanupToolsTests
                                              Arg.Any<int>(),
                                              Arg.Any<CancellationToken>()
                                             )
-                  .Returns(new[] { MakeScrapeJob(JobIdAlpha, ScrapeJobStatus.Cancelled, "actipro-wpf", "25.1") });
+                  .Returns([MakeScrapeJob(JobIdAlpha, ScrapeJobStatus.Cancelled, "actipro-wpf", "25.1")]);
         scrapeRepo.CountDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
                                               Arg.Any<string?>(),
                                               Arg.Any<string?>(),
@@ -238,7 +238,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -253,7 +253,7 @@ public sealed class JobCleanupToolsTests
         var json = await JobCleanupTools.CleanupJobs(factory,
                                                      MakeInlineRunner(),
                                                      kind: null,
-                                                     new[] { JobIdAlpha, JobIdBeta },
+                                                         [JobIdAlpha, JobIdBeta],
                                                      status: null,
                                                      library: null,
                                                      version: null,
@@ -287,7 +287,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         var matches = new[]
                           {
@@ -376,7 +376,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -389,7 +389,7 @@ public sealed class JobCleanupToolsTests
         await JobCleanupTools.CleanupJobs(factory,
                                           MakeInlineRunner(),
                                           kind: null,
-                                          new[] { JobIdAlpha },
+                                              [JobIdAlpha],
                                           status: null,
                                           library: null,
                                           version: null,
@@ -406,7 +406,7 @@ public sealed class JobCleanupToolsTests
     [Fact]
     public async Task CleanupJobsRejectsUnknownStatus()
     {
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         await Assert.ThrowsAsync<ArgumentException>(() => JobCleanupTools.CleanupJobs(factory,
                                                              MakeNoopRunner(),
@@ -426,7 +426,7 @@ public sealed class JobCleanupToolsTests
     [Fact]
     public async Task CleanupJobsRejectsUnknownKind()
     {
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         await Assert.ThrowsAsync<ArgumentException>(() => JobCleanupTools.CleanupJobs(factory,
                                                              MakeNoopRunner(),
@@ -450,7 +450,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -463,26 +463,26 @@ public sealed class JobCleanupToolsTests
                                              Arg.Any<int>(),
                                              Arg.Any<CancellationToken>()
                                             )
-                  .Returns(Array.Empty<ScrapeJobRecord>());
+                  .Returns([]);
         bgRepo.ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
                                          Arg.Any<string?>(),
                                          Arg.Any<string?>(),
                                          Arg.Any<int>(),
                                          Arg.Any<CancellationToken>()
                                         )
-              .Returns(Array.Empty<BackgroundJobRecord>());
+              .Returns([]);
         rescrubRepo.ListDeleteCandidatesAsync(Arg.Any<ScrapeJobStatus?>(),
                                               Arg.Any<string?>(),
                                               Arg.Any<string?>(),
                                               Arg.Any<int>(),
                                               Arg.Any<CancellationToken>()
                                              )
-                   .Returns(Array.Empty<RescrubJobRecord>());
+                   .Returns([]);
 
         await JobCleanupTools.CleanupJobs(factory,
                                           MakeNoopRunner(),
                                           kind: null,
-                                          new[] { JobIdAlpha, JobIdBeta },
+                                              [JobIdAlpha, JobIdBeta],
                                           "Failed",
                                           "any",
                                           "1.0",
@@ -528,7 +528,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -582,7 +582,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -636,7 +636,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -691,7 +691,7 @@ public sealed class JobCleanupToolsTests
         var bgRepo = Substitute.For<IBackgroundJobRepository>();
         var rescrubRepo = Substitute.For<IRescrubJobRepository>();
         var runner = MakeNoopRunner();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeRepo);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(bgRepo);
@@ -751,7 +751,7 @@ public sealed class JobCleanupToolsTests
                               Version = version,
                               RootUrl = ExampleRootUrl,
                               LibraryHint = libraryId,
-                              AllowedUrlPatterns = new[] { ExampleRootUrl }
+                              AllowedUrlPatterns = [ExampleRootUrl]
                           }
             };
 

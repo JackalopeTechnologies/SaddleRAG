@@ -29,11 +29,11 @@ public sealed class ListSymbolsToolTests
                                     Name = "f",
                                     Hint = "h",
                                     CurrentVersion = "1.0",
-                                    AllVersions = new List<string> { "1.0" }
+                                    AllVersions = ["1.0"]
                                 }
                            );
         chunkRepo.GetSymbolsAsync("foo", "1.0", SymbolKind.Type, filter: null, Arg.Any<CancellationToken>())
-                 .Returns(new[] { "ClassA", "ClassB" });
+                 .Returns(["ClassA", "ClassB"]);
 
         var json = await LibraryTools.ListSymbols(factory,
                                                   "foo",
@@ -56,15 +56,14 @@ public sealed class ListSymbolsToolTests
                                     Name = "f",
                                     Hint = "h",
                                     CurrentVersion = "1.0",
-                                    AllVersions = new List<string> { "1.0" }
+                                    AllVersions = ["1.0"]
                                 }
                            );
         chunkRepo.GetAllSymbolsAsync("foo", "1.0", filter: null, Arg.Any<CancellationToken>())
-                 .Returns(new[]
-                              {
+                 .Returns([
                                   new Symbol { Name = "ClassA", Kind = SymbolKind.Type },
                                   new Symbol { Name = "FuncB", Kind = SymbolKind.Function }
-                              }
+                              ]
                          );
 
         var json = await LibraryTools.ListSymbols(factory,
@@ -96,7 +95,7 @@ public sealed class ListSymbolsToolTests
 
     private static (RepositoryFactory factory, ILibraryRepository libraryRepo, IChunkRepository chunkRepo) MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);

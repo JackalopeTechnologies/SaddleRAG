@@ -29,7 +29,7 @@ public sealed class HealthToolsTests
                                     Name = "f",
                                     Hint = "h",
                                     CurrentVersion = "1.0",
-                                    AllVersions = new List<string> { "1.0" }
+                                    AllVersions = ["1.0"]
                                 }
                            );
         libraryRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
@@ -90,7 +90,7 @@ public sealed class HealthToolsTests
                                 {
                                     Id = "foo", Name = "f", Hint = "h",
                                     CurrentVersion = "1.0",
-                                    AllVersions = new List<string> { "1.0" }
+                                    AllVersions = ["1.0"]
                                 }
                            );
         libraryRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
@@ -124,7 +124,7 @@ public sealed class HealthToolsTests
     public async Task GetDashboardIndexEmptyDbRecommendsIngestion()
     {
         (var factory, var libraryRepo, var _, var _) = MakeFactory();
-        libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryRecord>());
+        libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).Returns([]);
 
         var json = await HealthTools.GetDashboardIndex(factory,
                                                        profile: null,
@@ -140,19 +140,18 @@ public sealed class HealthToolsTests
     {
         (var factory, var libraryRepo, var _, var _) = MakeFactory();
         libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
-                   .Returns(new[]
-                                {
+                   .Returns([
                                     new LibraryRecord
                                         {
                                             Id = "a", Name = "a", Hint = "h", CurrentVersion = "1.0",
-                                            AllVersions = new List<string> { "1.0" }
+                                            AllVersions = ["1.0"]
                                         },
                                     new LibraryRecord
                                         {
                                             Id = "b", Name = "b", Hint = "h", CurrentVersion = "1.0",
-                                            AllVersions = new List<string> { "1.0" }
+                                            AllVersions = ["1.0"]
                                         }
-                                }
+                                ]
                            );
         libraryRepo.GetVersionAsync("a", "1.0", Arg.Any<CancellationToken>())
                    .Returns(new LibraryVersionRecord
@@ -164,7 +163,7 @@ public sealed class HealthToolsTests
                                     EmbeddingModelName = "nomic-embed-text",
                                     EmbeddingDimensions = 768,
                                     Suspect = true,
-                                    SuspectReasons = new[] { "LanguageMismatch" }
+                                    SuspectReasons = ["LanguageMismatch"]
                                 }
                            );
         libraryRepo.GetVersionAsync("b", "1.0", Arg.Any<CancellationToken>())
@@ -177,7 +176,7 @@ public sealed class HealthToolsTests
                                     EmbeddingModelName = "nomic-embed-text",
                                     EmbeddingDimensions = 768,
                                     Suspect = false,
-                                    SuspectReasons = Array.Empty<string>()
+                                    SuspectReasons = []
                                 }
                            );
 
@@ -195,7 +194,7 @@ public sealed class HealthToolsTests
     public async Task GetDashboardIndexIncludesOrphanRunningJobsOutsideRecentWindow()
     {
         (var factory, var libraryRepo, var _, var jobRepo) = MakeFactory();
-        libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryRecord>());
+        libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).Returns([]);
 
         var orphan = MakeJobRecord("orphan-1",
                                    "mongodb.driver",
@@ -213,9 +212,9 @@ public sealed class HealthToolsTests
                                  );
 
         jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-               .Returns(new[] { fresh });
+               .Returns([fresh]);
         jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
-               .Returns(new[] { orphan });
+               .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
                                                           profile: null,
@@ -231,14 +230,13 @@ public sealed class HealthToolsTests
     {
         (var factory, var libraryRepo, var _, var jobRepo) = MakeFactory();
         libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
-                   .Returns(new[]
-                                {
+                   .Returns([
                                     new LibraryRecord
                                         {
                                             Id = "a", Name = "a", Hint = "h", CurrentVersion = "1.0",
-                                            AllVersions = new List<string> { "1.0" }
+                                            AllVersions = ["1.0"]
                                         }
-                                }
+                                ]
                            );
         libraryRepo.GetVersionAsync("a", "1.0", Arg.Any<CancellationToken>())
                    .Returns(new LibraryVersionRecord
@@ -260,9 +258,9 @@ public sealed class HealthToolsTests
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 2)
                                   );
         jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-               .Returns(new[] { orphan });
+               .Returns([orphan]);
         jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
-               .Returns(new[] { orphan });
+               .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
                                                           profile: null,
@@ -279,14 +277,13 @@ public sealed class HealthToolsTests
     {
         (var factory, var libraryRepo, var _, var jobRepo) = MakeFactory();
         libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
-                   .Returns(new[]
-                                {
+                   .Returns([
                                     new LibraryRecord
                                         {
                                             Id = "a", Name = "a", Hint = "h", CurrentVersion = "1.0",
-                                            AllVersions = new List<string> { "1.0" }
+                                            AllVersions = ["1.0"]
                                         }
-                                }
+                                ]
                            );
         libraryRepo.GetVersionAsync("a", "1.0", Arg.Any<CancellationToken>())
                    .Returns(new LibraryVersionRecord
@@ -308,9 +305,9 @@ public sealed class HealthToolsTests
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 1)
                                   );
         jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-               .Returns(Array.Empty<ScrapeJobRecord>());
+               .Returns([]);
         jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
-               .Returns(new[] { orphan });
+               .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
                                                           profile: null,
@@ -335,7 +332,7 @@ public sealed class HealthToolsTests
                               LibraryHint = library,
                               LibraryId = library,
                               Version = version,
-                              AllowedUrlPatterns = Array.Empty<string>()
+                              AllowedUrlPatterns = []
                           },
                 Status = status,
                 CreatedAt = createdAt,
@@ -347,7 +344,7 @@ public sealed class HealthToolsTests
         IChunkRepository chunkRepo,
         IScrapeJobRepository jobRepo) MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var jobRepo = Substitute.For<IScrapeJobRepository>();
@@ -355,9 +352,9 @@ public sealed class HealthToolsTests
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-               .Returns(Array.Empty<ScrapeJobRecord>());
+               .Returns([]);
         jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
-               .Returns(Array.Empty<ScrapeJobRecord>());
+               .Returns([]);
         return (factory, libraryRepo, chunkRepo, jobRepo);
     }
 }

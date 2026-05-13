@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Server;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using MudBlazor.Services;
 using SaddleRAG.Core.Interfaces;
@@ -108,6 +109,17 @@ Log.Logger = loggerConfig.CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Runtime overrides file: written by the set_active_embedding_model /
+// set_active_reranker_model / set_execution_provider MCP tools via
+// OnnxOverrideStore. Registered after appsettings.json so its values
+// take precedence on next process start. Optional + reloadOnChange so a
+// missing file is fine and edits are picked up without restart by any
+// IOptionsMonitor consumers (the in-process InferenceSession still
+// requires a restart, hence the RequiresRestart flag the tools return).
+builder.Configuration.AddJsonFile(OnnxOverrideStore.RuntimeOverridesFileName,
+                                  optional: true, reloadOnChange: true
+                                 );
+
 builder.Host.UseSerilog();
 builder.Host.UseWindowsService(options => { options.ServiceName = ServiceName; });
 
@@ -126,9 +138,7 @@ if (builder.Environment.IsDevelopment())
                                        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionDirectory));
 
     if (OperatingSystem.IsWindows())
-    {
         dataProtectionBuilder.ProtectKeysWithDpapi();
-    }
 }
 
 builder.Services.AddSingleton(levelSwitch);
@@ -149,6 +159,37 @@ builder.Services.AddSaddleRagDatabase(builder.Configuration);
 
 builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(OllamaSettings.SectionName));
 
+// ONNX configuration (in-process embedding + reranking via Microsoft.ML.OnnxRuntime).
+// When Onnx.Enabled && Onnx.EmbeddingEnabled, the OnnxEmbeddingProvider is
+// registered as IEmbeddingProvider; otherwise the OllamaEmbeddingProvider
+// stays as the active embedder. ToggleableReRanker reads
+// RankingSettings.ReRankerStrategy per-call to decide whether to dispatch
+// to OnnxReRanker, the legacy Ollama rerankers, or pass-through.
+// Bind + validate Onnx settings via the AddOptions pipeline. ValidateOnStart()
+// runs OnnxSettingsValidator during IHost.StartAsync (before the HTTP server
+// accepts requests), so any registry misconfig — duplicate names, unknown
+// ActiveEmbeddingModel, Bert entry missing VocabFile, etc. — fails the host
+// with an OptionsValidationException listing every failure at once. Without
+// ValidateOnStart() the validator would fire lazily on the first
+// IOptions<OnnxSettings>.Value access deep inside the warmup background
+// thread, hitting the warmup catch path with a generic error and never
+// reaching the operator at the canonical startup-failure surface.
+builder.Services.AddOptions<OnnxSettings>()
+       .Bind(builder.Configuration.GetSection(OnnxSettings.SectionName))
+       .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<OnnxSettings>, OnnxSettingsValidator>();
+
+// Tracks which OnnxRuntime execution providers are compiled into this build
+// flavor (USE_GPU symbol) and which one the running embedding / reranker
+// sessions actually loaded with. The list_execution_providers MCP tool reads
+// it so the LLM can see whether a requested GPU EP took effect or fell back.
+builder.Services.AddSingleton<OnnxRuntimeCapabilities>();
+
+// Persists set_active_embedding_model / set_active_reranker_model /
+// set_execution_provider mutations to runtime-overrides.json so they survive
+// restart. Mutates the live OnnxSettings singleton for in-process visibility.
+builder.Services.AddSingleton<OnnxOverrideStore>();
+
 // Ranking configuration (BM25 weight, ReRank blend weight, ProseMentionThreshold, ReRankerStrategy)
 builder.Services.Configure<RankingSettings>(builder.Configuration.GetSection(RankingSettings.SectionName));
 
@@ -157,11 +198,25 @@ builder.Services.Configure<RankingSettings>(builder.Configuration.GetSection(Ran
 
 builder.Services.AddSingleton<OllamaBootstrapper>();
 
-builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
+// Embedding provider — switch between ONNX and Ollama based on Onnx.Enabled+EmbeddingEnabled.
+var onnxSettingsForDi = builder.Configuration.GetSection(OnnxSettings.SectionName).Get<OnnxSettings>()
+                        ?? new OnnxSettings();
+if (onnxSettingsForDi is { Enabled: true, EmbeddingEnabled: true })
+    builder.Services.AddSingleton<IEmbeddingProvider, OnnxEmbeddingProvider>();
+else
+    builder.Services.AddSingleton<IEmbeddingProvider, OllamaEmbeddingProvider>();
+
+// Onnx model downloader (HuggingFace fetches into Onnx.ModelsDir during warmup).
+builder.Services.AddHttpClient(OnnxModelDownloader.HttpClientName);
+builder.Services.AddSingleton<OnnxModelDownloader>();
 
 builder.Services.AddSingleton<IVectorSearchProvider, InMemoryBruteForceVectorSearch>();
 
-// Re-ranker (toggleable at runtime via MCP tool)
+// Re-ranker (toggleable at runtime via MCP tool). OnnxReRanker is registered
+// regardless of Onnx.Enabled because ToggleableReRanker holds a reference
+// to it; if Onnx.ActiveRerankerModel resolves to null at construction the
+// reranker behaves as pass-through.
+builder.Services.AddSingleton<OnnxReRanker>();
 builder.Services.AddSingleton<ToggleableReRanker>();
 builder.Services.AddSingleton<IReRanker>(sp => sp.GetRequiredService<ToggleableReRanker>());
 
@@ -169,7 +224,6 @@ builder.Services.AddSingleton<IReRanker>(sp => sp.GetRequiredService<ToggleableR
 // Classification
 
 builder.Services.AddSingleton<LlmClassifier>();
-builder.Services.AddSingleton<LlmQueryPlanner>();
 
 // Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
 builder.Services.AddSingleton<LibraryProfileService>();
@@ -371,7 +425,15 @@ if (prewarmMode)
                           startupSw.Elapsed.TotalSeconds
                          );
 
-    using var prewarmCts = new CancellationTokenSource(TimeSpan.FromSeconds(seconds: 60));
+    // Scale prewarm timeout when ONNX is enabled: first install downloads
+    // ~364 MB (nomic-fp16 + mxbai-base quantized). 60s is fine for warm
+    // re-runs; cold first-install needs more.
+    const int PrewarmBaseTimeoutSeconds = 60;
+    const int PrewarmOnnxOverheadSeconds = 600;
+    int prewarmSeconds = onnxSettingsForDi.Enabled
+                             ? PrewarmBaseTimeoutSeconds + PrewarmOnnxOverheadSeconds
+                             : PrewarmBaseTimeoutSeconds;
+    using var prewarmCts = new CancellationTokenSource(TimeSpan.FromSeconds(prewarmSeconds));
 
     try
 

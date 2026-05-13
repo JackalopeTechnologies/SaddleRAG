@@ -78,7 +78,7 @@ public record LibraryVersionRecord
     /// <summary>
     ///     Reasons why this library version is marked suspect.
     /// </summary>
-    public IReadOnlyList<string> SuspectReasons { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<string> SuspectReasons { get; set; } = [];
 
     /// <summary>
     ///     When the suspect status was last evaluated.

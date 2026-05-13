@@ -27,7 +27,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 Name = "zeta",
                                 Hint = string.Empty,
                                 CurrentVersion = "1",
-                                AllVersions = new List<string> { "1" }
+                                AllVersions = ["1"]
                             }
                        );
         repo.AddLibrary(new LibraryRecord
@@ -36,7 +36,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 Name = "Alpha",
                                 Hint = string.Empty,
                                 CurrentVersion = "1",
-                                AllVersions = new List<string> { "1" }
+                                AllVersions = ["1"]
                             }
                        );
         repo.AddLibrary(new LibraryRecord
@@ -45,7 +45,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                 Name = "mongodb.driver",
                                 Hint = string.Empty,
                                 CurrentVersion = "1",
-                                AllVersions = new List<string> { "1" }
+                                AllVersions = ["1"]
                             }
                        );
 
@@ -82,7 +82,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    Name = "alpha",
                                    Hint = "hello",
                                    CurrentVersion = "1",
-                                   AllVersions = new List<string> { "1" }
+                                   AllVersions = ["1"]
                                }
                           );
         libRepo.AddVersion(new LibraryVersionRecord
@@ -98,7 +98,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    EmbeddingDimensions = 768,
                                    BoundaryIssuePct = 2.5,
                                    Suspect = true,
-                                   SuspectReasons = new[] { "low confidence", "thin docs" }
+                                   SuspectReasons = ["low confidence", "thin docs"]
                                }
                           );
 
@@ -115,7 +115,7 @@ public sealed class MonitorDataServiceEnrichmentTests
 
         Assert.NotNull(detail);
         Assert.True(detail.IsSuspect);
-        Assert.Equal(new[] { "low confidence", "thin docs" }, detail.SuspectReasons);
+        Assert.Equal(["low confidence", "thin docs"], detail.SuspectReasons);
         Assert.Equal(scraped, detail.LastScrapedAt);
         Assert.Equal(expected: 2.5, detail.BoundaryIssuePct);
         Assert.Equal("nomic-embed-text", detail.EmbeddingModelName);
@@ -131,7 +131,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    Name = "alpha",
                                    Hint = string.Empty,
                                    CurrentVersion = "1",
-                                   AllVersions = new List<string> { "1" }
+                                   AllVersions = ["1"]
                                }
                           );
         libRepo.AddVersion(new LibraryVersionRecord
@@ -204,10 +204,10 @@ public sealed class MonitorDataServiceEnrichmentTests
                               Id = "alpha/1",
                               LibraryId = "alpha",
                               Version = "1",
-                              Languages = new[] { "C#" },
-                              Separators = new[] { ".", "::" },
-                              CallableShapes = new[] { "Foo()", "Foo<T>()" },
-                              LikelySymbols = new[] { "Console", "WriteLine" },
+                              Languages = ["C#"],
+                              Separators = [".", "::"],
+                              CallableShapes = ["Foo()", "Foo<T>()"],
+                              LikelySymbols = ["Console", "WriteLine"],
                               Confidence = 0.85f,
                               Source = "calling-llm",
                               CreatedUtc = DateTime.UtcNow,
@@ -236,8 +236,8 @@ public sealed class MonitorDataServiceEnrichmentTests
 
         Assert.NotNull(loaded);
         Assert.Equal("alpha", loaded.LibraryId);
-        Assert.Equal(new[] { "C#" }, loaded.Languages);
-        Assert.Equal(new[] { "Console", "WriteLine" }, loaded.LikelySymbols);
+        Assert.Equal(["C#"], loaded.Languages);
+        Assert.Equal(["Console", "WriteLine"], loaded.LikelySymbols);
         Assert.Equal("PascalCase", loaded.Casing.Types);
         Assert.Equal("camelCase", loaded.Casing.Parameters);
         Assert.Equal(expected: 0.85f, loaded.Confidence);
@@ -269,7 +269,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                    CurrentVersion = "2",
                                    Hint = string.Empty,
                                    Name = "alpha",
-                                   AllVersions = new List<string> { "1", "2" }
+                                   AllVersions = ["1", "2"]
                                }
                           );
         var older = new DateTime(year: 2026,
@@ -360,7 +360,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           Version = "1",
                                           RootUrl = "https://x/",
                                           LibraryHint = "alpha",
-                                          AllowedUrlPatterns = Array.Empty<string>()
+                                          AllowedUrlPatterns = []
                                       },
                             CreatedAt = new DateTime(year: 2026,
                                                      month: 1,
@@ -381,7 +381,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           Version = "1",
                                           RootUrl = "https://x/",
                                           LibraryHint = "alpha",
-                                          AllowedUrlPatterns = Array.Empty<string>()
+                                          AllowedUrlPatterns = []
                                       },
                             CreatedAt = new DateTime(year: 2026,
                                                      month: 4,
@@ -402,7 +402,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           Version = "1",
                                           RootUrl = "https://y/",
                                           LibraryHint = "beta",
-                                          AllowedUrlPatterns = Array.Empty<string>()
+                                          AllowedUrlPatterns = []
                                       },
                             CreatedAt = new DateTime(year: 2026,
                                                      month: 5,
@@ -517,7 +517,7 @@ public sealed class MonitorDataServiceEnrichmentTests
                                           Version = "1",
                                           RootUrl = "https://x/",
                                           LibraryHint = "alpha",
-                                          AllowedUrlPatterns = Array.Empty<string>()
+                                          AllowedUrlPatterns = []
                                       },
                             Status = ScrapeJobStatus.Running,
                             StartedAt = new DateTime(year: 2026,

@@ -169,7 +169,7 @@ public class Bm25ShardRepository : IBm25ShardRepository
             result = inline;
         if (result == null && shard.ExternalTerms.TryGetValue(term, out var fileId))
             result = await DownloadTermPayloadAsync(fileId, ct);
-        return result ?? Array.Empty<Bm25Posting>();
+        return result ?? [];
     }
 
     /// <summary>

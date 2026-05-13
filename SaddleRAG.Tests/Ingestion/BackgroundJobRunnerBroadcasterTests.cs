@@ -100,7 +100,7 @@ public sealed class BackgroundJobRunnerBroadcasterTests
         FakeBackgroundJobRepository jobRepo) MakeRunner()
     {
         var jobRepo = new FakeBackgroundJobRepository();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
         factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         var broadcaster = Substitute.For<IMonitorBroadcaster>();
         var lifetime = Substitute.For<IHostApplicationLifetime>();

@@ -96,7 +96,7 @@ public sealed class MonitorBroadcasterEventsTests
         SuspectFlagEvent? captured = null;
         bcast.SuspectFlagRaised += e => captured = e;
 
-        bcast.RecordSuspectFlag("job-1", "alpha", "1.0.0", new[] { "low confidence", "thin docs" });
+        bcast.RecordSuspectFlag("job-1", "alpha", "1.0.0", ["low confidence", "thin docs"]);
 
         Assert.NotNull(captured);
         if (captured is not null)
@@ -104,7 +104,7 @@ public sealed class MonitorBroadcasterEventsTests
             Assert.Equal("job-1", captured.JobId);
             Assert.Equal("alpha", captured.LibraryId);
             Assert.Equal("1.0.0", captured.Version);
-            Assert.Equal(new[] { "low confidence", "thin docs" }, captured.Reasons);
+            Assert.Equal(["low confidence", "thin docs"], captured.Reasons);
         }
     }
 

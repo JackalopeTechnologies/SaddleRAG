@@ -59,7 +59,7 @@ public sealed class CodeFenceScannerTests
     [Fact]
     public void HandlesEmptyInput()
     {
-        var symbols = CodeFenceScanner.ScanContents(Array.Empty<string>());
+        var symbols = CodeFenceScanner.ScanContents([]);
 
         Assert.Empty(symbols);
     }

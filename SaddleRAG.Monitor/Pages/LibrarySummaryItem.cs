@@ -16,7 +16,7 @@ public sealed record LibrarySummaryItem
     public required int ChunkCount { get; init; }
     public required int PageCount { get; init; }
     public required bool IsSuspect { get; init; }
-    public IReadOnlyList<string> SuspectReasons { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> SuspectReasons { get; init; } = [];
     public DateTime? LastScrapedAt { get; init; }
     public string Hint { get; init; } = string.Empty;
 }

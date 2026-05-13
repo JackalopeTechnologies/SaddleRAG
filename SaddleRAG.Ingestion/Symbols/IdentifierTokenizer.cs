@@ -162,12 +162,12 @@ public static class IdentifierTokenizer
                  );
 
     private static readonly char[] smTrailingPunctuation =
-        {
+        [
             '.', ',', ';', ':', '!', '?', ')', '(', ']', '[', '>', '<', '"', '\'', '`'
-        };
+        ];
 
     private static readonly string[] smSeparators =
-        { SeparatorDoubleColon, SeparatorArrow, SeparatorDot, SeparatorColon };
+            [SeparatorDoubleColon, SeparatorArrow, SeparatorDot, SeparatorColon];
 
     private static readonly HashSet<string> smDeclaredKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                                                                      {

@@ -35,8 +35,8 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     protected JobInfo? Info { get; private set; }
     protected PipelineRates Rates { get; private set; } = PipelineRates.Zero;
     protected List<RecentError> AllErrors { get; } = [];
-    protected IReadOnlyList<RecentFetch> TerminalFetches { get; private set; } = Array.Empty<RecentFetch>();
-    protected IReadOnlyList<RecentReject> TerminalRejects { get; private set; } = Array.Empty<RecentReject>();
+    protected IReadOnlyList<RecentFetch> TerminalFetches { get; private set; } = [];
+    protected IReadOnlyList<RecentReject> TerminalRejects { get; private set; } = [];
 
     protected bool IsActive => Info is not null && Info.Status is "Queued" or "Running" && Info.CompletedAt is null;
 

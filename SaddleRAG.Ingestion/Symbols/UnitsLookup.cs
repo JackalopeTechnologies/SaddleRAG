@@ -31,8 +31,7 @@ public static class UnitsLookup
         ArgumentNullException.ThrowIfNull(candidate);
 
         var caseSensitiveHit = smUnits.Contains(candidate);
-        var shortCaseInsensitiveHit = candidate.Length > 0 &&
-                                      candidate.Length <= ShortUnitMaxLength &&
+        var shortCaseInsensitiveHit = candidate.Length is > 0 and <= ShortUnitMaxLength &&
                                       smUnitsCaseInsensitive.Contains(candidate);
         var result = caseSensitiveHit || shortCaseInsensitiveHit;
         return result;

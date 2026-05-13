@@ -28,9 +28,7 @@ public sealed class ClaudeDesktopWriterTests : IDisposable
     public void Dispose()
     {
         if (Directory.Exists(mTempDir))
-        {
             Directory.Delete(mTempDir, recursive: true);
-        }
     }
 
     [Theory]
@@ -41,9 +39,7 @@ public sealed class ClaudeDesktopWriterTests : IDisposable
     {
         string fixtureInput = TestPaths.FixtureFile("claude-desktop", scenario, "input.json");
         if (File.Exists(fixtureInput))
-        {
             File.Copy(fixtureInput, mConfigPath, overwrite: true);
-        }
 
         var writer = new ClaudeDesktopWriter(mConfigPath);
         var result = await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
@@ -65,7 +61,7 @@ public sealed class ClaudeDesktopWriterTests : IDisposable
         await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
         byte[] bytes = await File.ReadAllBytesAsync(mConfigPath, TestContext.Current.CancellationToken);
-        Assert.False(bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF,
+        Assert.False(bytes is [0xEF, 0xBB, 0xBF, ..],
             "Claude Desktop rejects UTF-8 BOM; writer must not emit one.");
     }
 

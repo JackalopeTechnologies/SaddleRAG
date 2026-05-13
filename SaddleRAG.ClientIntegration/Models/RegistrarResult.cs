@@ -16,14 +16,14 @@ public sealed record RegistrarResult(
     public static RegistrarResult ForRegister(IReadOnlyList<RegisterResult> results)
     {
         ArgumentNullException.ThrowIfNull(results);
-        var result = new RegistrarResult(results, Array.Empty<UnregisterResult>());
+        var result = new RegistrarResult(results, []);
         return result;
     }
 
     public static RegistrarResult ForUnregister(IReadOnlyList<UnregisterResult> results)
     {
         ArgumentNullException.ThrowIfNull(results);
-        var result = new RegistrarResult(Array.Empty<RegisterResult>(), results);
+        var result = new RegistrarResult([], results);
         return result;
     }
 }

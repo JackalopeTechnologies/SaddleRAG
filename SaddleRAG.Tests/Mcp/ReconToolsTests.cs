@@ -53,8 +53,8 @@ public sealed class ReconToolsTests
     public async Task SubmitLibraryProfileParsesCrawlHints()
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
-        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryProfile>());
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns([]);
+        var factory = Substitute.For<RepositoryFactory>([null]);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(repo);
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
 
@@ -100,8 +100,8 @@ public sealed class ReconToolsTests
     public async Task SubmitLibraryProfileTreatsMissingCrawlHintsAsEmpty()
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
-        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryProfile>());
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns([]);
+        var factory = Substitute.For<RepositoryFactory>([null]);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(repo);
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
 

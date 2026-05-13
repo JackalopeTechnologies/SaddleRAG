@@ -25,8 +25,8 @@ public sealed class DryRunAuditTests
 {
     private sealed class SpyAuditWriter : IScrapeAuditWriter
     {
-        public List<AuditContext> FetchedCalls { get; } = new List<AuditContext>();
-        public List<AuditContext> SkippedCalls { get; } = new List<AuditContext>();
+        public List<AuditContext> FetchedCalls { get; } = [];
+        public List<AuditContext> SkippedCalls { get; } = [];
 
         public void RecordSkipped(AuditContext ctx,
                                   string url,
@@ -145,7 +145,7 @@ public sealed class DryRunAuditTests
         public Task<IReadOnlyList<PageRecord>> GetPagesAsync(string libraryId,
                                                              string version,
                                                              CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<PageRecord>>(Array.Empty<PageRecord>());
+            => Task.FromResult<IReadOnlyList<PageRecord>>([]);
 
         public Task<PageRecord?> GetPageByUrlAsync(string libraryId,
                                                    string version,
@@ -161,7 +161,7 @@ public sealed class DryRunAuditTests
 
         public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
             CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<LibraryVersionKey>>(Array.Empty<LibraryVersionKey>());
+            => Task.FromResult<IReadOnlyList<LibraryVersionKey>>([]);
     }
 
     [Fact]
@@ -208,7 +208,7 @@ public sealed class DryRunAuditTests
                    );
 
         bool allMatchLibrary = auditWriter.FetchedCalls.Concat(auditWriter.SkippedCalls)
-                                          .All(c => c.LibraryId == LibraryId && c.Version == Version && c.JobId == JobId
+                                          .All(c => c is { LibraryId: LibraryId, Version: Version, JobId: JobId }
                                               );
         Assert.True(allMatchLibrary, "All audit calls should carry the supplied library, version, and jobId.");
     }

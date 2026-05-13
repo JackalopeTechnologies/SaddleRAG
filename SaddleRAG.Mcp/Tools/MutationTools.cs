@@ -186,7 +186,7 @@ public static class MutationTools
             var pages = await pageRepo.GetPageCountAsync(library, version, ct);
             var lib = await libraryRepo.GetLibraryAsync(library, ct);
             bool wouldDeleteLibraryRow =
-                lib != null && lib.AllVersions.Count == 1 && lib.AllVersions[index: 0] == version;
+                lib is { AllVersions.Count: 1 } && lib.AllVersions[index: 0] == version;
             string? wouldRepointTo = lib != null && lib.CurrentVersion == version && lib.AllVersions.Count > 1
                                          ? lib.AllVersions.First(v => v != version)
                                          : null;

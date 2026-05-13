@@ -8,10 +8,8 @@
 
 using System.ComponentModel;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
-using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Embedding;
 using Serilog.Core;
 using Serilog.Events;
@@ -30,14 +28,16 @@ public static class SettingsTools
 {
     [McpServerTool(Name = "set_rerank_strategy")]
     [Description("Set the active reranker strategy at runtime. " +
-                 "'Off' = no reranking (hybrid score is final, fastest; current default). " +
-                 "'Llm' and 'CrossEncoder' are currently non-functional stubs: the server accepts the " +
-                 "value, but requests behave like NoOp reranking until those pipelines are calibrated. " +
-                 "Use 'Off' for predictable production behavior. " +
+                 "'Off' = no reranking; hybrid (vector || BM25) score is final. Fastest, predictable, the shipped default. " +
+                 "'Onnx' = in-process cross-encoder reranker via Microsoft.ML.OnnxRuntime. " +
+                 "Scores (query, doc) pairs using the model named by Onnx.ActiveRerankerModel " +
+                 "(default mxbai-rerank-base-v1). Cross-encoder output is sigmoid-mapped to (0, 1) and used " +
+                 "directly as the final score for the top-K candidates; the pass-through tail is appended below. " +
+                 "Adds ~150 ms per search on CPU once the rerank session is warm. " +
                  "Omit strategy to read current state."
                 )]
     public static string SetRerankStrategy(ToggleableReRanker reRanker,
-                                           [Description("Reranker strategy: Off, Llm, or CrossEncoder. Omit to read current state."
+                                           [Description("Reranker strategy: Off or Onnx. Omit to read current state."
                                                        )]
                                            string? strategy = null)
     {
@@ -55,37 +55,6 @@ public static class SettingsTools
         var response = new
                            {
                                Strategy = reRanker.Strategy.ToString(),
-                               Warning = warning
-                           };
-        var result = JsonSerializer.Serialize(response, smJsonOptions);
-        return result;
-    }
-
-    [McpServerTool(Name = "set_query_planner_strategy")]
-    [Description("Set the active query-planner strategy at runtime. " +
-                 "'Off' = no local planning; the caller query flows straight to retrieval. " +
-                 "'Llm' = one local LLM call produces conservative search hints before retrieval. " +
-                 "Omit strategy to read current state."
-                )]
-    public static string SetQueryPlannerStrategy(IOptions<RankingSettings> rankingOptions,
-                                                 [Description("Query planner strategy: Off or Llm. Omit to read current state.")]
-                                                 string? strategy = null)
-    {
-        ArgumentNullException.ThrowIfNull(rankingOptions);
-
-        var rankingSettings = rankingOptions.Value;
-        string? warning = null;
-        if (!string.IsNullOrEmpty(strategy))
-        {
-            if (Enum.TryParse<QueryPlannerStrategy>(strategy, ignoreCase: true, out var parsed))
-                rankingSettings.QueryPlannerStrategy = parsed;
-            else
-                warning = string.Format(InvalidQueryPlannerStrategyWarningFormat, strategy);
-        }
-
-        var response = new
-                           {
-                               Strategy = rankingSettings.QueryPlannerStrategy.ToString(),
                                Warning = warning
                            };
         var result = JsonSerializer.Serialize(response, smJsonOptions);
@@ -127,10 +96,7 @@ public static class SettingsTools
         "Unknown level '{0}'. Valid values: Verbose, Debug, Information, Warning, Error, Fatal. Current level unchanged.";
 
     private const string InvalidStrategyWarningFormat =
-        "Unknown strategy '{0}'. Valid values: Off, Llm, CrossEncoder. Current strategy unchanged.";
-
-    private const string InvalidQueryPlannerStrategyWarningFormat =
-        "Unknown strategy '{0}'. Valid values: Off, Llm. Current query planner strategy unchanged.";
+        "Unknown strategy '{0}'. Valid values: Off, Onnx. Current strategy unchanged.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

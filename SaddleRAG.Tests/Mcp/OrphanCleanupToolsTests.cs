@@ -73,7 +73,7 @@ public sealed class OrphanCleanupToolsTests
                                       Name = "good-lib",
                                       Hint = "h",
                                       CurrentVersion = "1.0",
-                                      AllVersions = new List<string> { "1.0" }
+                                      AllVersions = ["1.0"]
                                   }
                              );
         fixture.SeedPagePairs(new LibraryVersionKey("good-lib", "1.0"),
@@ -123,7 +123,7 @@ public sealed class OrphanCleanupToolsTests
                                       Name = "lib-a",
                                       Hint = "h",
                                       CurrentVersion = "2.0",
-                                      AllVersions = new List<string> { "1.0", "2.0" }
+                                      AllVersions = ["1.0", "2.0"]
                                   }
                              );
         fixture.SeedPagePairs(new LibraryVersionKey("lib-a", "1.0"),
@@ -200,7 +200,7 @@ public sealed class OrphanCleanupToolsTests
                                       Name = "partial",
                                       Hint = "h",
                                       CurrentVersion = "2.0",
-                                      AllVersions = new List<string> { "2.0" }
+                                      AllVersions = ["2.0"]
                                   }
                              );
         fixture.SeedPagePairs(new LibraryVersionKey("partial", "2.0"),
@@ -293,7 +293,7 @@ public sealed class OrphanCleanupToolsTests
                                       Name = "valid",
                                       Hint = "h",
                                       CurrentVersion = "1.0",
-                                      AllVersions = new List<string> { "1.0" }
+                                      AllVersions = ["1.0"]
                                   }
                              );
         fixture.SeedPagePairs(new LibraryVersionKey("valid", "1.0"),
@@ -356,7 +356,7 @@ public sealed class OrphanCleanupToolsTests
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>(new object?[] { null });
+        var factory = Substitute.For<RepositoryFactory>([null]);
 
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -427,5 +427,5 @@ public sealed class OrphanCleanupToolsTests
         return runner;
     }
 
-    private static readonly IReadOnlyList<LibraryVersionKey> EmptyKeys = Array.Empty<LibraryVersionKey>();
+    private static readonly IReadOnlyList<LibraryVersionKey> EmptyKeys = [];
 }

@@ -27,7 +27,7 @@ public sealed class ReembedServiceTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
 
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(Array.Empty<DocChunk>());
+                 .Returns([]);
         libraryRepo.GetVersionAsync("lib", "1.0", Arg.Any<CancellationToken>())
                    .Returns(MakeVersion("ollama", "nomic-embed-text", dims: 768));
 
@@ -40,7 +40,7 @@ public sealed class ReembedServiceTests
                                                  "1.0",
                                                  new ReembedOptions(),
                                                  onProgress: null,
-                                                 ct: TestContext.Current.CancellationToken
+                                                 TestContext.Current.CancellationToken
                                                 );
 
         Assert.True(result.NothingToDo);
@@ -49,7 +49,7 @@ public sealed class ReembedServiceTests
         Assert.Equal("nomic-embed-text", result.PreviousEmbeddingModelName);
         Assert.Equal(expected: 768, result.PreviousEmbeddingDimensions);
         await embeddingProvider.DidNotReceive()
-                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>());
         await chunkRepo.DidNotReceive()
                        .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
     }
@@ -64,7 +64,7 @@ public sealed class ReembedServiceTests
 
         var chunk = MakeChunk("c1", "hello world");
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { chunk });
+                 .Returns([chunk]);
         libraryRepo.GetVersionAsync("lib", "1.0", Arg.Any<CancellationToken>())
                    .Returns(MakeVersion("ollama", "nomic-embed-text", dims: 768));
 
@@ -77,13 +77,13 @@ public sealed class ReembedServiceTests
                                                  "1.0",
                                                  new ReembedOptions { DryRun = true },
                                                  onProgress: null,
-                                                 ct: TestContext.Current.CancellationToken
+                                                 TestContext.Current.CancellationToken
                                                 );
 
         Assert.True(result.DryRun);
         Assert.Equal(expected: 1, result.Processed);
         await embeddingProvider.DidNotReceive()
-                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+                               .EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>());
         await chunkRepo.DidNotReceive()
                        .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
         await vectorSearch.DidNotReceive()
@@ -108,7 +108,7 @@ public sealed class ReembedServiceTests
         var c1 = MakeChunk("c1", "alpha");
         var c2 = MakeChunk("c2", "beta");
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { c1, c2 });
+                 .Returns([c1, c2]);
         libraryRepo.GetVersionAsync("lib", "1.0", Arg.Any<CancellationToken>())
                    .Returns(MakeVersion("ollama", "nomic-embed-text", dims: 768));
 
@@ -121,7 +121,7 @@ public sealed class ReembedServiceTests
                                                  "1.0",
                                                  new ReembedOptions(),
                                                  onProgress: null,
-                                                 ct: TestContext.Current.CancellationToken
+                                                 TestContext.Current.CancellationToken
                                                 );
 
         Assert.False(result.DryRun);
@@ -134,6 +134,7 @@ public sealed class ReembedServiceTests
 
         await embeddingProvider.Received(requiredNumberOfCalls: 1)
                                .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x.Count == 2),
+                                           Arg.Any<EmbedRole>(),
                                            Arg.Any<CancellationToken>()
                                           );
         await chunkRepo.Received(requiredNumberOfCalls: 1)
@@ -141,7 +142,7 @@ public sealed class ReembedServiceTests
                                           Arg.Any<CancellationToken>()
                                          );
         await vectorSearch.Received(requiredNumberOfCalls: 1)
-                          .IndexChunksAsync(null,
+                          .IndexChunksAsync(profile: null,
                                             "lib",
                                             "1.0",
                                             Arg.Is<IReadOnlyList<DocChunk>>(x => x.Count == 2),
@@ -180,12 +181,13 @@ public sealed class ReembedServiceTests
                                                  "1.0",
                                                  new ReembedOptions { MaxChunks = 2 },
                                                  onProgress: null,
-                                                 ct: TestContext.Current.CancellationToken
+                                                 TestContext.Current.CancellationToken
                                                 );
 
         Assert.Equal(expected: 2, result.Processed);
         await embeddingProvider.Received()
                                .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x.Count == 2),
+                                           Arg.Any<EmbedRole>(),
                                            Arg.Any<CancellationToken>()
                                           );
     }
@@ -198,13 +200,13 @@ public sealed class ReembedServiceTests
         provider.ProviderId.Returns(providerId);
         provider.ModelName.Returns(modelName);
         provider.Dimensions.Returns(dims);
-        provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+        provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>())
                 .Returns(call =>
                 {
                     var texts = call.Arg<IReadOnlyList<string>>();
                     var vectors = new float[texts.Count][];
                     for(var i = 0; i < texts.Count; i++)
-                        vectors[i] = new float[] { 0.1f, 0.2f, 0.3f };
+                        vectors[i] = [0.1f, 0.2f, 0.3f];
                     return vectors;
                 });
         return provider;
@@ -221,7 +223,7 @@ public sealed class ReembedServiceTests
                             PageTitle = "Page",
                             Category = DocCategory.ApiReference,
                             Content = content,
-                            Embedding = new float[] { 0f, 0f, 0f }
+                            Embedding = [0f, 0f, 0f]
                         };
         return chunk;
     }

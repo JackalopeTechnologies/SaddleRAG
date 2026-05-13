@@ -68,7 +68,7 @@ public sealed class RescrubServiceTests
 
         var legacyChunk = MakeLegacyChunk("class Controller { }");
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { legacyChunk });
+                 .Returns([legacyChunk]);
 
         var options = new RescrubOptions { DryRun = true };
         var result = await service.RescrubAsync(chunkRepo,
@@ -107,7 +107,7 @@ public sealed class RescrubServiceTests
 
         var legacyChunk = MakeLegacyChunk("class Controller { void MoveLinear() { } }");
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { legacyChunk });
+                 .Returns([legacyChunk]);
 
         var options = new RescrubOptions();
         var result = await service.RescrubAsync(chunkRepo,
@@ -161,7 +161,7 @@ public sealed class RescrubServiceTests
         var alreadyCurrent = MakeCurrentChunkFromContent("class Controller { void MoveLinear() { } }", profile);
 
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { alreadyCurrent });
+                 .Returns([alreadyCurrent]);
 
         // Existing index whose manifest matches the current parser/profile/classifier exactly,
         // so auto-detect skips reclassification and the rescrub finds no changes.
@@ -211,7 +211,9 @@ public sealed class RescrubServiceTests
 
     private static LlmClassifier MakeClassifier()
     {
-        var settings = Options.Create(new OllamaSettings());
+        var ollamaSettings = new OllamaSettings();
+        ollamaSettings.ClassificationModels.Add(new OllamaModelEntry { Name = "test-classifier:latest" });
+        var settings = Options.Create(ollamaSettings);
         var result = new LlmClassifier(settings,
                                        NullLogger<LlmClassifier>.Instance
                                       );
@@ -278,7 +280,7 @@ public sealed class RescrubServiceTests
 
         profileRepo.GetAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns(MakeProfile());
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { MakeLegacyChunk("The axis homes when MoveLinear runs.") });
+                 .Returns([MakeLegacyChunk("The axis homes when MoveLinear runs.")]);
 
         var result = await service.RescrubAsync(chunkRepo,
                                                 profileRepo,
@@ -311,7 +313,7 @@ public sealed class RescrubServiceTests
 
         profileRepo.GetAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns(MakeProfile());
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { MakeLegacyChunk("The axis homes when MoveLinear runs.") });
+                 .Returns([MakeLegacyChunk("The axis homes when MoveLinear runs.")]);
 
         var result = await service.RescrubAsync(chunkRepo,
                                                 profileRepo,
@@ -379,7 +381,7 @@ public sealed class RescrubServiceTests
 
         profileRepo.GetAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns(MakeProfile());
         chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
-                 .Returns(new[] { MakeLegacyChunk("The axis homes.") });
+                 .Returns([MakeLegacyChunk("The axis homes.")]);
 
         var result = await service.RescrubAsync(chunkRepo,
                                                 profileRepo,

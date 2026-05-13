@@ -11,6 +11,13 @@
 #pragma warning disable STR0010 // Interface methods cannot validate parameters
 
 
+#region Usings
+
+using SaddleRAG.Core.Enums;
+
+#endregion
+
+
 namespace SaddleRAG.Core.Interfaces;
 
 /// <summary>
@@ -43,8 +50,15 @@ public interface IEmbeddingProvider
 
 
     /// <summary>
-    ///     Generate embeddings for one or more texts.
+    ///     Generate embeddings for one or more texts. The
+    ///     <paramref name="role" /> argument tells asymmetric models
+    ///     (e.g. nomic-embed-text-v1.5) whether the text is being
+    ///     embedded as a document for indexing or as a query for
+    ///     retrieval — the model emits different vectors for each.
+    ///     Symmetric models and Ollama-backed providers ignore the role.
     ///     Implementations should batch efficiently.
     /// </summary>
-    Task<float[][]> EmbedAsync(IReadOnlyList<string> texts, CancellationToken ct = default);
+    Task<float[][]> EmbedAsync(IReadOnlyList<string> texts,
+                               EmbedRole role = EmbedRole.Document,
+                               CancellationToken ct = default);
 }

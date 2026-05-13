@@ -109,7 +109,7 @@ public class RescrubJobRepository : IRescrubJobRepository
         CancellationToken ct = default)
     {
         var filter = BuildDeleteFilter(status, libraryId, version);
-        IReadOnlyList<RescrubJobRecord> result = Array.Empty<RescrubJobRecord>();
+        IReadOnlyList<RescrubJobRecord> result = [];
         if (filter != null)
         {
             result = await mContext.RescrubJobs.Find(filter)

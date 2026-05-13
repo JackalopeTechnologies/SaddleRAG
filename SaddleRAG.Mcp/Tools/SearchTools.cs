@@ -16,7 +16,6 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
-using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Embedding;
 
@@ -64,7 +63,6 @@ public static class SearchTools
     public static async Task<string> SearchDocs(IVectorSearchProvider vectorSearch,
                                                 IEmbeddingProvider embeddingProvider,
                                                 IReRanker reRanker,
-                                                LlmQueryPlanner queryPlanner,
                                                 RepositoryFactory repositoryFactory,
                                                 IOptions<RankingSettings> rankingOptions,
                                                 IQueryMetrics metrics,
@@ -86,7 +84,6 @@ public static class SearchTools
         ArgumentNullException.ThrowIfNull(vectorSearch);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
         ArgumentNullException.ThrowIfNull(reRanker);
-        ArgumentNullException.ThrowIfNull(queryPlanner);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(rankingOptions);
         ArgumentNullException.ThrowIfNull(metrics);
@@ -104,7 +101,6 @@ public static class SearchTools
                                            () => ExecuteSearchAsync(vectorSearch,
                                                                     embeddingProvider,
                                                                     reRanker,
-                                                                    queryPlanner,
                                                                     repositoryFactory,
                                                                     rankingOptions.Value,
                                                                     metrics,
@@ -233,7 +229,7 @@ public static class SearchTools
     {
         var query = $"{library} overview getting started introduction";
         var embeddings = await metrics.TimeAsync(QueryMetricOperations.EmbedQuery,
-                                                 () => embeddingProvider.EmbedAsync([query], ct),
+                                                 () => embeddingProvider.EmbedAsync([query], EmbedRole.Query, ct),
                                                  note: $"library={library}"
                                                 );
 
@@ -337,7 +333,6 @@ public static class SearchTools
     private static async Task<string> ExecuteSearchAsync(IVectorSearchProvider vectorSearch,
                                                          IEmbeddingProvider embeddingProvider,
                                                          IReRanker reRanker,
-                                                         LlmQueryPlanner queryPlanner,
                                                          RepositoryFactory repositoryFactory,
                                                          RankingSettings rankingSettings,
                                                          IQueryMetrics metrics,
@@ -356,25 +351,10 @@ public static class SearchTools
             categoryFilter = parsed;
 
         var queryIsIdentifierShape = QueryShapeClassifier.IsIdentifierShaped(query);
-        var plannerActive = ShouldPlan(rankingSettings.QueryPlannerStrategy, queryIsIdentifierShape);
-        var plannerSw = Stopwatch.StartNew();
-        var queryPlan = SearchQueryPlan.Disabled(query);
-        if (plannerActive)
-        {
-            queryPlan = await metrics.TimeAsync(QueryMetricOperations.QueryPlan,
-                                                () => queryPlanner.PlanAsync(query, library, categoryFilter, ct),
-                                                note: $"library={library ?? "*"}"
-                                               );
-        }
-
-        plannerSw.Stop();
-
-        var effectiveQuery = ResolveEffectiveQuery(query, queryPlan);
-        var effectiveCategoryFilter = ResolveEffectiveCategoryFilter(categoryFilter, queryPlan);
 
         var embedSw = Stopwatch.StartNew();
         var embeddings = await metrics.TimeAsync(QueryMetricOperations.EmbedQuery,
-                                                 () => embeddingProvider.EmbedAsync([effectiveQuery], ct),
+                                                 () => embeddingProvider.EmbedAsync([query], EmbedRole.Query, ct),
                                                  note: $"library={library ?? "*"}"
                                                 );
         embedSw.Stop();
@@ -384,7 +364,7 @@ public static class SearchTools
                              Profile = profile,
                              LibraryId = library,
                              Version = resolvedVersion,
-                             Category = effectiveCategoryFilter
+                             Category = categoryFilter
                          };
 
         var vectorSw = Stopwatch.StartNew();
@@ -405,13 +385,12 @@ public static class SearchTools
                                                   library,
                                                   resolvedVersion,
                                                   profile,
-                                                  effectiveQuery,
+                                                  query,
                                                   ct
                                                  );
         bm25Sw.Stop();
 
         var hybrid = BlendVectorAndBm25(searchResults, bm25Scores, rankingSettings.Bm25Weight);
-        hybrid = ApplyQueryPlanBiases(hybrid, queryPlan);
 
         var rerankActive = ShouldRerank(rankingSettings.ReRankerStrategy, queryIsIdentifierShape, hybrid.Count);
         var reRankCandidateCount = rerankActive ? ResolveReRankCandidateCount(hybrid.Count, rankingSettings) : 0;
@@ -419,11 +398,10 @@ public static class SearchTools
         var rerankSw = Stopwatch.StartNew();
         var ranked = await ApplyRerankerOrPassThroughAsync(reRanker,
                                                            metrics,
-                                                           effectiveQuery,
+                                                           query,
                                                            hybrid,
                                                            maxResults,
                                                            rerankActive,
-                                                           rankingSettings.ReRankBlendWeight,
                                                            rankingSettings.MaxReRankCandidates,
                                                            ct
                                                           );
@@ -431,7 +409,6 @@ public static class SearchTools
         totalSw.Stop();
 
         var json = SerializeSearchResponse(ranked,
-                                           plannerSw,
                                            embedSw,
                                            vectorSw,
                                            bm25Sw,
@@ -441,10 +418,7 @@ public static class SearchTools
                                            reRankCandidateCount,
                                            rerankActive,
                                            queryIsIdentifierShape,
-                                           plannerActive,
-                                           effectiveQuery,
-                                           effectiveCategoryFilter,
-                                           queryPlan,
+                                           categoryFilter,
                                            rankingSettings
                                           );
         return json;
@@ -465,7 +439,7 @@ public static class SearchTools
             var indexRepo = repositoryFactory.GetLibraryIndexRepository(profile);
             var bm25ShardRepo = repositoryFactory.GetBm25ShardRepository(profile);
             var index = await indexRepo.GetAsync(library, resolvedVersion, ct);
-            if (index != null && index.Bm25.DocumentCount > 0)
+            if (index is { Bm25.DocumentCount: > 0 })
             {
                 var lookup = new ShardedBm25TermLookup(bm25ShardRepo, library, resolvedVersion, index.Bm25.ShardCount);
                 result = await Bm25Scorer.ScoreAsync(lookup, index.Bm25, query, ct);
@@ -510,99 +484,20 @@ public static class SearchTools
 
     private static bool ShouldRerank(ReRankerStrategy strategy, bool queryIsIdentifierShape, int candidateCount)
     {
-        // Llm strategy now reranks regardless of identifier shape. The
-        // legacy gate skipped reranking on CamelCase/dotted/callable
-        // queries because the old qwen3:1.7b 5-bucket plateau hurt those
-        // cases more than it helped. The new phi4-mini per-pair
-        // continuous-float reranker scores exact-name matches at 0.9+
-        // and lifts them above noise — exactly the case where BM25
-        // tokenization fails on identifiers like FastLineRenderableSeries.
         // queryIsIdentifierShape is still computed and surfaced in the
-        // diagnostic Strategy field but no longer gates dispatch.
-        // CrossEncoder cases stay commented while ToggleableReRanker
-        // routes that strategy to NoOp.
-        var fingerprint = (strategy, queryIsIdentifierShape, EnoughCandidates: candidateCount >= ReRankMinCandidates);
+        // diagnostic Strategy field but no longer gates dispatch — the
+        // ONNX cross-encoder scores exact-name matches at 0.9+ and lifts
+        // them above noise on identifier queries.
+        _ = queryIsIdentifierShape;
+        var enoughCandidates = candidateCount >= ReRankMinCandidates;
 
-        var result = fingerprint switch
+        var result = (strategy, enoughCandidates) switch
             {
-                (ReRankerStrategy.Off, var _, var _) => false,
-                (ReRankerStrategy.Llm, var _, false) => false,
-                (ReRankerStrategy.Llm, var _, true) => true,
-                // (ReRankerStrategy.CrossEncoder, var _, false) => false,
-                // (ReRankerStrategy.CrossEncoder, var _, true) => true,
+                (ReRankerStrategy.Off, var _) => false,
+                (ReRankerStrategy.Onnx, false) => false,
+                (ReRankerStrategy.Onnx, true) => true,
                 var _ => false
             };
-        return result;
-    }
-
-    private static bool ShouldPlan(QueryPlannerStrategy strategy, bool queryIsIdentifierShape)
-    {
-        var result = strategy switch
-            {
-                QueryPlannerStrategy.Off => false,
-                QueryPlannerStrategy.Llm => !queryIsIdentifierShape,
-                var _ => false
-            };
-        return result;
-    }
-
-    private static string ResolveEffectiveQuery(string query, SearchQueryPlan queryPlan)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(query);
-        ArgumentNullException.ThrowIfNull(queryPlan);
-
-        var result = query;
-        if (queryPlan.Confidence >= QueryRewriteConfidenceThreshold &&
-            !string.IsNullOrWhiteSpace(queryPlan.ExpandedQuery) &&
-            !string.Equals(query, queryPlan.ExpandedQuery, StringComparison.Ordinal))
-        {
-            result = queryPlan.ExpandedQuery;
-        }
-
-        return result;
-    }
-
-    private static DocCategory? ResolveEffectiveCategoryFilter(DocCategory? categoryFilter, SearchQueryPlan queryPlan)
-    {
-        ArgumentNullException.ThrowIfNull(queryPlan);
-
-        DocCategory? result = categoryFilter;
-        if (result == null && queryPlan.Confidence >= PreferredCategoryConfidenceThreshold)
-            result = queryPlan.PreferredCategory;
-        return result;
-    }
-
-    private static IReadOnlyList<HybridCandidate> ApplyQueryPlanBiases(IReadOnlyList<HybridCandidate> hybrid,
-                                                                       SearchQueryPlan queryPlan)
-    {
-        ArgumentNullException.ThrowIfNull(hybrid);
-        ArgumentNullException.ThrowIfNull(queryPlan);
-
-        IReadOnlyList<HybridCandidate> result;
-        if (queryPlan.Confidence <= 0f)
-        {
-            result = hybrid;
-        }
-        else
-        {
-            result = hybrid.Select(candidate => ApplyQueryPlanBias(candidate, queryPlan))
-                           .OrderByDescending(candidate => candidate.HybridScore)
-                           .ToList();
-        }
-
-        return result;
-    }
-
-    private static HybridCandidate ApplyQueryPlanBias(HybridCandidate candidate, SearchQueryPlan queryPlan)
-    {
-        var adjustment = QueryPlanScorer.ComputeAdjustment(candidate.Chunk, queryPlan);
-        var result = new HybridCandidate
-                         {
-                             Chunk = candidate.Chunk,
-                             VectorScore = candidate.VectorScore,
-                             Bm25Score = candidate.Bm25Score,
-                             HybridScore = candidate.HybridScore + adjustment
-                         };
         return result;
     }
 
@@ -612,7 +507,6 @@ public static class SearchTools
         IReadOnlyList<HybridCandidate> hybrid,
         int maxResults,
         bool rerankActive,
-        float blendWeight,
         int maxReRankCandidates,
         CancellationToken ct)
     {
@@ -634,26 +528,36 @@ public static class SearchTools
         }
         else
         {
-            result = await BlendWithRerankerAsync(reRanker,
-                                                  metrics,
-                                                  query,
-                                                  hybrid,
-                                                  maxResults,
-                                                  blendWeight,
-                                                  maxReRankCandidates,
-                                                  ct
-                                                 );
+            result = await ApplyRerankerOrderingAsync(reRanker,
+                                                     metrics,
+                                                     query,
+                                                     hybrid,
+                                                     maxResults,
+                                                     maxReRankCandidates,
+                                                     ct
+                                                    );
         }
 
         return result;
     }
 
-    private static async Task<IReadOnlyList<RankedResult>> BlendWithRerankerAsync(IReRanker reRanker,
+    /// <summary>
+    ///     Cross-encoder is authoritative on the candidates it scored.
+    ///     The top <paramref name="maxReRankCandidates" /> hybrid items
+    ///     are fed to the reranker and ordered by its score
+    ///     (sigmoid-mapped logits ∈ (0, 1), see
+    ///     <see cref="OnnxReRanker.NormalizeLogit" />). The pass-through
+    ///     tail keeps its hybrid score and is appended below the reranked
+    ///     tier — never interleaved. This replaces the pre-Phase-4 linear
+    ///     blend, which mixed unbounded raw logits with [0, 1] hybrid
+    ///     scores and let pass-through items leapfrog low-rerank items
+    ///     into the top-N.
+    /// </summary>
+    private static async Task<IReadOnlyList<RankedResult>> ApplyRerankerOrderingAsync(IReRanker reRanker,
         IQueryMetrics metrics,
         string query,
         IReadOnlyList<HybridCandidate> hybrid,
         int maxResults,
-        float blendWeight,
         int maxReRankCandidates,
         CancellationToken ct)
     {
@@ -670,16 +574,15 @@ public static class SearchTools
                                                     r => r.Count
                                                    );
 
-        var hybridWeight = 1.0f - blendWeight;
         var reranked = rerankResults
-                      .Select(rr => BlendRankedResult(rr, hybridByChunkId, blendWeight, hybridWeight));
+                      .Select(rr => CreateReRankedResult(rr, hybridByChunkId))
+                      .OrderByDescending(r => r.FinalScore);
         var passThrough = hybrid.Skip(reRankCandidateCount)
                                 .Select(CreatePassThroughRankedResult);
-        var blended = reranked.Concat(passThrough)
-                      .OrderByDescending(r => r.FinalScore)
+        var ordered = reranked.Concat(passThrough)
                       .Take(maxResults)
                       .ToList();
-        return blended;
+        return ordered;
     }
 
     private static RankedResult CreatePassThroughRankedResult(HybridCandidate candidate)
@@ -695,21 +598,17 @@ public static class SearchTools
         return result;
     }
 
-    private static RankedResult BlendRankedResult(ReRankResult rr,
-                                                  IReadOnlyDictionary<string, HybridCandidate> hybridByChunkId,
-                                                  float blendWeight,
-                                                  float hybridWeight)
+    private static RankedResult CreateReRankedResult(ReRankResult rr,
+                                                     IReadOnlyDictionary<string, HybridCandidate> hybridByChunkId)
     {
         var hybridCandidate = hybridByChunkId.TryGetValue(rr.Chunk.Id, out var hc) ? hc : null;
-        var hybridScore = hybridCandidate?.HybridScore ?? 0.0;
         var vectorScore = hybridCandidate?.VectorScore ?? 0f;
         var bm25Score = hybridCandidate != null ? (float) hybridCandidate.Bm25Score : 0f;
-        var final = (blendWeight * rr.RelevanceScore) + (hybridWeight * (float) hybridScore);
 
         var result = new RankedResult
                          {
                              Chunk = rr.Chunk,
-                             FinalScore = final,
+                             FinalScore = rr.RelevanceScore,
                              VectorScore = vectorScore,
                              Bm25Score = bm25Score,
                              RerankScore = rr.RelevanceScore
@@ -718,7 +617,6 @@ public static class SearchTools
     }
 
     private static string SerializeSearchResponse(IReadOnlyList<RankedResult> ranked,
-                                                  Stopwatch plannerSw,
                                                   Stopwatch embedSw,
                                                   Stopwatch vectorSw,
                                                   Stopwatch bm25Sw,
@@ -728,10 +626,7 @@ public static class SearchTools
                                                   int reRankCandidateCount,
                                                   bool rerankActive,
                                                   bool queryIsIdentifierShape,
-                                                  bool plannerActive,
-                                                  string effectiveQuery,
-                                                  DocCategory? effectiveCategoryFilter,
-                                                  SearchQueryPlan queryPlan,
+                                                  DocCategory? categoryFilter,
                                                   RankingSettings rankingSettings)
     {
         var results = ranked.Select(r => new
@@ -756,7 +651,6 @@ public static class SearchTools
                                Results = results,
                                Timing = new
                                             {
-                                                PlannerMs = plannerSw.ElapsedMilliseconds,
                                                 EmbedMs = embedSw.ElapsedMilliseconds,
                                                 VectorSearchMs = vectorSw.ElapsedMilliseconds,
                                                 Bm25Ms = bm25Sw.ElapsedMilliseconds,
@@ -767,21 +661,11 @@ public static class SearchTools
                                             },
                                Strategy = new
                                               {
-                                                  QueryPlannerStrategy = rankingSettings.QueryPlannerStrategy.ToString(),
-                                                  QueryPlannerActive = plannerActive,
                                                   ReRankerStrategy = rankingSettings.ReRankerStrategy.ToString(),
                                                   RerankActive = rerankActive,
                                                   QueryIsIdentifierShape = queryIsIdentifierShape,
-                                                  EffectiveQuery = effectiveQuery,
-                                                  EffectiveCategory = effectiveCategoryFilter?.ToString(),
-                                                  QueryPlannerConfidence = queryPlan.Confidence,
-                                                  queryPlan.PreferTypePages,
-                                                  queryPlan.PenalizeMemberPages,
-                                                  queryPlan.Penalize3D,
-                                                  queryPlan.BoostTerms,
-                                                  queryPlan.PenalizeTerms,
-                                                  rankingSettings.Bm25Weight,
-                                                  rankingSettings.ReRankBlendWeight
+                                                  Category = categoryFilter?.ToString(),
+                                                  rankingSettings.Bm25Weight
                                               }
                            };
 
@@ -826,9 +710,6 @@ public static class SearchTools
     private const int MinimumCandidateCount = 1;
     private const int MinimumCandidateMultiplier = 2;
     private const int MaxOverviewResults = 5;
-    private const float QueryRewriteConfidenceThreshold = 0.85f;
-    private const float PreferredCategoryConfidenceThreshold = 0.8f;
-
     private static readonly IReadOnlyDictionary<string, double> smEmptyBm25Scores =
         new Dictionary<string, double>(StringComparer.Ordinal);
 

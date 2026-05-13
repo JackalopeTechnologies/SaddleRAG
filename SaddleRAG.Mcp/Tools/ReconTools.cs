@@ -282,21 +282,53 @@ public static class ReconTools
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 
+    // Hint and sample-page strings are MCP response payload that ships
+    // verbatim to callers. Each is a named constant so the strings show
+    // up alongside their roles when reading the source.
+    private const string HintEnumIndexPage =
+        "Look for an enum index page (e.g. *-Enums.htm) — set canonicalInventoryUrl if found.";
+
+    private const string HintMultiLanguageOrdering =
+        "If the docs cover multiple languages, list them all in languages[] in order of prominence.";
+
+    private const string HintAerotechDotSeparator =
+        "Aerotech-style docs use \".\" separators in qualified names like AxisFault.Disabled.";
+
+    private const string HintPythonCasingMismatch =
+        "Python docs are PascalCase types and snake_case functions — note that mismatch.";
+
+    private const string HintSkipProseWords =
+        "Skip prose words (Each, When, Represents, Values, For, Use) — they are not symbols.";
+
+    private const string HintCrawlScopeAuthAndVersionedUrls =
+        "Auth walls (login redirects, /account/* paths) and versioned URLs (?v=24.1) are crawl-scope concerns — note them in crawlHints.excludedUrlPatterns, do not try to capture them as docs.";
+
+    private const string HintUseDryRunScrape =
+        "Use dryrun_scrape if the site looks complex; the report's PagesRemainingInQueue is a leading indicator of scope problems.";
+
+    private const string SamplePageRoot = "The root URL itself";
+
+    private const string SamplePageTypesOrEnums =
+        "Any \"types\" / \"enums\" / \"reference\" landing page linked from root";
+
+    private const string SamplePageOneApiReference =
+        "One sample API reference page so you see what a typical symbol shape looks like";
+
     private static readonly string[] smReconHints =
-        {
-            "Look for an enum index page (e.g. *-Enums.htm) — set canonicalInventoryUrl if found.",
-            "If the docs cover multiple languages, list them all in languages[] in order of prominence.",
-            "Aerotech-style docs use \".\" separators in qualified names like AxisFault.Disabled.",
-            "Python docs are PascalCase types and snake_case functions — note that mismatch.",
-            "Skip prose words (Each, When, Represents, Values, For, Use) — they are not symbols.",
-            "Auth walls (login redirects, /account/* paths) and versioned URLs (?v=24.1) are crawl-scope concerns — note them in crawlHints.excludedUrlPatterns, do not try to capture them as docs.",
-            "Use dryrun_scrape if the site looks complex; the report's PagesRemainingInQueue is a leading indicator of scope problems."
-        };
+        [
+            HintEnumIndexPage,
+            HintMultiLanguageOrdering,
+            HintAerotechDotSeparator,
+            HintPythonCasingMismatch,
+            HintSkipProseWords,
+            HintCrawlScopeAuthAndVersionedUrls,
+            HintUseDryRunScrape
+        ];
 
     private static readonly string[] smSamplePages =
-        {
-            "The root URL itself",
-            "Any \"types\" / \"enums\" / \"reference\" landing page linked from root",
-            "One sample API reference page so you see what a typical symbol shape looks like"
-        };
+        [
+            SamplePageRoot,
+            SamplePageTypesOrEnums,
+            SamplePageOneApiReference
+        ];
 }

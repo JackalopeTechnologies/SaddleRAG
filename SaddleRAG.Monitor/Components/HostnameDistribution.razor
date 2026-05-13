@@ -30,7 +30,7 @@
 
     [Parameter]
     [EditorRequired]
-    public IReadOnlyList<HostBucket> Buckets { get; set; } = Array.Empty<HostBucket>();
+    public IReadOnlyList<HostBucket> Buckets { get; set; } = [];
 
     private int Total => Buckets.Sum(b => b.Count);
 

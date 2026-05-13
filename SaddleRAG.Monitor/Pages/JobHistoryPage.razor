@@ -106,7 +106,7 @@
     {
         string result;
         var label = row.ItemsLabel;
-        if (string.IsNullOrEmpty(label) || (row.ItemsProcessed == 0 && row.ItemsTotal == 0))
+        if (string.IsNullOrEmpty(label) || row is { ItemsProcessed: 0, ItemsTotal: 0 })
             result = "—";
         else
             if (row.ItemsTotal > 0)

@@ -33,7 +33,7 @@ public sealed class LandingPageActiveJobsTests
         bcast.SetSnapshot("job-2", MakeSnap("job-2", queued: 5));
         var page = new TestableLandingPage { BroadcasterForTest = bcast };
 
-        page.RebuildFromIdsForTest(new[] { "job-1", "job-2", "job-missing" });
+        page.RebuildFromIdsForTest(["job-1", "job-2", "job-missing"]);
 
         Assert.Equal(expected: 2, page.ActiveJobsForTest.Count);
         Assert.Contains(page.ActiveJobsForTest, j => j.JobId == "job-1");
@@ -46,9 +46,9 @@ public sealed class LandingPageActiveJobsTests
             {
                 JobId = jobId,
                 Counters = new PipelineCounters { PagesQueued = queued },
-                RecentFetches = Array.Empty<RecentFetch>(),
-                RecentRejects = Array.Empty<RecentReject>(),
-                RecentErrors = Array.Empty<RecentError>()
+                RecentFetches = [],
+                RecentRejects = [],
+                RecentErrors = []
             };
 }
 
