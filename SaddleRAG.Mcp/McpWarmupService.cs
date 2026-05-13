@@ -216,13 +216,15 @@ public sealed class McpWarmupService : BackgroundService
                 stepSw.Restart();
 
                 var onnxReRanker = scope.ServiceProvider.GetRequiredService<OnnxReRanker>();
+                var rankingSettings = scope.ServiceProvider.GetRequiredService<IOptions<RankingSettings>>().Value;
 
-                await WarmReRankerAsync(onnxReRanker, stoppingToken);
+                await WarmReRankerAsync(onnxReRanker, rankingSettings.MaxReRankCandidates, stoppingToken);
 
-                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - rerank session warm ({Model})",
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - rerank session warm ({Model}, batch={Batch})",
                                        startupSw.Elapsed.TotalSeconds,
                                        stepSw.ElapsedMilliseconds,
-                                       string.IsNullOrEmpty(onnxReRanker.ModelName) ? RerankerPassThroughLabel : onnxReRanker.ModelName
+                                       string.IsNullOrEmpty(onnxReRanker.ModelName) ? RerankerPassThroughLabel : onnxReRanker.ModelName,
+                                       rankingSettings.MaxReRankCandidates
                                       );
             }
 
@@ -444,37 +446,49 @@ public sealed class McpWarmupService : BackgroundService
     ///     search doesn't pay the cold-path cost. The ONNX cross-encoder
     ///     session triggers graph optimization, kernel selection, and
     ///     SentencePiece tokenizer initialization on its first
-    ///     <c>session.Run</c>; without this probe that overhead (~6 s on
-    ///     CPU for mxbai-rerank-base-v1 in Phase 4 testing) lands on the
-    ///     first user query. The probe sends one synthetic (query, doc)
-    ///     pair through the supplied reranker; when the active reranker
-    ///     entry resolves to null (Onnx.ActiveRerankerModel = "none" or
+    ///     <c>session.Run</c>; without this probe that overhead lands on
+    ///     the first user query (Phase 4 measured ~6 s on CPU for
+    ///     mxbai-rerank-base-v1). ONNX Runtime selects per-shape kernels,
+    ///     so the probe sends <paramref name="candidateCount" /> chunks
+    ///     of long content — matching production's typical
+    ///     <c>RankingSettings.MaxReRankCandidates × ~MaxSequenceLength</c>
+    ///     shape — rather than one tiny pair, which would warm a kernel
+    ///     production never hits. When the active reranker entry resolves
+    ///     to null (Onnx.ActiveRerankerModel = "none" or
     ///     Onnx.Enabled = false) the pass-through path executes and the
     ///     probe is effectively a no-op. Exposed as <c>internal</c> so
     ///     SaddleRAG.Tests can invoke it with a fake
     ///     <see cref="IReRanker" /> without rebuilding the full warmup
     ///     dependency graph.
     /// </summary>
-    internal static async Task WarmReRankerAsync(IReRanker reRanker, CancellationToken ct)
+    internal static async Task WarmReRankerAsync(IReRanker reRanker, int candidateCount, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(reRanker);
 
-        var probeChunk = new DocChunk
-                             {
-                                 Id = WarmupRerankProbeChunkId,
-                                 LibraryId = WarmupRerankProbeLibraryId,
-                                 Version = WarmupRerankProbeVersion,
-                                 PageUrl = WarmupRerankProbePageUrl,
-                                 PageTitle = WarmupRerankProbePageTitle,
-                                 Category = DocCategory.Sample,
-                                 Content = WarmupRerankProbeContent
-                             };
+        int probeCount = Math.Max(val1: 1, candidateCount);
+        var probeChunks = new DocChunk[probeCount];
+        for(var i = 0; i < probeCount; i++)
+            probeChunks[i] = BuildWarmupRerankProbeChunk(i);
 
         await reRanker.ReRankAsync(WarmupRerankProbeQuery,
-                                   [probeChunk],
-                                   maxResults: 1,
+                                   probeChunks,
+                                   probeCount,
                                    ct
                                   );
+    }
+
+    private static DocChunk BuildWarmupRerankProbeChunk(int index)
+    {
+        return new DocChunk
+                   {
+                       Id = $"{WarmupRerankProbeChunkId}-{index}",
+                       LibraryId = WarmupRerankProbeLibraryId,
+                       Version = WarmupRerankProbeVersion,
+                       PageUrl = WarmupRerankProbePageUrl,
+                       PageTitle = WarmupRerankProbePageTitle,
+                       Category = DocCategory.Sample,
+                       Content = WarmupRerankProbeLongContent
+                   };
     }
 
 
@@ -512,7 +526,42 @@ public sealed class McpWarmupService : BackgroundService
 
     private const string WarmupRerankProbePageTitle = "warmup";
 
-    private const string WarmupRerankProbeContent = "warmup rerank probe content for cold-path elimination";
+    /// <summary>
+    ///     Synthetic doc content sized to fill the cross-encoder's
+    ///     <c>MaxSequenceLength</c> after tokenization. SentencePiece on
+    ///     English text averages ~4–5 chars/token; ~3500 chars reliably
+    ///     produces enough tokens that <c>OnnxReRanker.BuildPair</c>
+    ///     clamps at <c>MaxSequenceLength</c> (512 for
+    ///     mxbai-rerank-base-v1), so the warmup session.Run shape
+    ///     <c>[MaxReRankCandidates, ~512]</c> matches what production
+    ///     queries hit. A shorter probe would warm a different ORT
+    ///     kernel and leave the production shape cold.
+    /// </summary>
+    private const string WarmupRerankProbeLongContent =
+        "The Math.NET Numerics library provides probability distributions, linear algebra, " +
+        "matrix decompositions including Cholesky LU QR SVD and EVD, iterative solvers, " +
+        "preconditioners, optimization routines, statistics, distance metrics, special " +
+        "functions, integration, interpolation, regression, and curve fitting. The reranker " +
+        "warmup probe sends this synthetic content as a representative document so the ONNX " +
+        "Runtime cross-encoder session can perform graph optimization and kernel selection " +
+        "for the production-typical input shape during startup rather than on the first " +
+        "user query. SentencePiece tokenization on English text averages around five " +
+        "characters per token, so this paragraph repeated produces enough tokens to fill " +
+        "the model's maximum sequence length and exercise the longest input path. " +
+        "Numerical methods documentation covers dense and sparse matrices, vector storage " +
+        "formats, Gram-Schmidt orthogonalization, biconjugate gradient solvers, MILU " +
+        "preconditioning, Newton and trust region minimizers, Levenberg Marquardt, Markov " +
+        "chain Monte Carlo samplers, Mersenne Twister random number generation, Fourier " +
+        "transforms, polynomial root finding, descriptive and inferential statistics, " +
+        "kernel density estimation, quantile computation, correlation analysis, and " +
+        "moving statistics over streaming data. Native providers including Intel MKL can " +
+        "accelerate dense linear algebra and FFT. The library targets dotnet and supports " +
+        "both csharp and fsharp callers with idiomatic extensions and builder patterns " +
+        "for matrix and vector construction from arrays sequences enumerables nested " +
+        "enumerables or initializer lambdas without unnecessary copying. Performance work " +
+        "and storage rework across releases have made common operations significantly " +
+        "faster on both dense and sparse data through tuned parallelization and more " +
+        "storage-aware algorithms throughout the entire numerics package.";
 
     private const string RerankerPassThroughLabel = "pass-through";
 }
