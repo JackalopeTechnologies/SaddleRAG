@@ -364,12 +364,6 @@ public static class OnnxTools
                    };
     }
 
-    private const string UnknownEmbeddingWarningFormat =
-        "Unknown embedding model '{0}'. Call list_embedding_models for valid Names. Active model unchanged.";
-
-    private const string UnknownRerankerWarningFormat =
-        "Unknown reranker model '{0}'. Call list_reranker_models for valid Names, or pass '{1}' to disable reranking. Active reranker unchanged.";
-
     private const string UnknownExecutionProviderWarningFormat =
         "Unknown ExecutionProvider '{0}'. Valid values: {1}, {2}, {3}. ExecutionProvider unchanged.";
 
