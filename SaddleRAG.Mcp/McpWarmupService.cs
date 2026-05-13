@@ -134,6 +134,10 @@ public sealed class McpWarmupService : BackgroundService
             catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
 
             {
+                // Record the specific cause + log at Error, then rethrow.
+                // The outer catch detects that state is already Failed and
+                // skips its generic MarkFailed/LogError so we don't
+                // overwrite PhaseOnnxDownloadFailed or double-log.
                 mWarmupState.MarkFailed(PhaseOnnxDownloadFailed, ex.Message);
 
                 mLogger.LogError(ex, OnnxDownloadFailedLogTemplate, startupSw.Elapsed.TotalSeconds);
@@ -232,9 +236,19 @@ public sealed class McpWarmupService : BackgroundService
         catch(Exception ex)
 
         {
-            mWarmupState.MarkFailed(nameof(ScrapeJobStatus.Failed), ex.Message);
+            // Skip generic MarkFailed when an inner catch already set a
+            // specific phase (e.g., PhaseOnnxDownloadFailed). Otherwise this
+            // would overwrite the actionable phase the monitor UI shows
+            // and emit a second LogError line for the same incident.
+            bool alreadyFailedWithSpecificPhase =
+                string.Equals(mWarmupState.Status, nameof(ScrapeJobStatus.Failed), StringComparison.Ordinal);
 
-            mLogger.LogError(ex, "[Warmup] T+{Sec:F1}s - Failed", startupSw.Elapsed.TotalSeconds);
+            if (!alreadyFailedWithSpecificPhase)
+            {
+                mWarmupState.MarkFailed(nameof(ScrapeJobStatus.Failed), ex.Message);
+
+                mLogger.LogError(ex, "[Warmup] T+{Sec:F1}s - Failed", startupSw.Elapsed.TotalSeconds);
+            }
         }
     }
 
