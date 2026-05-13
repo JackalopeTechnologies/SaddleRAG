@@ -65,8 +65,14 @@ public class RankingSettings
     ///     Active reranker strategy. Mutable at runtime via the
     ///     set_rerank_strategy MCP tool; SearchTools and the dispatcher
     ///     both read this property per-call, so writes flow through
-    ///     immediately. Off skips reranking; Llm dispatches to the
-    ///     Ollama reranker; CrossEncoder currently falls through to NoOp.
+    ///     immediately. <see cref="ReRankerStrategy.Off" /> skips
+    ///     reranking entirely (NoOpReRanker pass-through). <see cref="ReRankerStrategy.Onnx" />
+    ///     dispatches to <c>OnnxReRanker</c>, which scores via the active
+    ///     entry in <c>OnnxSettings.RerankerModels</c>, or falls back to
+    ///     pass-through if <c>OnnxSettings.ActiveRerankerModel</c> resolves
+    ///     to null (e.g., set to <c>"none"</c>). The legacy <c>Llm</c> and
+    ///     <c>CrossEncoder</c> values were removed in Phase 5 of the ONNX
+    ///     migration.
     /// </summary>
     public ReRankerStrategy ReRankerStrategy { get; set; } = ReRankerStrategy.Off;
 
