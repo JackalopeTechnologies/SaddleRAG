@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -164,29 +165,57 @@ public sealed class OnnxOverrideStoreTests : IDisposable
     }
 
     [Fact]
-    public void ConcurrentWritesProduceWellFormedJsonWithLastValueWinning()
+    public void ConcurrentWritesProduceWellFormedJsonAndNeverThrow()
     {
         var settings = BuildSettingsWithRegistry();
         var store = BuildStore(settings);
 
-        // Hammer the store with 50 parallel writes. The internal lock should
-        // serialize them so the final file is always well-formed and contains
-        // a value the loop set (the exact one is racy; we just verify both
-        // shape and presence).
+        // Hammer the store with parallel writes that alternate between two
+        // different keys (ActiveEmbeddingModel + ExecutionProvider). Hitting
+        // the same key with two values would let a dropped-lock regression
+        // still produce well-formed JSON because the second writer's content
+        // overwrites the first's cleanly; alternating keys makes a torn
+        // read-modify-write observable as a missing key in the final file.
+        //
+        // We also capture every iteration's exceptions into a ConcurrentBag —
+        // without the lock, simultaneous File.Move calls on the same .tmp
+        // path race and surface as IOException("file in use"). The original
+        // test would have masked those as Parallel.For aggregate failure
+        // with no clear "the lock was dropped" diagnostic.
+        var failures = new ConcurrentBag<Exception>();
         Parallel.For(fromInclusive: 0, ConcurrentWriteIterations, i =>
         {
-            string name = i % 2 == 0 ? "nomic-v2" : "all-minilm-l6-v2";
-            store.SetActiveEmbeddingModel(name);
+            try
+            {
+                if (i % 2 == 0)
+                    store.SetActiveEmbeddingModel(i % 4 == 0 ? "nomic-v2" : "all-minilm-l6-v2");
+                else
+                    store.SetExecutionProvider(i % 4 == 1 ? OnnxExecutionProvider.Cpu : OnnxExecutionProvider.DirectMl);
+            }
+            catch(Exception ex)
+            {
+                failures.Add(ex);
+            }
         });
 
+        Assert.Empty(failures);
         Assert.True(File.Exists(mFilePath));
         string finalJson = File.ReadAllText(mFilePath);
         var root = JsonNode.Parse(finalJson) as JsonObject;
         Assert.NotNull(root);
         var onnx = root["Onnx"] as JsonObject;
         Assert.NotNull(onnx);
-        string? finalValue = onnx["ActiveEmbeddingModel"]?.GetValue<string>();
-        Assert.Contains(finalValue, new[] { "nomic-v2", "all-minilm-l6-v2" });
+
+        // Both keys must be present in the final file — proves no torn
+        // read-modify-write erased the other key's most-recent value.
+        Assert.NotNull(onnx["ActiveEmbeddingModel"]);
+        Assert.NotNull(onnx["ExecutionProvider"]);
+
+        string? finalEmbedding = onnx["ActiveEmbeddingModel"]?.GetValue<string>();
+        Assert.Contains(finalEmbedding, new[] { "nomic-v2", "all-minilm-l6-v2" });
+
+        string? finalProvider = onnx["ExecutionProvider"]?.GetValue<string>();
+        Assert.Contains(finalProvider, new[] { OnnxSettings.ExecutionProviderCpu, OnnxSettings.ExecutionProviderDirectMl });
     }
 
     private OnnxOverrideStore BuildStore(OnnxSettings settings)
