@@ -204,8 +204,34 @@ public class OnnxOverrideStore
     {
         string tmpPath = mFilePath + TempSuffix;
         string serialized = root.ToJsonString(smWriteOptions);
-        File.WriteAllText(tmpPath, serialized);
-        File.Move(tmpPath, mFilePath, overwrite: true);
+        try
+        {
+            File.WriteAllText(tmpPath, serialized);
+            File.Move(tmpPath, mFilePath, overwrite: true);
+        }
+        finally
+        {
+            DeleteIfExists(tmpPath);
+        }
+    }
+
+    private void DeleteIfExists(string tmpPath)
+    {
+        if (File.Exists(tmpPath))
+        {
+            // Mirrors OnnxModelDownloader.DeleteIfExists. The .tmp will
+            // only still exist here if File.Move threw (file lock, AV
+            // quarantine); a successful Move already consumed it.
+            try
+            {
+                File.Delete(tmpPath);
+            }
+            catch(Exception ex) when(ex is IOException or UnauthorizedAccessException
+                                        or System.Security.SecurityException)
+            {
+                mLogger.LogWarning(ex, "Failed to delete temp override file {TmpPath}; an orphan may remain in the content root.", tmpPath);
+            }
+        }
     }
 
     private static string GetContentRoot(IHostEnvironment env)
