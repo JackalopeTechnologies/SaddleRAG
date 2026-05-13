@@ -173,6 +173,24 @@ public sealed class OnnxSettingsTests
     }
 
     [Fact]
+    public void GetActiveRerankerModelThrowsForExplicitNameOnEmptyRegistry()
+    {
+        // Subtle edge case: registry is empty AND ActiveRerankerModel
+        // is set to a non-empty, non-"none" value. The four-case switch
+        // in GetActiveRerankerModel takes the (false, false) branch and
+        // FirstOrDefault returns null over the empty list. Without the
+        // throw the caller would think reranking is disabled when in
+        // fact the operator asked for a specific entry that doesn't
+        // exist. The throw routes the operator to the helpful error
+        // message naming both fixes (registered name or "none").
+        var settings = new OnnxSettings { ActiveRerankerModel = "mxbai" };
+
+        var ex = Assert.Throws<InvalidOperationException>(settings.GetActiveRerankerModel);
+        Assert.Contains("mxbai", ex.Message);
+        Assert.Contains(OnnxSettings.RerankerNoneSentinel, ex.Message);
+    }
+
+    [Fact]
     public void EmbeddingModelEntryDefaultsMatchExpected()
     {
         var entry = new EmbeddingModelEntry();
