@@ -28,14 +28,16 @@ public static class SettingsTools
 {
     [McpServerTool(Name = "set_rerank_strategy")]
     [Description("Set the active reranker strategy at runtime. " +
-                 "'Off' = no reranking (hybrid score is final, fastest; current default). " +
-                 "'Llm' and 'CrossEncoder' are currently non-functional stubs: the server accepts the " +
-                 "value, but requests behave like NoOp reranking until those pipelines are calibrated. " +
-                 "Use 'Off' for predictable production behavior. " +
+                 "'Off' = no reranking; hybrid (vector || BM25) score is final. Fastest, predictable, the shipped default. " +
+                 "'Onnx' = in-process cross-encoder reranker via Microsoft.ML.OnnxRuntime. " +
+                 "Scores (query, doc) pairs using the model named by Onnx.ActiveRerankerModel " +
+                 "(default mxbai-rerank-base-v1). Cross-encoder output is sigmoid-mapped to (0, 1) and used " +
+                 "directly as the final score for the top-K candidates; the pass-through tail is appended below. " +
+                 "Adds ~150 ms per search on CPU once the rerank session is warm. " +
                  "Omit strategy to read current state."
                 )]
     public static string SetRerankStrategy(ToggleableReRanker reRanker,
-                                           [Description("Reranker strategy: Off, Llm, or CrossEncoder. Omit to read current state."
+                                           [Description("Reranker strategy: Off or Onnx. Omit to read current state."
                                                        )]
                                            string? strategy = null)
     {
