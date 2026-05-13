@@ -151,17 +151,22 @@ public class OnnxSettings
     private const string ModelsDirOnnxSegment = "onnx";
 
     /// <summary>
-    ///     Returns true if <paramref name="value" /> matches one of the
-    ///     supported execution-provider sentinels case-insensitively. Used
+    ///     Returns true if <paramref name="value" /> matches a currently
+    ///     supported execution-provider sentinel (case-insensitive). Used
     ///     by the <c>set_execution_provider</c> MCP tool to validate input
-    ///     before mutating the setting.
+    ///     before mutating the setting. Only <see cref="ExecutionProviderCpu" />
+    ///     and <see cref="ExecutionProviderDirectMl" /> are accepted today;
+    ///     <see cref="ExecutionProviderCuda" /> stays a defined sentinel for
+    ///     future-proofing but is rejected here because no CUDA-flavored
+    ///     OnnxRuntime NuGet ships with the project — appending the CUDA
+    ///     EP would always fail at session creation. Lift this restriction
+    ///     when a CUDA build flavor is added to <c>SaddleRAG.Ingestion.csproj</c>.
     /// </summary>
     public static bool IsKnownExecutionProvider(string? value)
     {
         bool result = !string.IsNullOrEmpty(value)
                       && (string.Equals(value, ExecutionProviderCpu, StringComparison.OrdinalIgnoreCase)
-                          || string.Equals(value, ExecutionProviderDirectMl, StringComparison.OrdinalIgnoreCase)
-                          || string.Equals(value, ExecutionProviderCuda, StringComparison.OrdinalIgnoreCase));
+                          || string.Equals(value, ExecutionProviderDirectMl, StringComparison.OrdinalIgnoreCase));
         return result;
     }
 

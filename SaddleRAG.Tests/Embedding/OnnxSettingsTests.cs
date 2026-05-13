@@ -46,8 +46,8 @@ public sealed class OnnxSettingsTests
     [InlineData("cpu", true)]
     [InlineData("DirectMl", true)]
     [InlineData("directml", true)]
-    [InlineData("Cuda", true)]
-    [InlineData("cuda", true)]
+    [InlineData("Cuda", false)]
+    [InlineData("cuda", false)]
     [InlineData("", false)]
     [InlineData("OpenVino", false)]
     public void IsKnownExecutionProviderRecognizesValidValuesOnly(string input, bool expected)
