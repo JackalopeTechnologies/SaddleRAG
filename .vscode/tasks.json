@@ -65,6 +65,29 @@
       }
     },
     {
+      "label": "SaddleRAG: Build Debug x64 GPU",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/SaddleRAG.Mcp/SaddleRAG.Mcp.csproj",
+        "--configuration",
+        "Debug",
+        "-p:Platform=x64",
+        "-p:TreatWarningsAsErrors=true",
+        "-p:UseGpu=true"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": "$msCompile",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      }
+    },
+    {
       "label": "SaddleRAG: Stop Service",
       "type": "process",
       "command": "powershell.exe",
