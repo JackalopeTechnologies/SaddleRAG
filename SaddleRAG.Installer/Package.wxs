@@ -49,15 +49,15 @@
         <Property Id="OLLAMA_KEEPALIVE_WILL_SET" Value="0" Secure="yes" />
         <Property Id="OLLAMA_KEEPALIVE_NOTICE" Secure="yes" />
 
-        <!-- GPU detection: CheckGpuCapability CA populates these before -->
-        <!-- LaunchConditions in both sequences. WINDOWSBUILDNUMBER gates  -->
-        <!-- the launch condition; GPU_DETECTED + GPU_DETECTION_REASON     -->
-        <!-- drive ExecutionModeDlg's radio default and helper text;       -->
-        <!-- ONNX_EXECUTION_PROVIDER is intentionally declared without a   -->
-        <!-- Value attribute so "empty == auto-detect" is unambiguous --  -->
-        <!-- the CA only writes it when empty so command-line overrides   -->
-        <!-- (msiexec ... ONNX_EXECUTION_PROVIDER=Cpu) survive both UI and -->
-        <!-- Execute-sequence invocations of the CA.                       -->
+        <!-- GPU detection: CheckGpuCapability CA populates these before    -->
+        <!-- LaunchConditions in both sequences. WINDOWSBUILDNUMBER gates   -->
+        <!-- the launch condition; GPU_DETECTED + GPU_DETECTION_REASON      -->
+        <!-- drive ExecutionModeDlg's radio default and helper text.        -->
+        <!-- ONNX_EXECUTION_PROVIDER is intentionally declared without a    -->
+        <!-- Value attribute so "empty means auto-detect" is unambiguous;   -->
+        <!-- the CA only writes it when empty so command-line overrides     -->
+        <!-- (msiexec ... ONNX_EXECUTION_PROVIDER=Cpu) survive both UI and  -->
+        <!-- Execute-sequence invocations of the CA.                        -->
         <Property Id="WINDOWSBUILDNUMBER" Value="0" Secure="yes" />
         <Property Id="GPU_DETECTED" Value="0" Secure="yes" />
         <Property Id="GPU_DETECTION_REASON" Secure="yes" />
