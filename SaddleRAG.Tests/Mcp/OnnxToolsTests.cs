@@ -106,6 +106,14 @@ public sealed class OnnxToolsTests : IDisposable
         var compiled = root["CompiledIn"] as JsonArray;
         Assert.NotNull(compiled);
         Assert.Contains(compiled, n => n?.GetValue<string>() == OnnxSettings.ExecutionProviderCpu);
+
+        var accepted = root["AcceptedBySettings"] as JsonArray;
+        Assert.NotNull(accepted);
+        var acceptedNames = accepted.Select(n => n?.GetValue<string>()).ToArray();
+        Assert.Contains(OnnxSettings.ExecutionProviderCpu, acceptedNames);
+        Assert.Contains(OnnxSettings.ExecutionProviderDirectMl, acceptedNames);
+        Assert.DoesNotContain(OnnxSettings.ExecutionProviderCuda, acceptedNames);
+
         Assert.Equal(OnnxSettings.ExecutionProviderDirectMl, root["ActiveSetting"]?.GetValue<string>());
         Assert.Equal(OnnxSettings.ExecutionProviderCpu, root["ActiveProvider"]?.GetValue<string>());
     }

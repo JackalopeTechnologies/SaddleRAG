@@ -96,13 +96,16 @@ public static class OnnxTools
     [McpServerTool(Name = "list_execution_providers")]
     [Description("Report which ONNX Runtime execution providers (EPs) this build can use and which " +
                  "one the running embedding / reranker sessions actually loaded with. Returns " +
-                 "{ CompiledIn: [...], ActiveSetting, ActiveProvider, RequestedProvider, " +
-                 "LastLoadWarning }. CompiledIn is what's available in the linked OnnxRuntime " +
-                 "native binaries — CPU is always present; DirectMl appears on GPU builds. " +
-                 "ActiveSetting is the current Onnx.ExecutionProvider value (the request). " +
-                 "ActiveProvider is what the session actually got (CPU if a GPU EP failed at " +
-                 "session creation). LastLoadWarning surfaces the fallback reason if any. " +
-                 "Use set_execution_provider to change the request; it requires a restart."
+                 "{ CompiledIn: [...], AcceptedBySettings: [...], ActiveSetting, ActiveProvider, " +
+                 "RequestedProvider, LastLoadWarning }. CompiledIn is what's available in the " +
+                 "linked OnnxRuntime native binaries — CPU is always present; DirectMl appears " +
+                 "on GPU builds. AcceptedBySettings is what set_execution_provider will currently " +
+                 "accept without throwing (Cuda is a defined enum value but rejected today because " +
+                 "no CUDA-flavored OnnxRuntime NuGet ships with this build). ActiveSetting is the " +
+                 "current Onnx.ExecutionProvider value (the request). ActiveProvider is what the " +
+                 "session actually got (CPU if a GPU EP failed at session creation). " +
+                 "LastLoadWarning surfaces the fallback reason if any. Use set_execution_provider " +
+                 "to change the request; it requires a restart."
                 )]
     public static string ListExecutionProviders(OnnxRuntimeCapabilities capabilities,
                                                 IOptions<OnnxSettings> settings)
@@ -110,9 +113,13 @@ public static class OnnxTools
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(settings);
 
+        var acceptedBySettings = Enum.GetValues<OnnxExecutionProvider>()
+                                     .Where(OnnxSettings.IsSupportedByBuild)
+                                     .ToArray();
         var response = new
                            {
                                CompiledIn = capabilities.CompiledInProviders,
+                               AcceptedBySettings = acceptedBySettings,
                                ActiveSetting = settings.Value.ExecutionProvider,
                                capabilities.ActiveProvider,
                                capabilities.RequestedProvider,
