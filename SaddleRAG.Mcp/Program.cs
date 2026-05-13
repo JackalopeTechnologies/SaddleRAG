@@ -165,12 +165,18 @@ builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(Olla
 // stays as the active embedder. ToggleableReRanker reads
 // RankingSettings.ReRankerStrategy per-call to decide whether to dispatch
 // to OnnxReRanker, the legacy Ollama rerankers, or pass-through.
-builder.Services.Configure<OnnxSettings>(builder.Configuration.GetSection(OnnxSettings.SectionName));
-
-// Validate the Onnx registry shape at startup so per-TokenizerFamily file
-// requirements (Bert→VocabFile, SentencePiece→SpmFile) fail fast with a
-// clear OptionsValidationException at the first IOptions<OnnxSettings>.Value
-// access, rather than deep inside provider construction.
+// Bind + validate Onnx settings via the AddOptions pipeline. ValidateOnStart()
+// runs OnnxSettingsValidator during IHost.StartAsync (before the HTTP server
+// accepts requests), so any registry misconfig — duplicate names, unknown
+// ActiveEmbeddingModel, Bert entry missing VocabFile, etc. — fails the host
+// with an OptionsValidationException listing every failure at once. Without
+// ValidateOnStart() the validator would fire lazily on the first
+// IOptions<OnnxSettings>.Value access deep inside the warmup background
+// thread, hitting the warmup catch path with a generic error and never
+// reaching the operator at the canonical startup-failure surface.
+builder.Services.AddOptions<OnnxSettings>()
+       .Bind(builder.Configuration.GetSection(OnnxSettings.SectionName))
+       .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<OnnxSettings>, OnnxSettingsValidator>();
 
 // Tracks which OnnxRuntime execution providers are compiled into this build
