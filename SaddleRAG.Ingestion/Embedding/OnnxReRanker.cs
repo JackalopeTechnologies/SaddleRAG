@@ -379,16 +379,16 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
                                             );
     }
 
-    private static GraphOptimizationLevel ParseGraphOptimizationLevel(string value)
+    private static GraphOptimizationLevel ParseGraphOptimizationLevel(OnnxGraphOptimizationLevel level)
     {
-        GraphOptimizationLevel result = value switch
+        GraphOptimizationLevel result = level switch
         {
-            LevelDisable => GraphOptimizationLevel.ORT_DISABLE_ALL,
-            LevelBasic => GraphOptimizationLevel.ORT_ENABLE_BASIC,
-            LevelExtended => GraphOptimizationLevel.ORT_ENABLE_EXTENDED,
-            LevelAll => GraphOptimizationLevel.ORT_ENABLE_ALL,
+            OnnxGraphOptimizationLevel.Disable => GraphOptimizationLevel.ORT_DISABLE_ALL,
+            OnnxGraphOptimizationLevel.Basic => GraphOptimizationLevel.ORT_ENABLE_BASIC,
+            OnnxGraphOptimizationLevel.Extended => GraphOptimizationLevel.ORT_ENABLE_EXTENDED,
+            OnnxGraphOptimizationLevel.All => GraphOptimizationLevel.ORT_ENABLE_ALL,
             var _ => throw new InvalidOperationException(
-                $"Unknown Onnx.GraphOptimizationLevel '{value}'. Expected one of: {LevelDisable}, {LevelBasic}, {LevelExtended}, {LevelAll}."
+                $"Unhandled OnnxGraphOptimizationLevel '{level}'. Add a case to ParseGraphOptimizationLevel."
             )
         };
         return result;
@@ -401,10 +401,6 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
     private const string ClsTokenName = "[CLS]";
     private const string SepTokenName = "[SEP]";
     private const string PadTokenName = "[PAD]";
-    private const string LevelDisable = "Disable";
-    private const string LevelBasic = "Basic";
-    private const string LevelExtended = "Extended";
-    private const string LevelAll = "All";
     private const int InputCapacity = 3;
     internal const int SpecialTokenOverhead = 3;
     internal const int MinDocTokens = 4;

@@ -651,7 +651,7 @@ public sealed class OnnxProviderIntegrationTests
                                EmbeddingEnabled = true,
                                ActiveEmbeddingModel = "nomic-embed-text-v1.5",
                                ModelsDir = ScratchModelsRoot,
-                               GraphOptimizationLevel = "Basic"
+                               GraphOptimizationLevel = OnnxGraphOptimizationLevel.Basic
                            };
         settings.EmbeddingModels.Add(new EmbeddingModelEntry
                                          {
@@ -676,7 +676,7 @@ public sealed class OnnxProviderIntegrationTests
                                EmbeddingEnabled = false,
                                ActiveRerankerModel = "mxbai-rerank-base-v1",
                                ModelsDir = ScratchModelsRoot,
-                               GraphOptimizationLevel = "Basic",
+                               GraphOptimizationLevel = OnnxGraphOptimizationLevel.Basic,
                                RerankBatchSize = 16
                            };
         var entry = new RerankerModelEntry
