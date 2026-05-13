@@ -4,6 +4,12 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
+using SaddleRAG.Core.Enums;
+
+#endregion
+
 namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
@@ -29,35 +35,35 @@ public class OnnxRuntimeCapabilities
 {
     public OnnxRuntimeCapabilities()
     {
-        var compiled = new List<string> { OnnxSettings.ExecutionProviderCpu };
+        var compiled = new List<OnnxExecutionProvider> { OnnxExecutionProvider.Cpu };
 #if USE_GPU
-        compiled.Add(OnnxSettings.ExecutionProviderDirectMl);
+        compiled.Add(OnnxExecutionProvider.DirectMl);
 #endif
         mCompiledInProviders = compiled;
     }
 
-    private readonly List<string> mCompiledInProviders;
+    private readonly List<OnnxExecutionProvider> mCompiledInProviders;
 
     /// <summary>
     ///     EPs the running build is capable of attempting. CPU is always
     ///     present. DirectML is present when <c>USE_GPU</c> is defined.
     /// </summary>
-    public IReadOnlyList<string> CompiledInProviders => mCompiledInProviders;
+    public IReadOnlyList<OnnxExecutionProvider> CompiledInProviders => mCompiledInProviders;
 
     /// <summary>
     ///     The EP the most-recently-constructed embedding or reranker
-    ///     session is actually using. Starts as <c>"Cpu"</c> and is
-    ///     updated by <see cref="RecordLoadOutcome" />.
+    ///     session is actually using. Starts as <see cref="OnnxExecutionProvider.Cpu" />
+    ///     and is updated by <see cref="RecordLoadOutcome" />.
     /// </summary>
-    public string ActiveProvider { get; private set; } = OnnxSettings.ExecutionProviderCpu;
+    public OnnxExecutionProvider ActiveProvider { get; private set; } = OnnxExecutionProvider.Cpu;
 
     /// <summary>
-    ///     The EP the most-recent session was configured to attempt
-    ///     (from <c>OnnxSettings.ExecutionProvider</c>). Distinct from
+    ///     The EP the most-recent session was configured to attempt (from
+    ///     <c>OnnxSettings.ExecutionProvider</c>). Distinct from
     ///     <see cref="ActiveProvider" /> when a GPU EP was requested but
     ///     the session fell back to CPU.
     /// </summary>
-    public string RequestedProvider { get; private set; } = OnnxSettings.ExecutionProviderCpu;
+    public OnnxExecutionProvider RequestedProvider { get; private set; } = OnnxExecutionProvider.Cpu;
 
     /// <summary>
     ///     Free-form warning text from the most-recent EP-append attempt,
@@ -87,20 +93,16 @@ public class OnnxRuntimeCapabilities
     ///         </item>
     ///     </list>
     /// </summary>
-    public void RecordLoadOutcome(string requested, string actual, string? warning)
+    public void RecordLoadOutcome(OnnxExecutionProvider requested,
+                                  OnnxExecutionProvider actual,
+                                  string? warning)
     {
-        ArgumentException.ThrowIfNullOrEmpty(requested);
-        ArgumentException.ThrowIfNullOrEmpty(actual);
-
-        bool actualIsCompiledIn = mCompiledInProviders.Any(
-            p => string.Equals(p, actual, StringComparison.OrdinalIgnoreCase)
-        );
-        if (!actualIsCompiledIn)
+        if (!mCompiledInProviders.Contains(actual))
             throw new InvalidOperationException(
                 string.Format(ActualNotCompiledInFormat, actual, string.Join(",", mCompiledInProviders))
             );
 
-        bool fellBack = !string.Equals(requested, actual, StringComparison.OrdinalIgnoreCase);
+        bool fellBack = requested != actual;
         if (fellBack && string.IsNullOrEmpty(warning))
             throw new InvalidOperationException(string.Format(SilentFallbackFormat, requested, actual));
 

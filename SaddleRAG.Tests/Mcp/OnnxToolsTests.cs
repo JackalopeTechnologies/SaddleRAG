@@ -97,7 +97,7 @@ public sealed class OnnxToolsTests : IDisposable
     public void ListExecutionProvidersReportsCompiledInAndActiveSetting()
     {
         var capabilities = new OnnxRuntimeCapabilities();
-        var settings = new OnnxSettings { ExecutionProvider = OnnxSettings.ExecutionProviderDirectMl };
+        var settings = new OnnxSettings { ExecutionProvider = OnnxExecutionProvider.DirectMl };
 
         string json = OnnxTools.ListExecutionProviders(capabilities, Options.Create(settings));
 
@@ -202,7 +202,7 @@ public sealed class OnnxToolsTests : IDisposable
         Assert.NotNull(root);
         Assert.Equal(OnnxSettings.ExecutionProviderDirectMl, root["ExecutionProvider"]?.GetValue<string>());
         Assert.True(root["RequiresRestart"]?.GetValue<bool>());
-        Assert.Equal(OnnxSettings.ExecutionProviderDirectMl, settings.ExecutionProvider);
+        Assert.Equal(OnnxExecutionProvider.DirectMl, settings.ExecutionProvider);
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class OnnxToolsTests : IDisposable
         var root = JsonNode.Parse(json) as JsonObject;
         Assert.NotNull(root);
         Assert.NotNull(root["Warning"]?.GetValue<string>());
-        Assert.Equal(OnnxSettings.ExecutionProviderCpu, settings.ExecutionProvider);
+        Assert.Equal(OnnxExecutionProvider.Cpu, settings.ExecutionProvider);
     }
 
     #endregion

@@ -57,10 +57,9 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
             GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),
             IntraOpNumThreads = mSettings.IntraOpNumThreads
         };
-        string actualProvider = OnnxExecutionProviderConfigurator.Configure(sessionOptions,
-                                                                            mSettings.ExecutionProvider,
-                                                                            capabilities, mLogger
-                                                                           );
+        OnnxExecutionProvider actualProvider = OnnxExecutionProviderConfigurator.Configure(
+            sessionOptions, mSettings.ExecutionProvider, capabilities, mLogger
+        );
         mSession = new InferenceSession(modelPath, sessionOptions);
         mModelHasTokenTypeIds = mSession.InputMetadata.ContainsKey(InputNameTokenTypeIds);
 

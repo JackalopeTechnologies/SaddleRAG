@@ -8,6 +8,7 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntime;
+using SaddleRAG.Core.Enums;
 
 #endregion
 
@@ -38,69 +39,40 @@ public static class OnnxExecutionProviderConfigurator
     ///     <paramref name="capabilities" />. Returns the EP that was
     ///     ultimately applied.
     /// </summary>
-    public static string Configure(SessionOptions options,
-                                   string? requested,
-                                   OnnxRuntimeCapabilities capabilities,
-                                   ILogger logger)
+    public static OnnxExecutionProvider Configure(SessionOptions options,
+                                                  OnnxExecutionProvider requested,
+                                                  OnnxRuntimeCapabilities capabilities,
+                                                  ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(logger);
 
-        string normalized = NormalizeRequested(requested);
-        bool isCpu = string.Equals(normalized, OnnxSettings.ExecutionProviderCpu, StringComparison.Ordinal);
+        (OnnxExecutionProvider actual, string? warning) = requested switch
+        {
+            OnnxExecutionProvider.Cpu => (OnnxExecutionProvider.Cpu, (string?) null),
+            OnnxExecutionProvider.DirectMl => TryAppendDirectMl(options, logger),
+            OnnxExecutionProvider.Cuda => TryAppendCuda(options, logger),
+            var _ => HandleUnknown(requested, logger)
+        };
 
-        (string actual, string? warning) = isCpu
-                                               ? (OnnxSettings.ExecutionProviderCpu, (string?) null)
-                                               : AttemptNonCpuProvider(options, normalized, logger);
-
-        capabilities.RecordLoadOutcome(normalized, actual, warning);
+        capabilities.RecordLoadOutcome(requested, actual, warning);
         return actual;
     }
 
-    private static string NormalizeRequested(string? requested)
+    private static (OnnxExecutionProvider Actual, string? Warning) HandleUnknown(OnnxExecutionProvider requested,
+                                                                                  ILogger logger)
     {
-        string trimmed = string.IsNullOrWhiteSpace(requested)
-                             ? OnnxSettings.ExecutionProviderCpu
-                             : requested.Trim();
-        string result = trimmed.ToUpperInvariant() switch
-        {
-            CpuUpperKey => OnnxSettings.ExecutionProviderCpu,
-            DirectMlUpperKey => OnnxSettings.ExecutionProviderDirectMl,
-            CudaUpperKey => OnnxSettings.ExecutionProviderCuda,
-            var _ => trimmed
-        };
-        return result;
-    }
-
-    private static (string Actual, string? Warning) AttemptNonCpuProvider(SessionOptions options,
-                                                                          string requested,
-                                                                          ILogger logger)
-    {
-        (string Actual, string? Warning) result = requested.ToUpperInvariant() switch
-        {
-            DirectMlUpperKey => TryAppendDirectMl(options, logger),
-            CudaUpperKey => TryAppendCuda(options, logger),
-            var _ => HandleUnknown(requested, logger)
-        };
-        return result;
-    }
-
-    private static (string Actual, string? Warning) HandleUnknown(string requested, ILogger logger)
-    {
-        string warn = string.Format(UnknownProviderWarningFormat, requested,
-                                    OnnxSettings.ExecutionProviderCpu,
-                                    OnnxSettings.ExecutionProviderDirectMl,
-                                    OnnxSettings.ExecutionProviderCuda
-                                   );
+        string warn = string.Format(UnknownProviderWarningFormat, requested);
         logger.LogWarning("OnnxExecutionProviderConfigurator: {Warning}", warn);
-        (string Actual, string? Warning) result = (OnnxSettings.ExecutionProviderCpu, warn);
+        (OnnxExecutionProvider Actual, string? Warning) result = (OnnxExecutionProvider.Cpu, warn);
         return result;
     }
 
-    private static (string Actual, string? Warning) TryAppendDirectMl(SessionOptions options, ILogger logger)
+    private static (OnnxExecutionProvider Actual, string? Warning) TryAppendDirectMl(SessionOptions options,
+                                                                                      ILogger logger)
     {
-        (string Actual, string? Warning) result;
+        (OnnxExecutionProvider Actual, string? Warning) result;
 #if USE_GPU
         try
         {
@@ -108,29 +80,26 @@ public static class OnnxExecutionProviderConfigurator
             logger.LogInformation("OnnxExecutionProviderConfigurator: DirectML EP appended (device {DeviceId}).",
                                   DefaultGpuDeviceId
                                  );
-            result = (OnnxSettings.ExecutionProviderDirectMl, null);
+            result = (OnnxExecutionProvider.DirectMl, null);
         }
         catch(Exception ex) when(IsRecoverableEpAppendFailure(ex))
         {
-            string warn = string.Format(GpuAppendFailedWarningFormat, OnnxSettings.ExecutionProviderDirectMl,
-                                        ex.Message
-                                       );
+            string warn = string.Format(GpuAppendFailedWarningFormat, OnnxExecutionProvider.DirectMl, ex.Message);
             logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
-            result = (OnnxSettings.ExecutionProviderCpu, warn);
+            result = (OnnxExecutionProvider.Cpu, warn);
         }
 #else
-        string warnCpuOnly = string.Format(GpuNotCompiledInWarningFormat,
-                                           OnnxSettings.ExecutionProviderDirectMl
-                                          );
+        string warnCpuOnly = string.Format(GpuNotCompiledInWarningFormat, OnnxExecutionProvider.DirectMl);
         logger.LogWarning("OnnxExecutionProviderConfigurator: {Warning}", warnCpuOnly);
-        result = (OnnxSettings.ExecutionProviderCpu, warnCpuOnly);
+        result = (OnnxExecutionProvider.Cpu, warnCpuOnly);
 #endif
         return result;
     }
 
-    private static (string Actual, string? Warning) TryAppendCuda(SessionOptions options, ILogger logger)
+    private static (OnnxExecutionProvider Actual, string? Warning) TryAppendCuda(SessionOptions options,
+                                                                                  ILogger logger)
     {
-        (string Actual, string? Warning) result;
+        (OnnxExecutionProvider Actual, string? Warning) result;
 #if USE_GPU
         try
         {
@@ -138,20 +107,18 @@ public static class OnnxExecutionProviderConfigurator
             logger.LogInformation("OnnxExecutionProviderConfigurator: CUDA EP appended (device {DeviceId}).",
                                   DefaultGpuDeviceId
                                  );
-            result = (OnnxSettings.ExecutionProviderCuda, null);
+            result = (OnnxExecutionProvider.Cuda, null);
         }
         catch(Exception ex) when(IsRecoverableEpAppendFailure(ex))
         {
-            string warn = string.Format(GpuAppendFailedWarningFormat, OnnxSettings.ExecutionProviderCuda,
-                                        ex.Message
-                                       );
+            string warn = string.Format(GpuAppendFailedWarningFormat, OnnxExecutionProvider.Cuda, ex.Message);
             logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
-            result = (OnnxSettings.ExecutionProviderCpu, warn);
+            result = (OnnxExecutionProvider.Cpu, warn);
         }
 #else
-        string warnCpuOnly = string.Format(GpuNotCompiledInWarningFormat, OnnxSettings.ExecutionProviderCuda);
+        string warnCpuOnly = string.Format(GpuNotCompiledInWarningFormat, OnnxExecutionProvider.Cuda);
         logger.LogWarning("OnnxExecutionProviderConfigurator: {Warning}", warnCpuOnly);
-        result = (OnnxSettings.ExecutionProviderCpu, warnCpuOnly);
+        result = (OnnxExecutionProvider.Cpu, warnCpuOnly);
 #endif
         return result;
     }
@@ -172,7 +139,7 @@ public static class OnnxExecutionProviderConfigurator
     }
 
     private const string UnknownProviderWarningFormat =
-        "Unknown ExecutionProvider '{0}'; falling back to CPU. Valid values: {1}, {2}, {3}.";
+        "Unknown OnnxExecutionProvider '{0}'; falling back to CPU.";
 
     private const string GpuAppendFailedWarningFormat =
         "Failed to append {0} execution provider ({1}); falling back to CPU.";
@@ -180,8 +147,5 @@ public static class OnnxExecutionProviderConfigurator
     private const string GpuNotCompiledInWarningFormat =
         "ExecutionProvider '{0}' requested but this build is CPU-only (UseGpu=false at build time); falling back to CPU.";
 
-    private const string CpuUpperKey = "CPU";
-    private const string DirectMlUpperKey = "DIRECTML";
-    private const string CudaUpperKey = "CUDA";
     private const int DefaultGpuDeviceId = 0;
 }

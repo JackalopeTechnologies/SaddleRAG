@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 
 #endregion
@@ -88,19 +89,18 @@ public class OnnxSettings
 
     /// <summary>
     ///     Preferred ONNX Runtime execution provider for the embedding and
-    ///     reranker sessions. Accepted values: <c>"Cpu"</c> (default),
-    ///     <c>"DirectMl"</c> (Windows DX12 GPU via the DirectML EP),
-    ///     <c>"Cuda"</c> (NVIDIA GPU via the CUDA EP). Comparison is
-    ///     case-insensitive. CPU is always available; the GPU providers
-    ///     only take effect when the build was published with
-    ///     <c>UseGpu=true</c> (which swaps the OnnxRuntime NuGet to the
-    ///     matching GPU package). If a GPU provider is requested but the
-    ///     compiled-in runtime doesn't support it, the session falls back
-    ///     to CPU and a warning is logged; <see cref="OnnxRuntimeCapabilities" />
-    ///     records the outcome so the <c>list_execution_providers</c> MCP
-    ///     tool can report it. Changes take effect on next process start.
+    ///     reranker sessions. Bound from a case-insensitive string in
+    ///     appsettings.json (e.g. <c>"DirectMl"</c>). CPU is always
+    ///     available; the GPU providers only take effect when the build
+    ///     was published with <c>UseGpu=true</c> (which swaps the
+    ///     OnnxRuntime NuGet to the matching GPU package). If a GPU
+    ///     provider is requested but the compiled-in runtime doesn't
+    ///     support it, the session falls back to CPU and a warning is
+    ///     logged; <see cref="OnnxRuntimeCapabilities" /> records the
+    ///     outcome so the <c>list_execution_providers</c> MCP tool can
+    ///     report it. Changes take effect on next process start.
     /// </summary>
-    public string ExecutionProvider { get; set; } = ExecutionProviderCpu;
+    public OnnxExecutionProvider ExecutionProvider { get; set; } = OnnxExecutionProvider.Cpu;
 
     /// <summary>
     ///     Ordered registry of embedding model entries. <strong>First entry
@@ -130,14 +130,25 @@ public class OnnxSettings
 
     public const int DefaultRerankBatchSize = 64;
 
-    /// <summary>CPU execution provider sentinel. Always available regardless of build flavor.</summary>
-    public const string ExecutionProviderCpu = "Cpu";
+    /// <summary>
+    ///     CPU execution provider sentinel string. Kept as a string constant
+    ///     so callers serializing JSON for MCP tool responses and
+    ///     runtime-overrides.json don't have to do their own
+    ///     <see cref="OnnxExecutionProvider" /> ToString.
+    /// </summary>
+    public const string ExecutionProviderCpu = nameof(OnnxExecutionProvider.Cpu);
 
-    /// <summary>DirectML execution provider sentinel. Only effective when built with <c>UseGpu=true</c> against the DirectML NuGet.</summary>
-    public const string ExecutionProviderDirectMl = "DirectMl";
+    /// <summary>
+    ///     DirectML execution provider sentinel string.
+    ///     See <see cref="ExecutionProviderCpu" /> for why this is kept.
+    /// </summary>
+    public const string ExecutionProviderDirectMl = nameof(OnnxExecutionProvider.DirectMl);
 
-    /// <summary>CUDA execution provider sentinel. Only effective when built with <c>UseGpu=true</c> against the CUDA NuGet.</summary>
-    public const string ExecutionProviderCuda = "Cuda";
+    /// <summary>
+    ///     CUDA execution provider sentinel string.
+    ///     See <see cref="ExecutionProviderCpu" /> for why this is kept.
+    /// </summary>
+    public const string ExecutionProviderCuda = nameof(OnnxExecutionProvider.Cuda);
 
     public static string DefaultModelsDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -151,22 +162,40 @@ public class OnnxSettings
     private const string ModelsDirOnnxSegment = "onnx";
 
     /// <summary>
-    ///     Returns true if <paramref name="value" /> matches a currently
-    ///     supported execution-provider sentinel (case-insensitive). Used
-    ///     by the <c>set_execution_provider</c> MCP tool to validate input
-    ///     before mutating the setting. Only <see cref="ExecutionProviderCpu" />
-    ///     and <see cref="ExecutionProviderDirectMl" /> are accepted today;
-    ///     <see cref="ExecutionProviderCuda" /> stays a defined sentinel for
-    ///     future-proofing but is rejected here because no CUDA-flavored
-    ///     OnnxRuntime NuGet ships with the project — appending the CUDA
-    ///     EP would always fail at session creation. Lift this restriction
-    ///     when a CUDA build flavor is added to <c>SaddleRAG.Ingestion.csproj</c>.
+    ///     Returns true if <paramref name="value" /> can be parsed as a
+    ///     currently-supported <see cref="OnnxExecutionProvider" />
+    ///     (case-insensitive). Used by the <c>set_execution_provider</c>
+    ///     MCP tool to validate the LLM's string input before mutating
+    ///     the setting. Only <see cref="OnnxExecutionProvider.Cpu" /> and
+    ///     <see cref="OnnxExecutionProvider.DirectMl" /> are accepted
+    ///     today; <see cref="OnnxExecutionProvider.Cuda" /> stays a
+    ///     defined enum value for future-proofing but is rejected here
+    ///     because no CUDA-flavored OnnxRuntime NuGet ships with the
+    ///     project. Lift the Cuda exclusion when a CUDA build flavor is
+    ///     added to <c>SaddleRAG.Ingestion.csproj</c>.
     /// </summary>
     public static bool IsKnownExecutionProvider(string? value)
     {
-        bool result = !string.IsNullOrEmpty(value)
-                      && (string.Equals(value, ExecutionProviderCpu, StringComparison.OrdinalIgnoreCase)
-                          || string.Equals(value, ExecutionProviderDirectMl, StringComparison.OrdinalIgnoreCase));
+        bool result = Enum.TryParse<OnnxExecutionProvider>(value, ignoreCase: true, out var parsed)
+                      && IsSupportedByBuild(parsed);
+        return result;
+    }
+
+    /// <summary>
+    ///     Returns true if <paramref name="provider" /> is one the current
+    ///     build can attempt to load. CPU always; DirectML when the
+    ///     DirectML NuGet is referenced; CUDA never (yet — see
+    ///     <see cref="IsKnownExecutionProvider" />).
+    /// </summary>
+    public static bool IsSupportedByBuild(OnnxExecutionProvider provider)
+    {
+        bool result = provider switch
+        {
+            OnnxExecutionProvider.Cpu => true,
+            OnnxExecutionProvider.DirectMl => true,
+            OnnxExecutionProvider.Cuda => false,
+            var _ => false
+        };
         return result;
     }
 
