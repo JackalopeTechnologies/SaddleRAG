@@ -110,12 +110,12 @@ public static class OnnxExecutionProviderConfigurator
                                  );
             result = (OnnxSettings.ExecutionProviderDirectMl, null);
         }
-        catch(Exception ex)
+        catch(Exception ex) when(IsRecoverableEpAppendFailure(ex))
         {
             string warn = string.Format(GpuAppendFailedWarningFormat, OnnxSettings.ExecutionProviderDirectMl,
                                         ex.Message
                                        );
-            logger.LogWarning(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
+            logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
             result = (OnnxSettings.ExecutionProviderCpu, warn);
         }
 #else
@@ -140,12 +140,12 @@ public static class OnnxExecutionProviderConfigurator
                                  );
             result = (OnnxSettings.ExecutionProviderCuda, null);
         }
-        catch(Exception ex)
+        catch(Exception ex) when(IsRecoverableEpAppendFailure(ex))
         {
             string warn = string.Format(GpuAppendFailedWarningFormat, OnnxSettings.ExecutionProviderCuda,
                                         ex.Message
                                        );
-            logger.LogWarning(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
+            logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
             result = (OnnxSettings.ExecutionProviderCpu, warn);
         }
 #else
@@ -153,6 +153,21 @@ public static class OnnxExecutionProviderConfigurator
         logger.LogWarning("OnnxExecutionProviderConfigurator: {Warning}", warnCpuOnly);
         result = (OnnxSettings.ExecutionProviderCpu, warnCpuOnly);
 #endif
+        return result;
+    }
+
+    /// <summary>
+    ///     Filter for the EP-append catch. Native ORT throws
+    ///     <see cref="OnnxRuntimeException" /> when the EP itself can't bind
+    ///     (no compatible GPU, missing driver, etc.) — that's the expected
+    ///     fallback case. Anything else (<c>DllNotFoundException</c>,
+    ///     <c>TypeInitializationException</c>, <c>OutOfMemoryException</c>,
+    ///     etc.) signals a deployment defect or a programmer error and
+    ///     must not be downgraded to CPU silently.
+    /// </summary>
+    private static bool IsRecoverableEpAppendFailure(Exception ex)
+    {
+        bool result = ex is OnnxRuntimeException;
         return result;
     }
 
