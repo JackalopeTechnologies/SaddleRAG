@@ -166,8 +166,19 @@ set_rerank_strategy(strategy="Onnx")
 (Valid values: `Off`, `Onnx`. The legacy `Llm` and `CrossEncoder`
 strategies were removed in Phase 5 of this migration.)
 
-Compare a few searches with rerank on vs off. Reranker latency adds
-~150 ms per search for the default `RerankBatchSize=64`.
+Compare a few searches with rerank on vs off. Reranker latency
+depends heavily on the execution provider (see next section):
+
+| Execution provider | `ReRankMs` per search (12 candidates, ~512 token docs) |
+|---|---|
+| **DirectML (GPU build, DX12 GPU)** | ~150–500 ms |
+| **CPU** | ~2–7 s (model is unoptimized for CPU; mxbai-rerank-base-v1 is 184M params, batched attention at seq_len=512) |
+
+The original Phase 1 spike's "~150 ms on CPU" target turned out to be
+DirectML-territory in practice. On CPU, reranking is generally too
+slow for an interactive LLM tool loop — leave `Ranking.ReRankerStrategy=Off`
+on CPU-only installs, or build with `-p:UseGpu=true` and set
+`Onnx.ExecutionProvider=DirectMl` (see GPU acceleration section below).
 
 ## Where models live on disk
 
@@ -262,6 +273,15 @@ The override file is gitignored. To reset to the appsettings.json
 values, delete `runtime-overrides.json` and restart.
 
 ## GPU acceleration (DirectML / CUDA)
+
+Phase 4 measurements on a typical Windows 11 desktop with a DX12 GPU
+showed DirectML running rerank ~16–32× faster than CPU on the same
+inputs (~150–500 ms vs ~2–7 s for `ReRankMs` at 12 candidates,
+~512 token docs). Embedding latency is roughly equivalent across CPU
+and DirectML because the nomic 768-dim embedder is a small model.
+Search quality (top-N, RerankScore, RelevanceScore) is identical:
+same model, same sigmoid normalization, same ordering. **For
+production-grade rerank latency, the GPU build is required.**
 
 The CPU build (default) ships with `Microsoft.ML.OnnxRuntime` and
 runs every session on CPU. To take advantage of a GPU:
