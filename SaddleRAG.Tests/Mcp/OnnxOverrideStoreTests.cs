@@ -137,6 +137,58 @@ public sealed class OnnxOverrideStoreTests : IDisposable
         Assert.False(File.Exists(mFilePath));
     }
 
+    [Fact]
+    public void SetActiveEmbeddingModelRefusesToOverwriteCorruptOverrideFile()
+    {
+        File.WriteAllText(mFilePath, CorruptJson);
+        var settings = BuildSettingsWithRegistry();
+        var store = BuildStore(settings);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => store.SetActiveEmbeddingModel("nomic-v2"));
+        Assert.Contains(mFilePath, ex.Message);
+        // The corrupt file is preserved — operator can salvage manually.
+        Assert.Equal(CorruptJson, File.ReadAllText(mFilePath));
+    }
+
+    [Fact]
+    public void SetActiveEmbeddingModelRefusesNonObjectRootInOverrideFile()
+    {
+        // Override file is a valid JSON array; root must be an object for the
+        // Onnx section nesting to work.
+        File.WriteAllText(mFilePath, "[]");
+        var settings = BuildSettingsWithRegistry();
+        var store = BuildStore(settings);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => store.SetActiveEmbeddingModel("nomic-v2"));
+        Assert.Contains(mFilePath, ex.Message);
+    }
+
+    [Fact]
+    public void ConcurrentWritesProduceWellFormedJsonWithLastValueWinning()
+    {
+        var settings = BuildSettingsWithRegistry();
+        var store = BuildStore(settings);
+
+        // Hammer the store with 50 parallel writes. The internal lock should
+        // serialize them so the final file is always well-formed and contains
+        // a value the loop set (the exact one is racy; we just verify both
+        // shape and presence).
+        Parallel.For(fromInclusive: 0, ConcurrentWriteIterations, i =>
+        {
+            string name = i % 2 == 0 ? "nomic-v2" : "all-minilm-l6-v2";
+            store.SetActiveEmbeddingModel(name);
+        });
+
+        Assert.True(File.Exists(mFilePath));
+        string finalJson = File.ReadAllText(mFilePath);
+        var root = JsonNode.Parse(finalJson) as JsonObject;
+        Assert.NotNull(root);
+        var onnx = root["Onnx"] as JsonObject;
+        Assert.NotNull(onnx);
+        string? finalValue = onnx["ActiveEmbeddingModel"]?.GetValue<string>();
+        Assert.Contains(finalValue, new[] { "nomic-v2", "all-minilm-l6-v2" });
+    }
+
     private OnnxOverrideStore BuildStore(OnnxSettings settings)
     {
         return new OnnxOverrideStore(mTempDir, Options.Create(settings),
@@ -148,9 +200,13 @@ public sealed class OnnxOverrideStoreTests : IDisposable
     {
         var settings = new OnnxSettings();
         settings.EmbeddingModels.Add(new EmbeddingModelEntry { Name = "nomic-v2" });
+        settings.EmbeddingModels.Add(new EmbeddingModelEntry { Name = "all-minilm-l6-v2" });
         settings.RerankerModels.Add(new RerankerModelEntry { Name = "mxbai-base" });
         return settings;
     }
+
+    private const string CorruptJson = "{not valid json";
+    private const int ConcurrentWriteIterations = 50;
 
     private void AssertOverride(string key, string expected)
     {
