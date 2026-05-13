@@ -165,7 +165,22 @@ public class OnnxOverrideStore
         if (File.Exists(mFilePath))
         {
             string existing = File.ReadAllText(mFilePath);
-            result = (JsonNode.Parse(existing) as JsonObject) ?? new JsonObject();
+            JsonNode? parsed;
+            try
+            {
+                parsed = JsonNode.Parse(existing);
+            }
+            catch(JsonException ex)
+            {
+                throw new InvalidOperationException(
+                    string.Format(CorruptOverrideFormat, mFilePath, ex.Message)
+                );
+            }
+
+            result = (parsed as JsonObject)
+                     ?? throw new InvalidOperationException(
+                         string.Format(NonObjectOverrideFormat, mFilePath)
+                     );
         }
         else
             result = new JsonObject();
@@ -208,6 +223,8 @@ public class OnnxOverrideStore
     private const string UnknownEmbeddingNameFormat = "Unknown embedding model '{0}'. Registry contains: [{1}]. Refusing to persist an invalid override.";
     private const string UnknownRerankerNameFormat = "Unknown reranker model '{0}'. Pass '{1}' to disable reranking, or one of the registered models: [{2}]. Refusing to persist an invalid override.";
     private const string UnsupportedProviderFormat = "ExecutionProvider '{0}' is not supported by this build. Refusing to persist an unreachable override.";
+    private const string CorruptOverrideFormat = "Runtime overrides file '{0}' is not valid JSON ({1}). Refusing to overwrite — move it aside manually so any salvageable content is preserved, then retry.";
+    private const string NonObjectOverrideFormat = "Runtime overrides file '{0}' parses as JSON but the root is not an object. Refusing to overwrite — move it aside manually, then retry.";
 
     private static readonly JsonSerializerOptions smWriteOptions = new JsonSerializerOptions { WriteIndented = true };
 }
