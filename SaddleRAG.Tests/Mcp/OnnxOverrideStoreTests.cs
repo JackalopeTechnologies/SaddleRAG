@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Mcp.Tools;
 
@@ -39,7 +40,8 @@ public sealed class OnnxOverrideStoreTests : IDisposable
     [Fact]
     public void SetActiveEmbeddingModelMutatesSettingsAndWritesFile()
     {
-        var settings = new OnnxSettings { ActiveEmbeddingModel = string.Empty };
+        var settings = BuildSettingsWithRegistry();
+        settings.ActiveEmbeddingModel = string.Empty;
         var store = BuildStore(settings);
 
         store.SetActiveEmbeddingModel("nomic-v2");
@@ -52,7 +54,8 @@ public sealed class OnnxOverrideStoreTests : IDisposable
     [Fact]
     public void SetActiveRerankerModelHandlesNoneSentinel()
     {
-        var settings = new OnnxSettings { ActiveRerankerModel = "mxbai-base" };
+        var settings = BuildSettingsWithRegistry();
+        settings.ActiveRerankerModel = "mxbai-base";
         var store = BuildStore(settings);
 
         store.SetActiveRerankerModel(OnnxSettings.RerankerNoneSentinel);
@@ -76,13 +79,13 @@ public sealed class OnnxOverrideStoreTests : IDisposable
     [Fact]
     public void RepeatedWritesPreserveOtherKeys()
     {
-        var settings = new OnnxSettings();
+        var settings = BuildSettingsWithRegistry();
         var store = BuildStore(settings);
 
-        store.SetActiveEmbeddingModel("foo");
+        store.SetActiveEmbeddingModel("nomic-v2");
         store.SetExecutionProvider(OnnxExecutionProvider.DirectMl);
 
-        AssertOverride("ActiveEmbeddingModel", "foo");
+        AssertOverride("ActiveEmbeddingModel", "nomic-v2");
         AssertOverride("ExecutionProvider", OnnxSettings.ExecutionProviderDirectMl);
     }
 
@@ -102,11 +105,51 @@ public sealed class OnnxOverrideStoreTests : IDisposable
         Assert.Throws<ArgumentException>(() => store.SetActiveEmbeddingModel(string.Empty));
     }
 
+    [Fact]
+    public void SetActiveEmbeddingModelRejectsUnknownName()
+    {
+        var settings = BuildSettingsWithRegistry();
+        var store = BuildStore(settings);
+
+        var ex = Assert.Throws<ArgumentException>(() => store.SetActiveEmbeddingModel("does-not-exist"));
+        Assert.Contains("does-not-exist", ex.Message);
+        Assert.False(File.Exists(mFilePath));
+    }
+
+    [Fact]
+    public void SetActiveRerankerModelRejectsUnknownName()
+    {
+        var settings = BuildSettingsWithRegistry();
+        var store = BuildStore(settings);
+
+        var ex = Assert.Throws<ArgumentException>(() => store.SetActiveRerankerModel("typo"));
+        Assert.Contains("typo", ex.Message);
+        Assert.False(File.Exists(mFilePath));
+    }
+
+    [Fact]
+    public void SetExecutionProviderRejectsCudaOnCurrentBuilds()
+    {
+        var store = BuildStore(new OnnxSettings());
+
+        var ex = Assert.Throws<ArgumentException>(() => store.SetExecutionProvider(OnnxExecutionProvider.Cuda));
+        Assert.Contains("Cuda", ex.Message);
+        Assert.False(File.Exists(mFilePath));
+    }
+
     private OnnxOverrideStore BuildStore(OnnxSettings settings)
     {
         return new OnnxOverrideStore(mTempDir, Options.Create(settings),
                                      NullLogger<OnnxOverrideStore>.Instance
                                     );
+    }
+
+    private static OnnxSettings BuildSettingsWithRegistry()
+    {
+        var settings = new OnnxSettings();
+        settings.EmbeddingModels.Add(new EmbeddingModelEntry { Name = "nomic-v2" });
+        settings.RerankerModels.Add(new RerankerModelEntry { Name = "mxbai-base" });
+        return settings;
     }
 
     private void AssertOverride(string key, string expected)

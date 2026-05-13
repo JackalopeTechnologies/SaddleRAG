@@ -77,10 +77,27 @@ public class OnnxOverrideStore
     private readonly OnnxSettings mSettings;
     private readonly Lock mWriteLock = new();
 
-    /// <summary>Sets the active embedding model name and persists it.</summary>
+    /// <summary>
+    ///     Sets the active embedding model name and persists it. Validates
+    ///     <paramref name="name" /> against <c>mSettings.EmbeddingModels</c>
+    ///     before writing — the override file should never contain a name
+    ///     that the registry doesn't define, because the bad value would
+    ///     survive restart and break <c>OnnxSettings.GetActiveEmbeddingModel</c>
+    ///     deep inside provider construction.
+    /// </summary>
     public void SetActiveEmbeddingModel(string name)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
+
+        bool exists = mSettings.EmbeddingModels.Any(e => string.Equals(e.Name, name, StringComparison.Ordinal));
+        if (!exists)
+            throw new ArgumentException(
+                string.Format(UnknownEmbeddingNameFormat, name,
+                              string.Join(",", mSettings.EmbeddingModels.Select(e => e.Name))
+                             ),
+                nameof(name)
+            );
+
         mSettings.ActiveEmbeddingModel = name;
         WriteOverride(ActiveEmbeddingModelKey, name);
     }
@@ -88,18 +105,44 @@ public class OnnxOverrideStore
     /// <summary>
     ///     Sets the active reranker model name (or
     ///     <see cref="OnnxSettings.RerankerNoneSentinel" /> to disable
-    ///     reranking) and persists it.
+    ///     reranking) and persists it. Validates against
+    ///     <c>mSettings.RerankerModels</c> + the <c>"none"</c> sentinel.
     /// </summary>
     public void SetActiveRerankerModel(string name)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
-        mSettings.ActiveRerankerModel = name;
-        WriteOverride(ActiveRerankerModelKey, name);
+
+        bool isNone = string.Equals(name, OnnxSettings.RerankerNoneSentinel, StringComparison.OrdinalIgnoreCase);
+        bool exists = isNone
+                      || mSettings.RerankerModels.Any(e => string.Equals(e.Name, name, StringComparison.Ordinal));
+        if (!exists)
+            throw new ArgumentException(
+                string.Format(UnknownRerankerNameFormat, name,
+                              OnnxSettings.RerankerNoneSentinel,
+                              string.Join(",", mSettings.RerankerModels.Select(e => e.Name))
+                             ),
+                nameof(name)
+            );
+
+        string canonical = isNone ? OnnxSettings.RerankerNoneSentinel : name;
+        mSettings.ActiveRerankerModel = canonical;
+        WriteOverride(ActiveRerankerModelKey, canonical);
     }
 
-    /// <summary>Sets the ONNX execution provider and persists it.</summary>
+    /// <summary>
+    ///     Sets the ONNX execution provider and persists it. Validates
+    ///     against <see cref="OnnxSettings.IsSupportedByBuild" /> so a
+    ///     value the build can't actually load (e.g., Cuda today) never
+    ///     reaches the override file.
+    /// </summary>
     public void SetExecutionProvider(OnnxExecutionProvider provider)
     {
+        if (!OnnxSettings.IsSupportedByBuild(provider))
+            throw new ArgumentException(
+                string.Format(UnsupportedProviderFormat, provider),
+                nameof(provider)
+            );
+
         mSettings.ExecutionProvider = provider;
         WriteOverride(ExecutionProviderKey, provider.ToString());
     }
@@ -161,6 +204,10 @@ public class OnnxOverrideStore
     private const string ActiveRerankerModelKey = "ActiveRerankerModel";
     private const string ExecutionProviderKey = "ExecutionProvider";
     private const string TempSuffix = ".tmp";
+
+    private const string UnknownEmbeddingNameFormat = "Unknown embedding model '{0}'. Registry contains: [{1}]. Refusing to persist an invalid override.";
+    private const string UnknownRerankerNameFormat = "Unknown reranker model '{0}'. Pass '{1}' to disable reranking, or one of the registered models: [{2}]. Refusing to persist an invalid override.";
+    private const string UnsupportedProviderFormat = "ExecutionProvider '{0}' is not supported by this build. Refusing to persist an unreachable override.";
 
     private static readonly JsonSerializerOptions smWriteOptions = new JsonSerializerOptions { WriteIndented = true };
 }
