@@ -174,6 +174,45 @@ public sealed class OnnxExecutionProviderConfiguratorTests
         );
     }
 
+    [Theory]
+    [InlineData(typeof(DllNotFoundException))]
+    [InlineData(typeof(BadImageFormatException))]
+    [InlineData(typeof(InvalidOperationException))]
+    [InlineData(typeof(NotSupportedException))]
+    public void ProductionIsRecoverablePredicateRejectsDeploymentAndProgrammerErrors(Type exceptionType)
+    {
+        // This test calls the internal Configure overload with isRecoverable=null,
+        // which selects the production IsRecoverableEpAppendFailure predicate
+        // (ex is OnnxRuntimeException). Each exception type below is a known
+        // deployment or programmer error that must NOT be silently downgraded
+        // to CPU; if the production predicate were "simplified" to accept any
+        // Exception, these would silently fall through and the test catches it.
+        // The positive case (OnnxRuntimeException → caught) cannot be unit-
+        // tested in isolation because that exception's constructor is internal
+        // to the Microsoft.ML.OnnxRuntime package; Phase 4 manual verification
+        // against real DirectML hardware covers it implicitly.
+        var capabilities = new OnnxRuntimeCapabilities();
+        var options = new SessionOptions();
+        var instance = Activator.CreateInstance(exceptionType, ProductionPredicateProbeMessage);
+        if (instance is not Exception expected)
+            throw new InvalidOperationException(
+                $"Activator.CreateInstance({exceptionType.Name}, string) did not return an Exception."
+            );
+
+        Action<SessionOptions, int> brokenAppender = (_, _) => throw expected;
+
+        var ex = Assert.Throws(exceptionType, () =>
+            OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
+                                                        capabilities, NullLogger.Instance,
+                                                        brokenAppender, cudaAppender: null,
+                                                        isRecoverable: null
+                                                       )
+        );
+        Assert.Contains(ProductionPredicateProbeMessage, ex.Message);
+    }
+
+    private const string ProductionPredicateProbeMessage = "production-predicate-probe";
+
     /// <summary>
     ///     Stand-in for OnnxRuntimeException (whose constructor is
     ///     internal to Microsoft.ML.OnnxRuntime). The injected
