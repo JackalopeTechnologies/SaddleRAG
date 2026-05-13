@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Server;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using MudBlazor.Services;
 using SaddleRAG.Core.Interfaces;
@@ -165,6 +166,12 @@ builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(Olla
 // RankingSettings.ReRankerStrategy per-call to decide whether to dispatch
 // to OnnxReRanker, the legacy Ollama rerankers, or pass-through.
 builder.Services.Configure<OnnxSettings>(builder.Configuration.GetSection(OnnxSettings.SectionName));
+
+// Validate the Onnx registry shape at startup so per-TokenizerFamily file
+// requirements (Bert→VocabFile, SentencePiece→SpmFile) fail fast with a
+// clear OptionsValidationException at the first IOptions<OnnxSettings>.Value
+// access, rather than deep inside provider construction.
+builder.Services.AddSingleton<IValidateOptions<OnnxSettings>, OnnxSettingsValidator>();
 
 // Tracks which OnnxRuntime execution providers are compiled into this build
 // flavor (USE_GPU symbol) and which one the running embedding / reranker
