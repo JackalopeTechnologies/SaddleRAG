@@ -128,24 +128,20 @@ public sealed class OnnxToolsTests : IDisposable
         Assert.NotNull(root);
         Assert.Equal("all-minilm-l6-v2", root["ActiveEmbeddingModel"]?.GetValue<string>());
         Assert.True(root["RequiresRestart"]?.GetValue<bool>());
-        Assert.Null(root["Warning"]?.GetValue<string>());
         Assert.Equal("all-minilm-l6-v2", settings.ActiveEmbeddingModel);
     }
 
     [Fact]
-    public void SetActiveEmbeddingModelWithUnknownNameReturnsWarningAndDoesNotMutate()
+    public void SetActiveEmbeddingModelWithUnknownNameThrowsAndDoesNotMutate()
     {
         var settings = BuildSettingsWithRegistry();
         settings.ActiveEmbeddingModel = "nomic-embed-text-v1.5";
         var store = BuildStore(settings);
 
-        string json = OnnxTools.SetActiveEmbeddingModel(store, Options.Create(settings),
-                                                        "does-not-exist"
-                                                       );
-
-        var root = JsonNode.Parse(json) as JsonObject;
-        Assert.NotNull(root);
-        Assert.NotNull(root["Warning"]?.GetValue<string>());
+        var ex = Assert.Throws<ArgumentException>(() =>
+            OnnxTools.SetActiveEmbeddingModel(store, Options.Create(settings), "does-not-exist")
+        );
+        Assert.Contains("does-not-exist", ex.Message);
         Assert.Equal("nomic-embed-text-v1.5", settings.ActiveEmbeddingModel);
     }
 
@@ -170,18 +166,15 @@ public sealed class OnnxToolsTests : IDisposable
     }
 
     [Fact]
-    public void SetActiveRerankerModelWithUnknownNameReturnsWarning()
+    public void SetActiveRerankerModelWithUnknownNameThrows()
     {
         var settings = BuildSettingsWithRegistry();
         var store = BuildStore(settings);
 
-        string json = OnnxTools.SetActiveRerankerModel(store, Options.Create(settings),
-                                                       "does-not-exist"
-                                                      );
-
-        var root = JsonNode.Parse(json) as JsonObject;
-        Assert.NotNull(root);
-        Assert.NotNull(root["Warning"]?.GetValue<string>());
+        var ex = Assert.Throws<ArgumentException>(() =>
+            OnnxTools.SetActiveRerankerModel(store, Options.Create(settings), "does-not-exist")
+        );
+        Assert.Contains("does-not-exist", ex.Message);
     }
 
     #endregion
@@ -206,18 +199,15 @@ public sealed class OnnxToolsTests : IDisposable
     }
 
     [Fact]
-    public void SetExecutionProviderRejectsUnknownProviderWithWarning()
+    public void SetExecutionProviderRejectsUnknownProviderByThrowing()
     {
         var settings = new OnnxSettings();
         var store = BuildStore(settings);
 
-        string json = OnnxTools.SetExecutionProvider(store, Options.Create(settings),
-                                                     "Vulkan"
-                                                    );
-
-        var root = JsonNode.Parse(json) as JsonObject;
-        Assert.NotNull(root);
-        Assert.NotNull(root["Warning"]?.GetValue<string>());
+        var ex = Assert.Throws<ArgumentException>(() =>
+            OnnxTools.SetExecutionProvider(store, Options.Create(settings), "Vulkan")
+        );
+        Assert.Contains("Vulkan", ex.Message);
         Assert.Equal(OnnxExecutionProvider.Cpu, settings.ExecutionProvider);
     }
 

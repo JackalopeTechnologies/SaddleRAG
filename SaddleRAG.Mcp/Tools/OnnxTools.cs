@@ -129,11 +129,13 @@ public static class OnnxTools
     [McpServerTool(Name = "set_active_embedding_model")]
     [Description("Switch the active ONNX embedding model. Writes to runtime-overrides.json so the " +
                  "value survives restart. Returns { ActiveEmbeddingModel, RequiresRestart, " +
-                 "OverridesFile, Warning }. CRITICAL: changing the embedding model invalidates " +
-                 "every stored vector in every library (different models produce incompatible " +
-                 "vector spaces). After restart, call reembed_library against every library " +
-                 "returned by list_libraries to repopulate vectors. The name must match a Name " +
-                 "in list_embedding_models."
+                 "OverridesFile }. **Throws ArgumentException on unknown name** — the LLM should " +
+                 "treat that as a tool error and report the message verbatim to the user; nothing " +
+                 "is written to disk in the failure case. CRITICAL: changing the embedding model " +
+                 "invalidates every stored vector in every library (different models produce " +
+                 "incompatible vector spaces). After restart, call reembed_library against every " +
+                 "library returned by list_libraries to repopulate vectors. The name must match " +
+                 "a Name in list_embedding_models."
                 )]
     public static string SetActiveEmbeddingModel(OnnxOverrideStore store,
                                                  IOptions<OnnxSettings> settings,
@@ -144,20 +146,13 @@ public static class OnnxTools
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentException.ThrowIfNullOrEmpty(name);
 
-        OnnxSettings value = settings.Value;
-        string? warning = null;
-        bool exists = value.EmbeddingModels.Any(e => string.Equals(e.Name, name, StringComparison.Ordinal));
-        if (exists)
-            store.SetActiveEmbeddingModel(name);
-        else
-            warning = string.Format(UnknownEmbeddingWarningFormat, name);
+        store.SetActiveEmbeddingModel(name);
 
         var response = new
                            {
-                               ActiveEmbeddingModel = value.ActiveEmbeddingModel,
-                               RequiresRestart = exists,
-                               OverridesFile = store.FilePath,
-                               Warning = warning
+                               settings.Value.ActiveEmbeddingModel,
+                               RequiresRestart = true,
+                               OverridesFile = store.FilePath
                            };
         string result = JsonSerializer.Serialize(response, smJsonOptions);
         return result;
@@ -170,10 +165,12 @@ public static class OnnxTools
     [McpServerTool(Name = "set_active_reranker_model")]
     [Description("Switch the active ONNX reranker model. Writes to runtime-overrides.json so the " +
                  "value survives restart. Returns { ActiveRerankerModel, RequiresRestart, " +
-                 "OverridesFile, Warning }. Pass 'none' (case-insensitive) to disable reranking " +
-                 "entirely. Otherwise the name must match a Name in list_reranker_models. " +
-                 "Changing the reranker does NOT invalidate stored vectors — only embedding " +
-                 "model swaps require reembed_library."
+                 "OverridesFile }. **Throws ArgumentException on unknown name** — the LLM should " +
+                 "treat that as a tool error and report the message verbatim to the user; nothing " +
+                 "is written to disk in the failure case. Pass 'none' (case-insensitive) to " +
+                 "disable reranking entirely. Otherwise the name must match a Name in " +
+                 "list_reranker_models. Changing the reranker does NOT invalidate stored vectors " +
+                 "— only embedding model swaps require reembed_library."
                 )]
     public static string SetActiveRerankerModel(OnnxOverrideStore store,
                                                 IOptions<OnnxSettings> settings,
@@ -185,28 +182,13 @@ public static class OnnxTools
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentException.ThrowIfNullOrEmpty(name);
 
-        OnnxSettings value = settings.Value;
-        bool isNone = string.Equals(name, OnnxSettings.RerankerNoneSentinel,
-                                    StringComparison.OrdinalIgnoreCase
-                                   );
-        bool exists = isNone
-                      || value.RerankerModels.Any(e => string.Equals(e.Name, name, StringComparison.Ordinal));
-
-        string? warning = null;
-        if (exists)
-        {
-            string canonical = isNone ? OnnxSettings.RerankerNoneSentinel : name;
-            store.SetActiveRerankerModel(canonical);
-        }
-        else
-            warning = string.Format(UnknownRerankerWarningFormat, name, OnnxSettings.RerankerNoneSentinel);
+        store.SetActiveRerankerModel(name);
 
         var response = new
                            {
-                               ActiveRerankerModel = value.ActiveRerankerModel,
-                               RequiresRestart = exists,
-                               OverridesFile = store.FilePath,
-                               Warning = warning
+                               settings.Value.ActiveRerankerModel,
+                               RequiresRestart = true,
+                               OverridesFile = store.FilePath
                            };
         string result = JsonSerializer.Serialize(response, smJsonOptions);
         return result;
@@ -217,14 +199,16 @@ public static class OnnxTools
     #region set_execution_provider
 
     [McpServerTool(Name = "set_execution_provider")]
-    [Description("Set the ONNX Runtime execution provider (CPU, DirectMl, Cuda). Writes to " +
-                 "runtime-overrides.json so the value survives restart. Returns " +
-                 "{ ExecutionProvider, RequiresRestart, OverridesFile, Warning, CompiledIn }. " +
-                 "Setting takes effect on next process start. If the requested provider isn't " +
-                 "compiled into this build (check CompiledIn from list_execution_providers), " +
-                 "the session falls back to CPU at startup and LastLoadWarning records why. " +
-                 "GPU providers require the GPU build flavor (UseGpu=true at MSBuild time). " +
-                 "CPU is always available."
+    [Description("Set the ONNX Runtime execution provider. Accepted values today: Cpu, DirectMl. " +
+                 "Cuda is a recognized enum value but the current build doesn't support it. " +
+                 "Writes to runtime-overrides.json so the value survives restart. Returns " +
+                 "{ ExecutionProvider, RequiresRestart, OverridesFile }. **Throws ArgumentException " +
+                 "on unsupported or unparseable values** — the LLM should treat that as a tool " +
+                 "error and report the message verbatim; nothing is written to disk in the " +
+                 "failure case. Setting takes effect on next process start. If the requested " +
+                 "provider is compiled in but the hardware refuses it, the session falls back " +
+                 "to CPU at startup and list_execution_providers' LastLoadWarning records why. " +
+                 "GPU providers require the GPU build flavor (UseGpu=true at MSBuild time)."
                 )]
     public static string SetExecutionProvider(OnnxOverrideStore store,
                                               IOptions<OnnxSettings> settings,
@@ -236,24 +220,23 @@ public static class OnnxTools
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentException.ThrowIfNullOrEmpty(provider);
 
-        bool parsed = Enum.TryParse<OnnxExecutionProvider>(provider, ignoreCase: true, out var parsedValue)
-                      && OnnxSettings.IsSupportedByBuild(parsedValue);
-        string? warning = null;
-        if (parsed)
-            store.SetExecutionProvider(parsedValue);
-        else
-            warning = string.Format(UnknownExecutionProviderWarningFormat, provider,
-                                    OnnxSettings.ExecutionProviderCpu,
-                                    OnnxSettings.ExecutionProviderDirectMl,
-                                    OnnxSettings.ExecutionProviderCuda
-                                   );
+        if (!Enum.TryParse<OnnxExecutionProvider>(provider, ignoreCase: true, out var parsedValue))
+            throw new ArgumentException(
+                string.Format(UnknownExecutionProviderWarningFormat, provider,
+                              OnnxSettings.ExecutionProviderCpu,
+                              OnnxSettings.ExecutionProviderDirectMl,
+                              OnnxSettings.ExecutionProviderCuda
+                             ),
+                nameof(provider)
+            );
+
+        store.SetExecutionProvider(parsedValue);
 
         var response = new
                            {
                                ExecutionProvider = settings.Value.ExecutionProvider.ToString(),
-                               RequiresRestart = parsed,
-                               OverridesFile = store.FilePath,
-                               Warning = warning
+                               RequiresRestart = true,
+                               OverridesFile = store.FilePath
                            };
         string result = JsonSerializer.Serialize(response, smJsonOptions);
         return result;
