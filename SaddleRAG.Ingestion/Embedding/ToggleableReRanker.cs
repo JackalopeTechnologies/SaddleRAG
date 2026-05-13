@@ -60,6 +60,7 @@ public class ToggleableReRanker : IReRanker
     private readonly NoOpReRanker mNoOpReRanker;
     private readonly OnnxReRanker mOnnxReRanker;
     private readonly RankingSettings mRankingSettings;
+    private int mOnnxWithoutEntryWarned;
 
     /// <inheritdoc />
     public Task<IReadOnlyList<ReRankResult>> ReRankAsync(string query,
@@ -84,6 +85,14 @@ public class ToggleableReRanker : IReRanker
                 ReRankerStrategy.Onnx => mOnnxReRanker,
                 var _ => mNoOpReRanker
             };
+
+        bool isOnnxWithoutEntry = strategy == ReRankerStrategy.Onnx
+                                  && string.IsNullOrEmpty(mOnnxReRanker.ModelName);
+        if (isOnnxWithoutEntry && Interlocked.Exchange(ref mOnnxWithoutEntryWarned, value: 1) == 0)
+            mLogger.LogWarning(OnnxWithoutEntryWarningMessage);
+
         return result;
     }
+
+    private const string OnnxWithoutEntryWarningMessage = "ReRankerStrategy=Onnx but OnnxReRanker has no active entry (Onnx.ActiveRerankerModel resolved to null). Search results are being returned with synthetic positional scores; reranking is effectively disabled. Either set Onnx.ActiveRerankerModel to a registered entry, or set ReRankerStrategy=Off to make the pass-through behavior explicit.";
 }
