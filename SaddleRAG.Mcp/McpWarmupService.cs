@@ -125,7 +125,21 @@ public sealed class McpWarmupService : BackgroundService
 
             stepSw.Restart();
 
-            await onnxDownloader.EnsureActiveModelsAsync(stoppingToken);
+            try
+
+            {
+                await onnxDownloader.EnsureActiveModelsAsync(stoppingToken);
+            }
+
+            catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+
+            {
+                mWarmupState.MarkFailed(PhaseOnnxDownloadFailed, ex.Message);
+
+                mLogger.LogError(ex, OnnxDownloadFailedLogTemplate, startupSw.Elapsed.TotalSeconds);
+
+                throw;
+            }
 
             mWarmupState.MarkPhase(PhaseOnnxModelsReady);
 
@@ -220,7 +234,7 @@ public sealed class McpWarmupService : BackgroundService
         {
             mWarmupState.MarkFailed(nameof(ScrapeJobStatus.Failed), ex.Message);
 
-            mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Failed", startupSw.Elapsed.TotalSeconds);
+            mLogger.LogError(ex, "[Warmup] T+{Sec:F1}s - Failed", startupSw.Elapsed.TotalSeconds);
         }
     }
 
@@ -357,9 +371,13 @@ public sealed class McpWarmupService : BackgroundService
 
     private const string PhaseOnnxModelsReady = "ONNX models ready";
 
+    private const string PhaseOnnxDownloadFailed = "ONNX download failed";
+
     private const string PhaseVectorIndicesLoaded = "Vector indices loaded";
 
     private const string PhaseCanceled = "Canceled";
+
+    private const string OnnxDownloadFailedLogTemplate = "[Warmup] T+{Sec:F1}s - ONNX model download failed; embedding/reranking will not be available until the operator resolves this. Check network, Onnx.ModelsDir permissions, and the configured RepoId/ModelFile values.";
 
     private const string WarmupProbeText = "warmup";
 
