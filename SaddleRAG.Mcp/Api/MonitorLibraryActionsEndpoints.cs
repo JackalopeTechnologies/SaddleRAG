@@ -6,8 +6,10 @@
 
 #region Usings
 
+using System.Text.Json;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Mcp.Auth;
 
@@ -45,32 +47,51 @@ public static class MonitorLibraryActionsEndpoints
 
     private static async Task<IResult> RescrapeAsync(string libraryId,
                                                      RescrapeRequest req,
-                                                     IScrapeJobRepository jobs,
+                                                     IJobRepository jobs,
                                                      IScrapeJobQueue queue,
                                                      CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentNullException.ThrowIfNull(req);
         ArgumentException.ThrowIfNullOrEmpty(req.Version);
-        var recent = await jobs.ListRecentAsync(RescrapeJobScanLimit, ct);
-        var previous = recent.Where(r => string.Equals(r.Job.LibraryId,
+        var recent = await jobs.ListRecentAsync(JobType.Scrape, RescrapeJobScanLimit, ct);
+        var previous = recent.Where(r => string.Equals(r.LibraryId,
                                                        libraryId,
                                                        StringComparison.OrdinalIgnoreCase
                                                       ) &&
-                                         string.Equals(r.Job.Version,
+                                         string.Equals(r.Version,
                                                        req.Version,
                                                        StringComparison.OrdinalIgnoreCase
                                                       )
                                    )
                              .OrderByDescending(r => r.CreatedAt)
                              .FirstOrDefault();
+        var previousJob = DeserializeScrapeJob(previous);
         IResult result;
-        if (previous is null)
+        if (previousJob is null)
             result = Results.NotFound(new { Error = NoPriorScrapeError });
         else
         {
-            var jobId = await queue.QueueAsync(previous.Job, profile: null, ct);
+            var jobId = await queue.QueueAsync(previousJob, profile: null, ct);
             result = Results.Ok(new { JobId = jobId });
+        }
+
+        return result;
+    }
+
+    private static ScrapeJob? DeserializeScrapeJob(JobRecord? record)
+    {
+        ScrapeJob? result = null;
+        if (!string.IsNullOrEmpty(record?.InputJson))
+        {
+            try
+            {
+                result = JsonSerializer.Deserialize<ScrapeJob>(record.InputJson);
+            }
+            catch(JsonException)
+            {
+                // Malformed input — treat as no prior job.
+            }
         }
 
         return result;

@@ -84,7 +84,6 @@ public sealed class CancellationToolsTests
                                                             null,
                                                             null,
                                                             null,
-                                                            null,
                                                             lifetime
                                                            );
         return runner;
