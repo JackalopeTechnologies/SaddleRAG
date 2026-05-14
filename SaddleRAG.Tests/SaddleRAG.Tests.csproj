@@ -40,6 +40,7 @@
     <ProjectReference Include="..\SaddleRAG.ClientIntegration\SaddleRAG.ClientIntegration.csproj" />
     <ProjectReference Include="..\SaddleRAG.Core\SaddleRAG.Core.csproj" />
     <ProjectReference Include="..\SaddleRAG.Ingestion\SaddleRAG.Ingestion.csproj" />
+    <ProjectReference Include="..\SaddleRAG.Installer.Logic\SaddleRAG.Installer.Logic.csproj" />
     <ProjectReference Include="..\SaddleRAG.Mcp\SaddleRAG.Mcp.csproj" />
     <ProjectReference Include="..\SaddleRAG.Monitor\SaddleRAG.Monitor.csproj" />
   </ItemGroup>

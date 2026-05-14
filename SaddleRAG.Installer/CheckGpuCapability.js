@@ -16,12 +16,16 @@
 //   ONNX_EXECUTION_PROVIDER : "DirectMl" when GPU_DETECTED=1, "Cpu" otherwise.
 //                             The dialog's RadioButtonGroup reads this so the
 //                             right radio renders selected; silent installs
-//                             use it as the default written to appsettings.json
-//                             via PatchAppSettings. The CA only writes when the
+//                             (/qn, where the UI sequence is skipped) use it
+//                             as the default written to appsettings.json via
+//                             PatchAppSettings. The CA only writes when the
 //                             property is currently empty, so an explicit
 //                             command-line override (msiexec ... ONNX_EXECUTION_PROVIDER=Cpu)
-//                             is preserved through both the UI and Execute
-//                             sequence invocations of this CA. The Property
+//                             on a silent install is preserved when the
+//                             Execute-sequence copy of this CA fires, and a
+//                             user's radio click in interactive installs is
+//                             preserved when the same Execute-sequence copy
+//                             re-runs after the dialog. The Property
 //                             declaration in Package.wxs intentionally has no
 //                             default Value attribute so "empty == auto-detect"
 //                             is the unambiguous initial state.
@@ -30,25 +34,47 @@
 // permissive: a runtime EP-append failure in OnnxExecutionProviderConfigurator
 // already falls back to CPU with a recorded warning, so a false positive here
 // degrades gracefully rather than breaking the install.
+//
+// The adapter-classification rules in _isMicrosoftFallbackAdapter below are
+// mirrored in SaddleRAG.Installer.Logic.GpuDetectionRules (referenced by
+// SaddleRAG.Tests.Installer.GpuDetectionRulesTests) so the heuristic is unit-
+// testable. If either side changes, update the other.
 
-var _buildNumber = 0;
-var _gpuDetected = "0";
-var _reason      = "";
-var _gpuName     = "";
-var _gpuDriver   = "";
+var _buildNumber          = 0;
+var _buildNumberReadFailed = false;
+var _gpuDetected          = "0";
+var _reason               = "";
+var _gpuName              = "";
+var _gpuDriver            = "";
+
+function _formatJscriptError(err)
+{
+    var _msg  = (err && err.message)     ? err.message     : "";
+    var _desc = (err && err.description) ? err.description : "";
+    var _result;
+    if (_msg.length > 0)       { _result = _msg; }
+    else if (_desc.length > 0) { _result = _desc; }
+    else                       { _result = "unknown"; }
+    return _result;
+}
 
 // ---- OS build number from HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\CurrentBuildNumber.
 // REG_SZ on every Windows release; WScript.Shell.RegRead returns the string,
-// parseInt gives a numeric value the LaunchCondition can compare cleanly.
+// parseInt gives a numeric value the LaunchCondition can compare cleanly. On
+// failure we set _buildNumber=0 (which the LaunchCondition's permissive "= 0"
+// branch lets through) and record _buildNumberReadFailed so the reason string
+// can warn the operator that the OS-version gate was bypassed.
 try {
     var _shell = new ActiveXObject("WScript.Shell");
     var _raw   = _shell.RegRead("HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\CurrentBuildNumber");
     _buildNumber = parseInt(_raw, 10);
     if (isNaN(_buildNumber)) {
-        _buildNumber = 0;
+        _buildNumber          = 0;
+        _buildNumberReadFailed = true;
     }
 } catch(e) {
-    _buildNumber = 0;
+    _buildNumber          = 0;
+    _buildNumberReadFailed = true;
 }
 
 // ---- WMI Win32_VideoController scan. Permissive heuristic: any controller
@@ -89,7 +115,7 @@ try {
     }
 } catch(e) {
     _gpuDetected = "0";
-    _reason = "GPU detection unavailable (WMI error: " + e.message + "); defaulting to CPU.";
+    _reason = "GPU detection unavailable (WMI error: " + _formatJscriptError(e) + "); defaulting to CPU.";
 }
 
 // ---- Compose the reason string. LaunchCondition will block install on
@@ -107,16 +133,27 @@ if (_reason === "") {
     }
 }
 
+// If the registry read failed, the LaunchCondition's "WINDOWSBUILDNUMBER = 0"
+// branch lets install proceed, but the operator should know the OS-version
+// gate was bypassed. Append a note rather than overwriting the GPU reason.
+if (_buildNumberReadFailed) {
+    _reason = _reason + " (OS build unreadable from registry; launch-gate bypassed.)";
+}
+
 Session.Property("WINDOWSBUILDNUMBER")   = String(_buildNumber);
 Session.Property("GPU_DETECTED")         = _gpuDetected;
 Session.Property("GPU_DETECTION_REASON") = _reason;
 
-// Only seed ONNX_EXECUTION_PROVIDER if it hasn't already been set by either
-// the command line (msiexec /i ... ONNX_EXECUTION_PROVIDER=...) or a previous
-// invocation of this CA (the CA runs in both the UI and Execute sequences
-// for the silent-install case). RadioButtonGroup in ExecutionModeDlg writes
-// to the same property when the user clicks a radio, so on the second
-// invocation in the Execute sequence the user's choice is preserved.
+// Only seed ONNX_EXECUTION_PROVIDER if it hasn't already been set. The empty-
+// guard protects two distinct scenarios:
+//   * Silent install (/qn): InstallUISequence is skipped, so only the
+//     Execute-sequence copy of this CA runs. If the operator passed
+//     ONNX_EXECUTION_PROVIDER=X on the msiexec command line, the property
+//     arrives already set; the guard preserves it.
+//   * Interactive install: the UI-sequence copy seeds the property from
+//     detection, ExecutionModeDlg's RadioButtonGroup may overwrite it on a
+//     user click, then the Execute-sequence copy re-runs this CA. The guard
+//     keeps the user's choice across that second invocation.
 var _currentProvider = Session.Property("ONNX_EXECUTION_PROVIDER");
 if (!_currentProvider || _currentProvider.length === 0) {
     Session.Property("ONNX_EXECUTION_PROVIDER") = (_gpuDetected === "1") ? "DirectMl" : "Cpu";

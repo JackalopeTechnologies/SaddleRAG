@@ -32,11 +32,17 @@ public sealed class OnnxRuntimeCapabilitiesTests
 
         // CPU is always compiled in; DirectMl is only compiled in when the
         // USE_GPU symbol is defined. The capability list must match.
+        // Cuda must never appear today regardless of flavor — the GPU NuGet
+        // is the DirectML one, not Microsoft.ML.OnnxRuntime.Gpu. Asserting
+        // its absence locks the IsSupportedByBuild contract documented on
+        // OnnxExecutionProvider.Cuda; relax this assertion only when a
+        // Cuda-flavored build flavor is actually added.
 #if USE_GPU
         Assert.Contains(OnnxExecutionProvider.DirectMl, capabilities.CompiledInProviders);
 #else
         Assert.DoesNotContain(OnnxExecutionProvider.DirectMl, capabilities.CompiledInProviders);
 #endif
+        Assert.DoesNotContain(OnnxExecutionProvider.Cuda, capabilities.CompiledInProviders);
     }
 
     [Fact]

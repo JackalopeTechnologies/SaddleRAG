@@ -54,10 +54,12 @@
         <!-- the launch condition; GPU_DETECTED + GPU_DETECTION_REASON      -->
         <!-- drive ExecutionModeDlg's radio default and helper text.        -->
         <!-- ONNX_EXECUTION_PROVIDER is intentionally declared without a    -->
-        <!-- Value attribute so "empty means auto-detect" is unambiguous;   -->
-        <!-- the CA only writes it when empty so command-line overrides     -->
-        <!-- (msiexec ... ONNX_EXECUTION_PROVIDER=Cpu) survive both UI and  -->
-        <!-- Execute-sequence invocations of the CA.                        -->
+        <!-- Value attribute so "empty means auto-detect" is unambiguous.   -->
+        <!-- The CA only writes ONNX_EXECUTION_PROVIDER when empty, which   -->
+        <!-- preserves either a silent-install command-line value or, on    -->
+        <!-- interactive installs, the user's RadioButtonGroup click across -->
+        <!-- the Execute-sequence re-run. See the empty-guard block in      -->
+        <!-- CheckGpuCapability.js for the full rationale.                  -->
         <Property Id="WINDOWSBUILDNUMBER" Value="0" Secure="yes" />
         <Property Id="GPU_DETECTED" Value="0" Secure="yes" />
         <Property Id="GPU_DETECTION_REASON" Secure="yes" />
@@ -103,6 +105,7 @@
         <Component Id="HelperScripts" Directory="MCPFOLDER" Guid="B3A1F2E4-9C7D-4E8B-A5F1-2D3E4F5A6B7C">
             <File Source="SetOllamaKeepAlive.ps1" />
             <File Source="UnsetOllamaKeepAlive.ps1" />
+            <File Source="PatchAppSettings.ps1" />
         </Component>
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
@@ -153,27 +156,29 @@
                       Execute="immediate"
                       Return="ignore" />
 
-        <!-- Detect GPU/DirectML capability so ExecutionModeDlg can pre-select the    -->
-        <!-- right radio and silent installs default sensibly. Also reads OS build    -->
-        <!-- number so the LaunchCondition above can block on Windows < 18362.        -->
-        <!-- Scheduled Before="LaunchConditions" in both InstallUISequence and        -->
-        <!-- InstallExecuteSequence so silent installs get the same gate. Return is   -->
-        <!-- "ignore" so a JScript/WMI hiccup never aborts the install — the          -->
-        <!-- LaunchCondition's "WINDOWSBUILDNUMBER = 0" branch covers that case.      -->
+        <!-- Detect GPU/DirectML capability so ExecutionModeDlg can pre-select the -->
+        <!-- right radio and silent installs default sensibly. Also reads OS build -->
+        <!-- number so the <Launch> condition above can block on Windows < 18362.  -->
+        <!-- Sequencing and the Return="ignore" rationale are documented on the    -->
+        <!-- <Launch> element; this CA inherits both.                              -->
         <CustomAction Id="CheckGpuCapability"
                       Script="jscript"
                       ScriptSourceFile="CheckGpuCapability.js"
                       Execute="immediate"
                       Return="ignore" />
 
-        <!-- Patch appsettings.json with user-provided values (deferred, after file install). -->
-        <!-- Onnx.ExecutionProvider falls back to 'Cpu' if [ONNX_EXECUTION_PROVIDER] expands  -->
-        <!-- to empty (CheckGpuCapability didn't run + no command-line override) so the     -->
-        <!-- written config is always a valid OnnxExecutionProvider enum value.             -->
+        <!-- Patch appsettings.json with user-provided values (deferred, after file install).  -->
+        <!-- Delegates to PatchAppSettings.ps1 installed under MCPFOLDER so the logic is unit-  -->
+        <!-- testable (see SaddleRAG.Tests/Installer/PatchAppSettingsTests.cs) and isolated     -->
+        <!-- from MSI property-formatting quirks. CA is Return="ignore" so a script failure     -->
+        <!-- lands in the verbose MSI log without aborting the install; the runtime EP         -->
+        <!-- fallback in OnnxExecutionProviderConfigurator absorbs a missing/wrong              -->
+        <!-- ExecutionProvider write, and a missing Mongo/Ollama write fails visibly at        -->
+        <!-- startup config-binding rather than silently committing a broken install.          -->
         <SetProperty Id="PatchAppSettings"
                      Before="PatchAppSettings"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -Command &quot;$f = Join-Path '[MCPFOLDER]' 'appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.MongoDB.Profiles.local.ConnectionString = '[MONGOCONNECTION]'; $j.MongoDB.Profiles.local.DatabaseName = '[MONGODATABASE]'; $j.Ollama.Endpoint = '[OLLAMAENDPOINT]'; $ep = '[ONNX_EXECUTION_PROVIDER]'; if ([string]::IsNullOrWhiteSpace($ep)) { $ep = 'Cpu' }; $j.Onnx.ExecutionProvider = $ep; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8&quot;" />
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]PatchAppSettings.ps1&quot; -AppSettingsPath &quot;[MCPFOLDER]appsettings.json&quot; -ConnectionString &quot;[MONGOCONNECTION]&quot; -DatabaseName &quot;[MONGODATABASE]&quot; -OllamaEndpoint &quot;[OLLAMAENDPOINT]&quot; -ExecutionProvider &quot;[ONNX_EXECUTION_PROVIDER]&quot;" />
 
         <CustomAction Id="PatchAppSettings"
                       BinaryRef="Wix4UtilCA_X86"
