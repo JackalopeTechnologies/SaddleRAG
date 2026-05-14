@@ -161,4 +161,16 @@ public class RepositoryFactory
         var result = new BackgroundJobRepository(context);
         return result;
     }
+
+    /// <summary>
+    ///     Get the unified job repository for the specified profile.
+    ///     Replaces the four legacy per-pipeline getters above; new
+    ///     callers should use this exclusively.
+    /// </summary>
+    public virtual IJobRepository GetJobRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new JobRepository(context);
+        return result;
+    }
 }
