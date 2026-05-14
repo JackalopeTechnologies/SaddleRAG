@@ -194,7 +194,6 @@ public sealed class UrlCorrectionToolsTests
                                                             null,
                                                             null,
                                                             null,
-                                                            null,
                                                             lifetime
                                                            );
         runner.QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(string.Empty);
