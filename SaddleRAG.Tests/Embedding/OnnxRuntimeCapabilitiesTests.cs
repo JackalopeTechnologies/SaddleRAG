@@ -50,9 +50,9 @@ public sealed class OnnxRuntimeCapabilitiesTests
     {
         var capabilities = new OnnxRuntimeCapabilities();
 
-        capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.DirectMl,
-                                       actual: OnnxExecutionProvider.Cpu,
-                                       warning: "DirectML not compiled in"
+        capabilities.RecordLoadOutcome(OnnxExecutionProvider.DirectMl,
+                                       OnnxExecutionProvider.Cpu,
+                                       "DirectML not compiled in"
                                       );
 
         Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
@@ -63,13 +63,13 @@ public sealed class OnnxRuntimeCapabilitiesTests
     public void RecordLoadOutcomeClearsWarningOnSuccess()
     {
         var capabilities = new OnnxRuntimeCapabilities();
-        capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.DirectMl,
-                                       actual: OnnxExecutionProvider.Cpu,
-                                       warning: "fell back"
+        capabilities.RecordLoadOutcome(OnnxExecutionProvider.DirectMl,
+                                       OnnxExecutionProvider.Cpu,
+                                       "fell back"
                                       );
 
-        capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.Cpu,
-                                       actual: OnnxExecutionProvider.Cpu,
+        capabilities.RecordLoadOutcome(OnnxExecutionProvider.Cpu,
+                                       OnnxExecutionProvider.Cpu,
                                        warning: null
                                       );
 
@@ -85,8 +85,8 @@ public sealed class OnnxRuntimeCapabilitiesTests
         // GPU build doesn't compile in Cuda either (only DirectMl). Either
         // way recording Cuda as the actual loaded EP is a bug.
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.Cuda,
-                                           actual: OnnxExecutionProvider.Cuda,
+            capabilities.RecordLoadOutcome(OnnxExecutionProvider.Cuda,
+                                           OnnxExecutionProvider.Cuda,
                                            warning: null
                                           )
         );
@@ -99,8 +99,8 @@ public sealed class OnnxRuntimeCapabilitiesTests
         var capabilities = new OnnxRuntimeCapabilities();
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.DirectMl,
-                                           actual: OnnxExecutionProvider.Cpu,
+            capabilities.RecordLoadOutcome(OnnxExecutionProvider.DirectMl,
+                                           OnnxExecutionProvider.Cpu,
                                            warning: null
                                           )
         );

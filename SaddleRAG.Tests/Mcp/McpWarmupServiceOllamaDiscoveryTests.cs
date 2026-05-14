@@ -38,7 +38,7 @@ public sealed class McpWarmupServiceOllamaDiscoveryTests
     [Fact]
     public void ResolveOllamaModelNameReturnsNullWhenModelNameIsEmpty()
     {
-        var version = BuildVersion(providerId: OllamaEmbeddingProvider.ProviderIdName, modelName: string.Empty);
+        var version = BuildVersion(OllamaEmbeddingProvider.ProviderIdName, string.Empty);
 
         string? result = McpWarmupService.ResolveOllamaModelName(version);
 
@@ -48,7 +48,7 @@ public sealed class McpWarmupServiceOllamaDiscoveryTests
     [Fact]
     public void ResolveOllamaModelNameReturnsNullForOnnxProvider()
     {
-        var version = BuildVersion(providerId: OnnxProviderId, modelName: OnnxModelName);
+        var version = BuildVersion(OnnxProviderId, OnnxModelName);
 
         string? result = McpWarmupService.ResolveOllamaModelName(version);
 
@@ -58,7 +58,7 @@ public sealed class McpWarmupServiceOllamaDiscoveryTests
     [Fact]
     public void ResolveOllamaModelNameReturnsModelNameForOllamaProvider()
     {
-        var version = BuildVersion(providerId: OllamaEmbeddingProvider.ProviderIdName, modelName: OllamaModelName);
+        var version = BuildVersion(OllamaEmbeddingProvider.ProviderIdName, OllamaModelName);
 
         string? result = McpWarmupService.ResolveOllamaModelName(version);
 
@@ -68,7 +68,7 @@ public sealed class McpWarmupServiceOllamaDiscoveryTests
     [Fact]
     public void ResolveOllamaModelNameMatchesProviderIdCaseInsensitively()
     {
-        var version = BuildVersion(providerId: OllamaProviderIdMixedCase, modelName: OllamaModelName);
+        var version = BuildVersion(OllamaProviderIdMixedCase, OllamaModelName);
 
         string? result = McpWarmupService.ResolveOllamaModelName(version);
 
@@ -78,7 +78,7 @@ public sealed class McpWarmupServiceOllamaDiscoveryTests
     [Fact]
     public void ResolveOllamaModelNameReturnsNullForUnknownProviderId()
     {
-        var version = BuildVersion(providerId: UnknownProviderId, modelName: OllamaModelName);
+        var version = BuildVersion(UnknownProviderId, OllamaModelName);
 
         string? result = McpWarmupService.ResolveOllamaModelName(version);
 

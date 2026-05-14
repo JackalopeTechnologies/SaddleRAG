@@ -52,7 +52,7 @@ public sealed class PackageWxsLaunchConditionTests
     public void CheckGpuCapabilityIsScheduledBeforeLaunchConditionsInBothSequences()
     {
         XDocument doc = LoadPackageWxs();
-        XNamespace ns = WixNamespace;
+        XNamespace ns = smWixNamespace;
 
         bool inUiSequence = HasCheckGpuCapabilityBeforeLaunchConditions(doc, ns, InstallUISequenceName);
         bool inExecuteSequence = HasCheckGpuCapabilityBeforeLaunchConditions(doc, ns, InstallExecuteSequenceName);
@@ -65,7 +65,7 @@ public sealed class PackageWxsLaunchConditionTests
     public void OnnxExecutionProviderPropertyHasNoDefaultValue()
     {
         XDocument doc = LoadPackageWxs();
-        XNamespace ns = WixNamespace;
+        XNamespace ns = smWixNamespace;
 
         // Single() catches a duplicate Property declaration in the WXS — a
         // FirstOrDefault would silently validate only the first match.
@@ -83,7 +83,7 @@ public sealed class PackageWxsLaunchConditionTests
     public void PatchAppSettingsSetPropertyContainsAllScriptParameterNames()
     {
         XDocument doc = LoadPackageWxs();
-        XNamespace ns = WixNamespace;
+        XNamespace ns = smWixNamespace;
 
         // The deferred PatchAppSettings CA is driven by a SetProperty whose
         // Value attribute carries the full powershell.exe command line. A
@@ -97,7 +97,7 @@ public sealed class PackageWxsLaunchConditionTests
         string? commandLine = (string?) setProperty.Attribute(ValueAttributeName);
         Assert.NotNull(commandLine);
 
-        foreach (string parameterName in PatchAppSettingsScriptParameters)
+        foreach (string parameterName in smPatchAppSettingsScriptParameters)
             Assert.Contains(parameterName, commandLine);
 
         // And the script itself must declare each of those parameters,
@@ -107,7 +107,7 @@ public sealed class PackageWxsLaunchConditionTests
         if (scriptPath != null)
         {
             string scriptText = File.ReadAllText(scriptPath);
-            foreach (string parameterName in PatchAppSettingsScriptParameters)
+            foreach (string parameterName in smPatchAppSettingsScriptParameters)
             {
                 // PowerShell param-block names appear as "[string]$Name" or
                 // "[Parameter(...)]\n[type]$Name". Strip the leading '-' from
@@ -123,7 +123,7 @@ public sealed class PackageWxsLaunchConditionTests
     private static XElement LoadLaunchElement()
     {
         XDocument doc = LoadPackageWxs();
-        XNamespace ns = WixNamespace;
+        XNamespace ns = smWixNamespace;
         // Single() rather than FirstOrDefault so a future PR that adds a
         // second <Launch> element (perfectly legal in WiX) doesn't silently
         // pass these assertions against the wrong one.
@@ -187,16 +187,16 @@ public sealed class PackageWxsLaunchConditionTests
         return result;
     }
 
-    private static readonly string[] PatchAppSettingsScriptParameters =
-    {
-        "-AppSettingsPath",
+    private static readonly string[] smPatchAppSettingsScriptParameters =
+        [
+            "-AppSettingsPath",
         "-ConnectionString",
         "-DatabaseName",
         "-OllamaEndpoint",
         "-ExecutionProvider"
-    };
+        ];
 
-    private static readonly XNamespace WixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
+    private static readonly XNamespace smWixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
 
     private const string ExpectedLaunchCondition =
         "Installed OR WINDOWSBUILDNUMBER = \"0\" OR WINDOWSBUILDNUMBER >= 18362";
