@@ -130,6 +130,7 @@ public sealed class OnnxExecutionProviderConfiguratorTests
                                                    );
 
         Assert.Equal(OnnxExecutionProvider.DirectMl, capabilities.ActiveProvider);
+        Assert.Equal(OnnxExecutionProvider.DirectMl, capabilities.RequestedProvider);
         Assert.Null(capabilities.LastLoadWarning);
 #endif
     }

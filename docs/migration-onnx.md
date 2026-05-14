@@ -171,7 +171,7 @@ depends heavily on the execution provider (see next section):
 
 | Execution provider | `ReRankMs` per search (12 candidates, ~512 token docs) |
 |---|---|
-| **DirectML (GPU build, DX12 GPU)** | ~150–500 ms |
+| **DirectML (DX12 GPU)** | ~150–500 ms |
 | **CPU** | ~2–7 s (model is unoptimized for CPU; mxbai-rerank-base-v1 is 184M params, batched attention at seq_len=512) |
 
 The original Phase 1 spike's "~150 ms on CPU" target turned out to be
