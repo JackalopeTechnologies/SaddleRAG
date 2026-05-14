@@ -37,10 +37,10 @@ public sealed class PatchAppSettingsTests
         try
         {
             RunPatchScript(fixturePath,
-                           connectionString: "mongodb://example:27017",
-                           databaseName: "SaddleRAGTest",
-                           ollamaEndpoint: "http://example:11434",
-                           executionProvider: "DirectMl"
+                           "mongodb://example:27017",
+                           "SaddleRAGTest",
+                           "http://example:11434",
+                           "DirectMl"
                           );
 
             JsonNode patched = LoadJson(fixturePath);
@@ -65,10 +65,10 @@ public sealed class PatchAppSettingsTests
         try
         {
             RunPatchScript(fixturePath,
-                           connectionString: "mongodb://localhost:27017",
-                           databaseName: "SaddleRAG",
-                           ollamaEndpoint: "http://localhost:11434",
-                           executionProvider: string.Empty
+                           "mongodb://localhost:27017",
+                           "SaddleRAG",
+                           "http://localhost:11434",
+                           string.Empty
                           );
 
             JsonNode patched = LoadJson(fixturePath);
@@ -90,10 +90,10 @@ public sealed class PatchAppSettingsTests
         try
         {
             RunPatchScript(fixturePath,
-                           connectionString: "mongodb://localhost:27017",
-                           databaseName: "SaddleRAG",
-                           ollamaEndpoint: "http://localhost:11434",
-                           executionProvider: "   "
+                           "mongodb://localhost:27017",
+                           "SaddleRAG",
+                           "http://localhost:11434",
+                           "   "
                           );
 
             JsonNode patched = LoadJson(fixturePath);
@@ -113,13 +113,13 @@ public sealed class PatchAppSettingsTests
 
         string missing = Path.Combine(Path.GetTempPath(), $"saddlerag-missing-{Guid.NewGuid()}.json");
         int exitCode = TryRunPatchScript(missing,
-                                         connectionString: "x",
-                                         databaseName: "x",
-                                         ollamaEndpoint: "x",
-                                         executionProvider: "Cpu"
+                                         "x",
+                                         "x",
+                                         "x",
+                                         "Cpu"
                                         );
 
-        Assert.NotEqual(expected: 0, actual: exitCode);
+        Assert.NotEqual(expected: 0, exitCode);
         Assert.False(File.Exists(missing), "Script must not create the target file on failure.");
     }
 
@@ -133,10 +133,10 @@ public sealed class PatchAppSettingsTests
         try
         {
             RunPatchScript(fixturePath,
-                           connectionString: "mongodb://example:27017",
-                           databaseName: "SaddleRAGTest",
-                           ollamaEndpoint: "http://example:11434",
-                           executionProvider: "DirectMl"
+                           "mongodb://example:27017",
+                           "SaddleRAGTest",
+                           "http://example:11434",
+                           "DirectMl"
                           );
 
             JsonNode patched = LoadJson(fixturePath);
@@ -144,7 +144,7 @@ public sealed class PatchAppSettingsTests
             // Sections the script doesn't touch must round-trip unchanged.
             Assert.Equal("Information", (string?) patched["Logging"]?["LogLevel"]?["Default"]);
             Assert.Equal("http://kestrel:6100", (string?) patched["Kestrel"]?["Endpoints"]?["Http"]?["Url"]);
-            Assert.Equal(0.4d, (double?) patched["Ranking"]?["Bm25Weight"]);
+            Assert.Equal(expected: 0.4d, (double?) patched["Ranking"]?["Bm25Weight"]);
 
             // Additional Mongo profile must survive even though the script
             // only edits MongoDB.Profiles.local.
@@ -343,7 +343,7 @@ public sealed class PatchAppSettingsTests
         return result;
     }
 
-    private static readonly TimeSpan smWaitForExitTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan smWaitForExitTimeout = TimeSpan.FromSeconds(seconds: 30);
 
     private const string WindowsOnlySkipReason =
         "PatchAppSettings.ps1 is invoked by the Windows MSI installer; the test requires powershell.exe.";

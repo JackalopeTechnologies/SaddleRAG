@@ -79,7 +79,7 @@ public sealed class GpuDetectionRulesTests
         // (PCI\\VEN_...) but a fallback-tier Name. Either signal alone
         // should classify as fallback.
         bool nameOnly = GpuDetectionRules.IsMicrosoftFallbackAdapter("Microsoft Hyper-V Video",
-                                                                    pnpDeviceId: @"PCI\VEN_1414&DEV_5353"
+                                                                    @"PCI\VEN_1414&DEV_5353"
                                                                    );
         Assert.True(nameOnly);
 
@@ -87,7 +87,7 @@ public sealed class GpuDetectionRulesTests
         // the adapter or shipped a driver that lies about the name). PnP
         // path is still the authoritative signal here.
         bool pnpOnly = GpuDetectionRules.IsMicrosoftFallbackAdapter("Custom Renamed Adapter",
-                                                                   pnpDeviceId: @"ROOT\BASICDISPLAY\0000"
+                                                                   @"ROOT\BASICDISPLAY\0000"
                                                                   );
         Assert.True(pnpOnly);
     }
@@ -155,19 +155,19 @@ public sealed class GpuDetectionRulesTests
         return result;
     }
 
-    private static readonly IReadOnlyList<string> smExpectedNameFragments = new[]
-    {
-        "microsoft basic display",
+    private static readonly IReadOnlyList<string> smExpectedNameFragments =
+        [
+            "microsoft basic display",
         "microsoft remote display",
         "microsoft indirect display",
         "microsoft hyper-v video"
-    };
+        ];
 
-    private static readonly IReadOnlyList<string> smExpectedPnpPrefixes = new[]
-    {
-        @"ROOT\BASICDISPLAY",
+    private static readonly IReadOnlyList<string> smExpectedPnpPrefixes =
+        [
+            @"ROOT\BASICDISPLAY",
         @"ROOT\INDIRECTDISPLAY"
-    };
+        ];
 
     private const string JsLiteralQuote = "\"";
     private const string RepositoryRootMarker = "SaddleRAG.slnx";
