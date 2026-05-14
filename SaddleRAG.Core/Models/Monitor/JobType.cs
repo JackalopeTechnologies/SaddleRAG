@@ -15,6 +15,7 @@ public enum JobType
     DryRunScrape,
     Rechunk,
     Rescrub,
+    Reembed,
     RenameLibrary,
     DeleteVersion,
     DeleteLibrary,

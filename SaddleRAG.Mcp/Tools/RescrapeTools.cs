@@ -11,6 +11,7 @@ using System.Text.Json;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 
@@ -67,14 +68,15 @@ public static class RescrapeTools
         ArgumentException.ThrowIfNullOrEmpty(library);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        var jobRepo = repositoryFactory.GetScrapeJobRepository(profile);
-        var recent = await jobRepo.ListRecentAsync(limit: 100, ct);
-        var previous = recent.Where(j => j.Job.LibraryId == library && j.Job.Version == version)
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
+        var recent = await jobRepo.ListRecentAsync(JobType.Scrape, RecentJobScanLimit, ct);
+        var previous = recent.Where(j => j.LibraryId == library && j.Version == version)
                              .OrderByDescending(j => j.CreatedAt)
                              .FirstOrDefault();
+        var previousJob = DeserializeScrapeJob(previous);
 
         string json;
-        if (previous == null)
+        if (previousJob is null)
         {
             var noPrior = new
                               {
@@ -103,12 +105,12 @@ public static class RescrapeTools
             {
                 var job = new ScrapeJob
                               {
-                                  RootUrl = previous.Job.RootUrl,
+                                  RootUrl = previousJob.RootUrl,
                                   LibraryId = library,
                                   Version = version,
-                                  LibraryHint = previous.Job.LibraryHint,
-                                  AllowedUrlPatterns = previous.Job.AllowedUrlPatterns,
-                                  ExcludedUrlPatterns = previous.Job.ExcludedUrlPatterns,
+                                  LibraryHint = previousJob.LibraryHint,
+                                  AllowedUrlPatterns = previousJob.AllowedUrlPatterns,
+                                  ExcludedUrlPatterns = previousJob.ExcludedUrlPatterns,
                                   MaxPages = maxPages,
                                   FetchDelayMs = fetchDelayMs,
                                   ForceClean = force,
@@ -122,7 +124,7 @@ public static class RescrapeTools
                 var response = new
                                    {
                                        JobId = jobId,
-                                       Status = nameof(ScrapeJobStatus.Queued),
+                                       Status = nameof(JobStatus.Queued),
                                        LibraryId = library,
                                        Version = version,
                                        Message = $"Rescrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
@@ -134,11 +136,30 @@ public static class RescrapeTools
         return json;
     }
 
+    private static ScrapeJob? DeserializeScrapeJob(JobRecord? record)
+    {
+        ScrapeJob? result = null;
+        if (!string.IsNullOrEmpty(record?.InputJson))
+        {
+            try
+            {
+                result = JsonSerializer.Deserialize<ScrapeJob>(record.InputJson);
+            }
+            catch(JsonException)
+            {
+                // Malformed input — treat as no prior job.
+            }
+        }
+
+        return result;
+    }
+
     private const string StatusNoPriorJob = "NoPriorJob";
     private const string StatusRefused = "Refused";
     private const string ReasonUrlSuspect = "URL_SUSPECT";
     private const int DefaultMaxPages = 0;
     private const int DefaultFetchDelayMs = 500;
+    private const int RecentJobScanLimit = 100;
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

@@ -9,6 +9,7 @@
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Mcp.Tools;
 
@@ -199,21 +200,21 @@ public sealed class HealthToolsTests
         var orphan = MakeJobRecord("orphan-1",
                                    "mongodb.driver",
                                    "3.4.0",
-                                   ScrapeJobStatus.Running,
+                                   JobStatus.Running,
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 14),
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 14)
                                   );
         var fresh = MakeJobRecord("fresh-1",
                                   "foo",
                                   "1.0",
-                                  ScrapeJobStatus.Completed,
+                                  JobStatus.Completed,
                                   DateTime.UtcNow - TimeSpan.FromMinutes(minutes: 5),
                                   lastProgressAt: null
                                  );
 
-        jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+        jobRepo.ListRecentAsync(Arg.Any<JobType?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
                .Returns([fresh]);
-        jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
+        jobRepo.ListRunningAsync(Arg.Any<JobType?>(), Arg.Any<CancellationToken>())
                .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
@@ -253,13 +254,13 @@ public sealed class HealthToolsTests
         var orphan = MakeJobRecord("stale-running",
                                    "a",
                                    "1.0",
-                                   ScrapeJobStatus.Running,
+                                   JobStatus.Running,
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 2),
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 2)
                                   );
-        jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+        jobRepo.ListRecentAsync(Arg.Any<JobType?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
                .Returns([orphan]);
-        jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
+        jobRepo.ListRunningAsync(Arg.Any<JobType?>(), Arg.Any<CancellationToken>())
                .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
@@ -300,13 +301,13 @@ public sealed class HealthToolsTests
         var orphan = MakeJobRecord("stale",
                                    "a",
                                    "1.0",
-                                   ScrapeJobStatus.Running,
+                                   JobStatus.Running,
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 1),
                                    DateTime.UtcNow - TimeSpan.FromDays(days: 1)
                                   );
-        jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+        jobRepo.ListRecentAsync(Arg.Any<JobType?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
                .Returns([]);
-        jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
+        jobRepo.ListRunningAsync(Arg.Any<JobType?>(), Arg.Any<CancellationToken>())
                .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
@@ -317,23 +318,19 @@ public sealed class HealthToolsTests
         Assert.Contains("\"tool\": \"cancel_scrape\"", json);
     }
 
-    private static ScrapeJobRecord MakeJobRecord(string id,
-                                                 string library,
-                                                 string version,
-                                                 ScrapeJobStatus status,
-                                                 DateTime createdAt,
-                                                 DateTime? lastProgressAt) =>
-        new ScrapeJobRecord
+    private static JobRecord MakeJobRecord(string id,
+                                           string library,
+                                           string version,
+                                           JobStatus status,
+                                           DateTime createdAt,
+                                           DateTime? lastProgressAt) =>
+        new JobRecord
             {
                 Id = id,
-                Job = new ScrapeJob
-                          {
-                              RootUrl = "https://example.com",
-                              LibraryHint = library,
-                              LibraryId = library,
-                              Version = version,
-                              AllowedUrlPatterns = []
-                          },
+                JobType = JobType.Scrape,
+                LibraryId = library,
+                Version = version,
+                InputJson = "{}",
                 Status = status,
                 CreatedAt = createdAt,
                 LastProgressAt = lastProgressAt
@@ -342,18 +339,18 @@ public sealed class HealthToolsTests
     private static (RepositoryFactory factory,
         ILibraryRepository libraryRepo,
         IChunkRepository chunkRepo,
-        IScrapeJobRepository jobRepo) MakeFactory()
+        IJobRepository jobRepo) MakeFactory()
     {
         var factory = Substitute.For<RepositoryFactory>([null]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
-        var jobRepo = Substitute.For<IScrapeJobRepository>();
+        var jobRepo = Substitute.For<IJobRepository>();
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
-        factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(jobRepo);
-        jobRepo.ListRecentAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+        factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
+        jobRepo.ListRecentAsync(Arg.Any<JobType?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
                .Returns([]);
-        jobRepo.ListRunningJobsAsync(Arg.Any<CancellationToken>())
+        jobRepo.ListRunningAsync(Arg.Any<JobType?>(), Arg.Any<CancellationToken>())
                .Returns([]);
         return (factory, libraryRepo, chunkRepo, jobRepo);
     }

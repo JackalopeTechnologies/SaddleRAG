@@ -97,11 +97,11 @@ public sealed class BackgroundJobRunnerBroadcasterTests
 
     private static (BackgroundJobRunner runner,
         IMonitorBroadcaster broadcaster,
-        FakeBackgroundJobRepository jobRepo) MakeRunner()
+        FakeJobRepository jobRepo) MakeRunner()
     {
-        var jobRepo = new FakeBackgroundJobRepository();
+        var jobRepo = new FakeJobRepository();
         var factory = Substitute.For<RepositoryFactory>([null]);
-        factory.GetBackgroundJobRepository(Arg.Any<string?>()).Returns(jobRepo);
+        factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         var broadcaster = Substitute.For<IMonitorBroadcaster>();
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
