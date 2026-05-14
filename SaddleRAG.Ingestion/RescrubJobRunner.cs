@@ -6,11 +6,13 @@
 
 #region Usings
 
+using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Recon;
 
@@ -19,9 +21,13 @@ using SaddleRAG.Ingestion.Recon;
 namespace SaddleRAG.Ingestion;
 
 /// <summary>
-///     Runs reextract jobs in the background, tracking status in MongoDB so
-///     the caller can poll get_reextract_status without blocking the MCP
-///     transport connection.
+///     Runs reextract jobs in the background, tracking status in the
+///     unified <c>jobs</c> MongoDB collection so the caller can poll
+///     <c>get_reextract_status</c> without blocking the MCP transport
+///     connection. Writes typed <see cref="RescrubOptions" /> and
+///     <see cref="RescrubResult" /> blobs into
+///     <see cref="JobRecord.InputJson" /> and
+///     <see cref="JobRecord.ResultJson" />.
 /// </summary>
 public class RescrubJobRunner
 {
@@ -46,9 +52,7 @@ public class RescrubJobRunner
     private readonly CancellationToken mAppStoppingToken;
     private readonly IMonitorBroadcaster mBroadcaster;
     private readonly ILogger<RescrubJobRunner> mLogger;
-
     private readonly RepositoryFactory mRepositoryFactory;
-
     private readonly RescrubService mService;
 
     /// <summary>
@@ -65,37 +69,36 @@ public class RescrubJobRunner
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentNullException.ThrowIfNull(options);
 
-        var jobRepo = mRepositoryFactory.GetRescrubJobRepository(profile);
-        var jobRecord = new RescrubJobRecord
+        var jobRepo = mRepositoryFactory.GetJobRepository(profile);
+        var jobRecord = new JobRecord
                             {
                                 Id = Guid.NewGuid().ToString(),
+                                JobType = JobType.Rescrub,
+                                Profile = profile,
                                 LibraryId = libraryId,
                                 Version = version,
-                                Options = options,
-                                Profile = profile,
-                                Status = ScrapeJobStatus.Queued
+                                InputJson = JsonSerializer.Serialize(options),
+                                Status = JobStatus.Queued,
+                                ItemsLabel = ProgressLabel
                             };
 
         await jobRepo.UpsertAsync(jobRecord, ct);
-
-        // Fire-and-forget background execution. Errors land in the job record.
         _ = Task.Run(() => RunJobAsync(jobRecord), mAppStoppingToken);
-
         return jobRecord.Id;
     }
 
-    private async Task RunJobAsync(RescrubJobRecord jobRecord)
+    private async Task RunJobAsync(JobRecord jobRecord)
     {
-        var jobRepo = mRepositoryFactory.GetRescrubJobRepository(jobRecord.Profile);
+        var jobRepo = mRepositoryFactory.GetJobRepository(jobRecord.Profile);
 
-        jobRecord.Status = ScrapeJobStatus.Running;
+        jobRecord.Status = JobStatus.Running;
         jobRecord.StartedAt = DateTime.UtcNow;
         jobRecord.PipelineState = PipelineStateRunning;
         await jobRepo.UpsertAsync(jobRecord);
 
         mBroadcaster.RecordJobStarted(jobRecord.Id,
-                                      jobRecord.LibraryId,
-                                      jobRecord.Version,
+                                      jobRecord.LibraryId ?? string.Empty,
+                                      jobRecord.Version ?? string.Empty,
                                       string.Empty
                                      );
 
@@ -107,78 +110,91 @@ public class RescrubJobRunner
 
         try
         {
-            var chunkRepo = mRepositoryFactory.GetChunkRepository(jobRecord.Profile);
-            var profileRepo = mRepositoryFactory.GetLibraryProfileRepository(jobRecord.Profile);
-            var indexRepo = mRepositoryFactory.GetLibraryIndexRepository(jobRecord.Profile);
-            var bm25ShardRepo = mRepositoryFactory.GetBm25ShardRepository(jobRecord.Profile);
-            var excludedRepo = mRepositoryFactory.GetExcludedSymbolsRepository(jobRecord.Profile);
-            var libraryRepo = mRepositoryFactory.GetLibraryRepository(jobRecord.Profile);
-
-            var result = await mService.RescrubAsync(chunkRepo,
-                                                     profileRepo,
-                                                     indexRepo,
-                                                     bm25ShardRepo,
-                                                     excludedRepo,
-                                                     libraryRepo,
-                                                     jobRecord.LibraryId,
-                                                     jobRecord.Version,
-                                                     jobRecord.Options,
-                                                     (processed, total) =>
-                                                     {
-                                                         jobRecord.ChunksProcessed = processed;
-                                                         jobRecord.ChunksTotal = total;
-                                                         jobRecord.LastProgressAt = DateTime.UtcNow;
-                                                         jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
-                                                         mBroadcaster.RecordJobProgress(jobRecord.Id,
-                                                                  processed,
-                                                                  total,
-                                                                  ProgressLabel
-                                                             );
-                                                     },
-                                                     mAppStoppingToken
-                                                    );
-
-            jobRecord.Status = ScrapeJobStatus.Completed;
-            jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
-            jobRecord.CompletedAt = DateTime.UtcNow;
-            jobRecord.ChunksProcessed = result.Processed;
-            jobRecord.ChunksChanged = result.Changed;
-            jobRecord.ChunksTotal = result.Processed;
-            jobRecord.Result = result;
-            await jobRepo.UpsertAsync(jobRecord);
-
-            mBroadcaster.RecordJobCompleted(jobRecord.Id, indexedPageCount: 0);
-
-            mLogger.LogInformation("Rescrub job {JobId} completed: processed={Processed}, changed={Changed}",
-                                   jobRecord.Id,
-                                   result.Processed,
-                                   result.Changed
-                                  );
+            await ExecuteRescrubAsync(jobRecord, jobRepo);
         }
         catch(OperationCanceledException)
         {
-            mLogger.LogInformation("Rescrub job {JobId} was cancelled", jobRecord.Id);
-
-            jobRecord.Status = ScrapeJobStatus.Cancelled;
-            jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);
-            jobRecord.CancelledAt = DateTime.UtcNow;
-            jobRecord.CompletedAt = DateTime.UtcNow;
-            await jobRepo.UpsertAsync(jobRecord);
-
-            mBroadcaster.RecordJobCancelled(jobRecord.Id);
+            await MarkCancelledAsync(jobRecord, jobRepo);
         }
         catch(Exception ex)
         {
-            mLogger.LogError(ex, "Rescrub job {JobId} failed", jobRecord.Id);
-
-            jobRecord.Status = ScrapeJobStatus.Failed;
-            jobRecord.ErrorMessage = ex.Message;
-            jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
-            jobRecord.CompletedAt = DateTime.UtcNow;
-            await jobRepo.UpsertAsync(jobRecord);
-
-            mBroadcaster.RecordJobFailed(jobRecord.Id, ex.Message);
+            await MarkFailedAsync(jobRecord, jobRepo, ex);
         }
+    }
+
+    private async Task ExecuteRescrubAsync(JobRecord jobRecord, IJobRepository jobRepo)
+    {
+        var chunkRepo = mRepositoryFactory.GetChunkRepository(jobRecord.Profile);
+        var profileRepo = mRepositoryFactory.GetLibraryProfileRepository(jobRecord.Profile);
+        var indexRepo = mRepositoryFactory.GetLibraryIndexRepository(jobRecord.Profile);
+        var bm25ShardRepo = mRepositoryFactory.GetBm25ShardRepository(jobRecord.Profile);
+        var excludedRepo = mRepositoryFactory.GetExcludedSymbolsRepository(jobRecord.Profile);
+        var libraryRepo = mRepositoryFactory.GetLibraryRepository(jobRecord.Profile);
+        var options = JsonSerializer.Deserialize<RescrubOptions>(jobRecord.InputJson ?? string.Empty) ?? new RescrubOptions();
+
+        var result = await mService.RescrubAsync(chunkRepo,
+                                                 profileRepo,
+                                                 indexRepo,
+                                                 bm25ShardRepo,
+                                                 excludedRepo,
+                                                 libraryRepo,
+                                                 jobRecord.LibraryId ?? string.Empty,
+                                                 jobRecord.Version ?? string.Empty,
+                                                 options,
+                                                 (processed, total) => ProgressTick(jobRecord, jobRepo, processed, total),
+                                                 mAppStoppingToken
+                                                );
+
+        jobRecord.Status = JobStatus.Completed;
+        jobRecord.PipelineState = nameof(JobStatus.Completed);
+        jobRecord.CompletedAt = DateTime.UtcNow;
+        jobRecord.ItemsProcessed = result.Processed;
+        jobRecord.ItemsTotal = result.Processed;
+        jobRecord.ResultJson = JsonSerializer.Serialize(result);
+        await jobRepo.UpsertAsync(jobRecord);
+
+        mBroadcaster.RecordJobCompleted(jobRecord.Id, indexedPageCount: 0);
+
+        mLogger.LogInformation("Rescrub job {JobId} completed: processed={Processed}, changed={Changed}",
+                               jobRecord.Id,
+                               result.Processed,
+                               result.Changed
+                              );
+    }
+
+    private void ProgressTick(JobRecord jobRecord, IJobRepository jobRepo, int processed, int total)
+    {
+        jobRecord.ItemsProcessed = processed;
+        jobRecord.ItemsTotal = total;
+        jobRecord.LastProgressAt = DateTime.UtcNow;
+        jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
+        mBroadcaster.RecordJobProgress(jobRecord.Id, processed, total, ProgressLabel);
+    }
+
+    private async Task MarkCancelledAsync(JobRecord jobRecord, IJobRepository jobRepo)
+    {
+        mLogger.LogInformation("Rescrub job {JobId} was cancelled", jobRecord.Id);
+
+        jobRecord.Status = JobStatus.Cancelled;
+        jobRecord.PipelineState = nameof(JobStatus.Cancelled);
+        jobRecord.CancelledAt = DateTime.UtcNow;
+        jobRecord.CompletedAt = DateTime.UtcNow;
+        await jobRepo.UpsertAsync(jobRecord);
+
+        mBroadcaster.RecordJobCancelled(jobRecord.Id);
+    }
+
+    private async Task MarkFailedAsync(JobRecord jobRecord, IJobRepository jobRepo, Exception ex)
+    {
+        mLogger.LogError(ex, "Rescrub job {JobId} failed", jobRecord.Id);
+
+        jobRecord.Status = JobStatus.Failed;
+        jobRecord.ErrorMessage = ex.Message;
+        jobRecord.PipelineState = nameof(JobStatus.Failed);
+        jobRecord.CompletedAt = DateTime.UtcNow;
+        await jobRepo.UpsertAsync(jobRecord);
+
+        mBroadcaster.RecordJobFailed(jobRecord.Id, ex.Message);
     }
 
     private const string PipelineStateRunning = "Running";
