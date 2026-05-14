@@ -32,11 +32,17 @@ public sealed class OnnxRuntimeCapabilitiesTests
 
         // CPU is always compiled in; DirectMl is only compiled in when the
         // USE_GPU symbol is defined. The capability list must match.
+        // Cuda must never appear today regardless of flavor — the GPU NuGet
+        // is the DirectML one, not Microsoft.ML.OnnxRuntime.Gpu. Asserting
+        // its absence locks the IsSupportedByBuild contract documented on
+        // OnnxExecutionProvider.Cuda; relax this assertion only when a
+        // Cuda-flavored build flavor is actually added.
 #if USE_GPU
         Assert.Contains(OnnxExecutionProvider.DirectMl, capabilities.CompiledInProviders);
 #else
         Assert.DoesNotContain(OnnxExecutionProvider.DirectMl, capabilities.CompiledInProviders);
 #endif
+        Assert.DoesNotContain(OnnxExecutionProvider.Cuda, capabilities.CompiledInProviders);
     }
 
     [Fact]
@@ -44,9 +50,9 @@ public sealed class OnnxRuntimeCapabilitiesTests
     {
         var capabilities = new OnnxRuntimeCapabilities();
 
-        capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.DirectMl,
-                                       actual: OnnxExecutionProvider.Cpu,
-                                       warning: "DirectML not compiled in"
+        capabilities.RecordLoadOutcome(OnnxExecutionProvider.DirectMl,
+                                       OnnxExecutionProvider.Cpu,
+                                       "DirectML not compiled in"
                                       );
 
         Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
@@ -57,13 +63,13 @@ public sealed class OnnxRuntimeCapabilitiesTests
     public void RecordLoadOutcomeClearsWarningOnSuccess()
     {
         var capabilities = new OnnxRuntimeCapabilities();
-        capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.DirectMl,
-                                       actual: OnnxExecutionProvider.Cpu,
-                                       warning: "fell back"
+        capabilities.RecordLoadOutcome(OnnxExecutionProvider.DirectMl,
+                                       OnnxExecutionProvider.Cpu,
+                                       "fell back"
                                       );
 
-        capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.Cpu,
-                                       actual: OnnxExecutionProvider.Cpu,
+        capabilities.RecordLoadOutcome(OnnxExecutionProvider.Cpu,
+                                       OnnxExecutionProvider.Cpu,
                                        warning: null
                                       );
 
@@ -79,8 +85,8 @@ public sealed class OnnxRuntimeCapabilitiesTests
         // GPU build doesn't compile in Cuda either (only DirectMl). Either
         // way recording Cuda as the actual loaded EP is a bug.
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.Cuda,
-                                           actual: OnnxExecutionProvider.Cuda,
+            capabilities.RecordLoadOutcome(OnnxExecutionProvider.Cuda,
+                                           OnnxExecutionProvider.Cuda,
                                            warning: null
                                           )
         );
@@ -93,8 +99,8 @@ public sealed class OnnxRuntimeCapabilitiesTests
         var capabilities = new OnnxRuntimeCapabilities();
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            capabilities.RecordLoadOutcome(requested: OnnxExecutionProvider.DirectMl,
-                                           actual: OnnxExecutionProvider.Cpu,
+            capabilities.RecordLoadOutcome(OnnxExecutionProvider.DirectMl,
+                                           OnnxExecutionProvider.Cpu,
                                            warning: null
                                           )
         );

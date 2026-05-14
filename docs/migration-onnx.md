@@ -171,14 +171,15 @@ depends heavily on the execution provider (see next section):
 
 | Execution provider | `ReRankMs` per search (12 candidates, ~512 token docs) |
 |---|---|
-| **DirectML (GPU build, DX12 GPU)** | ~150–500 ms |
+| **DirectML (DX12 GPU)** | ~150–500 ms |
 | **CPU** | ~2–7 s (model is unoptimized for CPU; mxbai-rerank-base-v1 is 184M params, batched attention at seq_len=512) |
 
 The original Phase 1 spike's "~150 ms on CPU" target turned out to be
 DirectML-territory in practice. On CPU, reranking is generally too
-slow for an interactive LLM tool loop — leave `Ranking.ReRankerStrategy=Off`
-on CPU-only installs, or build with `-p:UseGpu=true` and set
-`Onnx.ExecutionProvider=DirectMl` (see GPU acceleration section below).
+slow for an interactive LLM tool loop — keep `Ranking.ReRankerStrategy=Off`
+on machines that fell back to CPU at install time, or flip
+`Onnx.ExecutionProvider=DirectMl` once a DirectX 12 GPU is available
+(see GPU acceleration section below).
 
 ## Where models live on disk
 
@@ -281,57 +282,101 @@ inputs (~150–500 ms vs ~2–7 s for `ReRankMs` at 12 candidates,
 and DirectML because the nomic 768-dim embedder is a small model.
 Search quality (top-N, RerankScore, RelevanceScore) is identical:
 same model, same sigmoid normalization, same ordering. **For
-production-grade rerank latency, the GPU build is required.**
+production-grade rerank latency, DirectML is required.**
 
-The CPU build (default) ships with `Microsoft.ML.OnnxRuntime` and
-runs every session on CPU. To take advantage of a GPU:
+### One MSI, install-time auto-detect
 
-1. Build the project with the GPU flavor:
+SaddleRAG ships a single GPU-flavored MSI that runs everywhere
+Windows 10 1903 (build 18362) or later runs. Both the CPU and
+DirectML execution providers are compiled in;
+`Onnx.ExecutionProvider` in `appsettings.json` picks which one loads
+at startup.
 
-    ```
-    dotnet build SaddleRAG.slnx -p:UseGpu=true
-    ```
+At install time, the installer's `CheckGpuCapability` custom action
+queries WMI (`Win32_VideoController`) for a non-Microsoft-fallback
+adapter and reads `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\CurrentBuildNumber`.
+The result populates the `ExecutionModeDlg` radio:
 
-   This swaps the package reference to
-   `Microsoft.ML.OnnxRuntime.DirectML` and defines the `USE_GPU`
-   conditional-compilation symbol so the runtime can call
-   `AppendExecutionProvider_DML` / `AppendExecutionProvider_CUDA`.
+- **Real GPU detected** → DirectML pre-selected, `Onnx.ExecutionProvider = "DirectMl"`
+  written to `appsettings.json`.
+- **Only Microsoft Basic Display Adapter / RDP indirect display
+  driver** → CPU pre-selected, `Onnx.ExecutionProvider = "Cpu"`.
+- **Windows build < 18362** → install is blocked by the
+  launch condition with a clear message.
 
-2. Set the execution provider at runtime via the MCP tool:
+The dialog shows the detection result verbatim so the operator knows
+why a particular default was chosen, and the radio can always be
+flipped before continuing.
 
-    ```
-    set_execution_provider(provider="DirectMl")
-    ```
+Silent installs (`msiexec /qn /i SaddleRAG.msi`) honor the same
+WMI heuristic by default. To force a specific provider in a scripted
+rollout, pass the property explicitly:
 
-   Or edit `appsettings.json`:
+```
+msiexec /qn /i SaddleRAG.Mcp-x.y.z.msi ONNX_EXECUTION_PROVIDER=Cpu
+```
 
-    ```json
-    "Onnx": {
-        "ExecutionProvider": "DirectMl"
-    }
-    ```
+`CheckGpuCapability` preserves any pre-set value rather than
+overwriting it, so command-line overrides survive into the
+PatchAppSettings step.
 
-3. Restart SaddleRAG. The startup logs include `executionProvider=...`
-   on the `OnnxEmbeddingProvider ready` and `OnnxReRanker ready`
-   lines, reporting which EP actually loaded.
+### Switching at runtime
 
-If a GPU EP is requested but the build is CPU-only (or the hardware
-refuses), the session falls back to CPU silently and logs a warning.
-`list_execution_providers` reports the fallback so the LLM can
-explain it to the user:
+After install, switch the active provider without reinstalling:
+
+```
+set_execution_provider(provider="DirectMl")
+```
+
+This writes to `runtime-overrides.json` (which shadows the
+`appsettings.json` baseline) and reports `RequiresRestart=true`.
+Restart the SaddleRAG service to pick up the change. Delete
+`runtime-overrides.json` and restart to revert to the install-time
+baseline.
+
+### Misdetection / hardware fallback
+
+If WMI reports a GPU that DirectML can't actually drive (uncommon,
+but possible with very old hardware or buggy drivers), the runtime
+catches `OnnxRuntimeException` at session creation, degrades to CPU,
+and records a warning. `list_execution_providers` surfaces the
+fallback so the LLM can explain what happened:
 
 ```json
 {
-    "CompiledIn": ["Cpu"],
+    "CompiledIn": ["Cpu", "DirectMl"],
     "ActiveSetting": "DirectMl",
     "ActiveProvider": "Cpu",
     "RequestedProvider": "DirectMl",
-    "LastLoadWarning": "ExecutionProvider 'DirectMl' requested but this build is CPU-only (UseGpu=false at build time); falling back to CPU."
+    "LastLoadWarning": "Failed to append DirectMl execution provider (...); falling back to CPU."
 }
 ```
 
+The service stays up; only rerank quality degrades to CPU speed.
+
+### CUDA
+
 DirectML on Windows works on any DX12 GPU (Intel, AMD, NVIDIA)
-without a CUDA install. CUDA support requires a different OnnxRuntime
-NuGet (`Microsoft.ML.OnnxRuntime.Gpu`) and the CUDA Toolkit on the
-host machine — left as a follow-up because most operator scenarios
-are covered by DirectML.
+without a CUDA install — so there is no operator scenario today
+that DirectML doesn't cover. CUDA support requires a different
+OnnxRuntime NuGet (`Microsoft.ML.OnnxRuntime.Gpu`) and the CUDA
+Toolkit on the host machine; the enum value is defined for
+forward-compatibility, but `OnnxSettings.IsSupportedByBuild`
+returns `false` for it.
+
+### Building from source
+
+The csproj defaults to `UseGpu=true`, so a plain
+`dotnet build SaddleRAG.slnx` produces the DirectML-flavored
+binaries. For a CPU-only local build (skips the DirectML NuGet
+download), pass:
+
+```
+dotnet build SaddleRAG.slnx -p:UseGpu=false
+```
+
+`USE_GPU` gates the GPU-specific `AppendExecutionProvider_DML` /
+`AppendExecutionProvider_CUDA` calls in
+`OnnxExecutionProviderConfigurator`. A CPU-only build that's asked
+to load DirectML at runtime degrades to CPU with the same
+`LastLoadWarning` mechanism as a hardware misdetection.

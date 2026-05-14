@@ -245,7 +245,7 @@ public sealed class OnnxToolsTests : IDisposable
     {
         var settings = BuildSettingsWithRegistry();
         settings.ModelsDir = mTempDir;
-        var downloader = BuildDownloader(settings, body: "ok");
+        var downloader = BuildDownloader(settings, "ok");
 
         string json = await OnnxTools.DownloadOnnxModel(downloader, Options.Create(settings),
                                                        "nomic-embed-text-v1.5",

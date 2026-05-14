@@ -64,7 +64,7 @@ public sealed class ToggleableReRankerTests
         // log; subsequent ones stay silent for the singleton's lifetime.
         var ranking = new RankingSettings { ReRankerStrategy = ReRankerStrategy.Onnx };
         var captureProvider = new CapturingLoggerProvider();
-        var factory = new LoggerFactory(new ILoggerProvider[] { captureProvider });
+        var factory = new LoggerFactory([captureProvider]);
 
         var onnxReRanker = new OnnxReRanker(Options.Create(new OnnxSettings()),
                                             new OnnxRuntimeCapabilities(),
@@ -73,13 +73,13 @@ public sealed class ToggleableReRankerTests
         var reranker = new ToggleableReRanker(Options.Create(ranking), onnxReRanker, factory);
 
         // First dispatch with Strategy=Onnx + empty model → one warning.
-        await reranker.ReRankAsync(QueryText, candidates: [], maxResults: 1,
+        await reranker.ReRankAsync(QueryText, [], maxResults: 1,
                                    TestContext.Current.CancellationToken
                                   );
         Assert.Equal(expected: 1, captureProvider.Logger.WarningsContaining(OnnxNoEntryWarningProbe));
 
         // Repeat dispatch — dedupe holds, no second warning.
-        await reranker.ReRankAsync(QueryText, candidates: [], maxResults: 1,
+        await reranker.ReRankAsync(QueryText, [], maxResults: 1,
                                    TestContext.Current.CancellationToken
                                   );
         Assert.Equal(expected: 1, captureProvider.Logger.WarningsContaining(OnnxNoEntryWarningProbe));
@@ -87,7 +87,7 @@ public sealed class ToggleableReRankerTests
         // Toggle out of and back into the bad state — dedupe MUST reset.
         reranker.Strategy = ReRankerStrategy.Off;
         reranker.Strategy = ReRankerStrategy.Onnx;
-        await reranker.ReRankAsync(QueryText, candidates: [], maxResults: 1,
+        await reranker.ReRankAsync(QueryText, [], maxResults: 1,
                                    TestContext.Current.CancellationToken
                                   );
         Assert.Equal(expected: 2, captureProvider.Logger.WarningsContaining(OnnxNoEntryWarningProbe));
