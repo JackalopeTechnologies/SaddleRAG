@@ -97,28 +97,30 @@ public sealed class UnifiedJobView : IUnifiedJobView
 
     private static (string? RenameTo, string? ScanPath) ParseDisplayHints(JobRecord r)
     {
-        string? renameTo = null;
-        string? scanPath = null;
+        (string? RenameTo, string? ScanPath) result = (null, null);
         if (!string.IsNullOrEmpty(r.InputJson) &&
-            (r.JobType == JobType.RenameLibrary || r.JobType == JobType.IndexProjectDependencies))
+            r.JobType is JobType.RenameLibrary or JobType.IndexProjectDependencies)
         {
             try
             {
                 using JsonDocument doc = JsonDocument.Parse(r.InputJson);
-                if (r.JobType == JobType.RenameLibrary &&
-                    doc.RootElement.TryGetProperty(NewIdJsonProperty, out JsonElement newIdEl))
-                    renameTo = newIdEl.GetString();
-                if (r.JobType == JobType.IndexProjectDependencies &&
-                    doc.RootElement.TryGetProperty(PathJsonProperty, out JsonElement pathEl))
-                    scanPath = pathEl.GetString();
+                result = r.JobType switch
+                         {
+                             JobType.RenameLibrary             => (ReadProperty(doc, NewIdJsonProperty), null),
+                             JobType.IndexProjectDependencies  => (null, ReadProperty(doc, PathJsonProperty)),
+                             _                                 => (null, null)
+                         };
             }
             catch(JsonException)
             {
                 // Malformed input json — leave both null.
             }
         }
-        return (renameTo, scanPath);
+        return result;
     }
+
+    private static string? ReadProperty(JsonDocument doc, string propertyName) =>
+        doc.RootElement.TryGetProperty(propertyName, out JsonElement el) ? el.GetString() : null;
 
     private const string NewIdJsonProperty = "newId";
     private const string PathJsonProperty = "path";
