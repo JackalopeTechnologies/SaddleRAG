@@ -103,7 +103,7 @@ public sealed class GpuDetectionRulesTests
         // case-folding direction) is still maintained by hand; this test
         // only catches the most likely class of drift, which is a list edit
         // on one side and not the other.
-        string? jsPath = TryResolveJScriptSourcePath();
+        string? jsPath = InstallerSourceTreeResolver.TryResolveInstallerFile(JScriptFileName);
         if (jsPath == null)
             Assert.Skip(JScriptMissingSkipReason);
         else
@@ -139,22 +139,6 @@ public sealed class GpuDetectionRulesTests
         }
     }
 
-    private static string? TryResolveJScriptSourcePath()
-    {
-        string testBinDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
-        DirectoryInfo? dir = new DirectoryInfo(testBinDir);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, RepositoryRootMarker)))
-            dir = dir.Parent;
-        string? result = null;
-        if (dir != null)
-        {
-            string candidate = Path.Combine(dir.FullName, InstallerFolderName, JScriptFileName);
-            if (File.Exists(candidate))
-                result = candidate;
-        }
-        return result;
-    }
-
     private static readonly IReadOnlyList<string> smExpectedNameFragments =
         [
             "microsoft basic display",
@@ -170,8 +154,6 @@ public sealed class GpuDetectionRulesTests
         ];
 
     private const string JsLiteralQuote = "\"";
-    private const string RepositoryRootMarker = "SaddleRAG.slnx";
-    private const string InstallerFolderName = "SaddleRAG.Installer";
     private const string JScriptFileName = "CheckGpuCapability.js";
     private const string JScriptMissingSkipReason =
         "CheckGpuCapability.js not locatable from test binary directory; skipping mirror check.";

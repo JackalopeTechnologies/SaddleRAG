@@ -51,10 +51,13 @@ public static class GpuDetectionRules
     ///         lowercase and matched as a substring (so any of the four
     ///         Microsoft-fallback name fragments anywhere in the
     ///         display name flags the adapter); <paramref name="pnpDeviceId" />
-    ///         is folded to uppercase and matched as a prefix (the
-    ///         Plug-and-Play tree only places fallback adapters under
-    ///         the <c>ROOT\BASICDISPLAY</c> / <c>ROOT\INDIRECTDISPLAY</c>
-    ///         hives).
+    ///         is folded to uppercase and matched as a prefix against the
+    ///         two PnP roots this helper recognizes today
+    ///         (<c>ROOT\BASICDISPLAY</c>, <c>ROOT\INDIRECTDISPLAY</c>).
+    ///         A future Windows release that places a new fallback adapter
+    ///         under a different <c>ROOT\</c> subtree would require an
+    ///         entry in <c>smFallbackPnpPrefixes</c> on both sides of the
+    ///         JScript / C# mirror.
     ///     </para>
     /// </remarks>
     public static bool IsMicrosoftFallbackAdapter(string? name, string? pnpDeviceId)
@@ -98,17 +101,24 @@ public static class GpuDetectionRules
         return result;
     }
 
-    private static readonly IReadOnlyList<string> smFallbackNameFragments = new[]
-    {
-        "microsoft basic display",
-        "microsoft remote display",
-        "microsoft indirect display",
-        "microsoft hyper-v video"
-    };
+    private static readonly IReadOnlyList<string> smFallbackNameFragments =
+    [
+        NameFragmentBasicDisplay,
+        NameFragmentRemoteDisplay,
+        NameFragmentIndirectDisplay,
+        NameFragmentHyperVVideo
+    ];
 
-    private static readonly IReadOnlyList<string> smFallbackPnpPrefixes = new[]
-    {
-        @"ROOT\BASICDISPLAY",
-        @"ROOT\INDIRECTDISPLAY"
-    };
+    private static readonly IReadOnlyList<string> smFallbackPnpPrefixes =
+    [
+        PnpPrefixBasicDisplay,
+        PnpPrefixIndirectDisplay
+    ];
+
+    private const string NameFragmentBasicDisplay    = "microsoft basic display";
+    private const string NameFragmentRemoteDisplay   = "microsoft remote display";
+    private const string NameFragmentIndirectDisplay = "microsoft indirect display";
+    private const string NameFragmentHyperVVideo     = "microsoft hyper-v video";
+    private const string PnpPrefixBasicDisplay       = @"ROOT\BASICDISPLAY";
+    private const string PnpPrefixIndirectDisplay    = @"ROOT\INDIRECTDISPLAY";
 }

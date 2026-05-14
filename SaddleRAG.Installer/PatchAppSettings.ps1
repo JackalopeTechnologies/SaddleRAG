@@ -42,6 +42,21 @@ $ErrorActionPreference = 'Stop'
 
 $TempPath = $AppSettingsPath + '.tmp'
 
+# Win32 MoveFileEx is the canonical atomic file-replace API on Windows.
+# PowerShell 5.1 (which hosts the installer's deferred CA) runs on the
+# .NET Framework, where [System.IO.File]::Move only has the 2-arg
+# overload -- no built-in overwrite. P/Invoke MoveFileEx with
+# MOVEFILE_REPLACE_EXISTING (0x1) to get a single atomic metadata op
+# on NTFS without depending on a .NET version that PS 5.1 doesn't ship.
+if (-not ('SaddleRAG.NativeApi.FileUtils' -as [type]))
+{
+    Add-Type -Namespace SaddleRAG.NativeApi -Name FileUtils -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+public static extern bool MoveFileEx(string lpExistingFileName, string lpNewFileName, uint dwFlags);
+'@
+}
+
 try
 {
     $json = Get-Content -LiteralPath $AppSettingsPath -Raw | ConvertFrom-Json
@@ -60,15 +75,25 @@ try
                          }
     $json.Onnx.ExecutionProvider = $effectiveProvider
 
-    # Write to a sibling .tmp file, then atomically rename over the target.
-    # Move-Item -Force is atomic on NTFS, so a crash mid-write (disk-full,
-    # antivirus interrupt, process kill) leaves the original appsettings.json
-    # intact rather than truncated. The runtime EP fallback can absorb a
-    # missing Onnx.ExecutionProvider, but a half-written MongoDB or Ollama
-    # section would fail startup config-binding with no diagnostic link back
-    # to the installer, which is the silent-fail mode this guard avoids.
+    # Write to a sibling .tmp file, then atomically replace the target via
+    # MoveFileEx(..., MOVEFILE_REPLACE_EXISTING). On NTFS this is a single
+    # atomic metadata operation, so a crash mid-write (disk-full, antivirus
+    # interrupt, process kill) leaves the original appsettings.json intact
+    # rather than truncated or missing. Move-Item -Force is *not* atomic in
+    # PowerShell's provider -- it deletes the destination first, then
+    # renames -- so a crash in between leaves no appsettings.json at all,
+    # worse than the truncation mode this guard exists to prevent. The
+    # runtime EP fallback can absorb a missing Onnx.ExecutionProvider, but
+    # a half-written or missing MongoDB or Ollama section would fail
+    # startup config-binding with no diagnostic link back to the installer.
     $json | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $TempPath -Encoding UTF8
-    Move-Item -LiteralPath $TempPath -Destination $AppSettingsPath -Force
+    $MoveFileReplaceExisting = 0x1
+    $moved = [SaddleRAG.NativeApi.FileUtils]::MoveFileEx($TempPath, $AppSettingsPath, $MoveFileReplaceExisting)
+    if (-not $moved)
+    {
+        $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw [System.IO.IOException]::new("MoveFileEx failed with Win32 error $err while replacing '$AppSettingsPath'.")
+    }
 
     # Stable success-sentinel token for MSI-log scrapers that want to
     # distinguish ran-and-worked from ran-and-silently-failed (the CA wrapper

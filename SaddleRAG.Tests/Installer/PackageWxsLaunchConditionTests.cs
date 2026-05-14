@@ -148,43 +148,16 @@ public sealed class PackageWxsLaunchConditionTests
 
     private static XDocument LoadPackageWxs()
     {
-        string? path = TryResolvePackageWxsPath();
+        string? path = InstallerSourceTreeResolver.TryResolveInstallerFile(WxsFileName);
         if (path == null)
             Assert.Skip(WxsMissingSkipReason);
         Assert.NotNull(path);
         return XDocument.Load(path);
     }
 
-    private static string? TryResolvePackageWxsPath()
-    {
-        string testBinDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
-        DirectoryInfo? dir = new DirectoryInfo(testBinDir);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, RepositoryRootMarker)))
-            dir = dir.Parent;
-        string? result = null;
-        if (dir != null)
-        {
-            string candidate = Path.Combine(dir.FullName, InstallerFolderName, WxsFileName);
-            if (File.Exists(candidate))
-                result = candidate;
-        }
-        return result;
-    }
-
     private static string? TryResolveScriptPath()
     {
-        string testBinDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
-        DirectoryInfo? dir = new DirectoryInfo(testBinDir);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, RepositoryRootMarker)))
-            dir = dir.Parent;
-        string? result = null;
-        if (dir != null)
-        {
-            string candidate = Path.Combine(dir.FullName, InstallerFolderName, PatchScriptFileName);
-            if (File.Exists(candidate))
-                result = candidate;
-        }
-        return result;
+        return InstallerSourceTreeResolver.TryResolveInstallerFile(PatchScriptFileName);
     }
 
     private static readonly string[] smPatchAppSettingsScriptParameters =
@@ -219,8 +192,6 @@ public sealed class PackageWxsLaunchConditionTests
     private const string InstallUISequenceName = "InstallUISequence";
     private const string InstallExecuteSequenceName = "InstallExecuteSequence";
 
-    private const string RepositoryRootMarker = "SaddleRAG.slnx";
-    private const string InstallerFolderName = "SaddleRAG.Installer";
     private const string WxsFileName = "Package.wxs";
     private const string PatchScriptFileName = "PatchAppSettings.ps1";
 

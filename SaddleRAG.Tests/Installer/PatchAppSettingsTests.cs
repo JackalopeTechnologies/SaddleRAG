@@ -124,6 +124,29 @@ public sealed class PatchAppSettingsTests
     }
 
     [Fact]
+    public void FailureSentinelEmittedToStderr()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // Forces the catch path by handing the script a fixture path that
+        // doesn't exist. The .ps1's catch emits a stable "FAILURE:" sentinel
+        // that MSI-log scrapers can grep for to distinguish ran-and-failed
+        // from never-ran.
+        string missing = Path.Combine(Path.GetTempPath(), $"saddlerag-missing-{Guid.NewGuid()}.json");
+        int exitCode = TryRunPatchScript(missing,
+                                         "x",
+                                         "x",
+                                         "x",
+                                         "Cpu",
+                                         out string stderr
+                                        );
+
+        Assert.NotEqual(expected: 0, exitCode);
+        Assert.Contains(FailureSentinel, stderr);
+    }
+
+    [Fact]
     public void PreservesUnrelatedConfigSectionsAndAdditionalMongoProfiles()
     {
         if (!OperatingSystem.IsWindows())
@@ -141,10 +164,20 @@ public sealed class PatchAppSettingsTests
 
             JsonNode patched = LoadJson(fixturePath);
 
-            // Sections the script doesn't touch must round-trip unchanged.
+            // Top-level scalar sibling -- the JSON object-rebuild path
+            // must preserve it.
+            Assert.Equal("*", (string?) patched["AllowedHosts"]);
+
+            // Object-tree siblings the script doesn't touch.
             Assert.Equal("Information", (string?) patched["Logging"]?["LogLevel"]?["Default"]);
             Assert.Equal("http://kestrel:6100", (string?) patched["Kestrel"]?["Endpoints"]?["Http"]?["Url"]);
             Assert.Equal(expected: 0.4d, (double?) patched["Ranking"]?["Bm25Weight"]);
+
+            // High-risk siblings INSIDE the same objects the script edits:
+            // MongoDB.ActiveProfile lives next to MongoDB.Profiles, and
+            // Ollama.EmbeddingModel lives next to Ollama.Endpoint.
+            Assert.Equal("local", (string?) patched["MongoDB"]?["ActiveProfile"]);
+            Assert.Equal("nomic-embed-text", (string?) patched["Ollama"]?["EmbeddingModel"]);
 
             // Additional Mongo profile must survive even though the script
             // only edits MongoDB.Profiles.local.
@@ -158,6 +191,70 @@ public sealed class PatchAppSettingsTests
         finally
         {
             File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
+    public void OriginalFileUnchangedOnFailure()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // The load-bearing claim of the .tmp + File::Replace pattern is
+        // that a mid-script failure leaves the ORIGINAL appsettings.json
+        // intact, not truncated or missing. Forcing the failure path here
+        // by seeding a fixture with the wrong shape under .Onnx, so the
+        // assignment $json.Onnx.ExecutionProvider = $ep throws.
+        string fixturePath = CreateMalformedFixture();
+        byte[] originalBytes = File.ReadAllBytes(fixturePath);
+
+        try
+        {
+            int exitCode = TryRunPatchScript(fixturePath,
+                                             "mongodb://example:27017",
+                                             "SaddleRAGTest",
+                                             "http://example:11434",
+                                             "DirectMl"
+                                            );
+
+            Assert.NotEqual(expected: 0, exitCode);
+            byte[] afterBytes = File.ReadAllBytes(fixturePath);
+            Assert.Equal(originalBytes, afterBytes);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
+    public void TempFileCleanedUpOnFailure()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        string fixturePath = CreateMalformedFixture();
+        string tempPath = fixturePath + ".tmp";
+
+        try
+        {
+            int exitCode = TryRunPatchScript(fixturePath,
+                                             "mongodb://example:27017",
+                                             "SaddleRAGTest",
+                                             "http://example:11434",
+                                             "DirectMl"
+                                            );
+
+            Assert.NotEqual(expected: 0, exitCode);
+            Assert.False(File.Exists(tempPath),
+                         $"Catch path must remove the .tmp file; found leftover at '{tempPath}'."
+                        );
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
         }
     }
 
@@ -187,9 +284,10 @@ public sealed class PatchAppSettingsTests
     private static string CreateFixtureWithExtraSections()
     {
         // Mirrors the shape of the shipped SaddleRAG.Mcp/appsettings.json
-        // (Logging + Kestrel + Ranking siblings, multiple Mongo profiles).
-        // The script edits only the four properties it owns; everything
-        // else must round-trip untouched.
+        // (top-level scalars, Logging + Kestrel + Ranking siblings, multiple
+        // Mongo profiles, in-object siblings of edited fields). The script
+        // edits only the four properties it owns; everything else must
+        // round-trip untouched.
         string tempPath = Path.Combine(Path.GetTempPath(), $"saddlerag-appsettings-extra-{Guid.NewGuid()}.json");
         var seed = new JsonObject
         {
@@ -200,6 +298,7 @@ public sealed class PatchAppSettingsTests
                     ["Default"] = "Information"
                 }
             },
+            ["AllowedHosts"] = "*",
             ["Kestrel"] = new JsonObject
             {
                 ["Endpoints"] = new JsonObject
@@ -209,6 +308,7 @@ public sealed class PatchAppSettingsTests
             },
             ["MongoDB"] = new JsonObject
             {
+                ["ActiveProfile"] = "local",
                 ["Profiles"] = new JsonObject
                 {
                     ["local"] = new JsonObject
@@ -223,9 +323,42 @@ public sealed class PatchAppSettingsTests
                     }
                 }
             },
-            ["Ollama"] = new JsonObject { ["Endpoint"] = "http://placeholder" },
+            ["Ollama"] = new JsonObject
+            {
+                ["Endpoint"] = "http://placeholder",
+                ["EmbeddingModel"] = "nomic-embed-text"
+            },
             ["Onnx"]   = new JsonObject { ["ExecutionProvider"] = "Cpu" },
             ["Ranking"] = new JsonObject { ["Bm25Weight"] = 0.4d }
+        };
+        File.WriteAllText(tempPath, seed.ToJsonString(), Encoding.UTF8);
+        return tempPath;
+    }
+
+    private static string CreateMalformedFixture()
+    {
+        // Onnx is a string scalar instead of an object, so the assignment
+        // $json.Onnx.ExecutionProvider = $ep inside PatchAppSettings.ps1
+        // throws inside the try block. MongoDB and Ollama are valid so the
+        // earlier ConvertFrom-Json + property reads succeed; the failure
+        // happens AFTER the temp file has been written, which is exactly
+        // the case the atomic-replace pattern exists to protect against.
+        string tempPath = Path.Combine(Path.GetTempPath(), $"saddlerag-malformed-{Guid.NewGuid()}.json");
+        var seed = new JsonObject
+        {
+            ["MongoDB"] = new JsonObject
+            {
+                ["Profiles"] = new JsonObject
+                {
+                    ["local"] = new JsonObject
+                    {
+                        ["ConnectionString"] = "mongodb://placeholder",
+                        ["DatabaseName"] = "Placeholder"
+                    }
+                }
+            },
+            ["Ollama"] = new JsonObject { ["Endpoint"] = "http://placeholder" },
+            ["Onnx"]   = "this-should-be-an-object"
         };
         File.WriteAllText(tempPath, seed.ToJsonString(), Encoding.UTF8);
         return tempPath;
@@ -246,9 +379,17 @@ public sealed class PatchAppSettingsTests
                                        string ollamaEndpoint,
                                        string executionProvider)
     {
-        int exitCode = TryRunPatchScript(appSettingsPath, connectionString, databaseName, ollamaEndpoint, executionProvider);
+        int exitCode = TryRunPatchScript(appSettingsPath,
+                                         connectionString,
+                                         databaseName,
+                                         ollamaEndpoint,
+                                         executionProvider,
+                                         out string stderr
+                                        );
         if (exitCode != 0)
-            throw new InvalidOperationException($"PatchAppSettings.ps1 exited with code {exitCode}.");
+            throw new InvalidOperationException(
+                $"PatchAppSettings.ps1 exited with code {exitCode}. stderr: {stderr}"
+            );
     }
 
     private static int TryRunPatchScript(string appSettingsPath,
@@ -257,7 +398,23 @@ public sealed class PatchAppSettingsTests
                                          string ollamaEndpoint,
                                          string executionProvider)
     {
-        string? scriptPath = TryResolveScriptPath();
+        return TryRunPatchScript(appSettingsPath,
+                                 connectionString,
+                                 databaseName,
+                                 ollamaEndpoint,
+                                 executionProvider,
+                                 out _
+                                );
+    }
+
+    private static int TryRunPatchScript(string appSettingsPath,
+                                         string connectionString,
+                                         string databaseName,
+                                         string ollamaEndpoint,
+                                         string executionProvider,
+                                         out string stderr)
+    {
+        string? scriptPath = InstallerSourceTreeResolver.TryResolveInstallerFile(PatchScriptFileName);
         if (scriptPath == null)
             Assert.Skip(ScriptMissingSkipReason);
         // Assert.Skip throws on the null branch; the second assertion narrows
@@ -269,7 +426,8 @@ public sealed class PatchAppSettingsTests
                                 connectionString,
                                 databaseName,
                                 ollamaEndpoint,
-                                executionProvider
+                                executionProvider,
+                                out stderr
                                );
     }
 
@@ -278,7 +436,8 @@ public sealed class PatchAppSettingsTests
                                         string connectionString,
                                         string databaseName,
                                         string ollamaEndpoint,
-                                        string executionProvider)
+                                        string executionProvider,
+                                        out string stderr)
     {
         var startInfo = new ProcessStartInfo("powershell.exe")
         {
@@ -310,46 +469,40 @@ public sealed class PatchAppSettingsTests
         // Drain stdout/stderr asynchronously BEFORE WaitForExit so a verbose
         // error message can't fill the ~4KB pipe buffer and deadlock the
         // child + the test. WaitForExit gets a bounded timeout so a hung
-        // powershell.exe (e.g., parameter binding prompts) fails as a clear
+        // powershell.exe (parameter-binding prompts, etc.) fails as a clear
         // assertion rather than a CI hang.
         Task<string> stdoutTask = proc.StandardOutput.ReadToEndAsync();
         Task<string> stderrTask = proc.StandardError.ReadToEndAsync();
 
         bool exited = proc.WaitForExit(smWaitForExitTimeout);
-        Assert.True(exited, "powershell.exe did not exit within the expected window; likely deadlocked or waiting on a prompt.");
+        if (!exited)
+        {
+            // Bounded drain of whatever the still-running child emitted so the
+            // assertion message is actually useful; if the child is fully
+            // wedged the partial value is "(unread)".
+            stdoutTask.Wait(smDiagnosticDrainTimeout);
+            stderrTask.Wait(smDiagnosticDrainTimeout);
+            string partialOut = stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result : UnreadDiagnosticPlaceholder;
+            string partialErr = stderrTask.IsCompletedSuccessfully ? stderrTask.Result : UnreadDiagnosticPlaceholder;
+            Assert.Fail($"powershell.exe did not exit within {smWaitForExitTimeout.TotalSeconds:N0}s. " +
+                        $"stdout: {partialOut}; stderr: {partialErr}"
+                       );
+        }
 
-        // Joining the read tasks after WaitForExit is safe and surfaces
-        // their output for the assertion message below if we ever decide
-        // to attach it (kept available for future diagnostics).
         stdoutTask.Wait();
         stderrTask.Wait();
-
+        stderr = stderrTask.Result;
         return proc.ExitCode;
     }
 
-    private static string? TryResolveScriptPath()
-    {
-        string testBinDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
-        DirectoryInfo? dir = new DirectoryInfo(testBinDir);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, RepositoryRootMarker)))
-            dir = dir.Parent;
-        string? result = null;
-        if (dir != null)
-        {
-            string candidate = Path.Combine(dir.FullName, InstallerFolderName, PatchScriptFileName);
-            if (File.Exists(candidate))
-                result = candidate;
-        }
-        return result;
-    }
-
     private static readonly TimeSpan smWaitForExitTimeout = TimeSpan.FromSeconds(seconds: 30);
+    private static readonly TimeSpan smDiagnosticDrainTimeout = TimeSpan.FromSeconds(seconds: 2);
 
     private const string WindowsOnlySkipReason =
         "PatchAppSettings.ps1 is invoked by the Windows MSI installer; the test requires powershell.exe.";
     private const string ScriptMissingSkipReason =
         "PatchAppSettings.ps1 not locatable from test binary directory; the test requires the script to be present in the source tree.";
-    private const string RepositoryRootMarker = "SaddleRAG.slnx";
-    private const string InstallerFolderName = "SaddleRAG.Installer";
     private const string PatchScriptFileName = "PatchAppSettings.ps1";
+    private const string FailureSentinel = "PatchAppSettings: FAILURE:";
+    private const string UnreadDiagnosticPlaceholder = "(unread)";
 }
