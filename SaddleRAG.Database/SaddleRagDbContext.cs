@@ -7,10 +7,15 @@
 #region Usings
 
 using Microsoft.Extensions.Options;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Core.Models.Monitor;
 
 #endregion
 
@@ -21,6 +26,29 @@ namespace SaddleRAG.Database;
 /// </summary>
 public class SaddleRagDbContext
 {
+    static SaddleRagDbContext()
+    {
+        // JobRecord persists JobType and JobStatus as MongoDB strings
+        // rather than ints so documents are human-readable and immune
+        // to enum-reorder drift. Core has no MongoDB dependency, so
+        // the serializer configuration lives here in the database
+        // layer via a class-map registration. The IsClassMapRegistered
+        // guard prevents a throw if tests construct DbContext multiple
+        // times within the same AppDomain.
+        if (!BsonClassMap.IsClassMapRegistered(typeof(JobRecord)))
+        {
+            BsonClassMap.RegisterClassMap<JobRecord>(cm =>
+                                                     {
+                                                         cm.AutoMap();
+                                                         cm.MapMember(r => r.JobType)
+                                                           .SetSerializer(new EnumSerializer<JobType>(BsonType.String));
+                                                         cm.MapMember(r => r.Status)
+                                                           .SetSerializer(new EnumSerializer<JobStatus>(BsonType.String));
+                                                     }
+                                                    );
+        }
+    }
+
     public SaddleRagDbContext(IOptions<SaddleRagDbSettings> settings)
     {
         (var connectionString, var databaseName) = settings.Value.Resolve();
@@ -46,17 +74,15 @@ public class SaddleRagDbContext
     public IMongoCollection<ProjectProfile> ProjectProfiles =>
         mDatabase.GetCollection<ProjectProfile>(CollectionProjectProfiles);
 
-    public IMongoCollection<ScrapeJobRecord> ScrapeJobs =>
-        mDatabase.GetCollection<ScrapeJobRecord>(CollectionScrapeJobs);
-
-    public IMongoCollection<RescrubJobRecord> RescrubJobs =>
-        mDatabase.GetCollection<RescrubJobRecord>(CollectionRescrubJobs);
-
-    public IMongoCollection<ReembedJobRecord> ReembedJobs =>
-        mDatabase.GetCollection<ReembedJobRecord>(CollectionReembedJobs);
-
-    public IMongoCollection<BackgroundJobRecord> BackgroundJobs =>
-        mDatabase.GetCollection<BackgroundJobRecord>(CollectionBackgroundJobs);
+    /// <summary>
+    ///     Unified jobs collection. Replaced the four legacy per-pipeline
+    ///     collections (scrapeJobs / rescrubJobs / reembedJobs /
+    ///     backgroundJobs). Any pre-unification data is migrated into this
+    ///     collection on startup by <c>JobsUnificationMigration</c>; the
+    ///     legacy collections are dropped once migration completes.
+    /// </summary>
+    public IMongoCollection<JobRecord> Jobs =>
+        mDatabase.GetCollection<JobRecord>(CollectionJobs);
 
     public IMongoCollection<LibraryProfile> LibraryProfiles =>
         mDatabase.GetCollection<LibraryProfile>(CollectionLibraryProfiles);
@@ -251,64 +277,19 @@ public class SaddleRagDbContext
                                                   cancellationToken: ct
                                                  );
 
-        // ScrapeJobs: TTL on CompletedAt. Running jobs (CompletedAt = null)
-        // are skipped by Mongo's TTL purge; only terminal jobs eventually
-        // age out. Manual cleanup_jobs tool covers early eviction.
-        var scrapeJobKeys = Builders<ScrapeJobRecord>.IndexKeys;
-        await
-            ScrapeJobs.Indexes.CreateOneAsync(new CreateIndexModel<ScrapeJobRecord>(scrapeJobKeys.Ascending(j => j
-                                                               .CompletedAt
-                                                           ),
-                                                       new CreateIndexOptions
-                                                           {
-                                                               ExpireAfter = smJobRetention
-                                                           }
-                                                  ),
-                                              cancellationToken: ct
-                                             );
-
-        // BackgroundJobs: TTL on CompletedAt with the same Running-skip semantics.
-        var backgroundJobKeys = Builders<BackgroundJobRecord>.IndexKeys;
-        await
-            BackgroundJobs.Indexes.CreateOneAsync(new CreateIndexModel<BackgroundJobRecord>(backgroundJobKeys
-                                                               .Ascending(j => j
-                                                                              .CompletedAt
+        // Jobs (unified): TTL on CompletedAt. Running jobs
+        // (CompletedAt = null) are skipped by Mongo's TTL purge; only
+        // terminal jobs eventually age out. Manual cleanup_jobs tool
+        // covers early eviction.
+        var jobKeys = Builders<JobRecord>.IndexKeys;
+        await Jobs.Indexes.CreateOneAsync(new CreateIndexModel<JobRecord>(jobKeys.Ascending(j => j.CompletedAt),
+                                                                          new CreateIndexOptions
+                                                                              {
+                                                                                  ExpireAfter = smJobRetention
+                                                                              }
                                                                          ),
-                                                           new CreateIndexOptions
-                                                               {
-                                                                   ExpireAfter = smJobRetention
-                                                               }
-                                                      ),
-                                                  cancellationToken: ct
-                                                 );
-
-        // RescrubJobs: TTL on CompletedAt with the same Running-skip semantics.
-        var rescrubJobKeys = Builders<RescrubJobRecord>.IndexKeys;
-        await
-            RescrubJobs.Indexes.CreateOneAsync(new CreateIndexModel<RescrubJobRecord>(rescrubJobKeys.Ascending(j => j
-                                                                .CompletedAt
-                                                            ),
-                                                        new CreateIndexOptions
-                                                            {
-                                                                ExpireAfter = smJobRetention
-                                                            }
-                                                   ),
-                                               cancellationToken: ct
-                                              );
-
-        // ReembedJobs: TTL on CompletedAt with the same Running-skip semantics.
-        var reembedJobKeys = Builders<ReembedJobRecord>.IndexKeys;
-        await
-            ReembedJobs.Indexes.CreateOneAsync(new CreateIndexModel<ReembedJobRecord>(reembedJobKeys.Ascending(j => j
-                                                                .CompletedAt
-                                                            ),
-                                                        new CreateIndexOptions
-                                                            {
-                                                                ExpireAfter = smJobRetention
-                                                            }
-                                                   ),
-                                               cancellationToken: ct
-                                              );
+                                          cancellationToken: ct
+                                         );
     }
 
     private const int JobRetentionDays = 30;
@@ -319,10 +300,7 @@ public class SaddleRagDbContext
     private const string CollectionChunks = "chunks";
     private const string CollectionVersionDiffs = "versionDiffs";
     private const string CollectionProjectProfiles = "projectProfiles";
-    private const string CollectionScrapeJobs = "scrapeJobs";
-    private const string CollectionRescrubJobs = "rescrubJobs";
-    private const string CollectionReembedJobs = "reembedJobs";
-    private const string CollectionBackgroundJobs = "backgroundJobs";
+    internal const string CollectionJobs = "jobs";
     private const string CollectionLibraryProfiles = "libraryProfiles";
     private const string CollectionLibraryIndexes = "libraryIndexes";
     private const string CollectionBm25Shards = "bm25Shards";

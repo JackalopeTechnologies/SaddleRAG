@@ -16,6 +16,7 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
+using SaddleRAG.Database.Migrations;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Embedding;
 
@@ -282,6 +283,13 @@ public sealed class McpWarmupService : BackgroundService
             indexCts.CancelAfter(TimeSpan.FromSeconds(seconds: 10));
 
             await ctx.EnsureIndexesAsync(indexCts.Token);
+
+            // One-time migration that folds the four legacy job
+            // collections into the unified jobs collection. Idempotent
+            // and a no-op once it has run for a profile, so safe to
+            // invoke on every startup.
+            var jobsMigration = new JobsUnificationMigration(ctx, mLogger);
+            await jobsMigration.RunAsync(indexCts.Token);
 
 
             var libRepo = repositoryFactory.GetLibraryRepository(profile);

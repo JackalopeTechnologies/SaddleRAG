@@ -270,9 +270,9 @@ public class LibraryRepository : ILibraryRepository
         var exUpdate = Builders<ExcludedSymbol>.Update.Set(e => e.LibraryId, newId);
         var exRes = await mContext.ExcludedSymbols.UpdateManyAsync(exFilter, exUpdate, cancellationToken: ct);
 
-        var jobFilter = Builders<ScrapeJobRecord>.Filter.Eq(ScrapeJobLibraryIdPath, oldId);
-        var jobUpdate = Builders<ScrapeJobRecord>.Update.Set(ScrapeJobLibraryIdPath, newId);
-        var jobRes = await mContext.ScrapeJobs.UpdateManyAsync(jobFilter, jobUpdate, cancellationToken: ct);
+        var jobFilter = Builders<JobRecord>.Filter.Eq(j => j.LibraryId, oldId);
+        var jobUpdate = Builders<JobRecord>.Update.Set(j => j.LibraryId, newId);
+        var jobRes = await mContext.Jobs.UpdateManyAsync(jobFilter, jobUpdate, cancellationToken: ct);
 
         var result = new RenameLibraryResult(libRes.ModifiedCount,
                                              verRes.ModifiedCount,
@@ -286,6 +286,4 @@ public class LibraryRepository : ILibraryRepository
                                             );
         return result;
     }
-
-    private const string ScrapeJobLibraryIdPath = "Job.LibraryId";
 }

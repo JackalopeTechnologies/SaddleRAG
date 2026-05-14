@@ -47,30 +47,18 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPageRepository, PageRepository>();
         services.AddSingleton<IChunkRepository, ChunkRepository>();
         services.AddSingleton<IDiffRepository, DiffRepository>();
-        services.AddSingleton<IScrapeJobRepository, ScrapeJobRepository>();
         services.AddSingleton<IScrapeAuditRepository, ScrapeAuditRepository>();
         services.AddSingleton<ILibraryProfileRepository, LibraryProfileRepository>();
         services.AddSingleton<ILibraryIndexRepository, LibraryIndexRepository>();
         services.AddSingleton<IBm25ShardRepository, Bm25ShardRepository>();
         services.AddSingleton<IExcludedSymbolsRepository, ExcludedSymbolsRepository>();
-        services.AddSingleton<IBackgroundJobRepository, BackgroundJobRepository>();
-        services.AddSingleton<IRescrubJobRepository, RescrubJobRepository>();
+        services.AddSingleton<IJobRepository, JobRepository>();
 
         return services;
     }
 
     private static void RegisterClassMaps()
     {
-        if (!BsonClassMap.IsClassMapRegistered(typeof(ScrapeJobRecord)))
-        {
-            BsonClassMap.RegisterClassMap<ScrapeJobRecord>(cm =>
-                                                           {
-                                                               cm.AutoMap();
-                                                               cm.SetIgnoreExtraElements(ignoreExtraElements: true);
-                                                           }
-                                                          );
-        }
-
         // Bm25Stats replaced the older Bm25Index; existing documents may
         // still have the old "Postings" field at the Bm25 level. Tolerate
         // it on read so the next rescrub can repopulate cleanly.

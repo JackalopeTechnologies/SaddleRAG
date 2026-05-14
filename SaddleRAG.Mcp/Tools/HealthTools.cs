@@ -11,6 +11,7 @@ using System.Text.Json;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 
 #endregion
@@ -152,11 +153,11 @@ public static class HealthTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
 
         var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
-        var jobRepo = repositoryFactory.GetScrapeJobRepository(profile);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
 
         var libraries = await libraryRepo.GetAllLibrariesAsync(ct);
-        var recentJobs = await jobRepo.ListRecentAsync(RecentJobsLimit, ct);
-        var runningJobs = await jobRepo.ListRunningJobsAsync(ct);
+        var recentJobs = await jobRepo.ListRecentAsync(JobType.Scrape, RecentJobsLimit, ct);
+        var runningJobs = await jobRepo.ListRunningAsync(JobType.Scrape, ct);
         var mergedJobs = MergeRecentAndRunning(recentJobs, runningJobs);
 
         var suspectList = new List<object>();
@@ -176,10 +177,10 @@ public static class HealthTools
         var recentJobsProjection = mergedJobs.Select(j => new
                                                               {
                                                                   j.Id,
-                                                                  j.Status,
+                                                                  Status = j.Status.ToString(),
                                                                   PipelineState = j.Status.ToString(),
-                                                                  Library = j.Job.LibraryId,
-                                                                  j.Job.Version,
+                                                                  Library = j.LibraryId,
+                                                                  j.Version,
                                                                   Stale =
                                                                       ScrapeJobThresholds
                                                                           .IsStaleRunning(j, staleCutoff),
@@ -220,10 +221,10 @@ public static class HealthTools
         return JsonSerializer.Serialize(response, smJsonOptions);
     }
 
-    private static IReadOnlyList<ScrapeJobRecord> MergeRecentAndRunning(IReadOnlyList<ScrapeJobRecord> recent,
-                                                                        IReadOnlyList<ScrapeJobRecord> running)
+    private static IReadOnlyList<JobRecord> MergeRecentAndRunning(IReadOnlyList<JobRecord> recent,
+                                                                   IReadOnlyList<JobRecord> running)
     {
-        var byId = new Dictionary<string, ScrapeJobRecord>(StringComparer.Ordinal);
+        var byId = new Dictionary<string, JobRecord>(StringComparer.Ordinal);
         foreach(var job in recent)
             byId[job.Id] = job;
         foreach(var job in running)
