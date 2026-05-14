@@ -121,7 +121,8 @@ builder.Configuration.AddJsonFile(OnnxOverrideStore.RuntimeOverridesFileName,
                                  );
 
 builder.Host.UseSerilog();
-builder.Host.UseWindowsService(options => { options.ServiceName = ServiceName; });
+if (OperatingSystem.IsWindows())
+    builder.Host.UseWindowsService(options => { options.ServiceName = ServiceName; });
 
 if (builder.Environment.IsDevelopment())
 {
