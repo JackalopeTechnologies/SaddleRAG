@@ -4,9 +4,16 @@ Test-oracle library for the SaddleRAG MSI installer's JScript custom actions.
 
 ## Why this project exists
 
-The MSI installer at `SaddleRAG.Installer/` runs JScript inside the Windows
-Installer service. JScript is not .NET — the MSI custom-action host does not
-load managed assemblies, so the installer cannot call this library at runtime.
+The SaddleRAG MSI installer at `SaddleRAG.Installer/` uses **script-type
+custom actions** (`Script="jscript"` in WiX) for its conditional install
+logic. JScript script CAs run inside the Windows Installer host's COM
+scripting engine and cannot load managed assemblies — so the live installer
+cannot call this library at runtime.
+
+(MSI itself *does* support managed CAs via WiX DTF / `WixToolset.Dtf`, but
+adopting them here would mean rewriting the existing CA template inventory
+and adding a packaging step. The script-CA approach is what's deployed
+today.)
 
 What this library provides is a **testable mirror** of the heuristics the
 JScript custom actions use. The C# copy is the source of truth for unit
