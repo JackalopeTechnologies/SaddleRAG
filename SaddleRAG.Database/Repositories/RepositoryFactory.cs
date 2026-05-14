@@ -67,16 +67,6 @@ public class RepositoryFactory
     }
 
     /// <summary>
-    ///     Get a scrape job repository for the specified profile.
-    /// </summary>
-    public virtual IScrapeJobRepository GetScrapeJobRepository(string? profile = null)
-    {
-        var context = mContextFactory.GetForProfile(profile);
-        var result = new ScrapeJobRepository(context);
-        return result;
-    }
-
-    /// <summary>
     ///     Get a library-profile repository for the specified database profile.
     ///     Stores the per-(library, version) reconnaissance results.
     /// </summary>
@@ -133,32 +123,15 @@ public class RepositoryFactory
     }
 
     /// <summary>
-    ///     Get a rescrub job repository for the specified profile.
+    ///     Get the unified job repository for the specified profile.
+    ///     The single entry-point for every job-type — replaces the four
+    ///     legacy per-pipeline getters retired in the four-to-one
+    ///     consolidation.
     /// </summary>
-    public virtual IRescrubJobRepository GetRescrubJobRepository(string? profile = null)
+    public virtual IJobRepository GetJobRepository(string? profile = null)
     {
         var context = mContextFactory.GetForProfile(profile);
-        var result = new RescrubJobRepository(context);
-        return result;
-    }
-
-    /// <summary>
-    ///     Get a reembed job repository for the specified profile.
-    /// </summary>
-    public virtual IReembedJobRepository GetReembedJobRepository(string? profile = null)
-    {
-        var context = mContextFactory.GetForProfile(profile);
-        var result = new ReembedJobRepository(context);
-        return result;
-    }
-
-    /// <summary>
-    ///     Get a background job repository for the specified profile.
-    /// </summary>
-    public virtual IBackgroundJobRepository GetBackgroundJobRepository(string? profile = null)
-    {
-        var context = mContextFactory.GetForProfile(profile);
-        var result = new BackgroundJobRepository(context);
+        var result = new JobRepository(context);
         return result;
     }
 }

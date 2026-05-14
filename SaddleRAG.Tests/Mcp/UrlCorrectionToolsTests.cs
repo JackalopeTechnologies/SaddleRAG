@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Mcp.Tools;
@@ -29,7 +30,7 @@ public sealed class UrlCorrectionToolsTests
         ILibraryProfileRepository ProfileRepo,
         ILibraryIndexRepository IndexRepo,
         IBm25ShardRepository Bm25Repo,
-        IScrapeJobRepository ScrapeJobRepo);
+        IJobRepository JobRepo);
 
     [Fact]
     public async Task SubmitUrlCorrectionDryRunReportsCascadeWithoutWriting()
@@ -62,8 +63,8 @@ public sealed class UrlCorrectionToolsTests
     public async Task SubmitUrlCorrectionDryRunListsActiveJobsAsWouldCancel()
     {
         var harness = MakeFactory();
-        var orphan = MakeJobRecord("orphan-1", "foo", "1.0", ScrapeJobStatus.Running);
-        harness.ScrapeJobRepo.ListActiveJobsAsync("foo", "1.0", Arg.Any<CancellationToken>())
+        var orphan = MakeJobRecord("orphan-1", "foo", "1.0", JobStatus.Running);
+        harness.JobRepo.ListActiveAsync("foo", "1.0", JobType.Scrape, Arg.Any<CancellationToken>())
                .Returns([orphan]);
 
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
@@ -124,9 +125,9 @@ public sealed class UrlCorrectionToolsTests
     public async Task SubmitUrlCorrectionApplyCancelsParallelRunningJobsBeforeRequeue()
     {
         var harness = MakeFactory();
-        var first = MakeJobRecord("running-1", "foo", "1.0", ScrapeJobStatus.Running);
-        var second = MakeJobRecord("running-2", "foo", "1.0", ScrapeJobStatus.Running);
-        harness.ScrapeJobRepo.ListActiveJobsAsync("foo", "1.0", Arg.Any<CancellationToken>())
+        var first = MakeJobRecord("running-1", "foo", "1.0", JobStatus.Running);
+        var second = MakeJobRecord("running-2", "foo", "1.0", JobStatus.Running);
+        harness.JobRepo.ListActiveAsync("foo", "1.0", JobType.Scrape, Arg.Any<CancellationToken>())
                .Returns([first, second]);
         harness.Runner.CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                .Returns(CancelScrapeOutcome.Signalled);
@@ -150,18 +151,14 @@ public sealed class UrlCorrectionToolsTests
         await harness.Runner.Received(requiredNumberOfCalls: 1).CancelAsync("running-2", Arg.Any<CancellationToken>());
     }
 
-    private static ScrapeJobRecord MakeJobRecord(string id, string library, string version, ScrapeJobStatus status) =>
-        new ScrapeJobRecord
+    private static JobRecord MakeJobRecord(string id, string library, string version, JobStatus status) =>
+        new JobRecord
             {
                 Id = id,
-                Job = new ScrapeJob
-                          {
-                              RootUrl = "https://example.com",
-                              LibraryHint = library,
-                              LibraryId = library,
-                              Version = version,
-                              AllowedUrlPatterns = []
-                          },
+                JobType = JobType.Scrape,
+                LibraryId = library,
+                Version = version,
+                InputJson = "{}",
                 Status = status,
                 CreatedAt = DateTime.UtcNow - TimeSpan.FromMinutes(minutes: 10)
             };
@@ -175,21 +172,24 @@ public sealed class UrlCorrectionToolsTests
         var profileRepo = Substitute.For<ILibraryProfileRepository>();
         var indexRepo = Substitute.For<ILibraryIndexRepository>();
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
-        var scrapeJobRepo = Substitute.For<IScrapeJobRepository>();
-        scrapeJobRepo.ListActiveJobsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                     .Returns([]);
+        var jobRepo = Substitute.For<IJobRepository>();
+        jobRepo.ListActiveAsync(Arg.Any<string>(),
+                                Arg.Any<string?>(),
+                                Arg.Any<JobType?>(),
+                                Arg.Any<CancellationToken>()
+                               )
+               .Returns([]);
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(profileRepo);
         factory.GetLibraryIndexRepository(Arg.Any<string?>()).Returns(indexRepo);
         factory.GetBm25ShardRepository(Arg.Any<string?>()).Returns(bm25Repo);
-        factory.GetScrapeJobRepository(Arg.Any<string?>()).Returns(scrapeJobRepo);
+        factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
 
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
         var runner = Substitute.ForPartsOf<ScrapeJobRunner>(null,
-                                                            null,
                                                             null,
                                                             null,
                                                             null,
@@ -206,7 +206,7 @@ public sealed class UrlCorrectionToolsTests
                                profileRepo,
                                indexRepo,
                                bm25Repo,
-                               scrapeJobRepo
+                               jobRepo
                               );
     }
 
