@@ -156,6 +156,71 @@ Add to `.mcp.json` in your project root:
 }
 ```
 
+## Linux / Docker
+
+### Docker (recommended)
+
+Requires Docker with Compose. Tested on Ubuntu 22.04+.
+
+**Start the stack:**
+```bash
+docker compose up -d
+```
+
+**Download models (one-time, ~3 GB):**
+```bash
+./warmup.sh
+```
+
+On first run, `warmup.sh` downloads ONNX embedding and reranker models from
+HuggingFace and the Ollama classification model (`phi4-mini:3.8b`). Models are
+stored in named Docker volumes and are not re-downloaded on restart.
+
+The optional recon model (`phi4:14b`, ~8 GB) can be pulled separately:
+```bash
+docker compose exec ollama ollama pull phi4:14b
+```
+
+**Access:** `http://localhost:6100`
+
+**Logs:** `docker compose logs -f saddlerag`
+
+**Stop:** `docker compose down` (data preserved). `docker compose down -v` deletes
+all volumes including downloaded models — use with caution.
+
+### Bare-metal (Ubuntu/Debian or Rocky/RHEL)
+
+```bash
+curl -fsSL https://github.com/JackalopeTechnologies/SaddleRAG/releases/latest/download/install.sh | sudo bash
+```
+
+The script installs .NET ASP.NET Core Runtime 10, MongoDB 8, Ollama, and
+SaddleRAG. It registers a systemd service and downloads models during install
+(same prewarm step as the Windows MSI).
+
+**Uninstall:** `sudo /opt/saddlerag/uninstall.sh`
+
+### Model warmup behaviour
+
+SaddleRAG downloads models on first run, not at image build time. This applies
+to both Docker and bare-metal:
+
+| Platform | When models download |
+|----------|---------------------|
+| Windows (MSI) | During MSI install (prewarm custom action) |
+| Docker | When you run `./warmup.sh` after `docker compose up -d` |
+| Bare-metal Linux | During `install.sh` (automatic) |
+
+Warmup sequence (logged to stdout / `journalctl`):
+
+```
+[Warmup] MongoDB profiles discovered
+[Warmup] Ollama bootstrap — pulls phi4-mini:3.8b if absent
+[Warmup] ONNX models ready — downloads nomic-embed-text-v1.5 + mxbai-rerank-base-v1 from HuggingFace
+[Warmup] Vector indices loaded
+[Warmup] Full pipeline warm
+```
+
 ## Managing AI Client Registrations
 
 The `SaddleRAG.Cli` tool manages which AI tools SaddleRAG is wired into.
