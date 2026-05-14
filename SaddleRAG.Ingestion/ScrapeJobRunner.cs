@@ -7,11 +7,13 @@
 #region Usings
 
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 
 #endregion
@@ -19,13 +21,21 @@ using SaddleRAG.Database.Repositories;
 namespace SaddleRAG.Ingestion;
 
 /// <summary>
-///     Runs scrape jobs in the background, tracks status in MongoDB,
-///     and reloads the per-profile vector index when ingestion completes.
+///     Runs scrape jobs in the background, tracks status in the unified
+///     <c>jobs</c> MongoDB collection, and reloads the per-profile
+///     vector index when ingestion completes.
+///     <para>
+///         Internally still uses <see cref="ScrapeJobRecord" /> as the
+///         in-memory domain object so the <see cref="IngestionOrchestrator" />
+///         callback contract is unchanged; every persistence call
+///         converts to <see cref="JobRecord" /> via
+///         <see cref="ProjectToUnified" /> and writes only to the
+///         unified collection.
+///     </para>
 /// </summary>
 public class ScrapeJobRunner : IScrapeJobQueue
 {
     public ScrapeJobRunner(IngestionOrchestrator orchestrator,
-                           IScrapeJobRepository jobRepository,
                            IChunkRepository chunkRepository,
                            IVectorSearchProvider vectorSearch,
                            ILibraryRepository libraryRepository,
@@ -34,7 +44,6 @@ public class ScrapeJobRunner : IScrapeJobQueue
                            IHostApplicationLifetime lifetime)
     {
         mOrchestrator = orchestrator;
-        mJobRepository = jobRepository;
         mChunkRepository = chunkRepository;
         mVectorSearch = vectorSearch;
         mLibraryRepository = libraryRepository;
@@ -48,7 +57,6 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
     private readonly CancellationToken mAppStoppingToken;
     private readonly IChunkRepository mChunkRepository;
-    private readonly IScrapeJobRepository mJobRepository;
     private readonly ILibraryRepository mLibraryRepository;
     private readonly ILogger<ScrapeJobRunner> mLogger;
     private readonly IngestionOrchestrator mOrchestrator;
@@ -71,7 +79,8 @@ public class ScrapeJobRunner : IScrapeJobQueue
                                 Status = ScrapeJobStatus.Queued
                             };
 
-        await mJobRepository.UpsertAsync(jobRecord, ct);
+        var jobRepo = mRepositoryFactory.GetJobRepository(profile);
+        await jobRepo.UpsertAsync(ProjectToUnified(jobRecord), ct);
 
         // Fire-and-forget background execution. Errors land in the job record.
         _ = Task.Run(() => RunJobAsync(jobRecord), mAppStoppingToken);
@@ -86,12 +95,13 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
         await semaphore.WaitAsync(mAppStoppingToken);
         CancellationTokenSource? cts = null;
+        var jobRepo = mRepositoryFactory.GetJobRepository(jobRecord.Profile);
         try
         {
             jobRecord.Status = ScrapeJobStatus.Running;
             jobRecord.StartedAt = DateTime.UtcNow;
             jobRecord.PipelineState = PipelineStateStarting;
-            await mJobRepository.UpsertAsync(jobRecord);
+            await jobRepo.UpsertAsync(ProjectToUnified(jobRecord));
 
             mLogger.LogInformation("Running scrape job {JobId} for {LibraryId} v{Version}",
                                    jobRecord.Id,
@@ -105,32 +115,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
             await mOrchestrator.IngestAsync(jobRecord.Job,
                                             jobRecord.Profile,
                                             jobRecord.Job.ForceClean,
-                                            updatedRecord =>
-                                            {
-                                                bool counterIncreased =
-                                                    updatedRecord.PagesQueued != jobRecord.PagesQueued ||
-                                                    updatedRecord.PagesFetched != jobRecord.PagesFetched ||
-                                                    updatedRecord.PagesClassified != jobRecord.PagesClassified ||
-                                                    updatedRecord.ChunksGenerated != jobRecord.ChunksGenerated ||
-                                                    updatedRecord.ChunksEmbedded != jobRecord.ChunksEmbedded ||
-                                                    updatedRecord.ChunksCompleted != jobRecord.ChunksCompleted ||
-                                                    updatedRecord.PagesCompleted != jobRecord.PagesCompleted;
-
-                                                jobRecord.PipelineState = updatedRecord.PipelineState;
-                                                jobRecord.PagesQueued = updatedRecord.PagesQueued;
-                                                jobRecord.PagesFetched = updatedRecord.PagesFetched;
-                                                jobRecord.PagesClassified = updatedRecord.PagesClassified;
-                                                jobRecord.ChunksGenerated = updatedRecord.ChunksGenerated;
-                                                jobRecord.ChunksEmbedded = updatedRecord.ChunksEmbedded;
-                                                jobRecord.ChunksCompleted = updatedRecord.ChunksCompleted;
-                                                jobRecord.PagesCompleted = updatedRecord.PagesCompleted;
-                                                jobRecord.ErrorCount = updatedRecord.ErrorCount;
-
-                                                if (counterIncreased)
-                                                    jobRecord.LastProgressAt = DateTime.UtcNow;
-
-                                                mJobRepository.UpsertAsync(jobRecord).GetAwaiter().GetResult();
-                                            },
+                                            updatedRecord => OnProgressTick(jobRecord, jobRepo, updatedRecord),
                                             jobRecord,
                                             cts.Token
                                            );
@@ -142,7 +127,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
             jobRecord.Status = ScrapeJobStatus.Completed;
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
             jobRecord.CompletedAt = DateTime.UtcNow;
-            await mJobRepository.UpsertAsync(jobRecord);
+            await jobRepo.UpsertAsync(ProjectToUnified(jobRecord));
 
             mLogger.LogInformation("Scrape job {JobId} completed successfully", jobRecord.Id);
         }
@@ -150,15 +135,13 @@ public class ScrapeJobRunner : IScrapeJobQueue
         {
             mLogger.LogInformation("Scrape job {JobId} was cancelled", jobRecord.Id);
 
-            // CancelAsync already wrote the Cancelled status; only update if it
-            // hasn't been persisted yet (e.g. cancellation came from app shutdown).
             if (jobRecord.Status != ScrapeJobStatus.Cancelled)
             {
                 jobRecord.Status = ScrapeJobStatus.Cancelled;
                 jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);
                 jobRecord.CancelledAt = DateTime.UtcNow;
                 jobRecord.CompletedAt = DateTime.UtcNow;
-                await mJobRepository.UpsertAsync(jobRecord);
+                await jobRepo.UpsertAsync(ProjectToUnified(jobRecord));
             }
         }
         catch(Exception ex)
@@ -169,7 +152,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
             jobRecord.ErrorMessage = ex.Message;
             jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
             jobRecord.CompletedAt = DateTime.UtcNow;
-            await mJobRepository.UpsertAsync(jobRecord);
+            await jobRepo.UpsertAsync(ProjectToUnified(jobRecord));
         }
         finally
         {
@@ -181,6 +164,33 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
             semaphore.Release();
         }
+    }
+
+    private static void OnProgressTick(ScrapeJobRecord jobRecord, IJobRepository jobRepo, ScrapeJobRecord updatedRecord)
+    {
+        bool counterIncreased =
+            updatedRecord.PagesQueued != jobRecord.PagesQueued ||
+            updatedRecord.PagesFetched != jobRecord.PagesFetched ||
+            updatedRecord.PagesClassified != jobRecord.PagesClassified ||
+            updatedRecord.ChunksGenerated != jobRecord.ChunksGenerated ||
+            updatedRecord.ChunksEmbedded != jobRecord.ChunksEmbedded ||
+            updatedRecord.ChunksCompleted != jobRecord.ChunksCompleted ||
+            updatedRecord.PagesCompleted != jobRecord.PagesCompleted;
+
+        jobRecord.PipelineState = updatedRecord.PipelineState;
+        jobRecord.PagesQueued = updatedRecord.PagesQueued;
+        jobRecord.PagesFetched = updatedRecord.PagesFetched;
+        jobRecord.PagesClassified = updatedRecord.PagesClassified;
+        jobRecord.ChunksGenerated = updatedRecord.ChunksGenerated;
+        jobRecord.ChunksEmbedded = updatedRecord.ChunksEmbedded;
+        jobRecord.ChunksCompleted = updatedRecord.ChunksCompleted;
+        jobRecord.PagesCompleted = updatedRecord.PagesCompleted;
+        jobRecord.ErrorCount = updatedRecord.ErrorCount;
+
+        if (counterIncreased)
+            jobRecord.LastProgressAt = DateTime.UtcNow;
+
+        jobRepo.UpsertAsync(ProjectToUnified(jobRecord)).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -233,15 +243,16 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
     /// <summary>
     ///     Cancel an in-flight or orphaned scrape job. Returns a
-    ///     <see cref="CancelScrapeOutcome" /> the caller can map to a user-facing message.
-    ///     If an active runner exists the CTS is signalled; if the process was restarted
-    ///     and the job is stranded in Running state the DB row is updated directly.
+    ///     <see cref="CancelScrapeOutcome" /> the caller can map to a
+    ///     user-facing message. If an active runner exists the CTS is
+    ///     signalled; if the process was restarted and the job is
+    ///     stranded in Running state the DB row is updated directly.
     /// </summary>
     public virtual async Task<CancelScrapeOutcome> CancelAsync(string jobId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
-        var jobRepo = mRepositoryFactory.GetScrapeJobRepository(profile: null);
+        var jobRepo = mRepositoryFactory.GetJobRepository(profile: null);
         var record = await jobRepo.GetAsync(jobId, ct);
 
         CancelScrapeOutcome result;
@@ -250,7 +261,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
             case null:
                 result = CancelScrapeOutcome.NotFound;
                 break;
-            case { Status: ScrapeJobStatus.Completed or ScrapeJobStatus.Failed or ScrapeJobStatus.Cancelled }:
+            case { Status: JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled }:
                 result = CancelScrapeOutcome.AlreadyTerminal;
                 break;
             default:
@@ -262,8 +273,8 @@ public class ScrapeJobRunner : IScrapeJobQueue
                 else
                     result = CancelScrapeOutcome.OrphanCleanedUp;
 
-                record.Status = ScrapeJobStatus.Cancelled;
-                record.PipelineState = nameof(ScrapeJobStatus.Cancelled);
+                record.Status = JobStatus.Cancelled;
+                record.PipelineState = nameof(JobStatus.Cancelled);
                 record.CancelledAt = DateTime.UtcNow;
                 record.CompletedAt = DateTime.UtcNow;
                 await jobRepo.UpsertAsync(record, ct);
@@ -273,7 +284,40 @@ public class ScrapeJobRunner : IScrapeJobQueue
         return result;
     }
 
+    private static JobRecord ProjectToUnified(ScrapeJobRecord source) => new()
+    {
+        Id              = source.Id,
+        JobType         = JobType.Scrape,
+        Profile         = source.Profile,
+        LibraryId       = source.Job.LibraryId,
+        Version         = source.Job.Version,
+        InputJson       = JsonSerializer.Serialize(source.Job),
+        Status          = (JobStatus) (int) source.Status,
+        PipelineState   = source.PipelineState,
+        ItemsProcessed  = source.PagesCompleted,
+        ItemsTotal      = 0,
+        ItemsLabel      = ItemsLabelPages,
+        ScrapeProgress  = new ScrapeProgress
+        {
+            PagesQueued     = source.PagesQueued,
+            PagesFetched    = source.PagesFetched,
+            PagesClassified = source.PagesClassified,
+            ChunksGenerated = source.ChunksGenerated,
+            ChunksEmbedded  = source.ChunksEmbedded,
+            ChunksCompleted = source.ChunksCompleted,
+            PagesCompleted  = source.PagesCompleted
+        },
+        ErrorCount      = source.ErrorCount,
+        ErrorMessage    = source.ErrorMessage,
+        CreatedAt       = source.CreatedAt,
+        StartedAt       = source.StartedAt,
+        CompletedAt     = source.CompletedAt,
+        LastProgressAt  = source.LastProgressAt,
+        CancelledAt     = source.CancelledAt
+    };
+
     private const string PipelineStateStarting = "Starting";
+    private const string ItemsLabelPages = "pages";
 
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> smJobLocks =
         new ConcurrentDictionary<string, SemaphoreSlim>();

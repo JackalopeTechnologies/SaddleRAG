@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 
 #endregion
@@ -18,10 +19,20 @@ using SaddleRAG.Database.Repositories;
 namespace SaddleRAG.Ingestion;
 
 /// <summary>
-///     Runs generic background jobs in a fire-and-forget Task, tracking lifecycle
-///     status in MongoDB so callers can poll get_job_status without blocking the
-///     MCP transport connection. Each job is one-shot; no concurrency semaphore
-///     is needed.
+///     Runs generic background jobs in a fire-and-forget Task, tracking
+///     lifecycle status in the unified <c>jobs</c> MongoDB collection so
+///     callers can poll <c>get_job_status</c> without blocking the MCP
+///     transport connection. Each job is one-shot; no concurrency
+///     semaphore is needed.
+///     <para>
+///         The caller-facing input type is still
+///         <see cref="BackgroundJobRecord" /> (with its snake_case
+///         <c>JobType</c> string and generic <c>ItemsProcessed</c> /
+///         <c>ItemsTotal</c> / <c>ItemsLabel</c> triple) so consumer
+///         MCP tools don't change. The runner converts to
+///         <see cref="JobRecord" /> at every persistence point and
+///         writes only to the unified collection.
+///     </para>
 /// </summary>
 public class BackgroundJobRunner : IBackgroundJobRunner
 {
@@ -43,7 +54,6 @@ public class BackgroundJobRunner : IBackgroundJobRunner
     private readonly CancellationToken mAppStoppingToken;
     private readonly IMonitorBroadcaster mBroadcaster;
     private readonly ILogger<BackgroundJobRunner> mLogger;
-
     private readonly RepositoryFactory mRepositoryFactory;
 
     /// <summary>
@@ -51,18 +61,6 @@ public class BackgroundJobRunner : IBackgroundJobRunner
     ///     job id immediately. The caller supplies the <paramref name="execute" />
     ///     delegate; the runner handles status transitions and error capture.
     /// </summary>
-    /// <param name="jobRecord">
-    ///     Pre-built record with <c>Status = Queued</c>. Must have a unique
-    ///     <c>Id</c> (GUID string).
-    /// </param>
-    /// <param name="execute">
-    ///     The operation to run. Receives the job record, an optional progress
-    ///     callback <c>(processed, total) =&gt; void</c>, and a cancellation
-    ///     token. May be null for the progress callback when the operation does
-    ///     not report incremental progress.
-    /// </param>
-    /// <param name="ct">Caller cancellation token used only for the initial upsert.</param>
-    /// <returns>The job id from <paramref name="jobRecord" />.</returns>
     public async Task<string> QueueAsync(BackgroundJobRecord jobRecord,
                                          Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute,
                                          CancellationToken ct = default)
@@ -70,8 +68,8 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         ArgumentNullException.ThrowIfNull(jobRecord);
         ArgumentNullException.ThrowIfNull(execute);
 
-        var jobRepo = mRepositoryFactory.GetBackgroundJobRepository(jobRecord.Profile);
-        await jobRepo.UpsertAsync(jobRecord, ct);
+        var jobRepo = mRepositoryFactory.GetJobRepository(jobRecord.Profile);
+        await jobRepo.UpsertAsync(Project(jobRecord), ct);
 
         // Fire-and-forget background execution. Errors land in the job record.
         _ = Task.Run(() => RunJobAsync(jobRecord, execute), mAppStoppingToken);
@@ -82,12 +80,12 @@ public class BackgroundJobRunner : IBackgroundJobRunner
     private async Task RunJobAsync(BackgroundJobRecord jobRecord,
                                    Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task> execute)
     {
-        var jobRepo = mRepositoryFactory.GetBackgroundJobRepository(jobRecord.Profile);
+        var jobRepo = mRepositoryFactory.GetJobRepository(jobRecord.Profile);
 
         jobRecord.Status = ScrapeJobStatus.Running;
         jobRecord.StartedAt = DateTime.UtcNow;
         jobRecord.PipelineState = PipelineStateRunning;
-        await jobRepo.UpsertAsync(jobRecord);
+        await jobRepo.UpsertAsync(Project(jobRecord));
 
         mBroadcaster.RecordJobStarted(jobRecord.Id,
                                       jobRecord.LibraryId ?? string.Empty,
@@ -102,66 +100,113 @@ public class BackgroundJobRunner : IBackgroundJobRunner
                                jobRecord.Version
                               );
 
-        Action<int, int> onProgress = (processed, total) =>
-                                      {
-                                          jobRecord.ItemsProcessed = processed;
-                                          jobRecord.ItemsTotal = total;
-                                          jobRecord.LastProgressAt = DateTime.UtcNow;
-                                          jobRepo.UpsertAsync(jobRecord).GetAwaiter().GetResult();
-                                          if (!string.IsNullOrEmpty(jobRecord.ItemsLabel))
-                                          {
-                                              mBroadcaster.RecordJobProgress(jobRecord.Id,
-                                                                             processed,
-                                                                             total,
-                                                                             jobRecord.ItemsLabel
-                                                                            );
-                                          }
-                                      };
+        Action<int, int> onProgress = (processed, total) => ProgressTick(jobRecord, jobRepo, processed, total);
 
         try
         {
             await execute(jobRecord, onProgress, mAppStoppingToken);
-
-            jobRecord.Status = ScrapeJobStatus.Completed;
-            jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
-            jobRecord.CompletedAt = DateTime.UtcNow;
-            await jobRepo.UpsertAsync(jobRecord);
-
-            mBroadcaster.RecordJobCompleted(jobRecord.Id, indexedPageCount: 0);
-
-            mLogger.LogInformation("Background job {JobId} ({JobType}) completed",
-                                   jobRecord.Id,
-                                   jobRecord.JobType
-                                  );
+            await MarkCompletedAsync(jobRecord, jobRepo);
         }
         catch(OperationCanceledException)
         {
-            mLogger.LogInformation("Background job {JobId} ({JobType}) was cancelled",
-                                   jobRecord.Id,
-                                   jobRecord.JobType
-                                  );
-
-            jobRecord.Status = ScrapeJobStatus.Cancelled;
-            jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);
-            jobRecord.CancelledAt = DateTime.UtcNow;
-            jobRecord.CompletedAt = DateTime.UtcNow;
-            await jobRepo.UpsertAsync(jobRecord);
-
-            mBroadcaster.RecordJobCancelled(jobRecord.Id);
+            await MarkCancelledAsync(jobRecord, jobRepo);
         }
         catch(Exception ex)
         {
-            mLogger.LogError(ex, "Background job {JobId} ({JobType}) failed", jobRecord.Id, jobRecord.JobType);
-
-            jobRecord.Status = ScrapeJobStatus.Failed;
-            jobRecord.ErrorMessage = ex.Message;
-            jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
-            jobRecord.CompletedAt = DateTime.UtcNow;
-            await jobRepo.UpsertAsync(jobRecord);
-
-            mBroadcaster.RecordJobFailed(jobRecord.Id, ex.Message);
+            await MarkFailedAsync(jobRecord, jobRepo, ex);
         }
     }
+
+    private void ProgressTick(BackgroundJobRecord jobRecord, IJobRepository jobRepo, int processed, int total)
+    {
+        jobRecord.ItemsProcessed = processed;
+        jobRecord.ItemsTotal = total;
+        jobRecord.LastProgressAt = DateTime.UtcNow;
+        jobRepo.UpsertAsync(Project(jobRecord)).GetAwaiter().GetResult();
+        if (!string.IsNullOrEmpty(jobRecord.ItemsLabel))
+            mBroadcaster.RecordJobProgress(jobRecord.Id, processed, total, jobRecord.ItemsLabel);
+    }
+
+    private async Task MarkCompletedAsync(BackgroundJobRecord jobRecord, IJobRepository jobRepo)
+    {
+        jobRecord.Status = ScrapeJobStatus.Completed;
+        jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
+        jobRecord.CompletedAt = DateTime.UtcNow;
+        await jobRepo.UpsertAsync(Project(jobRecord));
+
+        mBroadcaster.RecordJobCompleted(jobRecord.Id, indexedPageCount: 0);
+
+        mLogger.LogInformation("Background job {JobId} ({JobType}) completed",
+                               jobRecord.Id,
+                               jobRecord.JobType
+                              );
+    }
+
+    private async Task MarkCancelledAsync(BackgroundJobRecord jobRecord, IJobRepository jobRepo)
+    {
+        mLogger.LogInformation("Background job {JobId} ({JobType}) was cancelled",
+                               jobRecord.Id,
+                               jobRecord.JobType
+                              );
+
+        jobRecord.Status = ScrapeJobStatus.Cancelled;
+        jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);
+        jobRecord.CancelledAt = DateTime.UtcNow;
+        jobRecord.CompletedAt = DateTime.UtcNow;
+        await jobRepo.UpsertAsync(Project(jobRecord));
+
+        mBroadcaster.RecordJobCancelled(jobRecord.Id);
+    }
+
+    private async Task MarkFailedAsync(BackgroundJobRecord jobRecord, IJobRepository jobRepo, Exception ex)
+    {
+        mLogger.LogError(ex, "Background job {JobId} ({JobType}) failed", jobRecord.Id, jobRecord.JobType);
+
+        jobRecord.Status = ScrapeJobStatus.Failed;
+        jobRecord.ErrorMessage = ex.Message;
+        jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
+        jobRecord.CompletedAt = DateTime.UtcNow;
+        await jobRepo.UpsertAsync(Project(jobRecord));
+
+        mBroadcaster.RecordJobFailed(jobRecord.Id, ex.Message);
+    }
+
+    private static JobRecord Project(BackgroundJobRecord source) => new()
+    {
+        Id              = source.Id,
+        JobType         = LegacyJobTypeToEnum(source.JobType),
+        Profile         = source.Profile,
+        LibraryId       = source.LibraryId,
+        Version         = source.Version,
+        InputJson       = source.InputJson,
+        Status          = (JobStatus) (int) source.Status,
+        PipelineState   = source.PipelineState,
+        ItemsProcessed  = source.ItemsProcessed,
+        ItemsTotal      = source.ItemsTotal,
+        ItemsLabel      = source.ItemsLabel,
+        ResultJson      = source.ResultJson,
+        ErrorMessage    = source.ErrorMessage,
+        CreatedAt       = source.CreatedAt,
+        StartedAt       = source.StartedAt,
+        CompletedAt     = source.CompletedAt,
+        LastProgressAt  = source.LastProgressAt,
+        CancelledAt     = source.CancelledAt
+    };
+
+    private static JobType LegacyJobTypeToEnum(string legacyType) => legacyType switch
+    {
+        "dryrun_scrape"              => JobType.DryRunScrape,
+        "rechunk"                    => JobType.Rechunk,
+        "rename_library"             => JobType.RenameLibrary,
+        "delete_version"             => JobType.DeleteVersion,
+        "delete_library"             => JobType.DeleteLibrary,
+        "index_project_dependencies" => JobType.IndexProjectDependencies,
+        "submit_url_correction"      => JobType.SubmitUrlCorrection,
+        "cleanup_audit_log"          => JobType.CleanupAuditLog,
+        "cleanup_jobs"               => JobType.CleanupJobs,
+        "cleanup_orphans"            => JobType.CleanupOrphans,
+        var _                        => JobType.Unknown
+    };
 
     private const string PipelineStateRunning = "Running";
 }

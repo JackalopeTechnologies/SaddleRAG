@@ -12,6 +12,7 @@ using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Crawling;
@@ -129,7 +130,7 @@ public static class IngestionTools
                                             ct
                                            );
 
-        var response = new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) };
+        var response = new { JobId = jobId, Status = nameof(JobStatus.Queued) };
         return JsonSerializer.Serialize(response, smJsonOptions);
     }
 
@@ -152,36 +153,37 @@ public static class IngestionTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
-        var jobRepo = repositoryFactory.GetScrapeJobRepository(profile);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
         var job = await jobRepo.GetAsync(jobId, ct);
 
         string result;
-        if (job == null)
+        if (job is null || job.JobType != JobType.Scrape)
             result = $"No scrape job found with id '{jobId}'.";
         else
         {
+            var progress = job.ScrapeProgress ?? new ScrapeProgress();
             var response = new
                                {
                                    job.Id,
-                                   job.Status,
+                                   Status = job.Status.ToString(),
                                    job.PipelineState,
-                                   job.PagesQueued,
-                                   job.PagesFetched,
-                                   job.PagesClassified,
-                                   job.ChunksGenerated,
-                                   job.ChunksEmbedded,
-                                   job.ChunksCompleted,
-                                   job.PagesCompleted,
+                                   progress.PagesQueued,
+                                   progress.PagesFetched,
+                                   progress.PagesClassified,
+                                   progress.ChunksGenerated,
+                                   progress.ChunksEmbedded,
+                                   progress.ChunksCompleted,
+                                   progress.PagesCompleted,
                                    job.ErrorCount,
                                    job.ErrorMessage,
                                    job.CreatedAt,
                                    job.StartedAt,
                                    job.CompletedAt,
-                                   Library = job.Job.LibraryId,
-                                   job.Job.Version
+                                   Library = job.LibraryId,
+                                   job.Version
                                };
 
-            result = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+            result = JsonSerializer.Serialize(response, smJsonOptions);
         }
 
         return result;
@@ -202,22 +204,22 @@ public static class IngestionTools
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
 
-        var jobRepo = repositoryFactory.GetScrapeJobRepository(profile);
-        var jobs = await jobRepo.ListRecentAsync(limit, ct);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
+        var jobs = await jobRepo.ListRecentAsync(JobType.Scrape, limit, ct);
 
         var response = jobs.Select(j => new
                                             {
                                                 j.Id,
-                                                j.Status,
+                                                Status = j.Status.ToString(),
                                                 j.PipelineState,
-                                                Library = j.Job.LibraryId,
-                                                j.Job.Version,
+                                                Library = j.LibraryId,
+                                                j.Version,
                                                 j.CreatedAt,
                                                 j.CompletedAt
                                             }
                                   );
 
-        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(response, smJsonOptions);
         return json;
     }
 
@@ -239,35 +241,36 @@ public static class IngestionTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
-        var jobRepo = repositoryFactory.GetRescrubJobRepository(profile);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
         var job = await jobRepo.GetAsync(jobId, ct);
 
         string result;
-        if (job == null)
+        if (job is null || job.JobType != JobType.Rescrub)
             result = $"No reextract job found with id '{jobId}'.";
         else
         {
-            var boundaryHint = job.Result != null ? ResolveBoundaryHint(job.Result) : null;
+            var rescrubResult = ParseResult<RescrubResult>(job.ResultJson);
+            var boundaryHint = rescrubResult is not null ? ResolveBoundaryHint(rescrubResult) : null;
             var response = new
                                {
                                    job.Id,
-                                   job.Status,
+                                   Status = job.Status.ToString(),
                                    job.PipelineState,
                                    job.LibraryId,
                                    job.Version,
-                                   job.ChunksTotal,
-                                   job.ChunksProcessed,
-                                   job.ChunksChanged,
+                                   ChunksTotal = job.ItemsTotal,
+                                   ChunksProcessed = job.ItemsProcessed,
+                                   ChunksChanged = rescrubResult?.Changed,
                                    job.ErrorMessage,
                                    job.CreatedAt,
                                    job.StartedAt,
                                    job.CompletedAt,
                                    job.LastProgressAt,
                                    BoundaryHint = boundaryHint,
-                                   job.Result
+                                   Result = rescrubResult
                                };
 
-            result = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+            result = JsonSerializer.Serialize(response, smJsonOptions);
         }
 
         return result;
@@ -288,25 +291,25 @@ public static class IngestionTools
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
 
-        var jobRepo = repositoryFactory.GetRescrubJobRepository(profile);
-        var jobs = await jobRepo.ListRecentAsync(limit, ct);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
+        var jobs = await jobRepo.ListRecentAsync(JobType.Rescrub, limit, ct);
 
         var response = jobs.Select(j => new
                                             {
                                                 j.Id,
-                                                j.Status,
+                                                Status = j.Status.ToString(),
                                                 j.PipelineState,
                                                 j.LibraryId,
                                                 j.Version,
-                                                j.ChunksTotal,
-                                                j.ChunksProcessed,
-                                                j.ChunksChanged,
+                                                ChunksTotal = j.ItemsTotal,
+                                                ChunksProcessed = j.ItemsProcessed,
+                                                ChunksChanged = ParseResult<RescrubResult>(j.ResultJson)?.Changed,
                                                 j.CreatedAt,
                                                 j.CompletedAt
                                             }
                                   );
 
-        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(response, smJsonOptions);
         return json;
     }
 
@@ -340,32 +343,33 @@ public static class IngestionTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
-        var jobRepo = repositoryFactory.GetReembedJobRepository(profile);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
         var job = await jobRepo.GetAsync(jobId, ct);
 
         string result;
-        if (job == null)
+        if (job is null || job.JobType != JobType.Reembed)
             result = $"No reembed job found with id '{jobId}'.";
         else
         {
+            var reembedResult = ParseResult<ReembedResult>(job.ResultJson);
             var response = new
                                {
                                    job.Id,
-                                   job.Status,
+                                   Status = job.Status.ToString(),
                                    job.PipelineState,
                                    job.LibraryId,
                                    job.Version,
-                                   job.ChunksTotal,
-                                   job.ChunksProcessed,
+                                   ChunksTotal = job.ItemsTotal,
+                                   ChunksProcessed = job.ItemsProcessed,
                                    job.ErrorMessage,
                                    job.CreatedAt,
                                    job.StartedAt,
                                    job.CompletedAt,
                                    job.LastProgressAt,
-                                   job.Result
+                                   Result = reembedResult
                                };
 
-            result = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+            result = JsonSerializer.Serialize(response, smJsonOptions);
         }
 
         return result;
@@ -386,26 +390,26 @@ public static class IngestionTools
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
 
-        var jobRepo = repositoryFactory.GetReembedJobRepository(profile);
-        var jobs = await jobRepo.ListRecentAsync(limit, ct);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
+        var jobs = await jobRepo.ListRecentAsync(JobType.Reembed, limit, ct);
 
         var response = jobs.Select(j => new
                                             {
                                                 j.Id,
-                                                j.Status,
+                                                Status = j.Status.ToString(),
                                                 j.PipelineState,
                                                 j.LibraryId,
                                                 j.Version,
-                                                j.ChunksTotal,
-                                                j.ChunksProcessed,
+                                                ChunksTotal = j.ItemsTotal,
+                                                ChunksProcessed = j.ItemsProcessed,
                                                 j.CreatedAt,
                                                 j.CompletedAt,
-                                                EmbeddingProviderId = j.Result?.EmbeddingProviderId,
-                                                EmbeddingModelName = j.Result?.EmbeddingModelName
+                                                EmbeddingProviderId = ParseResult<ReembedResult>(j.ResultJson)?.EmbeddingProviderId,
+                                                EmbeddingModelName = ParseResult<ReembedResult>(j.ResultJson)?.EmbeddingModelName
                                             }
                                   );
 
-        var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(response, smJsonOptions);
         return json;
     }
 
@@ -423,6 +427,23 @@ public static class IngestionTools
 
         await runner.ReloadProfileAsync(profile, ct);
         return $"Reloaded vector index for profile '{profile ?? "(default)"}'.";
+    }
+
+    private static T? ParseResult<T>(string? json) where T : class
+    {
+        T? result = null;
+        if (!string.IsNullOrEmpty(json))
+        {
+            try
+            {
+                result = JsonSerializer.Deserialize<T>(json);
+            }
+            catch(JsonException)
+            {
+                // Malformed result payload — surface as null.
+            }
+        }
+        return result;
     }
 
     private const double BoundaryHintMayHelpThreshold = 5.0;

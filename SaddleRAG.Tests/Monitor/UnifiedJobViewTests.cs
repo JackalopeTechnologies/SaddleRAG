@@ -20,26 +20,24 @@ public sealed class UnifiedJobViewTests
     [Fact]
     public async Task ScrapeJobProjectsToScrapeRow()
     {
-        var scrape = new FakeScrapeJobRepository();
-        scrape.Add(new ScrapeJobRecord
-                       {
-                           Id = "s1",
-                           Job = new ScrapeJob
-                                     {
-                                         LibraryId = "foo",
-                                         Version = "1.0",
-                                         RootUrl = "https://x",
-                                         LibraryHint = "foo docs",
-                                         AllowedUrlPatterns = []
-                                     },
-                           Status = ScrapeJobStatus.Completed,
-                           CreatedAt = DateTime.UtcNow,
-                           PagesCompleted = 42,
-                           ErrorCount = 0
-                       }
-                  );
+        var fake = new FakeJobRepository();
+        fake.Add(new JobRecord
+                     {
+                         Id = "s1",
+                         JobType = JobType.Scrape,
+                         LibraryId = LibraryFoo,
+                         Version = VersionOne,
+                         InputJson = "{}",
+                         Status = JobStatus.Completed,
+                         CreatedAt = DateTime.UtcNow,
+                         ItemsProcessed = 42,
+                         ItemsTotal = 0,
+                         ItemsLabel = PagesLabel,
+                         ScrapeProgress = new ScrapeProgress { PagesCompleted = 42 }
+                     }
+                );
 
-        var view = new UnifiedJobView(scrape, new FakeBackgroundJobRepository(), new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -50,32 +48,32 @@ public sealed class UnifiedJobViewTests
         var row = Assert.Single(rows);
         Assert.Equal("s1", row.JobId);
         Assert.Equal(JobType.Scrape, row.Type);
-        Assert.Equal("foo", row.LibraryId);
-        Assert.Equal("1.0", row.Version);
+        Assert.Equal(LibraryFoo, row.LibraryId);
+        Assert.Equal(VersionOne, row.Version);
         Assert.Equal(expected: 42, row.ItemsProcessed);
-        Assert.Equal("pages", row.ItemsLabel);
+        Assert.Equal(PagesLabel, row.ItemsLabel);
     }
 
     [Fact]
     public async Task DryRunBackgroundJobProjectsToDryRunRow()
     {
-        var bg = new FakeBackgroundJobRepository();
-        bg.Add(new BackgroundJobRecord
-                   {
-                       Id = "b1",
-                       JobType = BackgroundJobTypes.DryRunScrape,
-                       LibraryId = "foo",
-                       Version = "1.0",
-                       InputJson = "{}",
-                       Status = ScrapeJobStatus.Completed,
-                       CreatedAt = DateTime.UtcNow,
-                       ItemsProcessed = 50,
-                       ItemsTotal = 50,
-                       ItemsLabel = "pages"
-                   }
-              );
+        var fake = new FakeJobRepository();
+        fake.Add(new JobRecord
+                     {
+                         Id = "b1",
+                         JobType = JobType.DryRunScrape,
+                         LibraryId = LibraryFoo,
+                         Version = VersionOne,
+                         InputJson = "{}",
+                         Status = JobStatus.Completed,
+                         CreatedAt = DateTime.UtcNow,
+                         ItemsProcessed = 50,
+                         ItemsTotal = 50,
+                         ItemsLabel = PagesLabel
+                     }
+                );
 
-        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -85,29 +83,31 @@ public sealed class UnifiedJobViewTests
 
         var row = Assert.Single(rows);
         Assert.Equal(JobType.DryRunScrape, row.Type);
-        Assert.Equal("foo", row.LibraryId);
+        Assert.Equal(LibraryFoo, row.LibraryId);
         Assert.Equal(expected: 50, row.ItemsProcessed);
-        Assert.Equal("pages", row.ItemsLabel);
+        Assert.Equal(PagesLabel, row.ItemsLabel);
     }
 
     [Fact]
     public async Task RescrubJobProjectsToRescrubRow()
     {
-        var rescrub = new FakeRescrubJobRepository();
-        rescrub.Add(new RescrubJobRecord
-                        {
-                            Id = "r1",
-                            LibraryId = "foo",
-                            Version = "1.0",
-                            Options = new RescrubOptions(),
-                            Status = ScrapeJobStatus.Running,
-                            CreatedAt = DateTime.UtcNow,
-                            ChunksProcessed = 100,
-                            ChunksTotal = 200
-                        }
-                   );
+        var fake = new FakeJobRepository();
+        fake.Add(new JobRecord
+                     {
+                         Id = "r1",
+                         JobType = JobType.Rescrub,
+                         LibraryId = LibraryFoo,
+                         Version = VersionOne,
+                         InputJson = "{}",
+                         Status = JobStatus.Running,
+                         CreatedAt = DateTime.UtcNow,
+                         ItemsProcessed = 100,
+                         ItemsTotal = 200,
+                         ItemsLabel = ChunksLabel
+                     }
+                );
 
-        var view = new UnifiedJobView(new FakeScrapeJobRepository(), new FakeBackgroundJobRepository(), rescrub);
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -117,25 +117,22 @@ public sealed class UnifiedJobViewTests
 
         var row = Assert.Single(rows);
         Assert.Equal(JobType.Rescrub, row.Type);
-        Assert.Equal("foo", row.LibraryId);
+        Assert.Equal(LibraryFoo, row.LibraryId);
         Assert.Equal(expected: 100, row.ItemsProcessed);
         Assert.Equal(expected: 200, row.ItemsTotal);
-        Assert.Equal("chunks", row.ItemsLabel);
+        Assert.Equal(ChunksLabel, row.ItemsLabel);
     }
 
     [Fact]
     public async Task ListSortsByCreatedAtDescAndAppliesLimit()
     {
-        var scrape = new FakeScrapeJobRepository();
-        var bg = new FakeBackgroundJobRepository();
-        var rescrub = new FakeRescrubJobRepository();
+        var fake = new FakeJobRepository();
         var now = DateTime.UtcNow;
+        fake.Add(MakeJob("s_old", JobType.Scrape, now.AddMinutes(value: -30)));
+        fake.Add(MakeJob("b_mid", JobType.Rechunk, now.AddMinutes(value: -20)));
+        fake.Add(MakeJob("r_new", JobType.Rescrub, now.AddMinutes(value: -10)));
 
-        scrape.Add(MakeScrape("s_old", now.AddMinutes(value: -30)));
-        bg.Add(MakeBackground("b_mid", BackgroundJobTypes.Rechunk, now.AddMinutes(value: -20)));
-        rescrub.Add(MakeRescrub("r_new", now.AddMinutes(value: -10)));
-
-        var view = new UnifiedJobView(scrape, bg, rescrub);
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -151,11 +148,11 @@ public sealed class UnifiedJobViewTests
     [Fact]
     public async Task ListFiltersByStatus()
     {
-        var scrape = new FakeScrapeJobRepository();
-        scrape.Add(MakeScrape("a", DateTime.UtcNow));
-        scrape.Add(MakeScrape("b", DateTime.UtcNow.AddSeconds(value: -1), ScrapeJobStatus.Failed));
+        var fake = new FakeJobRepository();
+        fake.Add(MakeJob("a", JobType.Scrape, DateTime.UtcNow));
+        fake.Add(MakeJob("b", JobType.Scrape, DateTime.UtcNow.AddSeconds(value: -1), JobStatus.Failed));
 
-        var view = new UnifiedJobView(scrape, new FakeBackgroundJobRepository(), new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(ScrapeJobStatus.Failed,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -170,12 +167,11 @@ public sealed class UnifiedJobViewTests
     [Fact]
     public async Task ListFiltersByType()
     {
-        var scrape = new FakeScrapeJobRepository();
-        scrape.Add(MakeScrape("s", DateTime.UtcNow));
-        var bg = new FakeBackgroundJobRepository();
-        bg.Add(MakeBackground("b", BackgroundJobTypes.Rechunk, DateTime.UtcNow));
+        var fake = new FakeJobRepository();
+        fake.Add(MakeJob("s", JobType.Scrape, DateTime.UtcNow));
+        fake.Add(MakeJob("b", JobType.Rechunk, DateTime.UtcNow));
 
-        var view = new UnifiedJobView(scrape, bg, new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         JobType.Rechunk,
                                         libraryFilter: null,
@@ -190,24 +186,24 @@ public sealed class UnifiedJobViewTests
     [Fact]
     public async Task LibraryFilterExcludesRowsWithNoLibrary()
     {
-        var bg = new FakeBackgroundJobRepository();
-        bg.Add(MakeBackground("b1", BackgroundJobTypes.Rechunk, DateTime.UtcNow));
-        bg.Add(new BackgroundJobRecord
-                   {
-                       Id = "b2",
-                       JobType = BackgroundJobTypes.RenameLibrary,
-                       LibraryId = null,
-                       Version = null,
-                       InputJson = "{}",
-                       Status = ScrapeJobStatus.Completed,
-                       CreatedAt = DateTime.UtcNow.AddSeconds(value: -1)
-                   }
-              );
+        var fake = new FakeJobRepository();
+        fake.Add(MakeJob("b1", JobType.Rechunk, DateTime.UtcNow));
+        fake.Add(new JobRecord
+                     {
+                         Id = "b2",
+                         JobType = JobType.RenameLibrary,
+                         LibraryId = null,
+                         Version = null,
+                         InputJson = "{}",
+                         Status = JobStatus.Completed,
+                         CreatedAt = DateTime.UtcNow.AddSeconds(value: -1)
+                     }
+                );
 
-        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
-                                        "x",
+                                        LibraryFilterMatch,
                                         limit: 10,
                                         TestContext.Current.CancellationToken
                                        );
@@ -219,18 +215,18 @@ public sealed class UnifiedJobViewTests
     [Fact]
     public async Task MalformedInputJsonDoesNotCrashProjection()
     {
-        var bg = new FakeBackgroundJobRepository();
-        bg.Add(new BackgroundJobRecord
-                   {
-                       Id = "b1",
-                       JobType = BackgroundJobTypes.RenameLibrary,
-                       InputJson = "{not-json",
-                       Status = ScrapeJobStatus.Completed,
-                       CreatedAt = DateTime.UtcNow
-                   }
-              );
+        var fake = new FakeJobRepository();
+        fake.Add(new JobRecord
+                     {
+                         Id = "b1",
+                         JobType = JobType.RenameLibrary,
+                         InputJson = "{not-json",
+                         Status = JobStatus.Completed,
+                         CreatedAt = DateTime.UtcNow
+                     }
+                );
 
-        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -243,25 +239,15 @@ public sealed class UnifiedJobViewTests
     }
 
     [Theory]
-    [InlineData(BackgroundJobTypes.CleanupAuditLog, JobType.CleanupAuditLog)]
-    [InlineData(BackgroundJobTypes.CleanupJobs, JobType.CleanupJobs)]
-    [InlineData(BackgroundJobTypes.CleanupOrphans, JobType.CleanupOrphans)]
-    public async Task CleanupBackgroundJobTypesMapToTheirJobType(string backgroundType, JobType expected)
+    [InlineData(JobType.CleanupAuditLog)]
+    [InlineData(JobType.CleanupJobs)]
+    [InlineData(JobType.CleanupOrphans)]
+    public async Task CleanupJobTypesPassThrough(JobType cleanupType)
     {
-        var bg = new FakeBackgroundJobRepository();
-        bg.Add(new BackgroundJobRecord
-                   {
-                       Id = "b1",
-                       JobType = backgroundType,
-                       LibraryId = "x",
-                       Version = "1",
-                       InputJson = "{}",
-                       Status = ScrapeJobStatus.Completed,
-                       CreatedAt = DateTime.UtcNow
-                   }
-              );
+        var fake = new FakeJobRepository();
+        fake.Add(MakeJob("b1", cleanupType, DateTime.UtcNow));
 
-        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -270,26 +256,16 @@ public sealed class UnifiedJobViewTests
                                        );
 
         var row = Assert.Single(rows);
-        Assert.Equal(expected, row.Type);
+        Assert.Equal(cleanupType, row.Type);
     }
 
     [Fact]
-    public async Task UnknownBackgroundJobTypeMapsToUnknown()
+    public async Task UnknownJobTypeProjectsAsUnknown()
     {
-        var bg = new FakeBackgroundJobRepository();
-        bg.Add(new BackgroundJobRecord
-                   {
-                       Id = "b_unknown",
-                       JobType = "future_unknown_type",
-                       LibraryId = "x",
-                       Version = "1",
-                       InputJson = "{}",
-                       Status = ScrapeJobStatus.Completed,
-                       CreatedAt = DateTime.UtcNow
-                   }
-              );
+        var fake = new FakeJobRepository();
+        fake.Add(MakeJob("b_unknown", JobType.Unknown, DateTime.UtcNow));
 
-        var view = new UnifiedJobView(new FakeScrapeJobRepository(), bg, new FakeRescrubJobRepository());
+        var view = new UnifiedJobView(fake);
         var rows = await view.ListAsync(statusFilter: null,
                                         typeFilter: null,
                                         libraryFilter: null,
@@ -303,46 +279,27 @@ public sealed class UnifiedJobViewTests
 
     #region Helper methods
 
-    private static ScrapeJobRecord MakeScrape(string id,
-                                              DateTime createdAt,
-                                              ScrapeJobStatus status = ScrapeJobStatus.Completed) =>
-        new ScrapeJobRecord
+    private static JobRecord MakeJob(string id,
+                                     JobType jobType,
+                                     DateTime createdAt,
+                                     JobStatus status = JobStatus.Completed) =>
+        new JobRecord
             {
                 Id = id,
-                Job = new ScrapeJob
-                          {
-                              LibraryId = "x",
-                              Version = "1",
-                              RootUrl = "https://x",
-                              LibraryHint = "test",
-                              AllowedUrlPatterns = []
-                          },
+                JobType = jobType,
+                LibraryId = LibraryX,
+                Version = VersionOne,
+                InputJson = "{}",
                 Status = status,
                 CreatedAt = createdAt
             };
 
-    private static BackgroundJobRecord MakeBackground(string id, string jobType, DateTime createdAt) =>
-        new BackgroundJobRecord
-            {
-                Id = id,
-                JobType = jobType,
-                LibraryId = "x",
-                Version = "1",
-                InputJson = "{}",
-                Status = ScrapeJobStatus.Completed,
-                CreatedAt = createdAt
-            };
-
-    private static RescrubJobRecord MakeRescrub(string id, DateTime createdAt) =>
-        new RescrubJobRecord
-            {
-                Id = id,
-                LibraryId = "x",
-                Version = "1",
-                Status = ScrapeJobStatus.Completed,
-                CreatedAt = createdAt,
-                Options = new RescrubOptions()
-            };
+    private const string LibraryFoo = "foo";
+    private const string LibraryX = "x";
+    private const string VersionOne = "1";
+    private const string PagesLabel = "pages";
+    private const string ChunksLabel = "chunks";
+    private const string LibraryFilterMatch = "x";
 
     #endregion
 }

@@ -12,6 +12,7 @@ using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 
 #endregion
@@ -66,7 +67,7 @@ public static class IngestTools
 
         var profileRepo = repositoryFactory.GetLibraryProfileRepository(profile);
         var chunkRepo = repositoryFactory.GetChunkRepository(profile);
-        var scrapeJobRepo = repositoryFactory.GetScrapeJobRepository(profile);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
         var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
 
         var libraryProfile = await profileRepo.GetAsync(library, version, ct);
@@ -76,7 +77,7 @@ public static class IngestTools
         if (chunkCount > 0)
             stale = await chunkRepo.HasStaleChunksAsync(library, version, ParserVersionInfo.Current, ct);
 
-        var activeJob = await scrapeJobRepo.GetActiveJobAsync(library, version, ct);
+        var activeJob = await jobRepo.GetActiveAsync(library, version, JobType.Scrape, ct);
         var versionRecord = await libraryRepo.GetVersionAsync(library, version, ct);
 
         bool isInProgress = activeJob != null;
