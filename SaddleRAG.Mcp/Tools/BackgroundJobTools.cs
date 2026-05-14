@@ -9,7 +9,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
-using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 
 #endregion
@@ -17,26 +17,27 @@ using SaddleRAG.Database.Repositories;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tools for polling generic background jobs: get_job_status and list_jobs.
-///     Covers rechunk, rename_library, delete_version, delete_library,
-///     dryrun_scrape, index_project_dependencies, and submit_url_correction.
+///     MCP tools for polling the unified <c>jobs</c> collection:
+///     <c>get_job_status</c> and <c>list_jobs</c>. With the four-collection
+///     to one consolidation these tools now serve every job type — scrape,
+///     reextract, reembed, and the original background-job set (rechunk,
+///     rename_library, delete_version, delete_library, dryrun_scrape,
+///     index_project_dependencies, submit_url_correction, cleanup_*).
 /// </summary>
 [McpServerToolType]
 public static class BackgroundJobTools
 {
     [McpServerTool(Name = "get_job_status")]
-    [Description("Check the status of a background job by its id. " +
-                 "Covers: rechunk_library, rename_library (apply), delete_version (apply), " +
-                 "delete_library (apply), dryrun_scrape, index_project_dependencies, " +
-                 "submit_url_correction (apply). " +
+    [Description("Check the status of any job by its id — works for scrape, reextract, " +
+                 "reembed, rechunk, rename_library, delete_version, delete_library, dryrun_scrape, " +
+                 "index_project_dependencies, submit_url_correction, and the cleanup_* family. " +
                  "Status values: Queued, Running (ItemsProcessed/ItemsTotal show progress where applicable), " +
                  "Completed (Result contains the full output), Failed (check ErrorMessage), Cancelled. " +
                  "Completed rechunk jobs may also include BoundaryHint ('rechunk_library may help' or 'rechunk_library recommended'); act on that before calling search_docs. " +
-                 "Poll at 10–30s intervals. " +
-                 "Job id comes from the tool that queued the operation."
+                 "Poll at 10–30s intervals. Job id comes from the tool that queued the operation."
                 )]
     public static async Task<string> GetJobStatus(RepositoryFactory repositoryFactory,
-                                                  [Description("Job id returned by dryrun_scrape, index_project_dependencies, submit_url_correction, rechunk_library, rename_library, delete_version, or delete_library."
+                                                  [Description("Job id returned by any tool that queues work (scrape_docs, reembed_library, rechunk_library, rename_library, …)."
                                                               )]
                                                   string jobId,
                                                   [Description("Optional database profile name (use list_profiles to discover)."
@@ -47,12 +48,12 @@ public static class BackgroundJobTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
-        var jobRepo = repositoryFactory.GetBackgroundJobRepository(profile);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
         var job = await jobRepo.GetAsync(jobId, ct);
 
         string result;
         if (job is null)
-            result = $"No background job found with id '{jobId}'.";
+            result = $"No job found with id '{jobId}'.";
         else
         {
             object? parsedResult = null;
@@ -74,7 +75,7 @@ public static class BackgroundJobTools
             var response = new
                                {
                                    job.Id,
-                                   job.JobType,
+                                   JobType = job.JobType.ToString(),
                                    Status = job.Status.ToString(),
                                    job.PipelineState,
                                    job.Profile,
@@ -99,42 +100,43 @@ public static class BackgroundJobTools
         return result;
     }
 
-    private static string? ComputeBoundaryHint(string jobType, object? parsedResult)
+    private static string? ComputeBoundaryHint(JobType jobType, object? parsedResult)
     {
         string? hint = null;
-        if (jobType == BackgroundJobTypes.Rechunk && parsedResult is JsonElement root)
+        if (jobType == JobType.Rechunk && parsedResult is JsonElement root &&
+            root.TryGetProperty(ResultJsonKeyBoundaryIssues, out var boundaryIssuesEl) &&
+            root.TryGetProperty(ResultJsonKeyProcessed, out var processedEl) &&
+            boundaryIssuesEl.TryGetInt32(out int boundaryIssues) &&
+            processedEl.TryGetInt32(out int processed) &&
+            processed > 0)
         {
-            if (root.TryGetProperty(ResultJsonKeyBoundaryIssues, out var boundaryIssuesEl) &&
-                root.TryGetProperty(ResultJsonKeyProcessed, out var processedEl) &&
-                boundaryIssuesEl.TryGetInt32(out int boundaryIssues) &&
-                processedEl.TryGetInt32(out int processed) &&
-                processed > 0)
-            {
-                double pct = PercentMultiplier * boundaryIssues / processed;
-                hint = pct switch
-                    {
-                        >= BoundaryThresholdHigh => BoundaryHintRecommended,
-                        >= BoundaryThresholdMedium => BoundaryHintMayHelp,
-                        var _ => null
-                    };
-            }
+            double pct = PercentMultiplier * boundaryIssues / processed;
+            hint = pct switch
+                {
+                    >= BoundaryThresholdHigh => BoundaryHintRecommended,
+                    >= BoundaryThresholdMedium => BoundaryHintMayHelp,
+                    var _ => null
+                };
         }
 
         return hint;
     }
 
     [McpServerTool(Name = "list_jobs")]
-    [Description("List recent background jobs (rechunk, rename_library, delete_version, delete_library, " +
-                 "dryrun_scrape, index_project_dependencies, submit_url_correction), most recent first. " +
-                 "Filter by jobType to narrow results. " +
-                 "Use get_job_status(jobId) to poll a specific job. " +
-                 "Does NOT list scrape_docs, reextract_library, or reembed_library jobs — " +
-                 "use list_scrape_jobs, list_reextract_jobs, and list_reembed_jobs for those."
+    [Description("List recent jobs from the unified queue, most recent first. " +
+                 "Returns every job type — scrape, reextract, reembed, rechunk, rename_library, " +
+                 "delete_version, delete_library, dryrun_scrape, index_project_dependencies, " +
+                 "submit_url_correction, and the cleanup_* family. Filter by jobType to narrow " +
+                 "results. Use get_job_status(jobId) to poll a specific job's full state. " +
+                 "Type-specific list tools (list_scrape_jobs, list_reextract_jobs, list_reembed_jobs) " +
+                 "remain available and project type-specific fields."
                 )]
     public static async Task<string> ListJobs(RepositoryFactory repositoryFactory,
-                                              [Description("Optional job type filter (e.g. 'rechunk', 'rename_library', 'delete_version', " +
-                                                           "'delete_library', 'dryrun_scrape', 'index_project_dependencies', 'submit_url_correction'). " +
-                                                           "Omit to list all types."
+                                              [Description("Optional job type filter. Accepts enum names (Scrape, Rechunk, " +
+                                                           "Rescrub, Reembed, RenameLibrary, DeleteVersion, DeleteLibrary, " +
+                                                           "DryRunScrape, IndexProjectDependencies, SubmitUrlCorrection, " +
+                                                           "CleanupAuditLog, CleanupJobs, CleanupOrphans) and legacy snake_case " +
+                                                           "(rechunk, rename_library, …). Omit to list all types."
                                                           )]
                                               string? jobType = null,
                                               [Description("Maximum number of jobs to return. Defaults to 20.")]
@@ -146,14 +148,15 @@ public static class BackgroundJobTools
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
 
-        var jobRepo = repositoryFactory.GetBackgroundJobRepository(profile);
-        var jobs = await jobRepo.ListRecentAsync(jobType, limit, ct);
+        JobType? parsedType = ParseJobType(jobType);
+        var jobRepo = repositoryFactory.GetJobRepository(profile);
+        var jobs = await jobRepo.ListRecentAsync(parsedType, limit, ct);
 
         var items = jobs.Select(j => new
                                          {
                                              j.Id,
                                              Status = j.Status.ToString(),
-                                             j.JobType,
+                                             JobType = j.JobType.ToString(),
                                              j.LibraryId,
                                              j.Version,
                                              j.ItemsProcessed,
@@ -167,6 +170,39 @@ public static class BackgroundJobTools
         return JsonSerializer.Serialize(items, smJsonOptions);
     }
 
+    private static JobType? ParseJobType(string? raw)
+    {
+        JobType? result = null;
+        if (!string.IsNullOrWhiteSpace(raw))
+            result = LegacyJobTypeToEnum(raw) ?? ParseEnumStrict(raw);
+
+        return result;
+    }
+
+    private static JobType ParseEnumStrict(string raw) =>
+        Enum.TryParse<JobType>(raw, ignoreCase: true, out var parsed)
+            ? parsed
+            : throw new ArgumentException(string.Format(UnknownJobTypeMessage, raw), nameof(raw));
+
+    private static JobType? LegacyJobTypeToEnum(string legacyType) => legacyType switch
+        {
+            "scrape"                     => JobType.Scrape,
+            "rescrub"                    => JobType.Rescrub,
+            "reextract"                  => JobType.Rescrub,
+            "reembed"                    => JobType.Reembed,
+            "dryrun_scrape"              => JobType.DryRunScrape,
+            "rechunk"                    => JobType.Rechunk,
+            "rename_library"             => JobType.RenameLibrary,
+            "delete_version"             => JobType.DeleteVersion,
+            "delete_library"             => JobType.DeleteLibrary,
+            "index_project_dependencies" => JobType.IndexProjectDependencies,
+            "submit_url_correction"      => JobType.SubmitUrlCorrection,
+            "cleanup_audit_log"          => JobType.CleanupAuditLog,
+            "cleanup_jobs"               => JobType.CleanupJobs,
+            "cleanup_orphans"            => JobType.CleanupOrphans,
+            var _                        => null
+        };
+
     private const string ResultJsonKeyBoundaryIssues = "BoundaryIssues";
     private const string ResultJsonKeyProcessed = "Processed";
     private const double PercentMultiplier = 100.0;
@@ -174,6 +210,8 @@ public static class BackgroundJobTools
     private const double BoundaryThresholdMedium = 5.0;
     private const string BoundaryHintRecommended = "rechunk_library recommended";
     private const string BoundaryHintMayHelp = "rechunk_library may help";
+    private const string UnknownJobTypeMessage =
+        "Unknown jobType '{0}'. Expected an enum name (e.g. Scrape, Rechunk, Reembed) or legacy snake_case (e.g. rechunk, rename_library).";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }
