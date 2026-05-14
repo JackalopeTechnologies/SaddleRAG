@@ -89,7 +89,7 @@ public sealed class OnnxExecutionProviderConfiguratorTests
         OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
                                                     capabilities, NullLogger.Instance,
                                                     failingAppender, cudaAppender: null,
-                                                    isRecoverable: ex => ex is SimulatedEpUnavailableException
+                                                    ex => ex is SimulatedEpUnavailableException
                                                    );
 
         Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
@@ -130,6 +130,7 @@ public sealed class OnnxExecutionProviderConfiguratorTests
                                                    );
 
         Assert.Equal(OnnxExecutionProvider.DirectMl, capabilities.ActiveProvider);
+        Assert.Equal(OnnxExecutionProvider.DirectMl, capabilities.RequestedProvider);
         Assert.Null(capabilities.LastLoadWarning);
 #endif
     }
@@ -145,7 +146,7 @@ public sealed class OnnxExecutionProviderConfiguratorTests
         OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.Cuda,
                                                     capabilities, NullLogger.Instance,
                                                     dmlAppender: null, failingAppender,
-                                                    isRecoverable: ex => ex is SimulatedEpUnavailableException
+                                                    ex => ex is SimulatedEpUnavailableException
                                                    );
 
         Assert.Equal(OnnxExecutionProvider.Cpu, capabilities.ActiveProvider);
@@ -169,7 +170,7 @@ public sealed class OnnxExecutionProviderConfiguratorTests
             OnnxExecutionProviderConfigurator.Configure(options, OnnxExecutionProvider.DirectMl,
                                                         capabilities, NullLogger.Instance,
                                                         brokenAppender, cudaAppender: null,
-                                                        isRecoverable: ex => ex is SimulatedEpUnavailableException
+                                                        ex => ex is SimulatedEpUnavailableException
                                                        )
         );
     }

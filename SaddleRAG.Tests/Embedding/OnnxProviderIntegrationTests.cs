@@ -407,7 +407,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var settings = BuildSettingsWithNomic();
         // Force a small cap to exercise truncation deterministically.
-        settings.EmbeddingModels[0].MaxSequenceLength = 64;
+        settings.EmbeddingModels[index: 0].MaxSequenceLength = 64;
         using var provider = new OnnxEmbeddingProvider(Options.Create(settings),
                                                        new OnnxRuntimeCapabilities(), NullLogger<OnnxEmbeddingProvider>.Instance);
 
@@ -428,7 +428,7 @@ public sealed class OnnxProviderIntegrationTests
     {
         var settings = BuildSettingsWithNomic();
         // Point at a registry entry whose Name resolves to a nonexistent dir.
-        settings.EmbeddingModels[0].Name = "does-not-exist-model";
+        settings.EmbeddingModels[index: 0].Name = "does-not-exist-model";
         settings.ActiveEmbeddingModel = "does-not-exist-model";
 
         var ex = Assert.Throws<FileNotFoundException>(
@@ -469,7 +469,7 @@ public sealed class OnnxProviderIntegrationTests
                                               new OnnxRuntimeCapabilities(), NullLogger<OnnxReRanker>.Instance);
 
         var emptyRanked = await reranker.ReRankAsync("query",
-                                                      Array.Empty<DocChunk>(),
+                                                      [],
                                                       maxResults: 10,
                                                       CancellationToken.None);
         Assert.Empty(emptyRanked);
@@ -480,8 +480,8 @@ public sealed class OnnxProviderIntegrationTests
                                                       maxResults: 10,
                                                       CancellationToken.None);
         Assert.Single(singleRanked);
-        Assert.Equal("only", singleRanked[0].Chunk.Id);
-        Assert.False(float.IsNaN(singleRanked[0].RelevanceScore));
+        Assert.Equal("only", singleRanked[index: 0].Chunk.Id);
+        Assert.False(float.IsNaN(singleRanked[index: 0].RelevanceScore));
     }
 
     [Fact]
@@ -523,7 +523,7 @@ public sealed class OnnxProviderIntegrationTests
 
         var ranked = await reranker.ReRankAsync("any query",
                                                 candidates,
-                                                maxResults: candidates.Count,
+                                                candidates.Count,
                                                 CancellationToken.None);
 
         Assert.Equal(candidates.Count, ranked.Count);
@@ -540,7 +540,7 @@ public sealed class OnnxProviderIntegrationTests
     public void ReRankerConstructorThrowsFileNotFoundWhenModelMissing()
     {
         var settings = BuildSettingsWithMxbai();
-        settings.RerankerModels[0].Name = "does-not-exist-reranker";
+        settings.RerankerModels[index: 0].Name = "does-not-exist-reranker";
         settings.ActiveRerankerModel = "does-not-exist-reranker";
 
         var ex = Assert.Throws<FileNotFoundException>(
@@ -573,9 +573,9 @@ public sealed class OnnxProviderIntegrationTests
         var firstRun = await toggle.ReRankAsync("What is the capital of France?",
                                                  candidates, candidates.Count,
                                                  CancellationToken.None);
-        Assert.True(firstRun[0].RelevanceScore <= 1.0f);
+        Assert.True(firstRun[index: 0].RelevanceScore <= 1.0f);
         // Synthetic, not real cross-encoder.
-        Assert.True(firstRun[0].RelevanceScore >= 0.9f);
+        Assert.True(firstRun[index: 0].RelevanceScore >= 0.9f);
 
         // Flip to Onnx mid-flight (same toggle instance).
         toggle.Strategy = ReRankerStrategy.Onnx;
@@ -590,9 +590,9 @@ public sealed class OnnxProviderIntegrationTests
         // clearly off-topic one (berlin = different country). NoOp's
         // synthetic step is 0.01; a real cross-encoder gap on this query
         // is much larger.
-        Assert.Equal("paris", secondRun[0].Chunk.Id);
-        Assert.InRange(secondRun[0].RelevanceScore, low: 0f, high: 1f);
-        var realRerankGap = secondRun[0].RelevanceScore - secondRun[1].RelevanceScore;
+        Assert.Equal("paris", secondRun[index: 0].Chunk.Id);
+        Assert.InRange(secondRun[index: 0].RelevanceScore, low: 0f, high: 1f);
+        var realRerankGap = secondRun[index: 0].RelevanceScore - secondRun[index: 1].RelevanceScore;
         Assert.True(realRerankGap > MinCrossEncoderTopGap,
                     $"Cross-encoder gap top→{BerlinChunkId} should be > {MinCrossEncoderTopGap:F2} (NoOp step is 0.01); got {realRerankGap:F4}"
                    );
@@ -602,8 +602,8 @@ public sealed class OnnxProviderIntegrationTests
         var thirdRun = await toggle.ReRankAsync("What is the capital of France?",
                                                  candidates, candidates.Count,
                                                  CancellationToken.None);
-        Assert.True(thirdRun[0].RelevanceScore <= 1.0f);
-        Assert.True(thirdRun[0].RelevanceScore >= 0.9f);
+        Assert.True(thirdRun[index: 0].RelevanceScore <= 1.0f);
+        Assert.True(thirdRun[index: 0].RelevanceScore >= 0.9f);
     }
 
     private static double Cosine(float[] a, float[] b)

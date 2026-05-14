@@ -6,6 +6,15 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <NoWarn>STR0010</NoWarn>
+    <!--
+      Mirror the UseGpu / USE_GPU plumbing from SaddleRAG.Ingestion.csproj so
+      #if USE_GPU branches in test files (which assert different outcomes for
+      CPU-only vs GPU-flavored builds of Ingestion) compile under the same
+      symbol the production assembly does. Override with -p:UseGpu=false to
+      run the CPU-only-build assertion paths.
+    -->
+    <UseGpu Condition="'$(UseGpu)' == ''">true</UseGpu>
+    <DefineConstants Condition="'$(UseGpu)' == 'true'">$(DefineConstants);USE_GPU</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +40,7 @@
     <ProjectReference Include="..\SaddleRAG.ClientIntegration\SaddleRAG.ClientIntegration.csproj" />
     <ProjectReference Include="..\SaddleRAG.Core\SaddleRAG.Core.csproj" />
     <ProjectReference Include="..\SaddleRAG.Ingestion\SaddleRAG.Ingestion.csproj" />
+    <ProjectReference Include="..\SaddleRAG.Installer.Logic\SaddleRAG.Installer.Logic.csproj" />
     <ProjectReference Include="..\SaddleRAG.Mcp\SaddleRAG.Mcp.csproj" />
     <ProjectReference Include="..\SaddleRAG.Monitor\SaddleRAG.Monitor.csproj" />
   </ItemGroup>

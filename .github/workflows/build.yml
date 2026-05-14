@@ -44,16 +44,20 @@ jobs:
               $isPrerelease = "false"
           }
 
-          echo "PackageVersion=$version" >> $env:GITHUB_ENV
-          echo "MsiVersion=$msiVersion" >> $env:GITHUB_ENV
-          echo "IsPrerelease=$isPrerelease" >> $env:GITHUB_ENV
+          # Emit as step outputs (tracked by the GitHub Actions schema
+          # validator) rather than $GITHUB_ENV, which is a runtime
+          # side-effect the validator can't follow. Downstream steps read
+          # these via the step-id output reference syntax below.
+          echo "PackageVersion=$version" >> $env:GITHUB_OUTPUT
+          echo "MsiVersion=$msiVersion" >> $env:GITHUB_OUTPUT
+          echo "IsPrerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
           Write-Host "Version: $version (MSI: $msiVersion, Prerelease: $isPrerelease)"
 
       - name: Restore
         run: dotnet restore SaddleRAG.slnx
 
       - name: Build
-        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:Version=${{ env.PackageVersion }}
+        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:Version=${{ steps.version.outputs.PackageVersion }}
 
       - name: Test
         # Integration tests (Mongo-backed repositories, Playwright-driven
@@ -63,10 +67,10 @@ jobs:
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build --filter "Category!=Integration"
 
       - name: Publish
-        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ env.PackageVersion }}/publish -p:Version=${{ env.PackageVersion }}
+        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
 
       - name: Publish CLI
-        run: dotnet publish SaddleRAG.Cli/SaddleRAG.Cli.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ env.PackageVersion }}/publish -p:Version=${{ env.PackageVersion }}
+        run: dotnet publish SaddleRAG.Cli/SaddleRAG.Cli.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
 
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
@@ -77,20 +81,20 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
 
       - name: Build MSI
-        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ env.PackageVersion }}/publish -d Version=${{ env.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
+        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ steps.version.outputs.PackageVersion }}/publish -d Version=${{ steps.version.outputs.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v5
         with:
-          name: SaddleRAG.Mcp-${{ env.PackageVersion }}
-          path: ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
+          name: SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}
+          path: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/${{ env.PackageVersion }}/SaddleRAG.Mcp-${{ env.PackageVersion }}.msi
-          prerelease: ${{ env.IsPrerelease }}
+          files: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
+          prerelease: ${{ steps.version.outputs.IsPrerelease }}
           draft: true
 
       - name: Kill orphan processes
