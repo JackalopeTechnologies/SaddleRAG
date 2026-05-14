@@ -12,6 +12,7 @@ using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Scanning;
@@ -87,13 +88,14 @@ public static class ScrapeDocsTools
 
         if (resume)
         {
-            var jobRepo = repositoryFactory.GetScrapeJobRepository(profile);
-            var recent = await jobRepo.ListRecentAsync(limit: 100, ct);
-            var previous = recent.Where(j => j.Job.LibraryId == libraryId && j.Job.Version == version)
+            var jobRepo = repositoryFactory.GetJobRepository(profile);
+            var recent = await jobRepo.ListRecentAsync(JobType.Scrape, limit: 100, ct);
+            var previous = recent.Where(j => j.LibraryId == libraryId && j.Version == version)
                                  .OrderByDescending(j => j.CreatedAt)
                                  .FirstOrDefault();
+            var previousJob = DeserializeScrapeJob(previous);
 
-            if (previous == null)
+            if (previousJob is null)
             {
                 var noPrior = new
                                   {
@@ -124,12 +126,12 @@ public static class ScrapeDocsTools
                 {
                     jobToQueue = new ScrapeJob
                                      {
-                                         RootUrl = url ?? previous.Job.RootUrl,
+                                         RootUrl = url ?? previousJob.RootUrl,
                                          LibraryId = libraryId,
                                          Version = version,
-                                         LibraryHint = hint ?? previous.Job.LibraryHint,
-                                         AllowedUrlPatterns = allowedUrlPatterns ?? previous.Job.AllowedUrlPatterns,
-                                         ExcludedUrlPatterns = excludedUrlPatterns ?? previous.Job.ExcludedUrlPatterns,
+                                         LibraryHint = hint ?? previousJob.LibraryHint,
+                                         AllowedUrlPatterns = allowedUrlPatterns ?? previousJob.AllowedUrlPatterns,
+                                         ExcludedUrlPatterns = excludedUrlPatterns ?? previousJob.ExcludedUrlPatterns,
                                          MaxPages = maxPages,
                                          FetchDelayMs = fetchDelayMs,
                                          ForceClean = force
@@ -183,6 +185,24 @@ public static class ScrapeDocsTools
         }
 
         return json;
+    }
+
+    private static ScrapeJob? DeserializeScrapeJob(JobRecord? record)
+    {
+        ScrapeJob? result = null;
+        if (!string.IsNullOrEmpty(record?.InputJson))
+        {
+            try
+            {
+                result = JsonSerializer.Deserialize<ScrapeJob>(record.InputJson);
+            }
+            catch(JsonException)
+            {
+                // Malformed input — treat as no prior job.
+            }
+        }
+
+        return result;
     }
 
     private static ScrapeJob BuildJobForUrl(string url,

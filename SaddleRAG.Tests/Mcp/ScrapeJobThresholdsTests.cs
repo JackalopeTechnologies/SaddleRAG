@@ -8,6 +8,7 @@
 
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 
 #endregion
 
@@ -20,7 +21,7 @@ public sealed class ScrapeJobThresholdsTests
     {
         var now = DateTime.UtcNow;
         var staleCutoff = now - TimeSpan.FromHours(hours: 4);
-        var job = MakeJob(ScrapeJobStatus.Running,
+        var job = MakeJob(JobStatus.Running,
                           now - TimeSpan.FromDays(days: 1),
                           now - TimeSpan.FromDays(days: 1)
                          );
@@ -33,7 +34,7 @@ public sealed class ScrapeJobThresholdsTests
     {
         var now = DateTime.UtcNow;
         var staleCutoff = now - TimeSpan.FromHours(hours: 4);
-        var job = MakeJob(ScrapeJobStatus.Running,
+        var job = MakeJob(JobStatus.Running,
                           now - TimeSpan.FromHours(hours: 8),
                           now - TimeSpan.FromMinutes(minutes: 30)
                          );
@@ -46,7 +47,7 @@ public sealed class ScrapeJobThresholdsTests
     {
         var now = DateTime.UtcNow;
         var staleCutoff = now - TimeSpan.FromHours(hours: 4);
-        var job = MakeJob(ScrapeJobStatus.Running,
+        var job = MakeJob(JobStatus.Running,
                           now - TimeSpan.FromDays(days: 2),
                           lastProgressAt: null
                          );
@@ -59,7 +60,7 @@ public sealed class ScrapeJobThresholdsTests
     {
         var now = DateTime.UtcNow;
         var staleCutoff = now - TimeSpan.FromHours(hours: 4);
-        var job = MakeJob(ScrapeJobStatus.Cancelled,
+        var job = MakeJob(JobStatus.Cancelled,
                           now - TimeSpan.FromDays(days: 7),
                           now - TimeSpan.FromDays(days: 7)
                          );
@@ -67,20 +68,16 @@ public sealed class ScrapeJobThresholdsTests
         Assert.False(ScrapeJobThresholds.IsStaleRunning(job, staleCutoff));
     }
 
-    private static ScrapeJobRecord MakeJob(ScrapeJobStatus status,
-                                           DateTime createdAt,
-                                           DateTime? lastProgressAt) =>
-        new ScrapeJobRecord
+    private static JobRecord MakeJob(JobStatus status,
+                                     DateTime createdAt,
+                                     DateTime? lastProgressAt) =>
+        new JobRecord
             {
                 Id = "job",
-                Job = new ScrapeJob
-                          {
-                              RootUrl = "https://example.com",
-                              LibraryHint = "h",
-                              LibraryId = "foo",
-                              Version = "1.0",
-                              AllowedUrlPatterns = []
-                          },
+                JobType = JobType.Scrape,
+                LibraryId = "foo",
+                Version = "1.0",
+                InputJson = "{}",
                 Status = status,
                 CreatedAt = createdAt,
                 LastProgressAt = lastProgressAt
