@@ -87,6 +87,17 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
     private readonly bool mModelHasTokenTypeIds;
     private readonly string mModelsDir;
     private readonly InferenceSession mSession;
+
+    // DirectML cannot tolerate concurrent Run() calls on the same
+    // InferenceSession — a query firing during an active re-embed
+    // crashes the GPU with TDR (Windows Timeout Detection and
+    // Recovery), suspends the device, and poisons the session for
+    // the lifetime of the process. Serialize every Run() through
+    // this gate so the only safe inference pattern (one-at-a-time)
+    // is the only inference pattern. The cost is negligible: the
+    // GPU is already the serial bottleneck.
+    private readonly SemaphoreSlim mSessionGate = new SemaphoreSlim(initialCount: 1, maxCount: 1);
+
     private readonly OnnxSettings mSettings;
     private readonly BertTokenizer mTokenizer;
 
@@ -135,6 +146,7 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
     public void Dispose()
     {
         mSession.Dispose();
+        mSessionGate.Dispose();
     }
 
     private float[] EmbedSingle(string text, string prefix)
@@ -163,27 +175,37 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
                                                       )
                       );
 
-        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = mSession.Run(inputs);
-        var first = results.First();
-        Tensor<float> hidden = first.AsTensor<float>();
+        float[] pooled;
+        mSessionGate.Wait();
+        try
+        {
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = mSession.Run(inputs);
+            Tensor<float> hidden = results.First().AsTensor<float>();
+            ValidateHiddenShape(hidden);
+            pooled = PoolAndNormalize(hidden, seqLen, attentionMask);
+        }
+        finally
+        {
+            mSessionGate.Release();
+        }
+
+        return pooled;
+    }
+
+    private void ValidateHiddenShape(Tensor<float> hidden)
+    {
         ReadOnlySpan<int> dims = hidden.Dimensions;
         if (dims.Length != HiddenStateDimsRank || dims[HiddenDimIndex] != mEntry.Dimensions)
             throw new InvalidOperationException(
                 $"ONNX model '{mEntry.Name}' produced unexpected output shape [{string.Join(",", dims.ToArray())}]; expected [batch, seq, {mEntry.Dimensions}]."
             );
+    }
 
+    private float[] PoolAndNormalize(Tensor<float> hidden, int seqLen, long[] attentionMask)
+    {
         int hiddenDim = mEntry.Dimensions;
         float[] pooled = new float[hiddenDim];
-        var valid = 0;
-        for(var t = 0; t < seqLen; t++)
-        {
-            if (attentionMask[t] != 0L)
-            {
-                valid++;
-                for(var d = 0; d < hiddenDim; d++)
-                    pooled[d] += hidden[0, t, d];
-            }
-        }
+        int valid = AccumulatePooled(hidden, seqLen, attentionMask, pooled, hiddenDim);
         if (valid > 0)
             for(var d = 0; d < hiddenDim; d++)
                 pooled[d] /= valid;
@@ -195,8 +217,31 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
         if (norm > 0.0)
             for(var d = 0; d < hiddenDim; d++)
                 pooled[d] = (float) (pooled[d] / norm);
-
         return pooled;
+    }
+
+    private static int AccumulatePooled(Tensor<float> hidden,
+                                        int seqLen,
+                                        long[] attentionMask,
+                                        float[] pooled,
+                                        int hiddenDim)
+    {
+        var valid = 0;
+        for(var t = 0; t < seqLen; t++)
+        {
+            if (attentionMask[t] != 0L)
+            {
+                valid++;
+                AccumulateOneToken(hidden, t, pooled, hiddenDim);
+            }
+        }
+        return valid;
+    }
+
+    private static void AccumulateOneToken(Tensor<float> hidden, int t, float[] pooled, int hiddenDim)
+    {
+        for(var d = 0; d < hiddenDim; d++)
+            pooled[d] += hidden[0, t, d];
     }
 
     private static BertTokenizer CreateTokenizer(EmbeddingModelEntry entry, string modelsDir, string vocabPath)
