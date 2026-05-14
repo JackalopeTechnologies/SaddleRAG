@@ -17,11 +17,10 @@ namespace SaddleRAG.Tests.Database;
 
 /// <summary>
 ///     Verifies that <see cref="SaddleRagDbContext.EnsureIndexesAsync" />
-///     creates the 30-day TTL indexes on ScrapeAuditLog (DiscoveredAt),
-///     ScrapeJobs (CompletedAt), BackgroundJobs (CompletedAt), and
-///     RescrubJobs (CompletedAt). The TTL is the safety net behind the
-///     manual cleanup tools — a regression here would let job and audit
-///     debris accumulate forever.
+///     creates the 30-day TTL indexes on ScrapeAuditLog (DiscoveredAt) and
+///     the unified Jobs collection (CompletedAt). The TTL is the safety
+///     net behind the manual cleanup tools — a regression here would let
+///     job and audit debris accumulate forever.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class RetentionTtlIndexTests
@@ -54,39 +53,11 @@ public sealed class RetentionTtlIndexTests
     }
 
     [Fact]
-    public async Task ScrapeJobsHasTtlIndexOnCompletedAt()
+    public async Task JobsHasTtlIndexOnCompletedAt()
     {
         await mContext.EnsureIndexesAsync(TestContext.Current.CancellationToken);
 
-        var ttl = await FindTtlIndexAsync(mContext.ScrapeJobs.Indexes,
-                                          JobFieldCompletedAt,
-                                          TestContext.Current.CancellationToken
-                                         );
-
-        Assert.NotNull(ttl);
-        Assert.Equal(ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
-    }
-
-    [Fact]
-    public async Task BackgroundJobsHasTtlIndexOnCompletedAt()
-    {
-        await mContext.EnsureIndexesAsync(TestContext.Current.CancellationToken);
-
-        var ttl = await FindTtlIndexAsync(mContext.BackgroundJobs.Indexes,
-                                          JobFieldCompletedAt,
-                                          TestContext.Current.CancellationToken
-                                         );
-
-        Assert.NotNull(ttl);
-        Assert.Equal(ExpectedRetentionSeconds, ttl[BsonFieldExpireAfterSeconds].ToInt64());
-    }
-
-    [Fact]
-    public async Task RescrubJobsHasTtlIndexOnCompletedAt()
-    {
-        await mContext.EnsureIndexesAsync(TestContext.Current.CancellationToken);
-
-        var ttl = await FindTtlIndexAsync(mContext.RescrubJobs.Indexes,
+        var ttl = await FindTtlIndexAsync(mContext.Jobs.Indexes,
                                           JobFieldCompletedAt,
                                           TestContext.Current.CancellationToken
                                          );

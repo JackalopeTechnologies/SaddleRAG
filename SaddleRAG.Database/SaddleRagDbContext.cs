@@ -74,24 +74,12 @@ public class SaddleRagDbContext
     public IMongoCollection<ProjectProfile> ProjectProfiles =>
         mDatabase.GetCollection<ProjectProfile>(CollectionProjectProfiles);
 
-    public IMongoCollection<ScrapeJobRecord> ScrapeJobs =>
-        mDatabase.GetCollection<ScrapeJobRecord>(CollectionScrapeJobs);
-
-    public IMongoCollection<RescrubJobRecord> RescrubJobs =>
-        mDatabase.GetCollection<RescrubJobRecord>(CollectionRescrubJobs);
-
-    public IMongoCollection<ReembedJobRecord> ReembedJobs =>
-        mDatabase.GetCollection<ReembedJobRecord>(CollectionReembedJobs);
-
-    public IMongoCollection<BackgroundJobRecord> BackgroundJobs =>
-        mDatabase.GetCollection<BackgroundJobRecord>(CollectionBackgroundJobs);
-
     /// <summary>
-    ///     Unified jobs collection. Replaces the four legacy per-pipeline
+    ///     Unified jobs collection. Replaced the four legacy per-pipeline
     ///     collections (scrapeJobs / rescrubJobs / reembedJobs /
-    ///     backgroundJobs). Existing legacy data is migrated into this
-    ///     collection on startup; the legacy collections are dropped
-    ///     once migration completes.
+    ///     backgroundJobs). Any pre-unification data is migrated into this
+    ///     collection on startup by <c>JobsUnificationMigration</c>; the
+    ///     legacy collections are dropped once migration completes.
     /// </summary>
     public IMongoCollection<JobRecord> Jobs =>
         mDatabase.GetCollection<JobRecord>(CollectionJobs);
@@ -289,68 +277,10 @@ public class SaddleRagDbContext
                                                   cancellationToken: ct
                                                  );
 
-        // ScrapeJobs: TTL on CompletedAt. Running jobs (CompletedAt = null)
-        // are skipped by Mongo's TTL purge; only terminal jobs eventually
-        // age out. Manual cleanup_jobs tool covers early eviction.
-        var scrapeJobKeys = Builders<ScrapeJobRecord>.IndexKeys;
-        await
-            ScrapeJobs.Indexes.CreateOneAsync(new CreateIndexModel<ScrapeJobRecord>(scrapeJobKeys.Ascending(j => j
-                                                               .CompletedAt
-                                                           ),
-                                                       new CreateIndexOptions
-                                                           {
-                                                               ExpireAfter = smJobRetention
-                                                           }
-                                                  ),
-                                              cancellationToken: ct
-                                             );
-
-        // BackgroundJobs: TTL on CompletedAt with the same Running-skip semantics.
-        var backgroundJobKeys = Builders<BackgroundJobRecord>.IndexKeys;
-        await
-            BackgroundJobs.Indexes.CreateOneAsync(new CreateIndexModel<BackgroundJobRecord>(backgroundJobKeys
-                                                               .Ascending(j => j
-                                                                              .CompletedAt
-                                                                         ),
-                                                           new CreateIndexOptions
-                                                               {
-                                                                   ExpireAfter = smJobRetention
-                                                               }
-                                                      ),
-                                                  cancellationToken: ct
-                                                 );
-
-        // RescrubJobs: TTL on CompletedAt with the same Running-skip semantics.
-        var rescrubJobKeys = Builders<RescrubJobRecord>.IndexKeys;
-        await
-            RescrubJobs.Indexes.CreateOneAsync(new CreateIndexModel<RescrubJobRecord>(rescrubJobKeys.Ascending(j => j
-                                                                .CompletedAt
-                                                            ),
-                                                        new CreateIndexOptions
-                                                            {
-                                                                ExpireAfter = smJobRetention
-                                                            }
-                                                   ),
-                                               cancellationToken: ct
-                                              );
-
-        // ReembedJobs: TTL on CompletedAt with the same Running-skip semantics.
-        var reembedJobKeys = Builders<ReembedJobRecord>.IndexKeys;
-        await
-            ReembedJobs.Indexes.CreateOneAsync(new CreateIndexModel<ReembedJobRecord>(reembedJobKeys.Ascending(j => j
-                                                                .CompletedAt
-                                                            ),
-                                                        new CreateIndexOptions
-                                                            {
-                                                                ExpireAfter = smJobRetention
-                                                            }
-                                                   ),
-                                               cancellationToken: ct
-                                              );
-
-        // Jobs (unified): TTL on CompletedAt with the same Running-skip
-        // semantics. Replaces the four legacy TTL indexes above once the
-        // migration runs.
+        // Jobs (unified): TTL on CompletedAt. Running jobs
+        // (CompletedAt = null) are skipped by Mongo's TTL purge; only
+        // terminal jobs eventually age out. Manual cleanup_jobs tool
+        // covers early eviction.
         var jobKeys = Builders<JobRecord>.IndexKeys;
         await Jobs.Indexes.CreateOneAsync(new CreateIndexModel<JobRecord>(jobKeys.Ascending(j => j.CompletedAt),
                                                                           new CreateIndexOptions
@@ -370,10 +300,6 @@ public class SaddleRagDbContext
     private const string CollectionChunks = "chunks";
     private const string CollectionVersionDiffs = "versionDiffs";
     private const string CollectionProjectProfiles = "projectProfiles";
-    private const string CollectionScrapeJobs = "scrapeJobs";
-    private const string CollectionRescrubJobs = "rescrubJobs";
-    private const string CollectionReembedJobs = "reembedJobs";
-    private const string CollectionBackgroundJobs = "backgroundJobs";
     internal const string CollectionJobs = "jobs";
     private const string CollectionLibraryProfiles = "libraryProfiles";
     private const string CollectionLibraryIndexes = "libraryIndexes";
