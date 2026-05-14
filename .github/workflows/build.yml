@@ -9,9 +9,10 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
 
     steps:
@@ -102,3 +103,63 @@ jobs:
         run: |
           Get-Process -Name dotnet, VBCSCompiler -ErrorAction SilentlyContinue |
             Stop-Process -Force -ErrorAction SilentlyContinue
+
+  build-linux:
+    runs-on: ubuntu-latest
+    needs: ${{ startsWith(github.ref, 'refs/tags/v') && fromJSON('["build-windows"]') || fromJSON('[]') }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.x'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0"
+          fi
+          echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}"
+
+      - name: Restore
+        run: dotnet restore SaddleRAG.slnx
+
+      - name: Build
+        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }}
+
+      - name: Test
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build --filter "Category!=Integration"
+
+      - name: Publish
+        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime linux-x64 --self-contained true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }} --output ./artifacts/linux/publish
+
+      - name: Package tarball
+        run: |
+          VERSION="${{ steps.version.outputs.PackageVersion }}"
+          TARBALL="SaddleRAG.Mcp-${VERSION}-linux-x64.tar.gz"
+          tar -czf "./artifacts/${TARBALL}" -C ./artifacts/linux/publish .
+          sha256sum "./artifacts/${TARBALL}" > "./artifacts/${TARBALL}.sha256"
+
+      - name: Upload linux artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: SaddleRAG.Mcp-linux-${{ steps.version.outputs.PackageVersion }}
+          path: |
+            ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
+            ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.PackageVersion }}"
+          gh release upload "v${VERSION}" \
+            "./artifacts/SaddleRAG.Mcp-${VERSION}-linux-x64.tar.gz" \
+            "./artifacts/SaddleRAG.Mcp-${VERSION}-linux-x64.tar.gz.sha256"
