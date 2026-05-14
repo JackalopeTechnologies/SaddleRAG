@@ -34,6 +34,29 @@ public static class GpuDetectionRules
     ///     (defensive: an adapter with no identifiers is not a real
     ///     GPU).
     /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Pass the raw <c>Win32_VideoController</c> string fields
+    ///         exactly as WMI / Get-CimInstance returns them. Internal
+    ///         normalization handles the case folding; pre-lowercasing
+    ///         the <paramref name="pnpDeviceId" /> or pre-uppercasing
+    ///         the <paramref name="name" /> would silently miss every
+    ///         match because the asymmetric prefix-vs-substring
+    ///         comparisons fold the two parameters in opposite
+    ///         directions internally.
+    ///     </para>
+    ///     <para>
+    ///         The asymmetry is invisible from the <c>(string?, string?)</c>
+    ///         signature: <paramref name="name" /> is folded to
+    ///         lowercase and matched as a substring (so any of the four
+    ///         Microsoft-fallback name fragments anywhere in the
+    ///         display name flags the adapter); <paramref name="pnpDeviceId" />
+    ///         is folded to uppercase and matched as a prefix (the
+    ///         Plug-and-Play tree only places fallback adapters under
+    ///         the <c>ROOT\BASICDISPLAY</c> / <c>ROOT\INDIRECTDISPLAY</c>
+    ///         hives).
+    ///     </para>
+    /// </remarks>
     public static bool IsMicrosoftFallbackAdapter(string? name, string? pnpDeviceId)
     {
         string lowerName  = (name ?? string.Empty).ToLowerInvariant();
