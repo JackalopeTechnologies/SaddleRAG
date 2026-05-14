@@ -106,7 +106,6 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
-    needs: ${{ startsWith(github.ref, 'refs/tags/v') && fromJSON('["build-windows"]') || fromJSON('[]') }}
 
     steps:
       - uses: actions/checkout@v5
@@ -124,8 +123,14 @@ jobs:
           else
             VERSION="0.0.0"
           fi
+          if [[ "${VERSION}" == 0.* ]]; then
+            IS_PRERELEASE="true"
+          else
+            IS_PRERELEASE="false"
+          fi
           echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Version: ${VERSION}"
+          echo "IsPrerelease=${IS_PRERELEASE}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION} (Prerelease: ${IS_PRERELEASE})"
 
       - name: Restore
         run: dotnet restore SaddleRAG.slnx
@@ -155,14 +160,18 @@ jobs:
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
 
       - name: Upload to GitHub Release
+        # Idempotent upsert via softprops/action-gh-release — same action
+        # build-windows uses for the MSI. Both jobs run in parallel; whichever
+        # arrives first creates the draft release with the prerelease flag,
+        # the other appends its artifact files. No coordination required.
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION="${{ steps.version.outputs.PackageVersion }}"
-          gh release upload "v${VERSION}" \
-            "./artifacts/SaddleRAG.Mcp-${VERSION}-linux-x64.tar.gz" \
-            "./artifacts/SaddleRAG.Mcp-${VERSION}-linux-x64.tar.gz.sha256"
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
+            ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
+          prerelease: ${{ steps.version.outputs.IsPrerelease }}
+          draft: true
 
   docker:
     runs-on: ubuntu-latest
