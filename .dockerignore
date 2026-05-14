@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+*.md
+docs/
+SaddleRAG.Tests/
+SaddleRAG.Installer/
+SaddleRAG.Installer.Logic/
+**/.vs/
+**/bin/
+**/obj/
+publish-linux-verify/
+artifacts/
+*.msi
+*.user
+*.suo
