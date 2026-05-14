@@ -127,6 +127,10 @@ catch
     {
         Remove-Item -LiteralPath $TempPath -Force -ErrorAction SilentlyContinue
     }
-    Write-Error ("PatchAppSettings: FAILURE: " + $_.Exception.Message)
+    # Write-Error is intentionally NOT used here: with $ErrorActionPreference='Stop'
+    # it word-wraps long messages in the redirected-pipe case (no terminal attached),
+    # inserting CRLF mid-string and breaking substring searches in MSI-log scrapers
+    # and tests. [Console]::Error.WriteLine writes the message as a single raw line.
+    [Console]::Error.WriteLine("PatchAppSettings: FAILURE: " + $_.Exception.Message)
     exit 1
 }
