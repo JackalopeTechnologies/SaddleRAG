@@ -15,11 +15,23 @@ namespace SaddleRAG.Tests.Installer;
 /// <summary>
 ///     Locks the adapter-classification heuristic used by the installer's
 ///     <c>CheckGpuCapability.js</c> custom action. The live installer runs
-///     JScript that mirrors <see cref="GpuDetectionRules" />; these tests
-///     are the source-of-truth contract that catches regressions on either
-///     side. The names used in <see cref="RealAdapters" /> and
-///     <see cref="FallbackAdapters" /> reflect what
-///     <c>Win32_VideoController</c> actually reports on common hardware.
+///     JScript that is mirrored by <see cref="GpuDetectionRules" />.
+///     <para>
+///         These tests exercise the C# copy directly. The cross-language
+///         contract — i.e., that the JScript and C# share the same name
+///         fragments and PnP prefixes — is held by
+///         <see cref="JScriptMirrorContainsAllExpectedFragmentsAndPrefixes" />,
+///         which loads <c>CheckGpuCapability.js</c> as text and asserts each
+///         expected literal is present. Behavior-level mirroring (e.g.,
+///         the no-identifier guard, case-folding direction) is still
+///         maintained by hand; if either side adds a logic branch, the
+///         other side must be updated and a new theory case added here.
+///     </para>
+///     <para>
+///         The names used in <see cref="RealAdapters" /> and
+///         <see cref="FallbackAdapters" /> reflect what
+///         <c>Win32_VideoController</c> actually reports on common hardware.
+///     </para>
 /// </summary>
 public sealed class GpuDetectionRulesTests
 {
@@ -79,6 +91,90 @@ public sealed class GpuDetectionRulesTests
                                                                   );
         Assert.True(pnpOnly);
     }
+
+    [Fact]
+    public void JScriptMirrorContainsAllExpectedFragmentsAndPrefixes()
+    {
+        // Cross-language contract: the JScript copy in CheckGpuCapability.js
+        // must contain the same fragment / prefix literals the C# helper
+        // uses. The C# arrays are private, so this test pins the contract by
+        // asserting the JScript source contains each expected literal as a
+        // string-literal token. Behavior-level mirror (no-identifier guard,
+        // case-folding direction) is still maintained by hand; this test
+        // only catches the most likely class of drift, which is a list edit
+        // on one side and not the other.
+        string? jsPath = TryResolveJScriptSourcePath();
+        if (jsPath == null)
+            Assert.Skip(JScriptMissingSkipReason);
+        else
+        {
+            string jsText = File.ReadAllText(jsPath);
+            AssertContainsAllFragmentLiterals(jsText, smExpectedNameFragments);
+            AssertContainsAllPnpPrefixLiterals(jsText, smExpectedPnpPrefixes);
+        }
+    }
+
+    private static void AssertContainsAllFragmentLiterals(string jsText, IReadOnlyList<string> fragments)
+    {
+        foreach (string fragment in fragments)
+        {
+            string jsLiteral = JsLiteralQuote + fragment + JsLiteralQuote;
+            Assert.True(jsText.Contains(jsLiteral, StringComparison.Ordinal),
+                        $"CheckGpuCapability.js missing fragment literal {jsLiteral}."
+                       );
+        }
+    }
+
+    private static void AssertContainsAllPnpPrefixLiterals(string jsText, IReadOnlyList<string> prefixes)
+    {
+        foreach (string prefix in prefixes)
+        {
+            // JScript escapes backslashes inside string literals, so a C#
+            // value of ROOT\BASICDISPLAY appears as "ROOT\\BASICDISPLAY" in
+            // the .js source.
+            string jsLiteral = JsLiteralQuote + prefix.Replace(@"\", @"\\") + JsLiteralQuote;
+            Assert.True(jsText.Contains(jsLiteral, StringComparison.Ordinal),
+                        $"CheckGpuCapability.js missing PnP prefix literal {jsLiteral}."
+                       );
+        }
+    }
+
+    private static string? TryResolveJScriptSourcePath()
+    {
+        string testBinDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+        DirectoryInfo? dir = new DirectoryInfo(testBinDir);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, RepositoryRootMarker)))
+            dir = dir.Parent;
+        string? result = null;
+        if (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, InstallerFolderName, JScriptFileName);
+            if (File.Exists(candidate))
+                result = candidate;
+        }
+        return result;
+    }
+
+    private static readonly IReadOnlyList<string> smExpectedNameFragments = new[]
+    {
+        "microsoft basic display",
+        "microsoft remote display",
+        "microsoft indirect display",
+        "microsoft hyper-v video"
+    };
+
+    private static readonly IReadOnlyList<string> smExpectedPnpPrefixes = new[]
+    {
+        @"ROOT\BASICDISPLAY",
+        @"ROOT\INDIRECTDISPLAY"
+    };
+
+    private const string JsLiteralQuote = "\"";
+    private const string RepositoryRootMarker = "SaddleRAG.slnx";
+    private const string InstallerFolderName = "SaddleRAG.Installer";
+    private const string JScriptFileName = "CheckGpuCapability.js";
+    private const string JScriptMissingSkipReason =
+        "CheckGpuCapability.js not locatable from test binary directory; skipping mirror check.";
 
     public static IEnumerable<TheoryDataRow<string, string>> RealAdapters()
     {

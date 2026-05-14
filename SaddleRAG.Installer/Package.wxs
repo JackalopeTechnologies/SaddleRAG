@@ -65,6 +65,16 @@
         <Property Id="GPU_DETECTION_REASON" Secure="yes" />
         <Property Id="ONNX_EXECUTION_PROVIDER" Secure="yes" />
 
+        <!-- Escaped variants of the four PatchAppSettings inputs, written by  -->
+        <!-- EscapeAppSettingsProperties so a literal " in a Mongo password or -->
+        <!-- Ollama URL doesn't break the powershell.exe argv parse before    -->
+        <!-- the .ps1 can record the failure. See EscapeAppSettingsProperties.js -->
+        <!-- for the escape rules.                                            -->
+        <Property Id="MONGOCONNECTION_ESCAPED" Secure="yes" />
+        <Property Id="MONGODATABASE_ESCAPED" Secure="yes" />
+        <Property Id="OLLAMAENDPOINT_ESCAPED" Secure="yes" />
+        <Property Id="ONNX_EXECUTION_PROVIDER_ESCAPED" Secure="yes" />
+
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
             <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp" />
@@ -167,6 +177,17 @@
                       Execute="immediate"
                       Return="ignore" />
 
+        <!-- Pre-escape the four PatchAppSettings inputs so a literal " in any   -->
+        <!-- value (Mongo password with a quote, Ollama URL containing one) doesn't -->
+        <!-- terminate the powershell.exe argv parse before the .ps1's try/catch  -->
+        <!-- can record the failure. Runs in the Execute sequence right before     -->
+        <!-- PatchAppSettings.                                                    -->
+        <CustomAction Id="EscapeAppSettingsProperties"
+                      Script="jscript"
+                      ScriptSourceFile="EscapeAppSettingsProperties.js"
+                      Execute="immediate"
+                      Return="ignore" />
+
         <!-- Patch appsettings.json with user-provided values (deferred, after file install).  -->
         <!-- Delegates to PatchAppSettings.ps1 installed under MCPFOLDER so the logic is unit-  -->
         <!-- testable (see SaddleRAG.Tests/Installer/PatchAppSettingsTests.cs) and isolated     -->
@@ -178,7 +199,7 @@
         <SetProperty Id="PatchAppSettings"
                      Before="PatchAppSettings"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]PatchAppSettings.ps1&quot; -AppSettingsPath &quot;[MCPFOLDER]appsettings.json&quot; -ConnectionString &quot;[MONGOCONNECTION]&quot; -DatabaseName &quot;[MONGODATABASE]&quot; -OllamaEndpoint &quot;[OLLAMAENDPOINT]&quot; -ExecutionProvider &quot;[ONNX_EXECUTION_PROVIDER]&quot;" />
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]PatchAppSettings.ps1&quot; -AppSettingsPath &quot;[MCPFOLDER]appsettings.json&quot; -ConnectionString &quot;[MONGOCONNECTION_ESCAPED]&quot; -DatabaseName &quot;[MONGODATABASE_ESCAPED]&quot; -OllamaEndpoint &quot;[OLLAMAENDPOINT_ESCAPED]&quot; -ExecutionProvider &quot;[ONNX_EXECUTION_PROVIDER_ESCAPED]&quot;" />
 
         <CustomAction Id="PatchAppSettings"
                       BinaryRef="Wix4UtilCA_X86"
@@ -286,6 +307,9 @@
             <!-- Must precede LaunchConditions: the launch gate reads -->
             <!-- WINDOWSBUILDNUMBER that this CA populates.            -->
             <Custom Action="CheckGpuCapability" Before="LaunchConditions" />
+            <!-- Must precede PatchAppSettings: the SetProperty Value below  -->
+            <!-- substitutes the _ESCAPED variants of MONGOCONNECTION etc.   -->
+            <Custom Action="EscapeAppSettingsProperties" Before="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="SetOllamaKeepAlive" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />

@@ -40,6 +40,8 @@ param
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$TempPath = $AppSettingsPath + '.tmp'
+
 try
 {
     $json = Get-Content -LiteralPath $AppSettingsPath -Raw | ConvertFrom-Json
@@ -58,12 +60,30 @@ try
                          }
     $json.Onnx.ExecutionProvider = $effectiveProvider
 
-    $json | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $AppSettingsPath -Encoding UTF8
+    # Write to a sibling .tmp file, then atomically rename over the target.
+    # Move-Item -Force is atomic on NTFS, so a crash mid-write (disk-full,
+    # antivirus interrupt, process kill) leaves the original appsettings.json
+    # intact rather than truncated. The runtime EP fallback can absorb a
+    # missing Onnx.ExecutionProvider, but a half-written MongoDB or Ollama
+    # section would fail startup config-binding with no diagnostic link back
+    # to the installer, which is the silent-fail mode this guard avoids.
+    $json | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $TempPath -Encoding UTF8
+    Move-Item -LiteralPath $TempPath -Destination $AppSettingsPath -Force
 
-    Write-Output "PatchAppSettings: wrote MongoDB/Ollama/Onnx settings (ExecutionProvider=$effectiveProvider) to $AppSettingsPath"
+    # Stable success-sentinel token for MSI-log scrapers that want to
+    # distinguish ran-and-worked from ran-and-silently-failed (the CA wrapper
+    # is Return="ignore", so a non-zero exit shows in the log but doesn't
+    # abort the install).
+    Write-Output "PatchAppSettings: SUCCESS (ExecutionProvider=$effectiveProvider) to $AppSettingsPath"
 }
 catch
 {
-    Write-Error ("PatchAppSettings failed: " + $_.Exception.Message)
+    # Best-effort cleanup of the temp file; failure here is fine, the catch
+    # has already captured the original problem.
+    if (Test-Path -LiteralPath $TempPath)
+    {
+        Remove-Item -LiteralPath $TempPath -Force -ErrorAction SilentlyContinue
+    }
+    Write-Error ("PatchAppSettings: FAILURE: " + $_.Exception.Message)
     exit 1
 }

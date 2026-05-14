@@ -51,10 +51,21 @@ function _formatJscriptError(err)
 {
     var _msg  = (err && err.message)     ? err.message     : "";
     var _desc = (err && err.description) ? err.description : "";
+    var _hr   = (err && typeof err.number === "number") ? err.number : 0;
+    var _base;
+    if (_msg.length > 0)       { _base = _msg; }
+    else if (_desc.length > 0) { _base = _desc; }
+    else                       { _base = "unknown"; }
     var _result;
-    if (_msg.length > 0)       { _result = _msg; }
-    else if (_desc.length > 0) { _result = _desc; }
-    else                       { _result = "unknown"; }
+    if (_hr !== 0) {
+        // Format as unsigned 32-bit hex so 0x80041010 etc. surface cleanly
+        // for operators distinguishing access-denied vs invalid-class vs
+        // WMI-not-running.
+        var _hex = (_hr >>> 0).toString(16);
+        _result = _base + " (0x" + _hex + ")";
+    } else {
+        _result = _base;
+    }
     return _result;
 }
 
@@ -85,6 +96,12 @@ function _isMicrosoftFallbackAdapter(name, pnp)
 {
     var _n = (name || "").toLowerCase();
     var _p = (pnp  || "").toUpperCase();
+    // Defensive: a controller WMI row with neither Name nor PNPDeviceID is
+    // not a real GPU. Mirrors the noIdentifier clause in
+    // SaddleRAG.Installer.Logic.GpuDetectionRules so the two sides agree.
+    if (_n.length === 0 && _p.length === 0) {
+        return true;
+    }
     var _isBasic   = _n.indexOf("microsoft basic display") !== -1;
     var _isRemote  = _n.indexOf("microsoft remote display") !== -1;
     var _isIndDisp = _n.indexOf("microsoft indirect display") !== -1;

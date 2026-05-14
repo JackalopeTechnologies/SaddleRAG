@@ -120,6 +120,45 @@ public sealed class PatchAppSettingsTests
                                         );
 
         Assert.NotEqual(expected: 0, actual: exitCode);
+        Assert.False(File.Exists(missing), "Script must not create the target file on failure.");
+    }
+
+    [Fact]
+    public void PreservesUnrelatedConfigSectionsAndAdditionalMongoProfiles()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        string fixturePath = CreateFixtureWithExtraSections();
+        try
+        {
+            RunPatchScript(fixturePath,
+                           connectionString: "mongodb://example:27017",
+                           databaseName: "SaddleRAGTest",
+                           ollamaEndpoint: "http://example:11434",
+                           executionProvider: "DirectMl"
+                          );
+
+            JsonNode patched = LoadJson(fixturePath);
+
+            // Sections the script doesn't touch must round-trip unchanged.
+            Assert.Equal("Information", (string?) patched["Logging"]?["LogLevel"]?["Default"]);
+            Assert.Equal("http://kestrel:6100", (string?) patched["Kestrel"]?["Endpoints"]?["Http"]?["Url"]);
+            Assert.Equal(0.4d, (double?) patched["Ranking"]?["Bm25Weight"]);
+
+            // Additional Mongo profile must survive even though the script
+            // only edits MongoDB.Profiles.local.
+            Assert.Equal("mongodb://prod-host:27017", (string?) patched["MongoDB"]?["Profiles"]?["production"]?["ConnectionString"]);
+            Assert.Equal("SaddleRAGProd", (string?) patched["MongoDB"]?["Profiles"]?["production"]?["DatabaseName"]);
+
+            // And the script's own writes still apply.
+            Assert.Equal("mongodb://example:27017", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["ConnectionString"]);
+            Assert.Equal("DirectMl", (string?) patched["Onnx"]?["ExecutionProvider"]);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
     }
 
     private static string CreateFixture()
@@ -140,6 +179,53 @@ public sealed class PatchAppSettingsTests
             },
             ["Ollama"] = new JsonObject { ["Endpoint"] = "http://placeholder" },
             ["Onnx"]   = new JsonObject { ["ExecutionProvider"] = "Cpu" }
+        };
+        File.WriteAllText(tempPath, seed.ToJsonString(), Encoding.UTF8);
+        return tempPath;
+    }
+
+    private static string CreateFixtureWithExtraSections()
+    {
+        // Mirrors the shape of the shipped SaddleRAG.Mcp/appsettings.json
+        // (Logging + Kestrel + Ranking siblings, multiple Mongo profiles).
+        // The script edits only the four properties it owns; everything
+        // else must round-trip untouched.
+        string tempPath = Path.Combine(Path.GetTempPath(), $"saddlerag-appsettings-extra-{Guid.NewGuid()}.json");
+        var seed = new JsonObject
+        {
+            ["Logging"] = new JsonObject
+            {
+                ["LogLevel"] = new JsonObject
+                {
+                    ["Default"] = "Information"
+                }
+            },
+            ["Kestrel"] = new JsonObject
+            {
+                ["Endpoints"] = new JsonObject
+                {
+                    ["Http"] = new JsonObject { ["Url"] = "http://kestrel:6100" }
+                }
+            },
+            ["MongoDB"] = new JsonObject
+            {
+                ["Profiles"] = new JsonObject
+                {
+                    ["local"] = new JsonObject
+                    {
+                        ["ConnectionString"] = "mongodb://placeholder",
+                        ["DatabaseName"] = "Placeholder"
+                    },
+                    ["production"] = new JsonObject
+                    {
+                        ["ConnectionString"] = "mongodb://prod-host:27017",
+                        ["DatabaseName"] = "SaddleRAGProd"
+                    }
+                }
+            },
+            ["Ollama"] = new JsonObject { ["Endpoint"] = "http://placeholder" },
+            ["Onnx"]   = new JsonObject { ["ExecutionProvider"] = "Cpu" },
+            ["Ranking"] = new JsonObject { ["Bm25Weight"] = 0.4d }
         };
         File.WriteAllText(tempPath, seed.ToJsonString(), Encoding.UTF8);
         return tempPath;
@@ -171,7 +257,29 @@ public sealed class PatchAppSettingsTests
                                          string ollamaEndpoint,
                                          string executionProvider)
     {
-        string scriptPath = ResolveScriptPath();
+        string? scriptPath = TryResolveScriptPath();
+        if (scriptPath == null)
+            Assert.Skip(ScriptMissingSkipReason);
+        // Assert.Skip throws on the null branch; the second assertion narrows
+        // scriptPath for the compiler without depending on a null-forgiving
+        // operator (banned by the project analyzer).
+        Assert.NotNull(scriptPath);
+        return InvokePowerShell(scriptPath,
+                                appSettingsPath,
+                                connectionString,
+                                databaseName,
+                                ollamaEndpoint,
+                                executionProvider
+                               );
+    }
+
+    private static int InvokePowerShell(string scriptPath,
+                                        string appSettingsPath,
+                                        string connectionString,
+                                        string databaseName,
+                                        string ollamaEndpoint,
+                                        string executionProvider)
+    {
         var startInfo = new ProcessStartInfo("powershell.exe")
         {
             UseShellExecute = false,
@@ -198,26 +306,50 @@ public sealed class PatchAppSettingsTests
         using Process? proc = Process.Start(startInfo);
         if (proc == null)
             throw new InvalidOperationException("Failed to start powershell.exe");
-        proc.WaitForExit();
+
+        // Drain stdout/stderr asynchronously BEFORE WaitForExit so a verbose
+        // error message can't fill the ~4KB pipe buffer and deadlock the
+        // child + the test. WaitForExit gets a bounded timeout so a hung
+        // powershell.exe (e.g., parameter binding prompts) fails as a clear
+        // assertion rather than a CI hang.
+        Task<string> stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        Task<string> stderrTask = proc.StandardError.ReadToEndAsync();
+
+        bool exited = proc.WaitForExit(smWaitForExitTimeout);
+        Assert.True(exited, "powershell.exe did not exit within the expected window; likely deadlocked or waiting on a prompt.");
+
+        // Joining the read tasks after WaitForExit is safe and surfaces
+        // their output for the assertion message below if we ever decide
+        // to attach it (kept available for future diagnostics).
+        stdoutTask.Wait();
+        stderrTask.Wait();
+
         return proc.ExitCode;
     }
 
-    private static string ResolveScriptPath()
+    private static string? TryResolveScriptPath()
     {
-        // Tests run from SaddleRAG.Tests/bin/.../net10.0/. The .ps1 source
-        // lives alongside Package.wxs in SaddleRAG.Installer/, three
-        // parents + a sibling-folder hop away.
-        string? testBinDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+        string testBinDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
         DirectoryInfo? dir = new DirectoryInfo(testBinDir);
-        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "SaddleRAG.slnx")))
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, RepositoryRootMarker)))
             dir = dir.Parent;
-        if (dir == null)
-            throw new InvalidOperationException("Could not locate repository root from test binary directory.");
-        string scriptPath = Path.Combine(dir.FullName, "SaddleRAG.Installer", "PatchAppSettings.ps1");
-        if (!File.Exists(scriptPath))
-            throw new InvalidOperationException($"PatchAppSettings.ps1 not found at '{scriptPath}'.");
-        return scriptPath;
+        string? result = null;
+        if (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, InstallerFolderName, PatchScriptFileName);
+            if (File.Exists(candidate))
+                result = candidate;
+        }
+        return result;
     }
 
-    private const string WindowsOnlySkipReason = "PatchAppSettings.ps1 is invoked by the Windows MSI installer; the test requires powershell.exe.";
+    private static readonly TimeSpan smWaitForExitTimeout = TimeSpan.FromSeconds(30);
+
+    private const string WindowsOnlySkipReason =
+        "PatchAppSettings.ps1 is invoked by the Windows MSI installer; the test requires powershell.exe.";
+    private const string ScriptMissingSkipReason =
+        "PatchAppSettings.ps1 not locatable from test binary directory; the test requires the script to be present in the source tree.";
+    private const string RepositoryRootMarker = "SaddleRAG.slnx";
+    private const string InstallerFolderName = "SaddleRAG.Installer";
+    private const string PatchScriptFileName = "PatchAppSettings.ps1";
 }
