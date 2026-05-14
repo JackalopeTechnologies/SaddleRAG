@@ -18,7 +18,15 @@ param
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
-    [string]$ExecutionProvider
+    [string]$ExecutionProvider,
+
+    # Set by the immediate EscapeAppSettingsProperties CA when one of the
+    # _ESCAPED property writes fails. The patch script aborts in that case
+    # rather than silently writing an empty connection string / endpoint.
+    # Empty string means "no escape failure recorded".
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
+    [string]$EscapeFailed
 )
 
 # Rewrites the installed appsettings.json with the user's MongoDB / Ollama /
@@ -59,6 +67,16 @@ public static extern bool MoveFileEx(string lpExistingFileName, string lpNewFile
 
 try
 {
+    # If the upstream JScript CA failed to escape one or more property
+    # values, [X_ESCAPED] expanded to empty here; writing empty strings to
+    # appsettings.json would let the install "succeed" with broken config.
+    # Abort with the surfaced failure instead so the operator sees it in
+    # the MSI log (the FAILURE: sentinel below is grep-friendly).
+    if (-not [string]::IsNullOrEmpty($EscapeFailed))
+    {
+        throw "Upstream argv-escape failed for one or more MSI properties: $EscapeFailed"
+    }
+
     $json = Get-Content -LiteralPath $AppSettingsPath -Raw | ConvertFrom-Json
 
     $json.MongoDB.Profiles.local.ConnectionString = $ConnectionString

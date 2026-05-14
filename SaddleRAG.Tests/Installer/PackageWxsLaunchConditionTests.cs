@@ -161,13 +161,14 @@ public sealed class PackageWxsLaunchConditionTests
     }
 
     private static readonly string[] smPatchAppSettingsScriptParameters =
-        [
-            "-AppSettingsPath",
+    [
+        "-AppSettingsPath",
         "-ConnectionString",
         "-DatabaseName",
         "-OllamaEndpoint",
-        "-ExecutionProvider"
-        ];
+        "-ExecutionProvider",
+        "-EscapeFailed"
+    ];
 
     private static readonly XNamespace smWixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
 
