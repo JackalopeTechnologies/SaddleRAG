@@ -1,7 +1,7 @@
 # Dockerfile
 
 # ── Stage 1: build ───────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-bookworm AS build
 WORKDIR /src
 COPY . .
 RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
@@ -13,7 +13,7 @@ RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
         -o /app/publish
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-bookworm-slim AS runtime
 
 # Playwright / Chromium system dependencies + PowerShell (for playwright.ps1)
 RUN apt-get update \

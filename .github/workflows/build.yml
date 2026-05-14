@@ -181,19 +181,6 @@ jobs:
           fi
           echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Download linux artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: SaddleRAG.Mcp-linux-${{ steps.version.outputs.PackageVersion }}
-          path: ./artifacts
-
-      - name: Extract publish output for Docker
-        run: |
-          VERSION="${{ steps.version.outputs.PackageVersion }}"
-          mkdir -p ./artifacts/linux/publish
-          tar -xzf "./artifacts/SaddleRAG.Mcp-${VERSION}-linux-x64.tar.gz" \
-              -C ./artifacts/linux/publish
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
