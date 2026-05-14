@@ -227,3 +227,34 @@ jobs:
           tags: |
             ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}
             ghcr.io/jackalopetechnologies/saddlerag:latest
+
+  build:
+    # Aggregate gate that resolves the historically-named "build" status
+    # check still required by master's branch protection rules. Before
+    # this PR the workflow had a single job literally called "build";
+    # the rename to build-windows + the new build-linux / docker jobs
+    # broke that name without an accompanying branch-protection update.
+    # Rather than require an admin settings change to land this PR, we
+    # restore the "build" check name as an aggregate that succeeds iff
+    # all three platform jobs succeed. Future branch-protection updates
+    # can promote build-windows / build-linux / docker to required and
+    # drop this aggregate, but until then this keeps the contract
+    # green-on-green-on-green = mergeable.
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, docker]
+    if: always()
+
+    steps:
+      - name: Aggregate per-platform results
+        run: |
+          windows='${{ needs.build-windows.result }}'
+          linux='${{ needs.build-linux.result }}'
+          docker='${{ needs.docker.result }}'
+          echo "build-windows: ${windows}"
+          echo "build-linux: ${linux}"
+          echo "docker: ${docker}"
+          if [[ "${windows}" != "success" || "${linux}" != "success" || "${docker}" != "success" ]]; then
+            echo "::error::One or more platform jobs failed; aggregate build check fails."
+            exit 1
+          fi
+          echo "All platform jobs succeeded."
