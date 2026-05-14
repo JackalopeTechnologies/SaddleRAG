@@ -1,7 +1,7 @@
 # Dockerfile
 
 # ── Stage 1: build ───────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:10.0-bookworm AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-bookworm-slim AS build
 WORKDIR /src
 COPY . .
 RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
