@@ -1,0 +1,44 @@
+# docker-compose.yml
+# One-command SaddleRAG stack: server + MongoDB + Ollama.
+# Models are NOT downloaded automatically. Run ./warmup.sh once after first start.
+
+services:
+  saddlerag:
+    image: ghcr.io/jackalopetechnologies/saddlerag:latest
+    ports:
+      - "6100:6100"
+    environment:
+      SADDLERAG__Onnx__Enabled: "true"
+      SADDLERAG__Onnx__EmbeddingEnabled: "true"
+      SADDLERAG__Onnx__ModelsDir: /data/models
+      SADDLERAG__Ollama__Endpoint: http://ollama:11434
+      SADDLERAG__MongoDB__Profiles__local__ConnectionString: mongodb://mongo:27017
+    volumes:
+      - onnx-models:/data/models
+    depends_on:
+      - mongo
+      - ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:6100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 5m
+
+  mongo:
+    image: mongo:8
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+  onnx-models:
+  ollama-data:

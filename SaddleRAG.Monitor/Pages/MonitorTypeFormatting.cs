@@ -24,6 +24,7 @@ internal static class MonitorTypeFormatting
                 JobType.IndexProjectDependencies => Color.Info,
                 JobType.Rechunk => Color.Primary,
                 JobType.Rescrub => Color.Primary,
+                JobType.Reembed => Color.Primary,
                 JobType.SubmitUrlCorrection => Color.Primary,
                 JobType.RenameLibrary => Color.Warning,
                 JobType.DeleteVersion => Color.Warning,
@@ -44,6 +45,7 @@ internal static class MonitorTypeFormatting
                 JobType.DryRunScrape => LabelDryRun,
                 JobType.Rechunk => LabelRechunk,
                 JobType.Rescrub => LabelRescrub,
+                JobType.Reembed => LabelReembed,
                 JobType.RenameLibrary => LabelRename,
                 JobType.DeleteVersion => LabelDeleteVersion,
                 JobType.DeleteLibrary => LabelDeleteLibrary,
@@ -66,6 +68,7 @@ internal static class MonitorTypeFormatting
     private const string LabelDryRun = "Dry-run";
     private const string LabelRechunk = "Rechunk";
     private const string LabelRescrub = "Rescrub";
+    private const string LabelReembed = "Re-embed";
     private const string LabelRename = "Rename";
     private const string LabelDeleteVersion = "Delete version";
     private const string LabelDeleteLibrary = "Delete library";

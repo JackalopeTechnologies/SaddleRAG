@@ -12,6 +12,7 @@ using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Scanning;
@@ -67,11 +68,11 @@ public static class UrlCorrectionTools
         {
             var chunkRepo = repositoryFactory.GetChunkRepository(profile);
             var pageRepo = repositoryFactory.GetPageRepository(profile);
-            var scrapeJobRepo = repositoryFactory.GetScrapeJobRepository(profile);
+            var jobRepo = repositoryFactory.GetJobRepository(profile);
 
             var chunks = await chunkRepo.GetChunkCountAsync(library, version, ct);
             var pages = await pageRepo.GetPageCountAsync(library, version, ct);
-            var activeJobs = await scrapeJobRepo.ListActiveJobsAsync(library, version, ct);
+            var activeJobs = await jobRepo.ListActiveAsync(library, version, JobType.Scrape, ct);
             var preview = new
                               {
                                   DryRun = true,
@@ -104,11 +105,12 @@ public static class UrlCorrectionTools
             var jobId = await backgroundRunner.QueueAsync(jobRecord,
                                                           async (record, _, jobCt) =>
                                                           {
-                                                              var scrapeJobRepo =
-                                                                  repositoryFactory.GetScrapeJobRepository(profile);
+                                                              var jobRepo =
+                                                                  repositoryFactory.GetJobRepository(profile);
                                                               var activeJobs =
-                                                                  await scrapeJobRepo.ListActiveJobsAsync(library,
+                                                                  await jobRepo.ListActiveAsync(library,
                                                                            version,
+                                                                           JobType.Scrape,
                                                                            jobCt
                                                                       );
                                                               var cancelledIds = new List<string>();

@@ -163,27 +163,37 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
                                                       )
                       );
 
-        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = mSession.Run(inputs);
-        var first = results.First();
-        Tensor<float> hidden = first.AsTensor<float>();
+        float[] pooled;
+        OnnxInferenceGate.Acquire();
+        try
+        {
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = mSession.Run(inputs);
+            Tensor<float> hidden = results.First().AsTensor<float>();
+            ValidateHiddenShape(hidden);
+            pooled = PoolAndNormalize(hidden, seqLen, attentionMask);
+        }
+        finally
+        {
+            OnnxInferenceGate.Release();
+        }
+
+        return pooled;
+    }
+
+    private void ValidateHiddenShape(Tensor<float> hidden)
+    {
         ReadOnlySpan<int> dims = hidden.Dimensions;
         if (dims.Length != HiddenStateDimsRank || dims[HiddenDimIndex] != mEntry.Dimensions)
             throw new InvalidOperationException(
                 $"ONNX model '{mEntry.Name}' produced unexpected output shape [{string.Join(",", dims.ToArray())}]; expected [batch, seq, {mEntry.Dimensions}]."
             );
+    }
 
+    private float[] PoolAndNormalize(Tensor<float> hidden, int seqLen, long[] attentionMask)
+    {
         int hiddenDim = mEntry.Dimensions;
         float[] pooled = new float[hiddenDim];
-        var valid = 0;
-        for(var t = 0; t < seqLen; t++)
-        {
-            if (attentionMask[t] != 0L)
-            {
-                valid++;
-                for(var d = 0; d < hiddenDim; d++)
-                    pooled[d] += hidden[0, t, d];
-            }
-        }
+        int valid = AccumulatePooled(hidden, seqLen, attentionMask, pooled, hiddenDim);
         if (valid > 0)
             for(var d = 0; d < hiddenDim; d++)
                 pooled[d] /= valid;
@@ -195,8 +205,31 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
         if (norm > 0.0)
             for(var d = 0; d < hiddenDim; d++)
                 pooled[d] = (float) (pooled[d] / norm);
-
         return pooled;
+    }
+
+    private static int AccumulatePooled(Tensor<float> hidden,
+                                        int seqLen,
+                                        long[] attentionMask,
+                                        float[] pooled,
+                                        int hiddenDim)
+    {
+        var valid = 0;
+        for(var t = 0; t < seqLen; t++)
+        {
+            if (attentionMask[t] != 0L)
+            {
+                valid++;
+                AccumulateOneToken(hidden, t, pooled, hiddenDim);
+            }
+        }
+        return valid;
+    }
+
+    private static void AccumulateOneToken(Tensor<float> hidden, int t, float[] pooled, int hiddenDim)
+    {
+        for(var d = 0; d < hiddenDim; d++)
+            pooled[d] += hidden[0, t, d];
     }
 
     private static BertTokenizer CreateTokenizer(EmbeddingModelEntry entry, string modelsDir, string vocabPath)
