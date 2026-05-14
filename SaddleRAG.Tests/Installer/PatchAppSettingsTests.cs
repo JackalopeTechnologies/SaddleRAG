@@ -200,12 +200,15 @@ public sealed class PatchAppSettingsTests
         if (!OperatingSystem.IsWindows())
             Assert.Skip(WindowsOnlySkipReason);
 
-        // The load-bearing claim of the .tmp + File::Replace pattern is
-        // that a mid-script failure leaves the ORIGINAL appsettings.json
-        // intact, not truncated or missing. Forcing the failure path here
-        // by seeding a fixture with the wrong shape under .Onnx, so the
-        // assignment $json.Onnx.ExecutionProvider = $ep throws.
-        string fixturePath = CreateMalformedFixture();
+        // The load-bearing claim of the .tmp + MoveFileEx pattern is that a
+        // failure AT THE RENAME STEP (after the .tmp was successfully
+        // written) leaves the ORIGINAL appsettings.json intact, not
+        // truncated. Seed a well-formed fixture and force MoveFileEx to
+        // fail by marking the target read-only -- ConvertFrom-Json /
+        // property writes / Set-Content all succeed; MoveFileEx returns
+        // false with ERROR_ACCESS_DENIED.
+        string fixturePath = CreateFixture();
+        File.SetAttributes(fixturePath, FileAttributes.ReadOnly);
         byte[] originalBytes = File.ReadAllBytes(fixturePath);
 
         try
@@ -223,6 +226,7 @@ public sealed class PatchAppSettingsTests
         }
         finally
         {
+            File.SetAttributes(fixturePath, FileAttributes.Normal);
             File.Delete(fixturePath);
         }
     }
@@ -233,8 +237,12 @@ public sealed class PatchAppSettingsTests
         if (!OperatingSystem.IsWindows())
             Assert.Skip(WindowsOnlySkipReason);
 
-        string fixturePath = CreateMalformedFixture();
-        string tempPath = fixturePath + ".tmp";
+        // Force a failure AFTER Set-Content has created the .tmp by marking
+        // the target read-only so MoveFileEx fails. The catch block's
+        // Remove-Item should clean up the .tmp regardless.
+        string fixturePath = CreateFixture();
+        string tempPath = fixturePath + TempFileSuffix;
+        File.SetAttributes(fixturePath, FileAttributes.ReadOnly);
 
         try
         {
@@ -252,9 +260,47 @@ public sealed class PatchAppSettingsTests
         }
         finally
         {
+            File.SetAttributes(fixturePath, FileAttributes.Normal);
             File.Delete(fixturePath);
             if (File.Exists(tempPath))
                 File.Delete(tempPath);
+        }
+    }
+
+    [Fact]
+    public void EscapeFailedAbortsBeforeAnyWrite()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // Wires the Critical-1 finding: when EscapeAppSettingsProperties.js
+        // records a per-property failure in ESCAPE_FAILED, the patch script
+        // must abort with a non-zero exit and emit the FAILURE: sentinel,
+        // NOT silently write empty values into appsettings.json. Simulate
+        // the failure by passing a non-empty -EscapeFailed directly.
+        string fixturePath = CreateFixture();
+        byte[] originalBytes = File.ReadAllBytes(fixturePath);
+
+        try
+        {
+            int exitCode = TryRunPatchScript(fixturePath,
+                                             "mongodb://example:27017",
+                                             "SaddleRAGTest",
+                                             "http://example:11434",
+                                             "DirectMl",
+                                             escapeFailed: SimulatedEscapeFailure,
+                                             out string stderr
+                                            );
+
+            Assert.NotEqual(expected: 0, exitCode);
+            Assert.Contains(FailureSentinel, stderr);
+            Assert.Contains(SimulatedEscapeFailure, stderr);
+            byte[] afterBytes = File.ReadAllBytes(fixturePath);
+            Assert.Equal(originalBytes, afterBytes);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
         }
     }
 
@@ -335,36 +381,7 @@ public sealed class PatchAppSettingsTests
         return tempPath;
     }
 
-    private static string CreateMalformedFixture()
-    {
-        // Onnx is a string scalar instead of an object, so the assignment
-        // $json.Onnx.ExecutionProvider = $ep inside PatchAppSettings.ps1
-        // throws inside the try block. MongoDB and Ollama are valid so the
-        // earlier ConvertFrom-Json + property reads succeed; the failure
-        // happens AFTER the temp file has been written, which is exactly
-        // the case the atomic-replace pattern exists to protect against.
-        string tempPath = Path.Combine(Path.GetTempPath(), $"saddlerag-malformed-{Guid.NewGuid()}.json");
-        var seed = new JsonObject
-        {
-            ["MongoDB"] = new JsonObject
-            {
-                ["Profiles"] = new JsonObject
-                {
-                    ["local"] = new JsonObject
-                    {
-                        ["ConnectionString"] = "mongodb://placeholder",
-                        ["DatabaseName"] = "Placeholder"
-                    }
-                }
-            },
-            ["Ollama"] = new JsonObject { ["Endpoint"] = "http://placeholder" },
-            ["Onnx"]   = "this-should-be-an-object"
-        };
-        File.WriteAllText(tempPath, seed.ToJsonString(), Encoding.UTF8);
-        return tempPath;
-    }
-
-    private static JsonNode LoadJson(string path)
+private static JsonNode LoadJson(string path)
     {
         string content = File.ReadAllText(path);
         JsonNode? parsed = JsonNode.Parse(content);
@@ -384,6 +401,7 @@ public sealed class PatchAppSettingsTests
                                          databaseName,
                                          ollamaEndpoint,
                                          executionProvider,
+                                         escapeFailed: string.Empty,
                                          out string stderr
                                         );
         if (exitCode != 0)
@@ -403,6 +421,7 @@ public sealed class PatchAppSettingsTests
                                  databaseName,
                                  ollamaEndpoint,
                                  executionProvider,
+                                 escapeFailed: string.Empty,
                                  out _
                                 );
     }
@@ -412,6 +431,24 @@ public sealed class PatchAppSettingsTests
                                          string databaseName,
                                          string ollamaEndpoint,
                                          string executionProvider,
+                                         out string stderr)
+    {
+        return TryRunPatchScript(appSettingsPath,
+                                 connectionString,
+                                 databaseName,
+                                 ollamaEndpoint,
+                                 executionProvider,
+                                 escapeFailed: string.Empty,
+                                 out stderr
+                                );
+    }
+
+    private static int TryRunPatchScript(string appSettingsPath,
+                                         string connectionString,
+                                         string databaseName,
+                                         string ollamaEndpoint,
+                                         string executionProvider,
+                                         string escapeFailed,
                                          out string stderr)
     {
         string? scriptPath = InstallerSourceTreeResolver.TryResolveInstallerFile(PatchScriptFileName);
@@ -427,6 +464,7 @@ public sealed class PatchAppSettingsTests
                                 databaseName,
                                 ollamaEndpoint,
                                 executionProvider,
+                                escapeFailed,
                                 out stderr
                                );
     }
@@ -437,6 +475,7 @@ public sealed class PatchAppSettingsTests
                                         string databaseName,
                                         string ollamaEndpoint,
                                         string executionProvider,
+                                        string escapeFailed,
                                         out string stderr)
     {
         var startInfo = new ProcessStartInfo("powershell.exe")
@@ -461,6 +500,8 @@ public sealed class PatchAppSettingsTests
         startInfo.ArgumentList.Add(ollamaEndpoint);
         startInfo.ArgumentList.Add("-ExecutionProvider");
         startInfo.ArgumentList.Add(executionProvider);
+        startInfo.ArgumentList.Add("-EscapeFailed");
+        startInfo.ArgumentList.Add(escapeFailed);
 
         using Process? proc = Process.Start(startInfo);
         if (proc == null)
@@ -505,4 +546,6 @@ public sealed class PatchAppSettingsTests
     private const string PatchScriptFileName = "PatchAppSettings.ps1";
     private const string FailureSentinel = "PatchAppSettings: FAILURE:";
     private const string UnreadDiagnosticPlaceholder = "(unread)";
+    private const string TempFileSuffix = ".tmp";
+    private const string SimulatedEscapeFailure = "MONGOCONNECTION: simulated escape failure";
 }

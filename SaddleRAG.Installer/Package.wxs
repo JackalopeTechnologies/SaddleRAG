@@ -75,6 +75,13 @@
         <Property Id="OLLAMAENDPOINT_ESCAPED" Secure="yes" />
         <Property Id="ONNX_EXECUTION_PROVIDER_ESCAPED" Secure="yes" />
 
+        <!-- Set by EscapeAppSettingsProperties.js when a per-property escape  -->
+        <!-- throws. PatchAppSettings.ps1 reads this and aborts if non-empty   -->
+        <!-- so the install doesn't silently write empty Mongo / Ollama values -->
+        <!-- when the upstream escape blew up. Declared without a Value so     -->
+        <!-- the "empty == nothing failed" semantic is unambiguous.            -->
+        <Property Id="ESCAPE_FAILED" Secure="yes" />
+
         <!-- Directories -->
         <StandardDirectory Id="ProgramFiles64Folder">
             <Directory Id="MCPFOLDER" Name="SaddleRAG.Mcp" />
@@ -199,7 +206,7 @@
         <SetProperty Id="PatchAppSettings"
                      Before="PatchAppSettings"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]PatchAppSettings.ps1&quot; -AppSettingsPath &quot;[MCPFOLDER]appsettings.json&quot; -ConnectionString &quot;[MONGOCONNECTION_ESCAPED]&quot; -DatabaseName &quot;[MONGODATABASE_ESCAPED]&quot; -OllamaEndpoint &quot;[OLLAMAENDPOINT_ESCAPED]&quot; -ExecutionProvider &quot;[ONNX_EXECUTION_PROVIDER_ESCAPED]&quot;" />
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]PatchAppSettings.ps1&quot; -AppSettingsPath &quot;[MCPFOLDER]appsettings.json&quot; -ConnectionString &quot;[MONGOCONNECTION_ESCAPED]&quot; -DatabaseName &quot;[MONGODATABASE_ESCAPED]&quot; -OllamaEndpoint &quot;[OLLAMAENDPOINT_ESCAPED]&quot; -ExecutionProvider &quot;[ONNX_EXECUTION_PROVIDER_ESCAPED]&quot; -EscapeFailed &quot;[ESCAPE_FAILED]&quot;" />
 
         <CustomAction Id="PatchAppSettings"
                       BinaryRef="Wix4UtilCA_X86"
