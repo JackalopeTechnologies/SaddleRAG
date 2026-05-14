@@ -238,17 +238,24 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
                                                       )
                       );
 
-        using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = session.Run(inputs);
-        var logitsOut = results.First();
-        Tensor<float> logits = logitsOut.AsTensor<float>();
-        ReadOnlySpan<int> dims = logits.Dimensions;
-        if (dims.Length != LogitsRank || dims[index: 0] != batchCount || dims[index: 1] != LogitsPerPair)
-            throw new InvalidOperationException(
-                $"ONNX reranker '{entry.Name}' produced unexpected output shape [{string.Join(",", dims.ToArray())}]; expected [{batchCount}, {LogitsPerPair}]."
-            );
+        OnnxInferenceGate.Acquire();
+        try
+        {
+            using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = session.Run(inputs);
+            Tensor<float> logits = results.First().AsTensor<float>();
+            ReadOnlySpan<int> dims = logits.Dimensions;
+            if (dims.Length != LogitsRank || dims[index: 0] != batchCount || dims[index: 1] != LogitsPerPair)
+                throw new InvalidOperationException(
+                    $"ONNX reranker '{entry.Name}' produced unexpected output shape [{string.Join(",", dims.ToArray())}]; expected [{batchCount}, {LogitsPerPair}]."
+                );
 
-        for(var i = 0; i < batchCount; i++)
-            scores[start + i] = NormalizeLogit(logits[i, 0]);
+            for(var i = 0; i < batchCount; i++)
+                scores[start + i] = NormalizeLogit(logits[i, 0]);
+        }
+        finally
+        {
+            OnnxInferenceGate.Release();
+        }
     }
 
     /// <summary>

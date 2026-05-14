@@ -87,17 +87,6 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
     private readonly bool mModelHasTokenTypeIds;
     private readonly string mModelsDir;
     private readonly InferenceSession mSession;
-
-    // DirectML cannot tolerate concurrent Run() calls on the same
-    // InferenceSession — a query firing during an active re-embed
-    // crashes the GPU with TDR (Windows Timeout Detection and
-    // Recovery), suspends the device, and poisons the session for
-    // the lifetime of the process. Serialize every Run() through
-    // this gate so the only safe inference pattern (one-at-a-time)
-    // is the only inference pattern. The cost is negligible: the
-    // GPU is already the serial bottleneck.
-    private readonly SemaphoreSlim mSessionGate = new SemaphoreSlim(initialCount: 1, maxCount: 1);
-
     private readonly OnnxSettings mSettings;
     private readonly BertTokenizer mTokenizer;
 
@@ -146,7 +135,6 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
     public void Dispose()
     {
         mSession.Dispose();
-        mSessionGate.Dispose();
     }
 
     private float[] EmbedSingle(string text, string prefix)
@@ -176,7 +164,7 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
                       );
 
         float[] pooled;
-        mSessionGate.Wait();
+        OnnxInferenceGate.Acquire();
         try
         {
             using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = mSession.Run(inputs);
@@ -186,7 +174,7 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
         }
         finally
         {
-            mSessionGate.Release();
+            OnnxInferenceGate.Release();
         }
 
         return pooled;
