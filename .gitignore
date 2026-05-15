@@ -9,6 +9,7 @@ Scratch/
 playwright-tmp/
 .worktrees/
 .superpowers/
+docs/
 # Runtime overrides file written by the set_active_embedding_model /
 # set_active_reranker_model / set_execution_provider MCP tools.
 # Operator-machine state — never source-controlled.

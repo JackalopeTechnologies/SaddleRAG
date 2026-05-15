@@ -711,7 +711,7 @@ public class PageCrawler
         string content = await ExtractMainContentAsync(page);
 
         string contentHash = ComputeHash(content);
-        string urlHash = ComputeHash(url);
+        string urlHash = ComputeCanonicalUrlHash(url);
 
         var record = new PageRecord
                          {
@@ -1477,7 +1477,7 @@ public class PageCrawler
         var links = await ExtractLinksAsync(page);
 
         string contentHash = ComputeHash(content);
-        string urlHash = ComputeHash(fetchUrl);
+        string urlHash = ComputeCanonicalUrlHash(fetchUrl);
 
         bool successInScope2 = IsInRootScope(fetchUrl, ctx.RootScope);
         bool successSameHost2 = !successInScope2 && IsSameHost(fetchUrl, ctx.RootScope);
@@ -2295,6 +2295,33 @@ public class PageCrawler
         byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(content));
         string result = Convert.ToHexStringLower(bytes);
         return result;
+    }
+
+    /// <summary>
+    ///     Hash a URL after stripping site-extension noise so that
+    ///     <c>/Generate</c> and <c>/Generate.html</c> map to the same
+    ///     <see cref="PageRecord.Id" />. Without this, a site that serves
+    ///     content both with and without <c>.html</c> (most static-site
+    ///     generators) or any scrape that triggers the
+    ///     <c>FetchWithExtensionRecoveryAsync</c> path on one run and not
+    ///     another ends up with two PageRecords for the same logical page —
+    ///     one with the raw fetched URL stored, one with the normalized
+    ///     form — because page identity is derived from the URL hash. The
+    ///     crawler's <c>Visited</c> tracker already keys on the normalized
+    ///     form; pulling the persisted Id onto the same canonical form
+    ///     closes the loop and makes <c>UpsertPageAsync</c> dedupe the
+    ///     way the rest of the crawl pipeline expects.
+    ///     <para>
+    ///         The <see cref="PageRecord.Url" /> field on the stored
+    ///         record still carries the raw fetched URL (with whatever
+    ///         extension the site served), so links remain clickable —
+    ///         only the synthetic <c>Id</c> is normalized.
+    ///     </para>
+    /// </summary>
+    internal static string ComputeCanonicalUrlHash(string url)
+    {
+        string canonical = NormalizeUrl(url, keepExtension: false) ?? url;
+        return ComputeHash(canonical);
     }
 
     private const int PageTimeoutMs = 30000;

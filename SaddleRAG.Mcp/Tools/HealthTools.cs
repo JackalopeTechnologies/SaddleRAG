@@ -157,7 +157,13 @@ public static class HealthTools
 
         var libraries = await libraryRepo.GetAllLibrariesAsync(ct);
         var recentJobs = await jobRepo.ListRecentAsync(JobType.Scrape, RecentJobsLimit, ct);
-        var runningJobs = await jobRepo.ListRunningAsync(JobType.Scrape, ct);
+        // Stale-running detection has to cover every long-running job type,
+        // not just Scrape — a Reembed or Rescrub that died with the process
+        // (e.g. the DirectML TDR crashes from May 14, 2026) leaves a Running
+        // row that the runner's catch block never got to mark Failed. Without
+        // this widening the dashboard wouldn't surface the orphan and
+        // start_ingest's active-job check would still see it as live.
+        var runningJobs = await jobRepo.ListRunningAsync(jobType: null, ct);
         var mergedJobs = MergeRecentAndRunning(recentJobs, runningJobs);
 
         var suspectList = new List<object>();
@@ -177,6 +183,7 @@ public static class HealthTools
         var recentJobsProjection = mergedJobs.Select(j => new
                                                               {
                                                                   j.Id,
+                                                                  JobType = j.JobType.ToString(),
                                                                   Status = j.Status.ToString(),
                                                                   PipelineState = j.Status.ToString(),
                                                                   Library = j.LibraryId,
