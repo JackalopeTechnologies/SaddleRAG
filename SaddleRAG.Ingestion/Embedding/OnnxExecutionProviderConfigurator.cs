@@ -155,11 +155,20 @@ public static class OnnxExecutionProviderConfigurator
         return result;
     }
 
-#if USE_GPU
-    private static readonly Action<SessionOptions, int> smDefaultDmlAppender =
+#if USE_GPU && !USE_GPU_CUDA
+    // DirectML build (Windows): both DML and CUDA appenders compile. CUDA will fall
+    // back gracefully at runtime on non-CUDA machines via OnnxRuntimeException.
+    private static readonly Action<SessionOptions, int>? smDefaultDmlAppender =
         (opts, deviceId) => opts.AppendExecutionProvider_DML(deviceId);
 
-    private static readonly Action<SessionOptions, int> smDefaultCudaAppender =
+    private static readonly Action<SessionOptions, int>? smDefaultCudaAppender =
+        (opts, deviceId) => opts.AppendExecutionProvider_CUDA(deviceId);
+#elif USE_GPU_CUDA
+    // CUDA build (Linux): AppendExecutionProvider_DML is Windows-only and not compiled
+    // in — the DirectML EP yields a "not compiled in" warning and CPU fallback.
+    private static readonly Action<SessionOptions, int>? smDefaultDmlAppender = null;
+
+    private static readonly Action<SessionOptions, int>? smDefaultCudaAppender =
         (opts, deviceId) => opts.AppendExecutionProvider_CUDA(deviceId);
 #else
     private static readonly Action<SessionOptions, int>? smDefaultDmlAppender = null;

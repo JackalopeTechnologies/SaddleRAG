@@ -41,14 +41,23 @@ public class OllamaBootstrapper
 
     /// <summary>
     ///     Full bootstrap sequence: install → start → pull models.
+    ///     When Ollama is already reachable (e.g. the Docker sidecar is up),
+    ///     installation and service-start are skipped — only model availability
+    ///     is verified, which avoids the Linux <see cref="PlatformNotSupportedException" />
+    ///     that <see cref="EnsureInstalledAsync" /> would throw in a container.
     /// </summary>
     public async Task BootstrapAsync(IReadOnlyList<string>? additionalModels = null,
                                      CancellationToken ct = default)
     {
-        await EnsureInstalledAsync(ct);
-        await EnsureRunningAsync(ct);
-        await EnsureModelsAsync(additionalModels, ct);
+        if (await IsReachableAsync(ct))
+            mLogger.LogInformation("Ollama already reachable at {Endpoint}, skipping install/start", mSettings.Endpoint);
+        else
+        {
+            await EnsureInstalledAsync(ct);
+            await EnsureRunningAsync(ct);
+        }
 
+        await EnsureModelsAsync(additionalModels, ct);
         mLogger.LogInformation("Ollama bootstrap complete");
     }
 

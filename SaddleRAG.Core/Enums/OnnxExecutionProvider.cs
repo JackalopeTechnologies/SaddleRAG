@@ -34,12 +34,10 @@ public enum OnnxExecutionProvider
 
     /// <summary>
     ///     CUDA execution on NVIDIA GPUs. Requires the build to reference
-    ///     <c>Microsoft.ML.OnnxRuntime.Gpu</c> and the host to have the
-    ///     CUDA Toolkit installed. <strong>Not currently supported by any
-    ///     SaddleRAG build flavor</strong> — the enum value is defined
-    ///     for forward-compatibility so config files referring to it bind
-    ///     cleanly when CUDA support lands, but
-    ///     <c>OnnxSettings.IsSupportedByBuild</c> still returns false.
+    ///     <c>Microsoft.ML.OnnxRuntime.Gpu</c> (<c>UseGpuCuda=true</c> at build
+    ///     time) and the host to have CUDA 12.x + cuDNN 9.x installed. Available
+    ///     in the Docker <c>:cuda</c> image when run with the NVIDIA Container
+    ///     Toolkit. Not available in the Windows MSI or the CPU Docker image.
     /// </summary>
     Cuda
 }

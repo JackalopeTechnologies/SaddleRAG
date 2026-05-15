@@ -210,7 +210,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker image (PR/push — no push)
+      - name: Build CPU image (PR/push — no push)
         if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: docker/build-push-action@v6
         with:
@@ -218,7 +218,16 @@ jobs:
           push: false
           tags: ghcr.io/jackalopetechnologies/saddlerag:dev
 
-      - name: Build and push Docker image (tag)
+      - name: Build CUDA image (PR/push — no push)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.cuda
+          push: false
+          tags: ghcr.io/jackalopetechnologies/saddlerag:dev-cuda
+
+      - name: Build and push CPU image (tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v6
         with:
@@ -226,7 +235,20 @@ jobs:
           push: true
           tags: |
             ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}
+            ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}-cpu
             ghcr.io/jackalopetechnologies/saddlerag:latest
+            ghcr.io/jackalopetechnologies/saddlerag:cpu
+
+      - name: Build and push CUDA image (tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.cuda
+          push: true
+          tags: |
+            ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}-cuda
+            ghcr.io/jackalopetechnologies/saddlerag:cuda
 
   build:
     # Aggregate gate that resolves the historically-named "build" status
