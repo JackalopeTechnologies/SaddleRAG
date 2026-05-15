@@ -372,6 +372,7 @@ builder.Services
                      }
                     )
        .WithHttpTransport(t => t.Stateless = true)
+       .UseToolExceptionFilter()
        .WithToolsFromAssembly();
 
 // Blazor Server + SignalR for /monitor
