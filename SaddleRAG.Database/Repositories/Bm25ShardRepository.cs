@@ -305,21 +305,22 @@ public class Bm25ShardRepository : IBm25ShardRepository
     ///     Estimate serialized size of a postings list without doing a full
     ///     BSON round-trip. Each Bm25Posting is roughly: ChunkId.Length +
     ///     12 bytes overhead. Conservative — overestimates slightly so we
-    ///     spill a hair earlier than strictly needed.
+    ///     spill a hair earlier than strictly needed. Internal for testing
+    ///     the spill-threshold math without touching Mongo.
     /// </summary>
-    private static int EstimatePostingsSize(IReadOnlyList<Bm25Posting> postings) =>
+    internal static int EstimatePostingsSize(IReadOnlyList<Bm25Posting> postings) =>
         postings.Sum(p => p.ChunkId.Length + PerPostingOverheadBytes);
 
-    private static byte[] SerializePostings(IReadOnlyList<Bm25Posting> postings) =>
+    internal static byte[] SerializePostings(IReadOnlyList<Bm25Posting> postings) =>
         Compress(JsonSerializer.SerializeToUtf8Bytes(postings, smJsonOptions));
 
-    private static IReadOnlyList<Bm25Posting> DeserializePostings(byte[] bytes) =>
+    internal static IReadOnlyList<Bm25Posting> DeserializePostings(byte[] bytes) =>
         JsonSerializer.Deserialize<List<Bm25Posting>>(Decompress(bytes), smJsonOptions) ?? [];
 
-    private static byte[] SerializePostingsDictionary(IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>> dict) =>
+    internal static byte[] SerializePostingsDictionary(IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>> dict) =>
         Compress(JsonSerializer.SerializeToUtf8Bytes(dict, smJsonOptions));
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>>
+    internal static IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>>
         DeserializePostingsDictionary(byte[] bytes) =>
         JsonSerializer.Deserialize<Dictionary<string, List<Bm25Posting>>>(Decompress(bytes), smJsonOptions)
                       ?.ToDictionary(kv => kv.Key,
@@ -328,7 +329,7 @@ public class Bm25ShardRepository : IBm25ShardRepository
                                     ) ??
         new Dictionary<string, IReadOnlyList<Bm25Posting>>();
 
-    private static byte[] Compress(byte[] bytes)
+    internal static byte[] Compress(byte[] bytes)
     {
         using var output = new MemoryStream();
         using(var gzip = new GZipStream(output, CompressionLevel.Fastest))
@@ -339,7 +340,7 @@ public class Bm25ShardRepository : IBm25ShardRepository
         return output.ToArray();
     }
 
-    private static byte[] Decompress(byte[] bytes)
+    internal static byte[] Decompress(byte[] bytes)
     {
         using var input = new MemoryStream(bytes);
         using var gzip = new GZipStream(input, CompressionMode.Decompress);
@@ -355,17 +356,17 @@ public class Bm25ShardRepository : IBm25ShardRepository
         return result;
     }
 
-    private static string MakeShardFileName(string libraryId, string version, int shardIndex) =>
+    internal static string MakeShardFileName(string libraryId, string version, int shardIndex) =>
         $"{libraryId}/{version}/shard-{shardIndex}";
 
-    private static string MakeTermFileName(string libraryId, string version, int shardIndex, string term)
+    internal static string MakeTermFileName(string libraryId, string version, int shardIndex, string term)
     {
         var sanitized = SanitizeForFileName(term);
         var result = $"{libraryId}/{version}/shard-{shardIndex}/term-{sanitized}";
         return result;
     }
 
-    private static string SanitizeForFileName(string term)
+    internal static string SanitizeForFileName(string term)
     {
         var chars = term.Select(c => char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_').ToArray();
         var result = new string(chars);
