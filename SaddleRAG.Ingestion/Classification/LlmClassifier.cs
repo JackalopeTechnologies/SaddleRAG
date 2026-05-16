@@ -24,7 +24,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     LLM-based page classifier using Ollama chat completion.
 ///     Authoritative classification â€” overrides heuristic results.
 /// </summary>
-public class LlmClassifier
+public class LlmClassifier : ILlmClassifier
 {
     public LlmClassifier(IOptions<OllamaSettings> settings,
                          ILogger<LlmClassifier> logger)
