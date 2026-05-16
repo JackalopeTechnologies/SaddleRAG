@@ -58,7 +58,13 @@ public sealed class UnifiedJobView : IUnifiedJobView
         return result;
     }
 
-    private static IReadOnlyList<JobRow> ApplyFilters(IEnumerable<JobRow> rows,
+    /// <summary>
+    ///     Apply status + library-substring filters, order by CreatedAt
+    ///     desc (JobId asc as the tie-breaker), and truncate. Pure: no
+    ///     dependency on the repository, so tests can drive it with
+    ///     in-memory rows. Internal for testability.
+    /// </summary>
+    internal static IReadOnlyList<JobRow> ApplyFilters(IEnumerable<JobRow> rows,
                                                        ScrapeJobStatus? statusFilter,
                                                        string? libraryFilter,
                                                        int limit) =>
@@ -72,7 +78,13 @@ public sealed class UnifiedJobView : IUnifiedJobView
             .Take(limit)
             .ToList();
 
-    private static JobRow Project(JobRecord r)
+    /// <summary>
+    ///     Project a <see cref="JobRecord" /> to the <see cref="JobRow" />
+    ///     wire-shape the Monitor UI consumes. Internal so the
+    ///     status-enum cast + display-hint parsing can be tested
+    ///     independently of the repository.
+    /// </summary>
+    internal static JobRow Project(JobRecord r)
     {
         (string? renameTo, string? scanPath) = ParseDisplayHints(r);
         return new JobRow
