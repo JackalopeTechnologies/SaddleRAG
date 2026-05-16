@@ -165,7 +165,13 @@ jobs:
         # same outputs. MarkdownSummaryGithub feeds the step summary +
         # sticky PR comment below; HtmlInline_AzurePipelines is the
         # downloadable drill-down. TextSummary is for console eyeballing.
+        # REPORTGENERATOR_LICENSE (optional) unlocks ReportGenerator Pro
+        # features when the secret is set; the tool runs in free-tier
+        # mode when the var is empty, so CI doesn't break when the
+        # secret is missing.
         if: success() || failure()
+        env:
+          REPORTGENERATOR_LICENSE: ${{ secrets.REPORTGENERATOR_LICENSE }}
         run: |
           dotnet tool restore
           dotnet tool run reportgenerator \
@@ -297,6 +303,96 @@ jobs:
             ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}-cuda
             ghcr.io/jackalopetechnologies/saddlerag:cuda
 
+  integration-test-linux:
+    # Runs the `[Trait("Category", "Integration")]` tests that depend on a
+    # real Mongo / network. They're gated out of `build-linux` because
+    # they need infrastructure, not because they're flaky — wiring them
+    # up here lets the suite catch regressions in the Mongo-backed
+    # repositories and ecosystem (NuGet / npm / pip) integrations.
+    #
+    # This job is intentionally NOT included in the `build` aggregate
+    # below. Failures here surface as a separate red check on the PR
+    # without blocking the existing required `build` gate. Promote into
+    # `needs:` once a few runs prove stability — for now, "loud signal,
+    # no gate."
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        # Healthcheck so the Test step doesn't race the mongod startup.
+        # `mongosh --eval "db.adminCommand('ping')"` is the canonical
+        # one-shot readiness probe.
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.x'
+
+      - name: Restore
+        run: dotnet restore SaddleRAG.slnx -p:UseGpu=false
+
+      - name: Build
+        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:UseGpu=false
+
+      - name: Install Playwright browsers
+        # FileScrapeAuditTests and DryRunAuditTests instantiate the real
+        # PageCrawler, which launches a Playwright Chromium. The browser
+        # binary doesn't ship with the NuGet package — the publish output
+        # (test bin in this case) emits a playwright.ps1 helper that
+        # downloads it. --with-deps also `apt-get`s the system deps
+        # Playwright needs on a fresh Ubuntu runner.
+        run: pwsh SaddleRAG.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+
+      - name: Cache ONNX models
+        # OnnxProviderIntegrationTests skip when the model files aren't
+        # present on disk. We cache them between CI runs so the bandwidth
+        # cost is one-time per model version. The cache key includes the
+        # specific RepoId + ModelFile filenames so a bump in
+        # OnnxProviderIntegrationTests.BuildSettingsWith* invalidates
+        # correctly. Models live where OnnxProviderIntegrationTests
+        # expects them: Scratch/onnx-spike/models/{name}/.
+        id: cache-onnx-models
+        uses: actions/cache@v4
+        with:
+          path: Scratch/onnx-spike/models
+          key: onnx-models-nomic-v1.5-fp16-mxbai-base-v1-quantized
+
+      - name: Download ONNX models (cache miss)
+        # Mirrors what OnnxModelDownloader does at runtime: pulls the
+        # active embedding + reranker model + tokenizer files from
+        # HuggingFace into the directory layout the tests probe.
+        # nomic-embed-text-v1.5 onnx/model_fp16.onnx is ~140 MB,
+        # mxbai-rerank-base-v1 onnx/model_quantized.onnx is ~180 MB.
+        if: steps.cache-onnx-models.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          NOMIC_DIR=Scratch/onnx-spike/models/nomic-embed-text-v1.5
+          MXBAI_DIR=Scratch/onnx-spike/models/mxbai-rerank-base-v1
+          mkdir -p "$NOMIC_DIR" "$MXBAI_DIR"
+          curl -L -f --retry 3 --retry-delay 5 -o "$NOMIC_DIR/model.onnx" \
+            https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model_fp16.onnx
+          curl -L -f --retry 3 --retry-delay 5 -o "$NOMIC_DIR/vocab.txt" \
+            https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/vocab.txt
+          curl -L -f --retry 3 --retry-delay 5 -o "$MXBAI_DIR/model.onnx" \
+            https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1/resolve/main/onnx/model_quantized.onnx
+          curl -L -f --retry 3 --retry-delay 5 -o "$MXBAI_DIR/spm.model" \
+            https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1/resolve/main/spm.model
+
+      - name: Run integration tests
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category=Integration"
+
   build:
     # Aggregate gate that resolves the historically-named "build" status
     # check still required by master's branch protection rules. Before
@@ -309,6 +405,9 @@ jobs:
     # can promote build-windows / build-linux / docker to required and
     # drop this aggregate, but until then this keeps the contract
     # green-on-green-on-green = mergeable.
+    #
+    # integration-test-linux is intentionally NOT a dependency yet —
+    # it runs in parallel as a non-blocking signal until we trust it.
     runs-on: ubuntu-latest
     needs: [build-windows, build-linux, docker]
     if: always()
