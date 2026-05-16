@@ -12,7 +12,6 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
-using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
@@ -50,13 +49,8 @@ public class IngestionOrchestrator
         mLlmClassifier = llmClassifier;
         mChunker = chunker;
         mEmbeddingProvider = embeddingProvider;
-        mLibraryRepository = libraryRepository;
         mPageRepository = pageRepository;
         mChunkRepository = chunkRepository;
-        mLibraryProfileRepository = libraryProfileRepository;
-        mLibraryIndexRepository = libraryIndexRepository;
-        mBm25ShardRepository = bm25ShardRepository;
-        mSuspectDetector = suspectDetector;
         mBroadcaster = broadcaster;
         mLogger = logger;
         mCrawlStage = new CrawlStage(crawler, logger);
@@ -64,9 +58,17 @@ public class IngestionOrchestrator
         mChunkStage = new ChunkStage(chunker, broadcaster, logger);
         mEmbedStage = new EmbedStage(embeddingProvider, chunkRepository, broadcaster, logger);
         mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
+        mFinalizer = new IngestionFinalizer(chunkRepository,
+                                            bm25ShardRepository,
+                                            libraryIndexRepository,
+                                            libraryRepository,
+                                            embeddingProvider,
+                                            libraryProfileRepository,
+                                            suspectDetector,
+                                            logger
+                                           );
     }
 
-    private readonly IBm25ShardRepository mBm25ShardRepository;
     private readonly IMonitorBroadcaster mBroadcaster;
 
     private readonly CategoryAwareChunker mChunker;
@@ -78,14 +80,11 @@ public class IngestionOrchestrator
     private readonly CrawlStage mCrawlStage;
     private readonly IEmbeddingProvider mEmbeddingProvider;
     private readonly EmbedStage mEmbedStage;
+    private readonly IngestionFinalizer mFinalizer;
     private readonly IndexStage mIndexStage;
-    private readonly ILibraryIndexRepository mLibraryIndexRepository;
-    private readonly ILibraryProfileRepository mLibraryProfileRepository;
-    private readonly ILibraryRepository mLibraryRepository;
     private readonly LlmClassifier mLlmClassifier;
     private readonly ILogger<IngestionOrchestrator> mLogger;
     private readonly IPageRepository mPageRepository;
-    private readonly SuspectDetector mSuspectDetector;
 
     /// <summary>
     ///     Run the streaming ingestion pipeline for a scrape job.
@@ -213,12 +212,8 @@ public class IngestionOrchestrator
             throw;
         }
 
-        // Build BM25 index over the freshly persisted chunks so hybrid
-        // search has both signals available without a follow-up rescrub.
-        await BuildBm25IndexAsync(job, ct);
-
-        // Update library metadata
-        await UpdateLibraryMetadataAsync(job, progress, ct);
+        // BM25 build + library metadata upsert + suspect evaluation.
+        await mFinalizer.RunAsync(job, progress, ct);
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
         onProgress?.Invoke(progress);
@@ -231,8 +226,6 @@ public class IngestionOrchestrator
                                progress.ChunksCompleted
                               );
     }
-
-    private const int SuspectSampleTitleLimit = 5;
 
     private const int PageChannelCapacity = 50;
     private const int ChunkChannelCapacity = 20;
@@ -336,7 +329,7 @@ public class IngestionOrchestrator
                               LibraryHint = libraryId,
                               AllowedUrlPatterns = []
                           };
-        await BuildBm25IndexAsync(bm25Job, ct);
+        await mFinalizer.BuildBm25IndexAsync(bm25Job, ct);
 
         var result = new SinglePageIngestResult
                          {
@@ -391,132 +384,6 @@ public class IngestionOrchestrator
             embedded[i] = chunks[i] with { Embedding = embeddings[i] };
 
         return embedded;
-    }
-
-    #endregion
-
-    #region BM25 index
-
-    /// <summary>
-    ///     Build the sharded BM25 inverted index over the chunks just
-    ///     persisted by the embed/index stage, then upsert the matching
-    ///     <see cref="LibraryIndex" /> with the inline stats.
-    ///     If a prior index exists (e.g. from a previous rescrub), its
-    ///     <c>CodeFenceSymbols</c> and <c>Manifest</c> fields are preserved
-    ///     so a re-scrape doesn't blow away symbol-extraction state until
-    ///     the next rescrub recomputes it.
-    /// </summary>
-    private async Task BuildBm25IndexAsync(ScrapeJob job, CancellationToken ct)
-    {
-        var chunks = await mChunkRepository.GetChunksAsync(job.LibraryId, job.Version, ct);
-        if (chunks.Count == 0)
-        {
-            mLogger.LogWarning("BM25 build skipped for {LibraryId} v{Version}: no chunks persisted",
-                               job.LibraryId,
-                               job.Version
-                              );
-        }
-        else
-            await PersistBm25IndexAsync(job, chunks, ct);
-    }
-
-    private async Task PersistBm25IndexAsync(ScrapeJob job, IReadOnlyList<DocChunk> chunks, CancellationToken ct)
-    {
-        var build = Bm25IndexBuilder.Build(job.LibraryId, job.Version, chunks);
-        await mBm25ShardRepository.ReplaceShardsAsync(job.LibraryId, job.Version, build.Shards, ct);
-
-        var existing = await mLibraryIndexRepository.GetAsync(job.LibraryId, job.Version, ct);
-        var index = new LibraryIndex
-                        {
-                            Id = LibraryIndexRepository.MakeId(job.LibraryId, job.Version),
-                            LibraryId = job.LibraryId,
-                            Version = job.Version,
-                            Bm25 = build.Stats,
-                            CodeFenceSymbols = existing?.CodeFenceSymbols ?? [],
-                            Manifest = existing?.Manifest ?? new LibraryManifest()
-                        };
-        await mLibraryIndexRepository.UpsertAsync(index, ct);
-
-        mLogger.LogInformation("BM25 index built for {LibraryId} v{Version}: {Docs} docs, {Shards} shards, avgLen={AvgLen:F1}",
-                               job.LibraryId,
-                               job.Version,
-                               build.Stats.DocumentCount,
-                               build.Stats.ShardCount,
-                               build.Stats.AverageDocLength
-                              );
-    }
-
-    #endregion
-
-    #region Library metadata
-
-    private async Task UpdateLibraryMetadataAsync(ScrapeJob job, ScrapeJobRecord progress, CancellationToken ct)
-    {
-        var library = await mLibraryRepository.GetLibraryAsync(job.LibraryId, ct);
-        if (library == null)
-        {
-            library = new LibraryRecord
-                          {
-                              Id = job.LibraryId,
-                              Name = job.LibraryId,
-                              Hint = job.LibraryHint,
-                              CurrentVersion = job.Version,
-                              AllVersions = [job.Version]
-                          };
-        }
-        else
-        {
-            library.CurrentVersion = job.Version;
-            if (!library.AllVersions.Contains(job.Version))
-                library.AllVersions.Add(job.Version);
-        }
-
-        await mLibraryRepository.UpsertLibraryAsync(library, ct);
-
-        var versionRecord = new LibraryVersionRecord
-                                {
-                                    Id = $"{job.LibraryId}/{job.Version}",
-                                    LibraryId = job.LibraryId,
-                                    Version = job.Version,
-                                    ScrapedAt = DateTime.UtcNow,
-                                    PageCount = progress.PagesFetched,
-                                    ChunkCount = progress.ChunksCompleted,
-                                    EmbeddingProviderId = mEmbeddingProvider.ProviderId,
-                                    EmbeddingModelName = mEmbeddingProvider.ModelName,
-                                    EmbeddingDimensions = mEmbeddingProvider.Dimensions
-                                };
-        await mLibraryRepository.UpsertVersionAsync(versionRecord, ct);
-        await EvaluateSuspectAsync(job, progress, ct);
-    }
-
-    private async Task EvaluateSuspectAsync(ScrapeJob job, ScrapeJobRecord progress, CancellationToken ct)
-    {
-        var languageMix = await mChunkRepository.GetLanguageMixAsync(job.LibraryId, job.Version, ct);
-        var hostnameDist = await mChunkRepository.GetHostnameDistributionAsync(job.LibraryId, job.Version, ct);
-        var sampleTitles =
-            await mChunkRepository.GetSampleTitlesAsync(job.LibraryId, job.Version, SuspectSampleTitleLimit, ct);
-
-        var profile = await mLibraryProfileRepository.GetAsync(job.LibraryId, job.Version, ct);
-        var declaredLanguages = profile?.Languages ?? [];
-
-        // distinctLinkTargets: SparseLinkGraph disabled until an outbound-link count helper exists.
-        // Passed as int.MaxValue so it never triggers; the other four reasons cover the common cases.
-        var reasons = await mSuspectDetector.EvaluateAsync(job.LibraryId,
-                                                           job.Version,
-                                                           job.RootUrl,
-                                                           progress.PagesCompleted,
-                                                           hostnameDist.Count,
-                                                           int.MaxValue,
-                                                           languageMix,
-                                                           declaredLanguages,
-                                                           sampleTitles,
-                                                           ct
-                                                          );
-
-        if (reasons.Count > 0)
-            await mLibraryRepository.SetSuspectAsync(job.LibraryId, job.Version, reasons, ct);
-        else
-            await mLibraryRepository.ClearSuspectAsync(job.LibraryId, job.Version, ct);
     }
 
     #endregion
