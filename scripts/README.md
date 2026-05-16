@@ -30,6 +30,20 @@ scripts/coverage.sh
 | `-NoOpen` | `--no-open` | Skip the browser launch (useful in CI or headless runs). |
 | `-Filter <expr>` | `--filter <expr>` | Override the default `Category!=Integration` xUnit filter. |
 
+### ReportGenerator Pro license (optional)
+
+If you have a [ReportGenerator Pro](https://reportgenerator.io/pro) license, set the `REPORTGENERATOR_LICENSE` environment variable and the tool will pick it up automatically — no script change needed:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable('REPORTGENERATOR_LICENSE', 'your-key', 'User')
+```
+
+```bash
+export REPORTGENERATOR_LICENSE="your-key"  # ~/.bashrc or ~/.zshrc
+```
+
+CI reads the same env var from the `REPORTGENERATOR_LICENSE` repo secret. Without the secret, the tool runs in free-tier mode — CI doesn't break.
+
 ### Gating policy
 
 No coverage gate is enforced. The scripts exit 0 on a successful test run regardless of coverage percentage. Picking a hard threshold at the current floor would just churn PRs — the right time to add a gate is after intentional coverage lifts on the assemblies that drag the average down (`SaddleRAG.Cli`, `SaddleRAG.Monitor`, `SaddleRAG.Database`).

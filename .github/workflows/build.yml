@@ -165,7 +165,13 @@ jobs:
         # same outputs. MarkdownSummaryGithub feeds the step summary +
         # sticky PR comment below; HtmlInline_AzurePipelines is the
         # downloadable drill-down. TextSummary is for console eyeballing.
+        # REPORTGENERATOR_LICENSE (optional) unlocks ReportGenerator Pro
+        # features when the secret is set; the tool runs in free-tier
+        # mode when the var is empty, so CI doesn't break when the
+        # secret is missing.
         if: success() || failure()
+        env:
+          REPORTGENERATOR_LICENSE: ${{ secrets.REPORTGENERATOR_LICENSE }}
         run: |
           dotnet tool restore
           dotnet tool run reportgenerator \
@@ -339,6 +345,15 @@ jobs:
 
       - name: Build
         run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:UseGpu=false
+
+      - name: Install Playwright browsers
+        # FileScrapeAuditTests and DryRunAuditTests instantiate the real
+        # PageCrawler, which launches a Playwright Chromium. The browser
+        # binary doesn't ship with the NuGet package — the publish output
+        # (test bin in this case) emits a playwright.ps1 helper that
+        # downloads it. --with-deps also `apt-get`s the system deps
+        # Playwright needs on a fresh Ubuntu runner.
+        run: pwsh SaddleRAG.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
 
       - name: Run integration tests
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category=Integration"
