@@ -9,6 +9,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
@@ -32,7 +33,7 @@ namespace SaddleRAG.Mcp.Tools;
 [McpServerToolType]
 public static class SearchTools
 {
-    private record HybridCandidate
+    internal record HybridCandidate
     {
         public required DocChunk Chunk { get; init; }
         public required float VectorScore { get; init; }
@@ -66,6 +67,7 @@ public static class SearchTools
                                                 RepositoryFactory repositoryFactory,
                                                 IOptions<RankingSettings> rankingOptions,
                                                 IQueryMetrics metrics,
+                                                ILogger<SearchToolsLog> logger,
                                                 [Description("Natural language search query")]
                                                 string query,
                                                 [Description("Library identifier — omit to search all libraries")]
@@ -87,6 +89,7 @@ public static class SearchTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(rankingOptions);
         ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(logger);
         ArgumentException.ThrowIfNullOrEmpty(query);
 
         var libraryRepository = repositoryFactory.GetLibraryRepository(profile);
@@ -104,6 +107,7 @@ public static class SearchTools
                                                                     repositoryFactory,
                                                                     rankingOptions.Value,
                                                                     metrics,
+                                                                    logger,
                                                                     query,
                                                                     library,
                                                                     resolvedVersion,
@@ -117,6 +121,16 @@ public static class SearchTools
         }
 
         return json;
+    }
+
+    /// <summary>
+    ///     Logger category for <see cref="SearchTools" />. Separate marker
+    ///     type so the static tool class can take <c>ILogger&lt;T&gt;</c>
+    ///     via DI on its method parameter list — generic type parameters
+    ///     can't point at a static class directly.
+    /// </summary>
+    public sealed class SearchToolsLog
+    {
     }
 
     [McpServerTool(Name = "get_class_reference")]
@@ -336,6 +350,7 @@ public static class SearchTools
                                                          RepositoryFactory repositoryFactory,
                                                          RankingSettings rankingSettings,
                                                          IQueryMetrics metrics,
+                                                         ILogger<SearchToolsLog> logger,
                                                          string query,
                                                          string? library,
                                                          string? resolvedVersion,
@@ -391,6 +406,23 @@ public static class SearchTools
         bm25Sw.Stop();
 
         var hybrid = BlendVectorAndBm25(searchResults, bm25Scores, rankingSettings.Bm25Weight);
+
+        // Identifier-shape fast path is an enhancement over the hybrid
+        // pool — skipped on cross-library queries to avoid noisy
+        // near-matches from many libraries at once. Failures degrade to
+        // hybrid-only via InjectIdentifierMatchesOrFallbackAsync.
+        if (queryIsIdentifierShape && library != null && resolvedVersion != null)
+        {
+            var chunkRepository = repositoryFactory.GetChunkRepository(profile);
+            hybrid = await InjectIdentifierMatchesOrFallbackAsync(hybrid,
+                                                                  chunkRepository,
+                                                                  query,
+                                                                  library,
+                                                                  resolvedVersion,
+                                                                  logger,
+                                                                  ct
+                                                                 );
+        }
 
         var rerankActive = ShouldRerank(rankingSettings.ReRankerStrategy, queryIsIdentifierShape, hybrid.Count);
         var reRankCandidateCount = rerankActive ? ResolveReRankCandidateCount(hybrid.Count, rankingSettings) : 0;
@@ -684,6 +716,111 @@ public static class SearchTools
         return result;
     }
 
+    /// <summary>
+    ///     Runs <see cref="InjectIdentifierMatchesAsync" /> and swallows
+    ///     any non-cancellation exception, returning the original hybrid
+    ///     pool with a warning logged. The fast path is an enhancement —
+    ///     a transient repository or tokenization failure must not regress
+    ///     a search that the hybrid pipeline already answered. Cancellation
+    ///     still propagates so the request can shed.
+    /// </summary>
+    internal static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesOrFallbackAsync(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IChunkRepository chunkRepository,
+        string query,
+        string library,
+        string version,
+        ILogger<SearchToolsLog> logger,
+        CancellationToken ct)
+    {
+        IReadOnlyList<HybridCandidate> result;
+
+        try
+        {
+            result = await InjectIdentifierMatchesAsync(hybrid, chunkRepository, query, library, version, ct);
+        }
+        catch(Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                              "Identifier fast-path skipped for query={Query}, library={Library}, version={Version}; degrading to hybrid-only results",
+                              query,
+                              library,
+                              version
+                             );
+            result = hybrid;
+        }
+
+        return result;
+    }
+
+    internal static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesAsync(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IChunkRepository chunkRepository,
+        string query,
+        string library,
+        string version,
+        CancellationToken ct)
+    {
+        var tokens = IdentifierTokenizer.ExtractDistinct(query, MinIdentifierTokenLength);
+        var matches = new List<DocChunk>();
+
+        foreach(var token in tokens.Take(MaxIdentifierLookupTokens))
+        {
+            var chunks = await chunkRepository.FindByQualifiedNameAsync(library, version, token, ct);
+            foreach(var chunk in chunks.Where(c => IsExactCaseInsensitiveQualifiedNameMatch(c, token)))
+                matches.Add(chunk);
+        }
+
+        var result = InjectIdentifierMatches(hybrid, matches);
+        return result;
+    }
+
+    private static bool IsExactCaseInsensitiveQualifiedNameMatch(DocChunk chunk, string token)
+    {
+        var result = !string.IsNullOrEmpty(chunk.QualifiedName) &&
+                     string.Equals(chunk.QualifiedName, token, StringComparison.OrdinalIgnoreCase);
+        return result;
+    }
+
+    /// <summary>
+    ///     Prepend chunks not already present in <paramref name="hybrid" />
+    ///     as synthetic <see cref="HybridCandidate" /> rows with zero
+    ///     vector, BM25, and hybrid scores. Zero scores are intentional —
+    ///     these rows exist solely to enter the rerank slice; with rerank
+    ///     disabled they sort to the bottom of the pool. The count is
+    ///     capped at <see cref="MaxInjectedIdentifierMatches" /> so a
+    ///     query that hits a popular <c>QualifiedName</c> can't crowd
+    ///     genuinely top-scored hybrid hits out of the rerank window.
+    /// </summary>
+    internal static IReadOnlyList<HybridCandidate> InjectIdentifierMatches(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IReadOnlyList<DocChunk> matches)
+    {
+        IReadOnlyList<HybridCandidate> result = hybrid;
+
+        if (matches.Count > 0)
+        {
+            var existing = hybrid.Select(c => c.Chunk.Id).ToHashSet(StringComparer.Ordinal);
+            var injected = matches
+                          .DistinctBy(c => c.Id, StringComparer.Ordinal)
+                          .Where(c => !existing.Contains(c.Id))
+                          .Take(MaxInjectedIdentifierMatches)
+                          .Select(c => new HybridCandidate
+                                           {
+                                               Chunk = c,
+                                               VectorScore = 0f,
+                                               Bm25Score = 0.0,
+                                               HybridScore = 0.0
+                                           }
+                                 )
+                          .ToList();
+            if (injected.Count > 0)
+                result = injected.Concat(hybrid).ToList();
+        }
+
+        return result;
+    }
+
     private static int ResolveVectorCandidateCount(int maxResults, RankingSettings rankingSettings)
     {
         var multiplier = Math.Max(MinimumCandidateMultiplier, rankingSettings.VectorCandidateMultiplier);
@@ -710,6 +847,9 @@ public static class SearchTools
     private const int MinimumCandidateCount = 1;
     private const int MinimumCandidateMultiplier = 2;
     private const int MaxOverviewResults = 5;
+    private const int MinIdentifierTokenLength = 2;
+    private const int MaxIdentifierLookupTokens = 4;
+    private const int MaxInjectedIdentifierMatches = 5;
     private static readonly IReadOnlyDictionary<string, double> smEmptyBm25Scores =
         new Dictionary<string, double>(StringComparer.Ordinal);
 

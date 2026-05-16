@@ -139,13 +139,13 @@ public static class Bm25IndexBuilder
             counts[lower] = counts.TryGetValue(lower, out var c) ? c + 1 : 1;
         }
 
-        // 2) Original-cased identifier tokens (preserve case so
-        //    PascalCase queries match without lowercasing).
-        foreach(var match in smIdentifierTokenRegex.Matches(chunk.Content).Where(m => m.Value.Length >= MinTokenLength))
-        {
-            var raw = match.Value;
-            counts[raw] = counts.TryGetValue(raw, out var c) ? c + 1 : 1;
-        }
+        // 2) Identifier tokens via IdentifierTokenizer.EmitRawAndLowercase
+        //    — emits both raw casing AND a lowercase variant so a query
+        //    like "axisfault.disabled" matches an indexed
+        //    "AxisFault.Disabled". The prose tokenizer above can't bridge
+        //    that gap because it splits on the separators.
+        foreach(var token in IdentifierTokenizer.EmitRawAndLowercase(chunk.Content, MinTokenLength))
+            counts[token] = counts.TryGetValue(token, out var c) ? c + 1 : 1;
 
         var docLength = counts.Values.Sum();
         if (docLength > 0)
@@ -172,10 +172,6 @@ public static class Bm25IndexBuilder
     private const uint HashSeed = 2166136261u;
     private const uint HashMultiplier = 16777619u;
 
-    // Prose tokens: word characters, lowercased after match.
+    // Prose tokens only — identifier tokens live in IdentifierTokenizer.
     private static readonly Regex smProseTokenRegex = new Regex("[A-Za-z][A-Za-z0-9]+", RegexOptions.Compiled);
-
-    // Identifier-shaped tokens: PascalCase, dotted, ::-joined, snake_case.
-    private static readonly Regex smIdentifierTokenRegex =
-        new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*", RegexOptions.Compiled);
 }

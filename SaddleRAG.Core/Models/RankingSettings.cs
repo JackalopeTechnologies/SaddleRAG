@@ -74,7 +74,7 @@ public class RankingSettings
 
     public const float DefaultBm25Weight = 0.4f;
     public const int DefaultVectorCandidateMultiplier = 5;
-    public const int DefaultMinVectorCandidateCount = 25;
-    public const int DefaultMaxReRankCandidates = 12;
+    public const int DefaultMinVectorCandidateCount = 50;
+    public const int DefaultMaxReRankCandidates = 25;
     public const int DefaultProseMentionThreshold = 3;
 }
