@@ -395,6 +395,7 @@ builder.Services.AddHostedService<MonitorLifecycleRelay>();
 builder.Services.AddSingleton<IUnifiedJobView, UnifiedJobView>();
 builder.Services.AddSingleton<MonitorDataService>();
 builder.Services.AddSingleton<MonitorJobService>();
+builder.Services.AddSingleton<IMonitorConfigSource, McpMonitorConfigSource>();
 
 var monitorPort = builder.Configuration.GetValue<int?>(KestrelHttpPortKey) ?? DefaultMonitorPort;
 builder.Services.AddHttpClient<MonitorWriteService>(client =>

@@ -1,0 +1,94 @@
+@* SaddleRAG.Monitor/Pages/ConfigPage.razor *@
+@page "/monitor/config"
+@rendermode InteractiveServer
+@inherits ConfigPageBase
+
+<MudText Typo="Typo.h4" Class="mb-4">Configuration</MudText>
+
+@if (Snapshot is null)
+{
+    <MudProgressCircular Indeterminate="true"/>
+}
+else
+{
+    <MudText Typo="Typo.caption" Class="mb-3">
+        Read-only view. Mutations go through the MCP tool surface
+        (set_active_embedding_model, set_execution_provider, etc.).
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Embedding</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="@($"Provider: {Snapshot.Embedding.ProviderId}")"/>
+                    <MudListItem Text="@($"Model: {Snapshot.Embedding.ModelName}")"/>
+                    <MudListItem Text="@($"Dimensions: {Snapshot.Embedding.Dimensions}")"/>
+                    <MudListItem Text="@($"ONNX-backed: {Snapshot.Embedding.OnnxBacked}")"/>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Reranker</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="@($"Strategy: {Snapshot.Reranker.Strategy}")"/>
+                    <MudListItem Text="@($"Active model: {Snapshot.Reranker.ActiveModel ?? "(none)"}")"/>
+                    <MudListItem Text="@($"ONNX enabled: {Snapshot.Reranker.OnnxEnabled}")"/>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Execution provider</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="@($"Requested: {Snapshot.ExecutionProvider.Requested}")"/>
+                    <MudListItem Text="@($"Active: {Snapshot.ExecutionProvider.Active}")"/>
+                    <MudListItem Text="@($"Matches requested: {Snapshot.ExecutionProvider.MatchesRequested}")"/>
+                    <MudListItem Text="@($"Compiled-in: {string.Join(", ", Snapshot.ExecutionProvider.CompiledInProviders)}")"/>
+                </MudList>
+                @if (!string.IsNullOrEmpty(Snapshot.ExecutionProvider.LastLoadWarning))
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mt-2" Dense="true">
+                        @Snapshot.ExecutionProvider.LastLoadWarning
+                    </MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">MongoDB</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="@($"Active profile: {Snapshot.Mongo.ActiveProfileName}")"/>
+                    <MudListItem Text="@($"Host: {Snapshot.Mongo.Host}")"/>
+                    <MudListItem Text="@($"Database: {Snapshot.Mongo.DatabaseName}")"/>
+                    <MudListItem Text="@($"Credentials present: {Snapshot.Mongo.CredentialsPresent}")"/>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Ollama</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="@($"Endpoint: {Snapshot.Ollama.Endpoint}")"/>
+                    <MudListItem Text="@($"Classification model: {Snapshot.Ollama.ClassificationModel}")"/>
+                    <MudListItem Text="@($"Recon model: {Snapshot.Ollama.ReconModel}")"/>
+                    <MudListItem Text="@($"Embedding model: {Snapshot.Ollama.EmbeddingModel}")"/>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Profile</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="@($"Effective: {Snapshot.Profile.EffectiveProfile}")"/>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
