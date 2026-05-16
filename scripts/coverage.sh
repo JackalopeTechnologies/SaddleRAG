@@ -1,21 +1,7 @@
 #!/usr/bin/env bash
 # Run the test suite with code-coverage collection and produce an HTML report.
-#
-# 1. Restores the local dotnet tool manifest (dotnet-reportgenerator-globaltool).
-# 2. Runs `dotnet test SaddleRAG.Tests` with --collect:"XPlat Code Coverage"
-#    into ./coverage-results.
-# 3. Generates an HTML report under ./coverage-results/html and prints the
-#    summary. On macOS/Linux desktops with `xdg-open` (Linux) or `open`
-#    (macOS) available, the report opens in the default browser unless
-#    --no-open is passed.
-#
-# Coverage gating is NOT enforced — the script exits 0 on a successful
-# test run regardless of the coverage percentage.
-#
-# Usage:
-#   scripts/coverage.sh                       # default: skip integration tests
-#   scripts/coverage.sh --no-open             # don't launch a browser
-#   scripts/coverage.sh --filter "Category=Bench"   # custom xUnit filter
+# See scripts/README.md for the full workflow, flags, gating policy, and CI
+# parity notes. No coverage gate is enforced.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

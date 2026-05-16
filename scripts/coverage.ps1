@@ -3,23 +3,15 @@
 Run the test suite with code-coverage collection and open an HTML report.
 
 .DESCRIPTION
-1. Restores the local dotnet tool manifest (dotnet-reportgenerator-globaltool).
-2. Runs `dotnet test SaddleRAG.Tests` with --collect:"XPlat Code Coverage"
-   into ./coverage-results.
-3. Generates an HTML report under ./coverage-results/html and opens
-   index.html.
-
-Coverage gating is NOT enforced — the script always exits 0 on a successful
-test run regardless of the coverage percentage. Add a gate by parsing
-./coverage-results/html/Summary.txt if you decide to enforce one later.
+See scripts/README.md for the full workflow, flags, gating policy, and
+CI parity notes. No coverage gate is enforced.
 
 .PARAMETER NoOpen
 Skip opening the generated report in the default browser.
 
 .PARAMETER Filter
-xUnit filter expression passed through to dotnet test (e.g.
-"Category!=Integration"). Default: exclude integration tests so the run
-matches CI.
+xUnit filter expression passed through to dotnet test. Default
+`Category!=Integration` matches CI.
 #>
 [CmdletBinding()]
 param

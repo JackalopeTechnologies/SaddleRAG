@@ -148,20 +148,23 @@ jobs:
         run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }}
 
       - name: Test (with coverage)
-        # `--collect:"XPlat Code Coverage"` picks up coverlet.collector
+        # --collect:"XPlat Code Coverage" picks up coverlet.collector
         # already referenced by SaddleRAG.Tests.csproj. Output lands under
         # ./coverage-results/<guid>/coverage.cobertura.xml — one file per
-        # test project run. The Codecov upload step below globs the tree.
+        # test project run.
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category!=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
 
       - name: Upload coverage to Codecov
+        # codecov/codecov-action@v4 supports tokenless OIDC upload for public
+        # repos — no CODECOV_TOKEN needed. fail_ci_if_error stays false so a
+        # Codecov outage doesn't break the build status; the artifact upload
+        # below is the redundant copy.
         if: success() || failure()
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage-results/**/coverage.cobertura.xml
           flags: linux
           fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload coverage XML artifact
         if: success() || failure()
@@ -169,6 +172,10 @@ jobs:
         with:
           name: coverage-cobertura-${{ steps.version.outputs.PackageVersion }}
           path: ./coverage-results/**/coverage.cobertura.xml
+          # Fail loudly when the Test step "succeeded" but produced no XML —
+          # signals a coverlet.collector attach failure that the green check
+          # would otherwise hide.
+          if-no-files-found: error
 
       - name: Publish
         run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime linux-x64 --self-contained true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }} --output ./artifacts/linux/publish
