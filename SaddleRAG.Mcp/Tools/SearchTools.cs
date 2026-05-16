@@ -392,6 +392,26 @@ public static class SearchTools
 
         var hybrid = BlendVectorAndBm25(searchResults, bm25Scores, rankingSettings.Bm25Weight);
 
+        // Identifier-shape fast path. When the query smells like a symbol
+        // and a specific library was requested, look up chunks whose
+        // QualifiedName matches the query (case-insensitive) and inject
+        // them ahead of the hybrid pool so they get a rerank shot
+        // regardless of where they ranked in vector+BM25 hybrid scoring.
+        // The cross-encoder then decides their final position. Skipped on
+        // cross-library queries (library == null) to avoid pulling noisy
+        // substring matches from many libraries at once.
+        if (queryIsIdentifierShape && library != null && resolvedVersion != null)
+        {
+            var chunkRepository = repositoryFactory.GetChunkRepository(profile);
+            hybrid = await InjectIdentifierMatchesAsync(hybrid,
+                                                       chunkRepository,
+                                                       query,
+                                                       library,
+                                                       resolvedVersion,
+                                                       ct
+                                                      );
+        }
+
         var rerankActive = ShouldRerank(rankingSettings.ReRankerStrategy, queryIsIdentifierShape, hybrid.Count);
         var reRankCandidateCount = rerankActive ? ResolveReRankCandidateCount(hybrid.Count, rankingSettings) : 0;
 
@@ -684,6 +704,89 @@ public static class SearchTools
         return result;
     }
 
+    private static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesAsync(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IChunkRepository chunkRepository,
+        string query,
+        string library,
+        string version,
+        CancellationToken ct)
+    {
+        var tokens = ExtractIdentifierTokens(query);
+        var matches = new List<DocChunk>();
+
+        foreach(var token in tokens.Take(MaxIdentifierLookupTokens))
+        {
+            var chunks = await chunkRepository.FindByQualifiedNameAsync(library, version, token, ct);
+            foreach(var chunk in chunks.Where(c => IsExactCaseInsensitiveQualifiedNameMatch(c, token)))
+                matches.Add(chunk);
+        }
+
+        var result = InjectIdentifierMatches(hybrid, matches);
+        return result;
+    }
+
+    /// <summary>
+    ///     Extract identifier-shaped tokens (PascalCase, dotted, ::-joined,
+    ///     snake_case) from a query for QualifiedName lookups. Public so
+    ///     callers and tests can exercise the same tokenization the
+    ///     identifier fast path uses.
+    /// </summary>
+    public static IReadOnlyList<string> ExtractIdentifierTokens(string query)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(query);
+
+        var tokens = smIdentifierTokenRegex
+                    .Matches(query)
+                    .Where(m => m.Value.Length >= MinIdentifierTokenLength)
+                    .Select(m => m.Value)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+        return tokens;
+    }
+
+    private static bool IsExactCaseInsensitiveQualifiedNameMatch(DocChunk chunk, string token)
+    {
+        var result = !string.IsNullOrEmpty(chunk.QualifiedName) &&
+                     string.Equals(chunk.QualifiedName, token, StringComparison.OrdinalIgnoreCase);
+        return result;
+    }
+
+    /// <summary>
+    ///     Prepend chunks not already present in <paramref name="hybrid" />
+    ///     as synthetic <see cref="HybridCandidate" /> rows with zero vector
+    ///     and BM25 scores. Injected items sit at the head of the pool so
+    ///     the rerank slice picks them up; the cross-encoder decides their
+    ///     final ranking from there.
+    /// </summary>
+    private static IReadOnlyList<HybridCandidate> InjectIdentifierMatches(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IReadOnlyList<DocChunk> matches)
+    {
+        IReadOnlyList<HybridCandidate> result = hybrid;
+
+        if (matches.Count > 0)
+        {
+            var existing = hybrid.Select(c => c.Chunk.Id).ToHashSet(StringComparer.Ordinal);
+            var injected = matches
+                          .DistinctBy(c => c.Id, StringComparer.Ordinal)
+                          .Where(c => !existing.Contains(c.Id))
+                          .Select(c => new HybridCandidate
+                                           {
+                                               Chunk = c,
+                                               VectorScore = 0f,
+                                               Bm25Score = 0.0,
+                                               HybridScore = 0.0
+                                           }
+                                 )
+                          .ToList();
+            if (injected.Count > 0)
+                result = injected.Concat(hybrid).ToList();
+        }
+
+        return result;
+    }
+
     private static int ResolveVectorCandidateCount(int maxResults, RankingSettings rankingSettings)
     {
         var multiplier = Math.Max(MinimumCandidateMultiplier, rankingSettings.VectorCandidateMultiplier);
@@ -710,8 +813,19 @@ public static class SearchTools
     private const int MinimumCandidateCount = 1;
     private const int MinimumCandidateMultiplier = 2;
     private const int MaxOverviewResults = 5;
+    private const int MinIdentifierTokenLength = 2;
+    private const int MaxIdentifierLookupTokens = 4;
     private static readonly IReadOnlyDictionary<string, double> smEmptyBm25Scores =
         new Dictionary<string, double>(StringComparer.Ordinal);
+
+    // Mirrors Bm25IndexBuilder/Bm25Scorer identifier regex so the fast path
+    // pulls the same identifier shapes (PascalCase, dotted, ::-joined,
+    // snake_case) that BM25 indexes — keeps tokenization consistent across
+    // the retrieval pipeline.
+    private static readonly System.Text.RegularExpressions.Regex smIdentifierTokenRegex =
+        new System.Text.RegularExpressions.Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*",
+                                                  System.Text.RegularExpressions.RegexOptions.Compiled
+                                                 );
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

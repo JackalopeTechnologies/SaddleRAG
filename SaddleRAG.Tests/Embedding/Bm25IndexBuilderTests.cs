@@ -89,6 +89,30 @@ public sealed class Bm25IndexBuilderTests
     }
 
     [Fact]
+    public void DottedIdentifierTokenIsEmittedInBothRawAndLowercaseForms()
+    {
+        var chunks = new[] { MakeChunk("a", "Use AxisFault.Disabled here") };
+
+        var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
+        var allTerms = build.Shards.SelectMany(s => s.InlineTerms.Keys).ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("AxisFault.Disabled", allTerms);
+        Assert.Contains("axisfault.disabled", allTerms);
+    }
+
+    [Fact]
+    public void PascalCaseIdentifierTokenIsEmittedInBothRawAndLowercaseForms()
+    {
+        var chunks = new[] { MakeChunk("a", "Call MovePvt to move.") };
+
+        var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
+        var allTerms = build.Shards.SelectMany(s => s.InlineTerms.Keys).ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("MovePvt", allTerms);
+        Assert.Contains("movepvt", allTerms);
+    }
+
+    [Fact]
     public void StatsDocumentCountAndAverageDocLengthAreSane()
     {
         var chunks = new[]

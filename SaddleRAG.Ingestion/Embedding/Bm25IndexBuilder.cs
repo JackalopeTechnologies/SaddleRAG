@@ -139,12 +139,20 @@ public static class Bm25IndexBuilder
             counts[lower] = counts.TryGetValue(lower, out var c) ? c + 1 : 1;
         }
 
-        // 2) Original-cased identifier tokens (preserve case so
-        //    PascalCase queries match without lowercasing).
+        // 2) Identifier tokens emitted in BOTH original-case (preserve case
+        //    so case-sensitive matches still win) AND lowercase (so a query
+        //    like "axisfault.disabled" matches an indexed "AxisFault.Disabled"
+        //    — the prose tokenizer can't bridge case mismatches on dotted /
+        //    ::-joined / snake_case identifiers because it splits on the
+        //    separators). Query-side mirror lives in Bm25Scorer.
         foreach(var match in smIdentifierTokenRegex.Matches(chunk.Content).Where(m => m.Value.Length >= MinTokenLength))
         {
             var raw = match.Value;
             counts[raw] = counts.TryGetValue(raw, out var c) ? c + 1 : 1;
+
+            var lower = raw.ToLowerInvariant();
+            if (!string.Equals(lower, raw, StringComparison.Ordinal))
+                counts[lower] = counts.TryGetValue(lower, out var cl) ? cl + 1 : 1;
         }
 
         var docLength = counts.Values.Sum();

@@ -140,9 +140,15 @@ public static class Bm25Scorer
         foreach(var match in smProseTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
             terms.Add(match.Value.ToLowerInvariant());
 
-        // Original-cased identifier tokens.
+        // Identifier tokens in BOTH original-case (preserve case for
+        // case-sensitive scoring) AND lowercase (so case-mismatched
+        // dotted / ::-joined / snake_case identifier queries match
+        // indexed lowercase variants). Mirrors Bm25IndexBuilder.IndexOne.
         foreach(var match in smIdentifierTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
+        {
             terms.Add(match.Value);
+            terms.Add(match.Value.ToLowerInvariant());
+        }
 
         var distinct = terms.Distinct(StringComparer.Ordinal).ToList();
         return distinct;

@@ -94,6 +94,35 @@ public sealed class Bm25ScorerTests
     }
 
     [Fact]
+    public void ExtractQueryTermsEmitsLowercaseVariantOfDottedIdentifier()
+    {
+        var terms = Bm25Scorer.ExtractQueryTerms("AxisFault.Disabled");
+
+        Assert.Contains("AxisFault.Disabled", terms);
+        Assert.Contains("axisfault.disabled", terms);
+    }
+
+    [Fact]
+    public async Task CaseMismatchedDottedIdentifierQueryScoresChunkContainingMixedCase()
+    {
+        var chunks = new[]
+                         {
+                             MakeChunk("a", "Set AxisFault.Disabled to acknowledge."),
+                             MakeChunk("b", "Other unrelated content here.")
+                         };
+
+        var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
+        var lookup = new InMemoryBm25TermLookup(build);
+        var scores = await Bm25Scorer.ScoreAsync(lookup,
+                                                 build.Stats,
+                                                 "axisfault.disabled",
+                                                 TestContext.Current.CancellationToken
+                                                );
+
+        Assert.True(scores.ContainsKey("a"), "case-mismatched dotted identifier should still score the matching chunk");
+    }
+
+    [Fact]
     public async Task DottedIdentifierQueryMatchesDottedIdentifier()
     {
         var chunks = new[]

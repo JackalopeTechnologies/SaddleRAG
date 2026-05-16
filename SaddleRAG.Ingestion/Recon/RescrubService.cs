@@ -83,7 +83,24 @@ public class RescrubService
         RescrubResult result;
 
         if (profile == null)
-            result = new RescrubResult { LibraryId = libraryId, Version = version, ReconNeeded = true };
+        {
+            // No LibraryProfile yet — symbol extraction and reclassification
+            // can't run (they require profile-driven language/style hints),
+            // but BM25 shard rebuild has no profile dependency. Run an
+            // indexes-only refresh so a BM25 builder / tokenizer change
+            // reaches the corpus without forcing recon_library first.
+            // ReconNeeded stays true in the result so callers know full
+            // symbol metadata is still missing.
+            result = await RunIndexesOnlyRescrubAsync(chunkRepo,
+                                                     indexRepo,
+                                                     bm25ShardRepo,
+                                                     libraryId,
+                                                     version,
+                                                     options,
+                                                     onProgress,
+                                                     ct
+                                                    );
+        }
         else
         {
             result = await RunRescrubAsync(chunkRepo,
@@ -101,6 +118,99 @@ public class RescrubService
         }
 
         return result;
+    }
+
+    private async Task<RescrubResult> RunIndexesOnlyRescrubAsync(IChunkRepository chunkRepo,
+                                                                 ILibraryIndexRepository indexRepo,
+                                                                 IBm25ShardRepository bm25ShardRepo,
+                                                                 string libraryId,
+                                                                 string version,
+                                                                 RescrubOptions options,
+                                                                 Action<int, int>? onProgress,
+                                                                 CancellationToken ct)
+    {
+        var chunks = await chunkRepo.GetChunksAsync(libraryId, version, ct);
+        var scoped = options.MaxChunks.HasValue ? chunks.Take(options.MaxChunks.Value).ToList() : chunks.ToList();
+        var boundaryIssues = options.BoundaryAudit ? ChunkBoundaryAudit.CountIssues(scoped) : 0;
+
+        // Report each chunk as "processed" for progress so the UI shows
+        // movement; we don't mutate the chunks themselves in this path.
+        if (onProgress != null)
+        {
+            for(var i = 0; i < scoped.Count; i++)
+                onProgress(i + 1, scoped.Count);
+        }
+
+        var indexesBuilt = false;
+        if (options is { RebuildIndexes: true, DryRun: false })
+        {
+            await PersistIndexesOnlyAsync(indexRepo, bm25ShardRepo, libraryId, version, scoped, ct);
+            indexesBuilt = true;
+        }
+
+        mLogger.LogInformation("Rescrub {Library}/{Version} (indexes-only, no profile): processed={Processed}, indexesBuilt={IndexesBuilt}, dryRun={DryRun}",
+                               libraryId,
+                               version,
+                               scoped.Count,
+                               indexesBuilt,
+                               options.DryRun
+                              );
+
+        var result = new RescrubResult
+                         {
+                             LibraryId = libraryId,
+                             Version = version,
+                             Processed = scoped.Count,
+                             Changed = 0,
+                             BoundaryIssues = boundaryIssues,
+                             DidReclassify = false,
+                             IndexesBuilt = indexesBuilt,
+                             DryRun = options.DryRun,
+                             SampleDiffs = [],
+                             ReconNeeded = true,
+                             ExcludedCount = 0,
+                             Hints = []
+                         };
+        return result;
+    }
+
+    private async Task PersistIndexesOnlyAsync(ILibraryIndexRepository indexRepo,
+                                               IBm25ShardRepository bm25ShardRepo,
+                                               string libraryId,
+                                               string version,
+                                               IReadOnlyList<DocChunk> chunks,
+                                               CancellationToken ct)
+    {
+        // No-profile path: scan chunks for CodeFenceSymbols (profile-free)
+        // and rebuild BM25 shards. Manifest preserves any prior profile/
+        // classifier-version markers when an existing index is present so
+        // a later recon_library run can correctly auto-detect change.
+        var existingIndex = await indexRepo.GetAsync(libraryId, version, ct);
+        var fenceSymbols = CodeFenceScanner.ScanContents(chunks.Select(c => c.Content));
+
+        var bm25Build = Bm25IndexBuilder.Build(libraryId, version, chunks);
+        await bm25ShardRepo.ReplaceShardsAsync(libraryId, version, bm25Build.Shards, ct);
+
+        var manifest = new LibraryManifest
+                           {
+                               LastParserVersion = existingIndex?.Manifest.LastParserVersion ?? ParserVersionInfo.Current,
+                               LastProfileHash = existingIndex?.Manifest.LastProfileHash ?? string.Empty,
+                               LastClassifierVersion = existingIndex?.Manifest.LastClassifierVersion ??
+                                                       mClassifier.GetCurrentVersion(),
+                               LastBuiltUtc = DateTime.UtcNow
+                           };
+
+        var index = new LibraryIndex
+                        {
+                            Id = LibraryIndexRepository.MakeId(libraryId, version),
+                            LibraryId = libraryId,
+                            Version = version,
+                            Bm25 = bm25Build.Stats,
+                            CodeFenceSymbols = fenceSymbols.ToList(),
+                            Manifest = manifest
+                        };
+
+        await indexRepo.UpsertAsync(index, ct);
     }
 
     private async Task<RescrubResult> RunRescrubAsync(IChunkRepository chunkRepo,

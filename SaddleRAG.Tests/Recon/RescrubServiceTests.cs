@@ -23,7 +23,7 @@ namespace SaddleRAG.Tests.Recon;
 public sealed class RescrubServiceTests
 {
     [Fact]
-    public async Task ReturnsReconNeededWhenProfileMissing()
+    public async Task RebuildsBm25AndIndexEvenWhenProfileMissingButStillReportsReconNeeded()
     {
         var service = MakeService();
         var chunkRepo = Substitute.For<IChunkRepository>();
@@ -34,6 +34,9 @@ public sealed class RescrubServiceTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
 
         profileRepo.GetAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns((LibraryProfile?) null);
+        var legacyChunk = MakeLegacyChunk("class Controller { void MoveLinear() { } }");
+        chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
+                 .Returns([legacyChunk]);
 
         var result = await service.RescrubAsync(chunkRepo,
                                                 profileRepo,
@@ -48,8 +51,60 @@ public sealed class RescrubServiceTests
                                                );
 
         Assert.True(result.ReconNeeded);
+        Assert.True(result.IndexesBuilt);
+        Assert.Equal(expected: 1, result.Processed);
+        Assert.Equal(expected: 0, result.Changed);
+
+        await bm25ShardRepo.Received(requiredNumberOfCalls: 1)
+                           .ReplaceShardsAsync("lib",
+                                               "1.0",
+                                               Arg.Any<IReadOnlyList<Bm25Shard>>(),
+                                               Arg.Any<CancellationToken>()
+                                              );
+        await indexRepo.Received(requiredNumberOfCalls: 1)
+                       .UpsertAsync(Arg.Any<LibraryIndex>(), Arg.Any<CancellationToken>());
+
+        // Symbol extraction must NOT run without a profile.
         await chunkRepo.DidNotReceive()
-                       .GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+                       .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DryRunSkipsIndexWritesWhenProfileMissing()
+    {
+        var service = MakeService();
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        var profileRepo = Substitute.For<ILibraryProfileRepository>();
+        var indexRepo = Substitute.For<ILibraryIndexRepository>();
+        var bm25ShardRepo = Substitute.For<IBm25ShardRepository>();
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        var libraryRepo = Substitute.For<ILibraryRepository>();
+
+        profileRepo.GetAsync("lib", "1.0", Arg.Any<CancellationToken>()).Returns((LibraryProfile?) null);
+        chunkRepo.GetChunksAsync("lib", "1.0", Arg.Any<CancellationToken>())
+                 .Returns([MakeLegacyChunk("class Controller { }")]);
+
+        var result = await service.RescrubAsync(chunkRepo,
+                                                profileRepo,
+                                                indexRepo,
+                                                bm25ShardRepo,
+                                                excludedRepo,
+                                                libraryRepo,
+                                                "lib",
+                                                "1.0",
+                                                new RescrubOptions { DryRun = true },
+                                                ct: TestContext.Current.CancellationToken
+                                               );
+
+        Assert.True(result.DryRun);
+        Assert.False(result.IndexesBuilt);
+        await bm25ShardRepo.DidNotReceive()
+                           .ReplaceShardsAsync(Arg.Any<string>(),
+                                               Arg.Any<string>(),
+                                               Arg.Any<IReadOnlyList<Bm25Shard>>(),
+                                               Arg.Any<CancellationToken>()
+                                              );
+        await indexRepo.DidNotReceive().UpsertAsync(Arg.Any<LibraryIndex>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
