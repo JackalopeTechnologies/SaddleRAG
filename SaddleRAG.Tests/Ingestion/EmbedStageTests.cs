@@ -268,6 +268,60 @@ public sealed class EmbedStageTests
     }
 
     [Fact]
+    public async Task EmbedBatchAsyncReturnsChunksWithEmbeddingsAttached()
+    {
+        // Direct call to the helper that both the streaming batch loop and the
+        // orchestrator's single-page ingest path go through. No upsert, no
+        // broadcaster — those are RunAsync's job. Just texts -> embeddings ->
+        // chunks-with-Embedding-set.
+        var provider = ProviderReturning(dimensions: 8);
+        var chunks = new[] { NewChunk("a"), NewChunk("b"), NewChunk("c") };
+
+        var result = await EmbedStage.EmbedBatchAsync(provider,
+                                                      NullLogger.Instance,
+                                                      chunks,
+                                                      TestContext.Current.CancellationToken
+                                                     );
+
+        Assert.Equal(3, result.Length);
+        Assert.All(result,
+                   c =>
+                   {
+                       Assert.NotNull(c.Embedding);
+                       Assert.Equal(8, c.Embedding.Length);
+                   }
+                  );
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsyncCapsPromptTextAtMaxEmbedChars()
+    {
+        // Generate a chunk with content larger than MaxEmbedChars so the
+        // truncation inside EmbedBatchAsync is exercised. The provider
+        // captures the text it actually receives; we assert the cap holds.
+        IReadOnlyList<string>? captured = null;
+        var provider = Substitute.For<IEmbeddingProvider>();
+        provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>())
+                .Returns(call =>
+                         {
+                             captured = call.Arg<IReadOnlyList<string>>();
+                             return Task.FromResult(new[] { new float[4] });
+                         }
+                        );
+        var bigChunk = NewChunk("big") with { Content = new string('x', EmbedStage.MaxEmbedChars * 2) };
+
+        await EmbedStage.EmbedBatchAsync(provider,
+                                         NullLogger.Instance,
+                                         new[] { bigChunk },
+                                         TestContext.Current.CancellationToken
+                                        );
+
+        Assert.NotNull(captured);
+        Assert.Single(captured);
+        Assert.True(captured[0].Length <= EmbedStage.MaxEmbedChars);
+    }
+
+    [Fact]
     public async Task EmbedWithRetryAsyncSurfacesSecondFailureWhenBothCallsThrow()
     {
         var provider = Substitute.For<IEmbeddingProvider>();

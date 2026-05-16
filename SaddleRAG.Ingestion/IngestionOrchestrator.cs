@@ -15,7 +15,6 @@ using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
-using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Suspect;
 
 #endregion
@@ -46,7 +45,6 @@ public class IngestionOrchestrator
                                  ILogger<IngestionOrchestrator> logger)
     {
         mCrawler = crawler;
-        mLlmClassifier = llmClassifier;
         mChunker = chunker;
         mEmbeddingProvider = embeddingProvider;
         mPageRepository = pageRepository;
@@ -82,7 +80,6 @@ public class IngestionOrchestrator
     private readonly EmbedStage mEmbedStage;
     private readonly IngestionFinalizer mFinalizer;
     private readonly IndexStage mIndexStage;
-    private readonly LlmClassifier mLlmClassifier;
     private readonly ILogger<IngestionOrchestrator> mLogger;
     private readonly IPageRepository mPageRepository;
 
@@ -282,7 +279,11 @@ public class IngestionOrchestrator
                                                                       string url,
                                                                       CancellationToken ct)
     {
-        var classified = await ClassifySinglePageAsync(page, libraryId);
+        // Reuse the streaming pipeline's per-page classify + embed primitives
+        // so the single-page path can't drift on prompt format, confidence
+        // threshold, or retry semantics. The orchestrator owns only the
+        // single-page result shape and BM25 refresh.
+        var classified = await mClassifyStage.ClassifyPageAsync(page, libraryId);
         var chunks = mChunker.Chunk(classified);
 
         SinglePageIngestResult result;
@@ -299,39 +300,20 @@ public class IngestionOrchestrator
         }
         else
         {
-            result = await PersistSinglePageChunksAsync(classified,
-                                                        chunks.ToList(),
-                                                        libraryId,
-                                                        version,
-                                                        url,
-                                                        ct
-                                                       );
-        }
+            var embedded = await EmbedStage.EmbedBatchAsync(mEmbeddingProvider, mLogger, chunks, ct);
+            await mChunkRepository.UpsertChunksAsync(embedded, ct);
 
-        return result;
-    }
+            var bm25Job = new ScrapeJob
+                              {
+                                  RootUrl = url,
+                                  LibraryId = libraryId,
+                                  Version = version,
+                                  LibraryHint = libraryId,
+                                  AllowedUrlPatterns = []
+                              };
+            await mFinalizer.BuildBm25IndexAsync(bm25Job, ct);
 
-    private async Task<SinglePageIngestResult> PersistSinglePageChunksAsync(PageRecord classified,
-                                                                            List<DocChunk> chunks,
-                                                                            string libraryId,
-                                                                            string version,
-                                                                            string url,
-                                                                            CancellationToken ct)
-    {
-        var embedded = await EmbedSinglePageChunksAsync(chunks, ct);
-        await mChunkRepository.UpsertChunksAsync(embedded, ct);
-
-        var bm25Job = new ScrapeJob
-                          {
-                              RootUrl = url,
-                              LibraryId = libraryId,
-                              Version = version,
-                              LibraryHint = libraryId,
-                              AllowedUrlPatterns = []
-                          };
-        await mFinalizer.BuildBm25IndexAsync(bm25Job, ct);
-
-        var result = new SinglePageIngestResult
+            result = new SinglePageIngestResult
                          {
                              Status = SinglePageStatusIndexed,
                              Url = url,
@@ -340,50 +322,9 @@ public class IngestionOrchestrator
                              ChunksAdded = embedded.Length,
                              Category = classified.Category.ToString()
                          };
-        return result;
-    }
-
-    private async Task<PageRecord> ClassifySinglePageAsync(PageRecord page, string libraryHint)
-    {
-        PageRecord result;
-        try
-        {
-            (var category, float confidence) = await mLlmClassifier.ClassifyAsync(page, libraryHint);
-            if (category != DocCategory.Unclassified && confidence > 0)
-            {
-                result = page with { Category = category };
-                await mPageRepository.UpsertPageAsync(result);
-            }
-            else
-                result = page;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogWarning(ex, "Single-page classification failed for {Url}, leaving Unclassified", page.Url);
-            result = page;
         }
 
         return result;
-    }
-
-    private async Task<DocChunk[]> EmbedSinglePageChunksAsync(List<DocChunk> chunks, CancellationToken ct)
-    {
-        var texts = chunks
-                    .Select(c =>
-                                EmbedStage.TruncateForEmbedding(
-                                    $"[{c.Category}] [{c.LibraryId}] [{c.PageTitle}]\n{c.Content}",
-                                    EmbedStage.MaxEmbedChars
-                                                               )
-                           )
-                    .ToList();
-
-        float[][] embeddings = await EmbedStage.EmbedWithRetryAsync(mEmbeddingProvider, mLogger, texts, ct);
-
-        var embedded = new DocChunk[chunks.Count];
-        for(var i = 0; i < chunks.Count; i++)
-            embedded[i] = chunks[i] with { Embedding = embeddings[i] };
-
-        return embedded;
     }
 
     #endregion

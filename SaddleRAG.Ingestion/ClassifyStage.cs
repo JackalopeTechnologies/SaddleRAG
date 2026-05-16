@@ -72,7 +72,7 @@ internal sealed class ClassifyStage
         {
             await foreach(var page in input.ReadAllAsync(cts.Token))
             {
-                var classified = await ClassifyPageAsync(page, job, progress);
+                var classified = await ClassifyPageAsync(page, job.LibraryHint, () => progress.IncrementErrorCount());
                 await output.WriteAsync(classified, cts.Token);
                 progress.PagesClassified++;
                 onProgress?.Invoke(progress);
@@ -97,12 +97,21 @@ internal sealed class ClassifyStage
         }
     }
 
-    private async Task<PageRecord> ClassifyPageAsync(PageRecord page, ScrapeJob job, ScrapeJobRecord progress)
+    /// <summary>
+    ///     Classify a single page using the LLM and upsert if high-confidence.
+    ///     Exposed as <c>internal</c> so the orchestrator's single-page ingest
+    ///     path can reuse the exact same classify-and-absorb semantics that
+    ///     the streaming stage applies per page. <paramref name="onError" />
+    ///     is invoked once on any classifier exception (the streaming path
+    ///     wires it to <c>progress.IncrementErrorCount</c>; the single-page
+    ///     path passes <c>null</c> because there is no progress object).
+    /// </summary>
+    internal async Task<PageRecord> ClassifyPageAsync(PageRecord page, string libraryHint, Action? onError = null)
     {
         PageRecord result;
         try
         {
-            (var category, float confidence) = await mLlmClassifier.ClassifyAsync(page, job.LibraryHint);
+            (var category, float confidence) = await mLlmClassifier.ClassifyAsync(page, libraryHint);
             if (category != DocCategory.Unclassified && confidence > 0)
             {
                 result = page with { Category = category };
@@ -114,7 +123,7 @@ internal sealed class ClassifyStage
         catch(Exception ex)
         {
             mLogger.LogWarning(ex, "LLM classification failed for {Url}, passing as Unclassified", page.Url);
-            progress.IncrementErrorCount();
+            onError?.Invoke();
             result = page;
         }
 
