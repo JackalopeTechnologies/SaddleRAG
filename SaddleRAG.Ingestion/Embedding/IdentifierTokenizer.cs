@@ -70,10 +70,9 @@ public static class IdentifierTokenizer
 
     /// <summary>
     ///     Extract identifier-shaped tokens, deduped with ordinal
-    ///     comparison. Original casing is preserved because the rerank
-    ///     fast-path uses the result to look up <c>QualifiedName</c>
-    ///     case-insensitively — feeding it lowercased tokens loses the
-    ///     ability to match exact-case indexes first.
+    ///     comparison. Original casing is preserved so callers can look
+    ///     up <c>QualifiedName</c> case-insensitively — lowercasing the
+    ///     input would lose the ability to match exact-case indexes first.
     /// </summary>
     public static IReadOnlyList<string> ExtractDistinct(string input, int minLength)
     {

@@ -407,36 +407,21 @@ public static class SearchTools
 
         var hybrid = BlendVectorAndBm25(searchResults, bm25Scores, rankingSettings.Bm25Weight);
 
-        // Identifier-shape fast path: look up chunks whose QualifiedName
-        // matches the query case-insensitively and surface them to the
-        // cross-encoder even when vector+BM25 hybrid ranked them outside
-        // the top slice. Skipped on cross-library queries (library == null)
-        // to avoid noisy near-matches from many libraries at once. Fast
-        // path is an enhancement over the hybrid pool — a transient Mongo
-        // hiccup or unexpected query shape must NOT regress the search;
-        // catch + log + continue.
+        // Identifier-shape fast path is an enhancement over the hybrid
+        // pool — skipped on cross-library queries to avoid noisy
+        // near-matches from many libraries at once. Failures degrade to
+        // hybrid-only via InjectIdentifierMatchesOrFallbackAsync.
         if (queryIsIdentifierShape && library != null && resolvedVersion != null)
         {
-            try
-            {
-                var chunkRepository = repositoryFactory.GetChunkRepository(profile);
-                hybrid = await InjectIdentifierMatchesAsync(hybrid,
-                                                           chunkRepository,
-                                                           query,
-                                                           library,
-                                                           resolvedVersion,
-                                                           ct
-                                                          );
-            }
-            catch(Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(ex,
-                                  "Identifier fast-path skipped for query={Query}, library={Library}, version={Version}; degrading to hybrid-only results",
-                                  query,
-                                  library,
-                                  resolvedVersion
-                                 );
-            }
+            var chunkRepository = repositoryFactory.GetChunkRepository(profile);
+            hybrid = await InjectIdentifierMatchesOrFallbackAsync(hybrid,
+                                                                  chunkRepository,
+                                                                  query,
+                                                                  library,
+                                                                  resolvedVersion,
+                                                                  logger,
+                                                                  ct
+                                                                 );
         }
 
         var rerankActive = ShouldRerank(rankingSettings.ReRankerStrategy, queryIsIdentifierShape, hybrid.Count);
@@ -728,6 +713,43 @@ public static class SearchTools
                                     IndexNewLibrariesHint
                         };
         var result = JsonSerializer.Serialize(error, smJsonOptions);
+        return result;
+    }
+
+    /// <summary>
+    ///     Runs <see cref="InjectIdentifierMatchesAsync" /> and swallows
+    ///     any non-cancellation exception, returning the original hybrid
+    ///     pool with a warning logged. The fast path is an enhancement —
+    ///     a transient repository or tokenization failure must not regress
+    ///     a search that the hybrid pipeline already answered. Cancellation
+    ///     still propagates so the request can shed.
+    /// </summary>
+    internal static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesOrFallbackAsync(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IChunkRepository chunkRepository,
+        string query,
+        string library,
+        string version,
+        ILogger<SearchToolsLog> logger,
+        CancellationToken ct)
+    {
+        IReadOnlyList<HybridCandidate> result;
+
+        try
+        {
+            result = await InjectIdentifierMatchesAsync(hybrid, chunkRepository, query, library, version, ct);
+        }
+        catch(Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex,
+                              "Identifier fast-path skipped for query={Query}, library={Library}, version={Version}; degrading to hybrid-only results",
+                              query,
+                              library,
+                              version
+                             );
+            result = hybrid;
+        }
+
         return result;
     }
 

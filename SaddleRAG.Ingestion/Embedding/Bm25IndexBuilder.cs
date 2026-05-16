@@ -172,8 +172,6 @@ public static class Bm25IndexBuilder
     private const uint HashSeed = 2166136261u;
     private const uint HashMultiplier = 16777619u;
 
-    // Prose tokens: word characters, lowercased after match. Identifier
-    // tokens live in IdentifierTokenizer to keep BM25 and the search
-    // fast-path aligned on one regex.
+    // Prose tokens only — identifier tokens live in IdentifierTokenizer.
     private static readonly Regex smProseTokenRegex = new Regex("[A-Za-z][A-Za-z0-9]+", RegexOptions.Compiled);
 }

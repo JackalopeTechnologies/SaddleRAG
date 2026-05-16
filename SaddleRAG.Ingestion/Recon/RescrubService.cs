@@ -139,10 +139,7 @@ public class RescrubService
             indexesBuilt = true;
         }
 
-        // Single progress callback at the end: chunks were enumerated (for
-        // BM25 / CodeFenceSymbols) but never mutated, so per-chunk progress
-        // updates would lie about per-item work the way RunRescrubAsync
-        // uses them.
+        // Single end-of-method callback — chunks weren't mutated, so per-chunk progress would misrepresent the work.
         onProgress?.Invoke(scoped.Count, scoped.Count);
 
         mLogger.LogInformation("Rescrub {Library}/{Version} (indexes-only, no profile): processed={Processed}, indexesBuilt={IndexesBuilt}, dryRun={DryRun}",
