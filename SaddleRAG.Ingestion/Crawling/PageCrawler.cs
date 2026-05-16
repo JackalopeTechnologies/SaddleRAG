@@ -29,7 +29,7 @@ namespace SaddleRAG.Ingestion.Crawling;
 ///     Applies a same-scope-unlimited / out-of-scope-depth-limited heuristic
 ///     so that crawls don't recurse forever into linked GitHub or external sites.
 /// </summary>
-public class PageCrawler
+public class PageCrawler : IPageCrawler
 {
     private record CrawlEntry(
         string Url,

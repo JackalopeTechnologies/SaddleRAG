@@ -59,6 +59,7 @@ public class IngestionOrchestrator
         mSuspectDetector = suspectDetector;
         mBroadcaster = broadcaster;
         mLogger = logger;
+        mCrawlStage = new CrawlStage(crawler, logger);
         mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
     }
 
@@ -69,6 +70,7 @@ public class IngestionOrchestrator
     private readonly IChunkRepository mChunkRepository;
 
     private readonly PageCrawler mCrawler;
+    private readonly CrawlStage mCrawlStage;
     private readonly IEmbeddingProvider mEmbeddingProvider;
     private readonly IndexStage mIndexStage;
     private readonly ILibraryIndexRepository mLibraryIndexRepository;
@@ -160,14 +162,14 @@ public class IngestionOrchestrator
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // Launch all five stages
-        var crawlTask = RunCrawlStageAsync(job,
-                                           crawlToClassify.Writer,
-                                           resumeUrls,
-                                           seedUrls,
-                                           progress,
-                                           onProgress,
-                                           cts
-                                          );
+        var crawlTask = mCrawlStage.RunAsync(job,
+                                             crawlToClassify.Writer,
+                                             resumeUrls,
+                                             seedUrls,
+                                             progress,
+                                             onProgress,
+                                             cts
+                                            );
         var classifyTask =
             RunClassifyStageAsync(job,
                                   crawlToClassify.Reader,
@@ -224,53 +226,6 @@ public class IngestionOrchestrator
                                progress.ChunksCompleted
                               );
     }
-
-    #region Crawl stage
-
-    private async Task RunCrawlStageAsync(ScrapeJob job,
-                                          ChannelWriter<PageRecord> output,
-                                          IReadOnlySet<string>? resumeUrls,
-                                          IReadOnlyList<string>? seedUrls,
-                                          ScrapeJobRecord progress,
-                                          Action<ScrapeJobRecord>? onProgress,
-                                          CancellationTokenSource cts)
-    {
-        try
-        {
-            await mCrawler.CrawlAsync(job,
-                                      output,
-                                      progress.Id,
-                                      resumeUrls,
-                                      seedUrls,
-                                      pageCount =>
-                                      {
-                                          progress.PagesFetched = pageCount;
-                                          onProgress?.Invoke(progress);
-                                      },
-                                      queueCount => { progress.PagesQueued = queueCount; },
-                                      () =>
-                                      {
-                                          progress.IncrementErrorCount();
-                                          onProgress?.Invoke(progress);
-                                      },
-                                      cts.Token
-                                     );
-        }
-        catch(OperationCanceledException)
-        {
-            output.TryComplete();
-            throw;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogError(ex, "Crawl stage fatal error");
-            output.TryComplete(ex);
-            await cts.CancelAsync();
-            throw;
-        }
-    }
-
-    #endregion
 
     private static string TruncateForEmbedding(string text, int maxChars)
     {
