@@ -239,49 +239,67 @@ public class OllamaBootstrapper
         }
     }
 
-    private static string? FindOllamaExecutable()
+    private static string? FindOllamaExecutable() =>
+        FindOllamaExecutable(Environment.GetEnvironmentVariable(PathEnvironmentVariable),
+                             File.Exists,
+                             OllamaExeName,
+                             GetDefaultCommonPaths()
+                            );
+
+    /// <summary>
+    ///     Search a PATH-style string and a fallback list of common install
+    ///     paths for <paramref name="exeName" />, returning the first hit
+    ///     according to <paramref name="fileExists" />. Pure: no real
+    ///     environment or file-system access, so tests can drive the search
+    ///     deterministically.
+    /// </summary>
+    internal static string? FindOllamaExecutable(string? pathEnvValue,
+                                                 Func<string, bool> fileExists,
+                                                 string exeName,
+                                                 IReadOnlyList<string> commonPaths)
     {
+        ArgumentNullException.ThrowIfNull(fileExists);
+        ArgumentException.ThrowIfNullOrEmpty(exeName);
+        ArgumentNullException.ThrowIfNull(commonPaths);
+
         string? result = null;
 
-        string[] pathDirs = Environment.GetEnvironmentVariable(PathEnvironmentVariable)?.Split(Path.PathSeparator) ??
-                                [];
-        foreach(string dir in pathDirs)
+        var pathDirs = pathEnvValue?.Split(Path.PathSeparator) ?? [];
+        foreach(var dir in pathDirs.Where(d => result == null && !string.IsNullOrEmpty(d)))
         {
-            if (result == null)
-            {
-                string candidate = Path.Combine(dir, OllamaExeName);
-                if (File.Exists(candidate))
-                    result = candidate;
-            }
+            var candidate = Path.Combine(dir, exeName);
+            if (fileExists(candidate))
+                result = candidate;
         }
 
-        if (result == null)
+        foreach(var path in commonPaths.Where(_ => result == null))
         {
-            string[] commonPaths = OperatingSystem.IsWindows()
-                ? [
-                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                   ProgramsFolderName,
-                                   OllamaFolderName,
-                                   OllamaExeName),
-                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                                   OllamaFolderName,
-                                   OllamaExeName),
-                      @"C:\Program Files\Ollama\ollama.exe"
-                  ]
-                : [
-                      OllamaPathLocalBin,
-                      OllamaPathUsrBin,
-                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                                   OllamaDotDir, OllamaBinDir, OllamaExeNamePosix)
-                  ];
-
-            foreach(string path in commonPaths)
-            {
-                if (result == null && File.Exists(path))
-                    result = path;
-            }
+            if (fileExists(path))
+                result = path;
         }
 
+        return result;
+    }
+
+    private static IReadOnlyList<string> GetDefaultCommonPaths()
+    {
+        IReadOnlyList<string> result = OperatingSystem.IsWindows()
+            ? [
+                  Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                               ProgramsFolderName,
+                               OllamaFolderName,
+                               OllamaExeName),
+                  Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                               OllamaFolderName,
+                               OllamaExeName),
+                  @"C:\Program Files\Ollama\ollama.exe"
+              ]
+            : [
+                  OllamaPathLocalBin,
+                  OllamaPathUsrBin,
+                  Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                               OllamaDotDir, OllamaBinDir, OllamaExeNamePosix)
+              ];
         return result;
     }
 
@@ -437,7 +455,7 @@ public class OllamaBootstrapper
     {
         var client = new OllamaApiClient(new Uri(mSettings.Endpoint));
 
-        var requiredModels = ResolveRequiredModels(additionalModels);
+        var requiredModels = ResolveRequiredModels(mSettings, additionalModels);
 
         var localModels = await client.ListLocalModelsAsync(ct);
         var availableNames = localModels
@@ -446,11 +464,7 @@ public class OllamaBootstrapper
 
         foreach(string model in requiredModels)
         {
-            bool isAvailable = availableNames.Contains(model) ||
-                               availableNames.Contains($"{model}:latest") ||
-                               availableNames.Any(n => n.StartsWith(model, StringComparison.OrdinalIgnoreCase));
-
-            if (isAvailable)
+            if (IsModelAvailable(model, availableNames))
                 mLogger.LogInformation("Model {Model} is available", model);
             else
             {
@@ -465,16 +479,21 @@ public class OllamaBootstrapper
     ///     classification are always required; the reranker model depends
     ///     on the configured ReRankerStrategy so we don't pull a 1.9GB
     ///     cross-encoder when the strategy is Off (or vice versa, pull a
-    ///     legacy reranker model nobody will use).
+    ///     legacy reranker model nobody will use). <c>internal static</c>
+    ///     so tests can drive the resolution against a settings object
+    ///     without standing up the rest of the bootstrapper.
     /// </summary>
-    private HashSet<string> ResolveRequiredModels(IReadOnlyList<string>? additionalModels)
+    internal static HashSet<string> ResolveRequiredModels(OllamaSettings settings,
+                                                          IReadOnlyList<string>? additionalModels)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+
         var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                            {
-                               mSettings.EmbeddingModel
+                               settings.EmbeddingModel
                            };
 
-        var classificationModelName = mSettings.GetActiveClassificationModel().Name;
+        var classificationModelName = settings.GetActiveClassificationModel().Name;
         if (!string.IsNullOrEmpty(classificationModelName))
             required.Add(classificationModelName);
 
@@ -485,6 +504,25 @@ public class OllamaBootstrapper
         }
 
         return required;
+    }
+
+    /// <summary>
+    ///     Determine whether <paramref name="model" /> is satisfied by any
+    ///     name in <paramref name="availableNames" />. Matches three ways:
+    ///     exact (case-insensitive), <c>{model}:latest</c>, or
+    ///     <c>{model}*</c> prefix. The prefix match handles tag-specific
+    ///     installs like <c>phi4:14b</c> satisfying a request for
+    ///     <c>phi4</c>.
+    /// </summary>
+    internal static bool IsModelAvailable(string model, IReadOnlySet<string> availableNames)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(model);
+        ArgumentNullException.ThrowIfNull(availableNames);
+
+        var result = availableNames.Contains(model) ||
+                     availableNames.Contains($"{model}:latest") ||
+                     availableNames.Any(n => n.StartsWith(model, StringComparison.OrdinalIgnoreCase));
+        return result;
     }
 
     private async Task PullModelAsync(OllamaApiClient client, string model, CancellationToken ct)
