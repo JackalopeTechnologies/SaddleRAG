@@ -23,7 +23,7 @@ namespace SaddleRAG.Ingestion.Chunking;
 ///     Each chunk is enriched with extracted Symbols[] and a primary QualifiedName via
 ///     SymbolExtractor.
 /// </summary>
-public class CategoryAwareChunker
+public class CategoryAwareChunker : IChunker
 {
     public CategoryAwareChunker(SymbolExtractor symbolExtractor)
     {

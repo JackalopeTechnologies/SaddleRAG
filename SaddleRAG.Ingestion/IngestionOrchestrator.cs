@@ -61,6 +61,7 @@ public class IngestionOrchestrator
         mLogger = logger;
         mCrawlStage = new CrawlStage(crawler, logger);
         mClassifyStage = new ClassifyStage(llmClassifier, pageRepository, broadcaster, logger);
+        mChunkStage = new ChunkStage(chunker, broadcaster, logger);
         mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
     }
 
@@ -69,6 +70,7 @@ public class IngestionOrchestrator
 
     private readonly CategoryAwareChunker mChunker;
     private readonly IChunkRepository mChunkRepository;
+    private readonly ChunkStage mChunkStage;
     private readonly ClassifyStage mClassifyStage;
 
     private readonly PageCrawler mCrawler;
@@ -179,7 +181,7 @@ public class IngestionOrchestrator
                                                    onProgress,
                                                    cts
                                                   );
-        var chunkTask = RunChunkStageAsync(classifyToChunk.Reader, chunkToEmbed.Writer, progress, onProgress, cts);
+        var chunkTask = mChunkStage.RunAsync(classifyToChunk.Reader, chunkToEmbed.Writer, progress, onProgress, cts);
         var embedTask = RunEmbedStageAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
         var indexTask = mIndexStage.RunAsync(profile,
                                              job,
@@ -523,64 +525,6 @@ public class IngestionOrchestrator
             await mLibraryRepository.SetSuspectAsync(job.LibraryId, job.Version, reasons, ct);
         else
             await mLibraryRepository.ClearSuspectAsync(job.LibraryId, job.Version, ct);
-    }
-
-    #endregion
-
-    #region Chunk stage
-
-    private async Task RunChunkStageAsync(ChannelReader<PageRecord> input,
-                                          ChannelWriter<DocChunk[]> output,
-                                          ScrapeJobRecord progress,
-                                          Action<ScrapeJobRecord>? onProgress,
-                                          CancellationTokenSource cts)
-    {
-        try
-        {
-            await foreach(var page in input.ReadAllAsync(cts.Token))
-                await ChunkPageAsync(page, output, progress, onProgress, cts.Token);
-        }
-        catch(OperationCanceledException)
-        {
-            output.TryComplete();
-            throw;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogError(ex, "Chunk stage fatal error");
-            output.TryComplete(ex);
-            await cts.CancelAsync();
-            throw;
-        }
-        finally
-        {
-            output.TryComplete();
-        }
-    }
-
-    private async Task ChunkPageAsync(PageRecord page,
-                                      ChannelWriter<DocChunk[]> output,
-                                      ScrapeJobRecord progress,
-                                      Action<ScrapeJobRecord>? onProgress,
-                                      CancellationToken ct)
-    {
-        try
-        {
-            var chunks = mChunker.Chunk(page);
-            if (chunks.Count > 0)
-            {
-                await output.WriteAsync(chunks.ToArray(), ct);
-                progress.ChunksGenerated += chunks.Count;
-                onProgress?.Invoke(progress);
-                for(var ci = 0; ci < chunks.Count; ci++)
-                    mBroadcaster.RecordChunkGenerated(progress.Id);
-            }
-        }
-        catch(Exception ex) when(ex is not OperationCanceledException)
-        {
-            mLogger.LogWarning(ex, "Chunking failed for {Url}, skipping page", page.Url);
-            progress.IncrementErrorCount();
-        }
     }
 
     #endregion
