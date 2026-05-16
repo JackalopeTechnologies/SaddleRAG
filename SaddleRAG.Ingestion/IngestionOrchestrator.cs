@@ -62,6 +62,7 @@ public class IngestionOrchestrator
         mCrawlStage = new CrawlStage(crawler, logger);
         mClassifyStage = new ClassifyStage(llmClassifier, pageRepository, broadcaster, logger);
         mChunkStage = new ChunkStage(chunker, broadcaster, logger);
+        mEmbedStage = new EmbedStage(embeddingProvider, chunkRepository, broadcaster, logger);
         mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
     }
 
@@ -76,6 +77,7 @@ public class IngestionOrchestrator
     private readonly PageCrawler mCrawler;
     private readonly CrawlStage mCrawlStage;
     private readonly IEmbeddingProvider mEmbeddingProvider;
+    private readonly EmbedStage mEmbedStage;
     private readonly IndexStage mIndexStage;
     private readonly ILibraryIndexRepository mLibraryIndexRepository;
     private readonly ILibraryProfileRepository mLibraryProfileRepository;
@@ -182,7 +184,7 @@ public class IngestionOrchestrator
                                                    cts
                                                   );
         var chunkTask = mChunkStage.RunAsync(classifyToChunk.Reader, chunkToEmbed.Writer, progress, onProgress, cts);
-        var embedTask = RunEmbedStageAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
+        var embedTask = mEmbedStage.RunAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
         var indexTask = mIndexStage.RunAsync(profile,
                                              job,
                                              auditCtx,
@@ -230,21 +232,10 @@ public class IngestionOrchestrator
                               );
     }
 
-    private static string TruncateForEmbedding(string text, int maxChars)
-    {
-        string result = text.Length > maxChars ? text[..maxChars] : text;
-        return result;
-    }
-
     private const int SuspectSampleTitleLimit = 5;
 
     private const int PageChannelCapacity = 50;
     private const int ChunkChannelCapacity = 20;
-    private const int EmbedBatchSize = 32;
-
-    // Safety limit for embedding context window (nomic-embed-text: 2048 tokens)
-    // Use 6000 chars as hard cap (~2000 tokens at ~3 chars/token)
-    private const int MaxEmbedChars = 6000;
 
     private const string SinglePageStatusIndexed = "Indexed";
     private const string SinglePageStatusEmpty = "Empty";
@@ -386,13 +377,14 @@ public class IngestionOrchestrator
     {
         var texts = chunks
                     .Select(c =>
-                                TruncateForEmbedding($"[{c.Category}] [{c.LibraryId}] [{c.PageTitle}]\n{c.Content}",
-                                                     MaxEmbedChars
-                                                    )
+                                EmbedStage.TruncateForEmbedding(
+                                    $"[{c.Category}] [{c.LibraryId}] [{c.PageTitle}]\n{c.Content}",
+                                    EmbedStage.MaxEmbedChars
+                                                               )
                            )
                     .ToList();
 
-        float[][] embeddings = await EmbedWithRetryAsync(texts, ct);
+        float[][] embeddings = await EmbedStage.EmbedWithRetryAsync(mEmbeddingProvider, mLogger, texts, ct);
 
         var embedded = new DocChunk[chunks.Count];
         for(var i = 0; i < chunks.Count; i++)
@@ -529,107 +521,4 @@ public class IngestionOrchestrator
 
     #endregion
 
-    #region Embed stage
-
-    private async Task RunEmbedStageAsync(ChannelReader<DocChunk[]> input,
-                                          ChannelWriter<DocChunk[]> output,
-                                          ScrapeJobRecord progress,
-                                          Action<ScrapeJobRecord>? onProgress,
-                                          CancellationTokenSource cts)
-    {
-        var batch = new List<DocChunk>();
-
-        try
-        {
-            await foreach(var pageChunks in input.ReadAllAsync(cts.Token))
-            {
-                batch.AddRange(pageChunks);
-
-                while (batch.Count >= EmbedBatchSize)
-                {
-                    var toEmbed = batch.Take(EmbedBatchSize).ToList();
-                    batch = batch.Skip(EmbedBatchSize).ToList();
-                    await EmbedAndForwardBatchAsync(toEmbed, output, progress, onProgress, cts.Token);
-                }
-            }
-
-            // Flush remaining chunks
-            if (batch.Count > 0)
-                await EmbedAndForwardBatchAsync(batch, output, progress, onProgress, cts.Token);
-        }
-        catch(OperationCanceledException)
-        {
-            output.TryComplete();
-            throw;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogError(ex, "Embed stage fatal error");
-            output.TryComplete(ex);
-            await cts.CancelAsync();
-            throw;
-        }
-        finally
-        {
-            output.TryComplete();
-        }
-    }
-
-    private async Task EmbedAndForwardBatchAsync(List<DocChunk> batch,
-                                                 ChannelWriter<DocChunk[]> output,
-                                                 ScrapeJobRecord progress,
-                                                 Action<ScrapeJobRecord>? onProgress,
-                                                 CancellationToken ct)
-    {
-        try
-        {
-            var texts = batch
-                        .Select(c =>
-                                    TruncateForEmbedding($"[{c.Category}] [{c.LibraryId}] [{c.PageTitle}]\n{c.Content}",
-                                                         MaxEmbedChars
-                                                        )
-                               )
-                        .ToList();
-
-            float[][] embeddings = await EmbedWithRetryAsync(texts, ct);
-
-            var embeddedChunks = new DocChunk[batch.Count];
-            for(var i = 0; i < batch.Count; i++)
-                embeddedChunks[i] = batch[i] with { Embedding = embeddings[i] };
-
-            // Upsert to MongoDB (supports resume â€” no duplicates on re-run)
-            await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
-            progress.ChunksEmbedded += embeddedChunks.Length;
-            onProgress?.Invoke(progress);
-            for(var ei = 0; ei < embeddedChunks.Length; ei++)
-                mBroadcaster.RecordChunkEmbedded(progress.Id);
-
-            await output.WriteAsync(embeddedChunks, ct);
-
-            mLogger.LogDebug("Embedded and stored batch of {Count} chunks", embeddedChunks.Length);
-        }
-        catch(Exception ex) when(ex is not OperationCanceledException)
-        {
-            mLogger.LogWarning(ex, "Embedding failed for batch of {Count} chunks, skipping", batch.Count);
-            progress.IncrementErrorCount();
-        }
-    }
-
-    private async Task<float[][]> EmbedWithRetryAsync(IReadOnlyList<string> texts, CancellationToken ct)
-    {
-        float[][] result;
-        try
-        {
-            result = await mEmbeddingProvider.EmbedAsync(texts, ct: ct);
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogWarning(ex, "Embedding failed, retrying once");
-            result = await mEmbeddingProvider.EmbedAsync(texts, ct: ct);
-        }
-
-        return result;
-    }
-
-    #endregion
 }
