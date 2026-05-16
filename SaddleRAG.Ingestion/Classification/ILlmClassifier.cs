@@ -14,12 +14,15 @@ using SaddleRAG.Core.Models;
 namespace SaddleRAG.Ingestion.Classification;
 
 /// <summary>
-///     Minimal seam for the streaming-pipeline classify stage: single
-///     per-page classification call. The concrete <see cref="LlmClassifier" />
-///     also exposes <c>GetCurrentVersion</c>; that stays on the concrete type
-///     because only <see cref="Recon.RescrubService" /> needs it.
+///     Minimal seam for the streaming-pipeline classify stage and the
+///     <c>saddlerag-cli reclassify</c> command: single per-page
+///     classification call. The concrete <see cref="LlmClassifier" /> also
+///     exposes <c>GetCurrentVersion</c>; that stays on the concrete type
+///     because only <see cref="Recon.RescrubService" /> needs it. Public
+///     so the CLI handler (in <c>SaddleRAG.Cli</c>) can take this seam
+///     for unit testing without dragging in the OllamaSharp client.
 /// </summary>
-internal interface ILlmClassifier
+public interface ILlmClassifier
 {
     /// <summary>
     ///     Classify <paramref name="page" /> for the library identified by

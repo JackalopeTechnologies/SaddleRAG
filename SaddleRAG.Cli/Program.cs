@@ -16,7 +16,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using SaddleRAG.Cli.Commands;
 using SaddleRAG.Cli.Handlers;
-using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
@@ -82,12 +81,6 @@ const string InspectCommandName = "inspect";
 const string InspectCommandDescription = "Load a single page and report its link/sidebar structure";
 const string UrlOptionName = "--url";
 const string UrlOptionDescription = "URL to inspect";
-const string CollapsedPropertyName = "collapsed";
-const string SidebarsPropertyName = "sidebars";
-const string IdPropertyName = "id";
-const string ClassNamePropertyName = "className";
-const string SamplesPropertyName = "samples";
-const string LinksByHostPropertyName = "linksByHost";
 const string ProfileCommandName = "profile";
 const string ProfileCommandDescription = "Show or switch MongoDB connection profiles";
 const string ListAvailableProfilesDescription = "List available profiles";
@@ -252,10 +245,9 @@ ingestCommand.SetAction(async (parseResult, ct) =>
                                                            onProgress: progress =>
                                                                        {
                                                                            Console
-                                                                               .Write($"\rQueued: {progress.PagesQueued} | Crawled: {progress.PagesFetched} | " +
-                                                                                        $"Classified: {progress.PagesClassified} | Chunks: {progress.ChunksGenerated} | " +
-                                                                                        $"Searchable: {progress.ChunksCompleted} chunks ({progress.PagesCompleted} pages)"
-                                                                                   );
+                                                                               .Write(IngestProgressFormatter
+                                                                                          .Format(progress)
+                                                                                     );
                                                                        }
                                                           );
                             Console.WriteLine();
@@ -331,68 +323,7 @@ dryrunCommand.SetAction(async (parseResult, ct) =>
                                                                    Guid.NewGuid().ToString("N")
                                                                   );
 
-                            Console.WriteLine();
-                            Console.WriteLine($"=== Dry Run Report ({report.ElapsedTime.TotalSeconds:F1}s) ===");
-                            Console.WriteLine($"Total pages fetched: {report.TotalPages}");
-                            Console.WriteLine($"  In-scope:    {report.InScopePages}");
-                            Console.WriteLine($"  Out-of-scope: {report.OutOfScopePages}");
-                            Console.WriteLine($"Skipped (filtered): {report.FilteredSkips}");
-                            Console.WriteLine($"Skipped (depth limit): {report.DepthLimitedSkips}");
-                            Console.WriteLine($"Fetch errors: {report.FetchErrors}");
-                            Console.WriteLine($"Pages still in queue at end: {report.PagesRemainingInQueue}");
-                            if (report.HitMaxPagesLimit)
-                            {
-                                Console
-                                    .WriteLine($"** HIT MaxPages limit ({maxPages}) — actual crawl would have {report.TotalPages + report.PagesRemainingInQueue}+ pages **"
-                                              );
-                            }
-
-                            Console.WriteLine();
-                            Console.WriteLine("Pages by host:");
-                            foreach((var host, var count) in report.PagesByHost.OrderByDescending(kv => kv.Value))
-                                Console.WriteLine($"  {host}: {count}");
-
-                            Console.WriteLine();
-                            Console.WriteLine("Out-of-scope depth distribution:");
-                            foreach((var depth, var count) in report.DepthDistribution.OrderBy(kv => kv.Key))
-                                Console.WriteLine($"  depth {depth}: {count}");
-
-                            if (report.GitHubReposToClone.Count > 0)
-                            {
-                                Console.WriteLine();
-                                Console
-                                    .WriteLine($"GitHub repos that would be cloned ({report.GitHubReposToClone.Count}):"
-                                              );
-                                foreach(var repo in report.GitHubReposToClone)
-                                    Console.WriteLine($"  {repo}");
-                            }
-
-                            if (report.Errors.Count > 0)
-                            {
-                                Console.WriteLine();
-                                Console.WriteLine($"Fetch errors ({report.Errors.Count}):");
-                                var grouped = report.Errors.GroupBy(e => e.ErrorKind)
-                                                    .OrderByDescending(g => g.Count());
-                                foreach(var group in grouped)
-                                {
-                                    Console.WriteLine($"  [{group.Count()}] {group.Key}");
-                                    foreach(var err in group.Take(count: 5))
-                                        Console.WriteLine($"    {err.Url} — {err.Message}");
-                                    if (group.Count() > 5)
-                                        Console.WriteLine($"    ... and {group.Count() - 5} more");
-                                }
-                            }
-
-                            if (report.SamplePendingUrls.Count > 0)
-                            {
-                                Console.WriteLine();
-                                Console
-                                    .WriteLine($"Sample URLs still in queue (first {report.SamplePendingUrls.Count}):");
-                                foreach(var pending in report.SamplePendingUrls)
-                                    Console.WriteLine($"  {pending}");
-                            }
-
-                            return 0;
+                            return DryrunReportRenderer.Render(report, maxPages, Console.Out);
                         }
                        );
 
@@ -412,77 +343,21 @@ reclassifyCommand.SetAction(async (parseResult, ct) =>
                                 var libraryId = parseResult.GetValue(reclassifyLibOption);
                                 var allPages = parseResult.GetValue(reclassifyAllOption);
 
-                                var bootstrapper = provider.GetRequiredService<OllamaBootstrapper>();
-                                await bootstrapper.BootstrapAsync();
+                                await provider.GetRequiredService<OllamaBootstrapper>().BootstrapAsync();
 
-                                var libRepo = provider.GetRequiredService<ILibraryRepository>();
-                                var pageRepo = provider.GetRequiredService<IPageRepository>();
-                                var chunkRepo = provider.GetRequiredService<IChunkRepository>();
-                                var llm = provider.GetRequiredService<LlmClassifier>();
-
-                                var libraries = string.IsNullOrEmpty(libraryId)
-                                                    ? await libRepo.GetAllLibrariesAsync()
-                                                    : new List<LibraryRecord>
-                                                          {
-                                                              await libRepo.GetLibraryAsync(libraryId) ??
-                                                              throw new Exception($"Library '{libraryId}' not found")
-                                                          };
-
-                                var totalProcessed = 0;
-                                var totalReclassified = 0;
-
-                                foreach(var lib in libraries)
-                                {
-                                    Console.WriteLine($"\nReclassifying {lib.Id} v{lib.CurrentVersion}...");
-                                    var pages = await pageRepo.GetPagesAsync(lib.Id, lib.CurrentVersion);
-                                    var targetPages = allPages
-                                                          ? pages.ToList()
-                                                          : pages.Where(p => p.Category == DocCategory.Unclassified)
-                                                                 .ToList();
-
-                                    Console
-                                        .WriteLine($"  {targetPages.Count} pages to process (of {pages.Count} total)");
-
-                                    var processed = 0;
-                                    foreach(var page in targetPages)
-                                    {
-                                        (var newCategory, var confidence) = await llm.ClassifyAsync(page, lib.Hint);
-                                        processed++;
-
-                                        if (newCategory != DocCategory.Unclassified &&
-                                            confidence > 0 &&
-                                            newCategory != page.Category)
-                                        {
-                                            var classified = page with { Category = newCategory };
-                                            await pageRepo.UpsertPageAsync(classified);
-
-                                            await chunkRepo.UpdateCategoryByPageUrlAsync(lib.Id,
-                                                     lib.CurrentVersion,
-                                                     page.Url,
-                                                     newCategory
-                                                );
-
-                                            totalReclassified++;
-                                        }
-
-                                        if (processed % 10 == 0)
-                                        {
-                                            Console
-                                                .WriteLine($"  {processed}/{targetPages.Count} processed, {totalReclassified} reclassified so far"
-                                                          );
-                                        }
-                                    }
-
-                                    totalProcessed += processed;
-                                }
-
-                                Console
-                                    .WriteLine($"\nDone. Processed {totalProcessed} pages, reclassified {totalReclassified}."
-                                              );
-                                Console
-                                    .WriteLine("Pages and chunks updated in MongoDB. Restart MCP server (or call reload_profile) to refresh in-memory index."
-                                              );
-                                return 0;
+                                return await ReclassifyHandler.RunAsync(libraryId,
+                                                                        allPages,
+                                                                        provider
+                                                                            .GetRequiredService<ILibraryRepository>(),
+                                                                        provider
+                                                                            .GetRequiredService<IPageRepository>(),
+                                                                        provider
+                                                                            .GetRequiredService<IChunkRepository>(),
+                                                                        provider
+                                                                            .GetRequiredService<LlmClassifier>(),
+                                                                        Console.Out,
+                                                                        ct
+                                                                       );
                             }
                            );
 
@@ -571,47 +446,11 @@ inspectCommand.SetAction(async (parseResult, ct) =>
                                                                                  """
                                                                             );
 
-                             Console.WriteLine();
                              using var doc = JsonDocument.Parse(infoJson);
-                             var root = doc.RootElement;
-
-                             Console.WriteLine($"Title: {root.GetProperty("title").GetString()}");
-                             Console.WriteLine($"Total links: {root.GetProperty("totalLinks").GetInt32()}");
-                             Console.WriteLine();
-
-                             Console.WriteLine("Collapsible markers:");
-                             var collapsed = root.GetProperty(CollapsedPropertyName);
-                             foreach(var prop in collapsed.EnumerateObject())
-                                 Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
-                             Console.WriteLine();
-
-                             Console.WriteLine("Sidebar candidates with >5 links:");
-                             foreach(var sb in root.GetProperty(SidebarsPropertyName).EnumerateArray())
-                             {
-                                 Console
-                                     .WriteLine($"  [{sb.GetProperty("linkCount").GetInt32()} links] {sb.GetProperty("tag").GetString()}" +
-                                                (sb.GetProperty(IdPropertyName).GetString() is var id &&
-                                                 !string.IsNullOrEmpty(id)
-                                                     ? $"#{id}"
-                                                     : string.Empty) +
-                                                (sb.GetProperty(ClassNamePropertyName).GetString() is var cls &&
-                                                 !string.IsNullOrEmpty(cls)
-                                                     ? $" .{cls.Replace(" ", ".")}"
-                                                     : string.Empty)
-                                               );
-                                 Console.WriteLine($"    selector hint: {sb.GetProperty("sel").GetString()}");
-                                 foreach(var sample in sb.GetProperty(SamplesPropertyName).EnumerateArray())
-                                     Console.WriteLine($"    sample: {sample.GetString()}");
-                             }
-
-                             Console.WriteLine();
-
-                             Console.WriteLine("Links by host:");
-                             foreach(var prop in root.GetProperty(LinksByHostPropertyName).EnumerateObject())
-                                 Console.WriteLine($"  {prop.Name}: {prop.Value.GetInt32()}");
+                             var exit = InspectReportRenderer.Render(doc.RootElement, Console.Out);
 
                              await page.CloseAsync();
-                             return 0;
+                             return exit;
                          }
                         );
 
