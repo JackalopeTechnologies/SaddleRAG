@@ -355,6 +355,41 @@ jobs:
         # Playwright needs on a fresh Ubuntu runner.
         run: pwsh SaddleRAG.Tests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
 
+      - name: Cache ONNX models
+        # OnnxProviderIntegrationTests skip when the model files aren't
+        # present on disk. We cache them between CI runs so the bandwidth
+        # cost is one-time per model version. The cache key includes the
+        # specific RepoId + ModelFile filenames so a bump in
+        # OnnxProviderIntegrationTests.BuildSettingsWith* invalidates
+        # correctly. Models live where OnnxProviderIntegrationTests
+        # expects them: Scratch/onnx-spike/models/{name}/.
+        id: cache-onnx-models
+        uses: actions/cache@v4
+        with:
+          path: Scratch/onnx-spike/models
+          key: onnx-models-nomic-v1.5-fp16-mxbai-base-v1-quantized
+
+      - name: Download ONNX models (cache miss)
+        # Mirrors what OnnxModelDownloader does at runtime: pulls the
+        # active embedding + reranker model + tokenizer files from
+        # HuggingFace into the directory layout the tests probe.
+        # nomic-embed-text-v1.5 onnx/model_fp16.onnx is ~140 MB,
+        # mxbai-rerank-base-v1 onnx/model_quantized.onnx is ~180 MB.
+        if: steps.cache-onnx-models.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          NOMIC_DIR=Scratch/onnx-spike/models/nomic-embed-text-v1.5
+          MXBAI_DIR=Scratch/onnx-spike/models/mxbai-rerank-base-v1
+          mkdir -p "$NOMIC_DIR" "$MXBAI_DIR"
+          curl -L -f --retry 3 --retry-delay 5 -o "$NOMIC_DIR/model.onnx" \
+            https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model_fp16.onnx
+          curl -L -f --retry 3 --retry-delay 5 -o "$NOMIC_DIR/vocab.txt" \
+            https://huggingface.co/nomic-ai/nomic-embed-text-v1.5/resolve/main/vocab.txt
+          curl -L -f --retry 3 --retry-delay 5 -o "$MXBAI_DIR/model.onnx" \
+            https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1/resolve/main/onnx/model_quantized.onnx
+          curl -L -f --retry 3 --retry-delay 5 -o "$MXBAI_DIR/spm.model" \
+            https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1/resolve/main/spm.model
+
       - name: Run integration tests
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category=Integration"
 
