@@ -94,7 +94,12 @@ public sealed class ScrapeAuditWriterTests
 
         writer.RecordFetched(NewCtx("job-2"), "https://x.com/", parentUrl: null, "x.com", depth: 0);
 
-        await Task.Delay(millisecondsDelay: 400, TestContext.Current.CancellationToken);
+        // Poll instead of a fixed sleep — timer fires can be delayed under
+        // coverage instrumentation or a busy CI runner, but the test only
+        // cares THAT the timer eventually flushed.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(seconds: 5);
+        while(spy.Inserted.Count == 0 && DateTime.UtcNow < deadline)
+            await Task.Delay(millisecondsDelay: 25, TestContext.Current.CancellationToken);
 
         Assert.Single(spy.Inserted);
         Assert.Equal(AuditStatus.Fetched, spy.Inserted[index: 0].Status);
