@@ -420,6 +420,7 @@ public static class SearchTools
                                                                   library,
                                                                   resolvedVersion,
                                                                   logger,
+                                                                  metrics,
                                                                   ct
                                                                  );
         }
@@ -722,7 +723,11 @@ public static class SearchTools
     ///     pool with a warning logged. The fast path is an enhancement —
     ///     a transient repository or tokenization failure must not regress
     ///     a search that the hybrid pipeline already answered. Cancellation
-    ///     still propagates so the request can shed.
+    ///     still propagates so the request can shed. Records one
+    ///     <c>identifier_fast_path</c> sample on <paramref name="metrics" />
+    ///     per call (success with injected-count note, failure with
+    ///     exception-type note) so an SLO can alert on degradation that
+    ///     the LogLevel.Warning alone wouldn't surface.
     /// </summary>
     internal static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesOrFallbackAsync(
         IReadOnlyList<HybridCandidate> hybrid,
@@ -731,22 +736,41 @@ public static class SearchTools
         string library,
         string version,
         ILogger<SearchToolsLog> logger,
+        IQueryMetrics metrics,
         CancellationToken ct)
     {
         IReadOnlyList<HybridCandidate> result;
+        var sw = Stopwatch.StartNew();
 
         try
         {
             result = await InjectIdentifierMatchesAsync(hybrid, chunkRepository, query, library, version, ct);
+            sw.Stop();
+            // Injected-count = result count minus pre-existing hybrid count.
+            // Zero is a valid success (no QualifiedName match for any token).
+            var injected = result.Count - hybrid.Count;
+            metrics.Record(QueryMetricOperations.IdentifierFastPath,
+                           sw.Elapsed,
+                           success: true,
+                           resultCount: injected,
+                           note: $"library={library}"
+                          );
         }
         catch(Exception ex) when (ex is not OperationCanceledException)
         {
+            sw.Stop();
             logger.LogWarning(ex,
                               "Identifier fast-path skipped for query={Query}, library={Library}, version={Version}; degrading to hybrid-only results",
                               query,
                               library,
                               version
                              );
+            metrics.Record(QueryMetricOperations.IdentifierFastPath,
+                           sw.Elapsed,
+                           success: false,
+                           resultCount: null,
+                           note: $"{ex.GetType().Name} library={library}"
+                          );
             result = hybrid;
         }
 
