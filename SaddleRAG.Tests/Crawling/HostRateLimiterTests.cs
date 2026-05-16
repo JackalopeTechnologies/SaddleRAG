@@ -142,6 +142,13 @@ public sealed class HostRateLimiterTests
     [Fact]
     public async Task DrainShrinksAvailablePermitsAfterCallersRelease()
     {
+        // ReportRateLimited halves a 4-permit limiter to 2. The four in-flight
+        // slots are then disposed; the limiter must absorb two of those four
+        // releases (the "deficit") so only two permits become available, not
+        // four. After acquiring two, a third Acquire must block. Determinism
+        // here comes from the limiter consuming permits synchronously inside
+        // ReportRateLimited + absorbing remaining releases via Release's
+        // deficit counter — no race against a background drain task.
         var limiter = new HostRateLimiter(initialConcurrency: 4, minConcurrency: 1, maxConcurrency: 4);
 
         var s1 = await limiter.AcquireAsync(TestContext.Current.CancellationToken);
@@ -157,18 +164,44 @@ public sealed class HostRateLimiterTests
         s3.Dispose();
         s4.Dispose();
 
-        await Task.Delay(millisecondsDelay: 50, TestContext.Current.CancellationToken);
-
         var afterRelease1 = await limiter.AcquireAsync(TestContext.Current.CancellationToken);
         var afterRelease2 = await limiter.AcquireAsync(TestContext.Current.CancellationToken);
 
         var third = limiter.AcquireAsync(TestContext.Current.CancellationToken);
-        var raced = await Task.WhenAny(third, Task.Delay(millisecondsDelay: 50, TestContext.Current.CancellationToken));
-        Assert.NotEqual(third, raced);
+        await Task.Yield();
+        Assert.False(third.IsCompleted,
+                     "third Acquire should block because Drain absorbed two of the four releases"
+                    );
 
         afterRelease1.Dispose();
         var slotThird = await third;
         afterRelease2.Dispose();
+        slotThird.Dispose();
+    }
+
+    [Fact]
+    public async Task ReportRateLimitedConsumesPermitsSynchronouslyWhenAvailable()
+    {
+        // No slots in flight: the four idle permits go straight to the channel.
+        // ReportRateLimited halves to 2, drops 2 permits synchronously, deficit
+        // stays at 0 (nothing to absorb later).
+        var limiter = new HostRateLimiter(initialConcurrency: 4, minConcurrency: 1, maxConcurrency: 4);
+
+        limiter.ReportRateLimited(TimeSpan.Zero);
+
+        Assert.Equal(expected: 2, limiter.CurrentConcurrency);
+        var s1 = await limiter.AcquireAsync(TestContext.Current.CancellationToken);
+        var s2 = await limiter.AcquireAsync(TestContext.Current.CancellationToken);
+
+        var third = limiter.AcquireAsync(TestContext.Current.CancellationToken);
+        await Task.Yield();
+        Assert.False(third.IsCompleted,
+                     "third Acquire should block because only two permits remain after rate-limit"
+                    );
+
+        s1.Dispose();
+        var slotThird = await third;
+        s2.Dispose();
         slotThird.Dispose();
     }
 
