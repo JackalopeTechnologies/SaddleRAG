@@ -317,11 +317,15 @@ public class ChunkRepository : IChunkRepository
         return result;
     }
 
-    private static IEnumerable<string> ProjectTypeNames(IReadOnlyList<DocChunk> chunks)
+    /// <summary>
+    ///     For v2+ chunks: return Symbols[] entries with Kind == Type. For
+    ///     legacy v1 chunks: fall back to QualifiedName so the tool stays
+    ///     useful until a rescrub bumps them. Each chunk yields zero or
+    ///     more names. Internal so the parser-version-boundary logic can
+    ///     be unit-tested without standing up a real Mongo collection.
+    /// </summary>
+    internal static IEnumerable<string> ProjectTypeNames(IReadOnlyList<DocChunk> chunks)
     {
-        // For v2+ chunks: return Symbols[] entries with Kind == Type.
-        // For legacy v1 chunks: fall back to QualifiedName so the tool stays useful
-        // until a rescrub bumps them. Each chunk yields zero or more names.
         var v2Names = chunks
                       .Where(c => c is { ParserVersion: >= ParserVersionV2, Symbols.Count: > 0 })
                       .SelectMany(c => c.Symbols.Where(s => s.Kind == SymbolKind.Type).Select(s => s.Name));
@@ -335,7 +339,7 @@ public class ChunkRepository : IChunkRepository
         return result;
     }
 
-    private static IEnumerable<string> ApplyFilter(IEnumerable<string> names, string? filter)
+    internal static IEnumerable<string> ApplyFilter(IEnumerable<string> names, string? filter)
     {
         var result = string.IsNullOrWhiteSpace(filter)
                          ? names
