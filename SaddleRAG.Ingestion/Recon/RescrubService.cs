@@ -84,13 +84,12 @@ public class RescrubService
 
         if (profile == null)
         {
-            // No LibraryProfile yet — symbol extraction and reclassification
-            // can't run (they require profile-driven language/style hints),
-            // but BM25 shard rebuild has no profile dependency. Run an
-            // indexes-only refresh so a BM25 builder / tokenizer change
-            // reaches the corpus without forcing recon_library first.
-            // ReconNeeded stays true in the result so callers know full
-            // symbol metadata is still missing.
+            // Symbol extraction and reclassification require profile-driven
+            // language/style hints, so they can't run. BM25 shard rebuild
+            // has no profile dependency, so we still refresh indexes —
+            // letting a tokenizer change reach the corpus without forcing
+            // recon_library first. ReconNeeded stays true so callers know
+            // full symbol metadata is still missing.
             result = await RunIndexesOnlyRescrubAsync(chunkRepo,
                                                      indexRepo,
                                                      bm25ShardRepo,
@@ -133,20 +132,18 @@ public class RescrubService
         var scoped = options.MaxChunks.HasValue ? chunks.Take(options.MaxChunks.Value).ToList() : chunks.ToList();
         var boundaryIssues = options.BoundaryAudit ? ChunkBoundaryAudit.CountIssues(scoped) : 0;
 
-        // Report each chunk as "processed" for progress so the UI shows
-        // movement; we don't mutate the chunks themselves in this path.
-        if (onProgress != null)
-        {
-            for(var i = 0; i < scoped.Count; i++)
-                onProgress(i + 1, scoped.Count);
-        }
-
         var indexesBuilt = false;
         if (options is { RebuildIndexes: true, DryRun: false })
         {
             await PersistIndexesOnlyAsync(indexRepo, bm25ShardRepo, libraryId, version, scoped, ct);
             indexesBuilt = true;
         }
+
+        // Single progress callback at the end: chunks were enumerated (for
+        // BM25 / CodeFenceSymbols) but never mutated, so per-chunk progress
+        // updates would lie about per-item work the way RunRescrubAsync
+        // uses them.
+        onProgress?.Invoke(scoped.Count, scoped.Count);
 
         mLogger.LogInformation("Rescrub {Library}/{Version} (indexes-only, no profile): processed={Processed}, indexesBuilt={IndexesBuilt}, dryRun={DryRun}",
                                libraryId,
@@ -181,20 +178,35 @@ public class RescrubService
                                                IReadOnlyList<DocChunk> chunks,
                                                CancellationToken ct)
     {
-        // No-profile path: scan chunks for CodeFenceSymbols (profile-free)
-        // and rebuild BM25 shards. Manifest preserves any prior profile/
-        // classifier-version markers when an existing index is present so
-        // a later recon_library run can correctly auto-detect change.
         var existingIndex = await indexRepo.GetAsync(libraryId, version, ct);
         var fenceSymbols = CodeFenceScanner.ScanContents(chunks.Select(c => c.Content));
 
         var bm25Build = Bm25IndexBuilder.Build(libraryId, version, chunks);
         await bm25ShardRepo.ReplaceShardsAsync(libraryId, version, bm25Build.Shards, ct);
 
+        // Manifest carries forward any prior parser/classifier markers when
+        // an index already exists so a later recon_library can still
+        // auto-detect drift. When no prior index exists, LastParserVersion
+        // stays at 0 (the sentinel for "parser never ran on this build") —
+        // writing ParserVersionInfo.Current here would lie because symbol
+        // extraction is skipped on the no-profile path. LastProfileHash is
+        // always cleared in this path: if a profile existed and was deleted,
+        // a non-empty hash would point at a profile that's gone — clearing
+        // forces downstream recon to treat the library as profile-less.
+        var carryoverProfileHash = existingIndex?.Manifest.LastProfileHash;
+        if (!string.IsNullOrEmpty(carryoverProfileHash))
+        {
+            mLogger.LogWarning("Indexes-only rescrub for {Library}/{Version}: existing index has LastProfileHash={Hash} but profile is missing; clearing hash so recon_library treats this as profile-less",
+                               libraryId,
+                               version,
+                               carryoverProfileHash
+                              );
+        }
+
         var manifest = new LibraryManifest
                            {
-                               LastParserVersion = existingIndex?.Manifest.LastParserVersion ?? ParserVersionInfo.Current,
-                               LastProfileHash = existingIndex?.Manifest.LastProfileHash ?? string.Empty,
+                               LastParserVersion = existingIndex?.Manifest.LastParserVersion ?? 0,
+                               LastProfileHash = string.Empty,
                                LastClassifierVersion = existingIndex?.Manifest.LastClassifierVersion ??
                                                        mClassifier.GetCurrentVersion(),
                                LastBuiltUtc = DateTime.UtcNow

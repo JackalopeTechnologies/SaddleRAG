@@ -9,6 +9,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
@@ -32,7 +33,7 @@ namespace SaddleRAG.Mcp.Tools;
 [McpServerToolType]
 public static class SearchTools
 {
-    private record HybridCandidate
+    internal record HybridCandidate
     {
         public required DocChunk Chunk { get; init; }
         public required float VectorScore { get; init; }
@@ -66,6 +67,7 @@ public static class SearchTools
                                                 RepositoryFactory repositoryFactory,
                                                 IOptions<RankingSettings> rankingOptions,
                                                 IQueryMetrics metrics,
+                                                ILogger<SearchToolsLog> logger,
                                                 [Description("Natural language search query")]
                                                 string query,
                                                 [Description("Library identifier — omit to search all libraries")]
@@ -87,6 +89,7 @@ public static class SearchTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(rankingOptions);
         ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentNullException.ThrowIfNull(logger);
         ArgumentException.ThrowIfNullOrEmpty(query);
 
         var libraryRepository = repositoryFactory.GetLibraryRepository(profile);
@@ -104,6 +107,7 @@ public static class SearchTools
                                                                     repositoryFactory,
                                                                     rankingOptions.Value,
                                                                     metrics,
+                                                                    logger,
                                                                     query,
                                                                     library,
                                                                     resolvedVersion,
@@ -117,6 +121,16 @@ public static class SearchTools
         }
 
         return json;
+    }
+
+    /// <summary>
+    ///     Logger category for <see cref="SearchTools" />. Separate marker
+    ///     type so the static tool class can take <c>ILogger&lt;T&gt;</c>
+    ///     via DI on its method parameter list — generic type parameters
+    ///     can't point at a static class directly.
+    /// </summary>
+    public sealed class SearchToolsLog
+    {
     }
 
     [McpServerTool(Name = "get_class_reference")]
@@ -336,6 +350,7 @@ public static class SearchTools
                                                          RepositoryFactory repositoryFactory,
                                                          RankingSettings rankingSettings,
                                                          IQueryMetrics metrics,
+                                                         ILogger<SearchToolsLog> logger,
                                                          string query,
                                                          string? library,
                                                          string? resolvedVersion,
@@ -392,24 +407,36 @@ public static class SearchTools
 
         var hybrid = BlendVectorAndBm25(searchResults, bm25Scores, rankingSettings.Bm25Weight);
 
-        // Identifier-shape fast path. When the query smells like a symbol
-        // and a specific library was requested, look up chunks whose
-        // QualifiedName matches the query (case-insensitive) and inject
-        // them ahead of the hybrid pool so they get a rerank shot
-        // regardless of where they ranked in vector+BM25 hybrid scoring.
-        // The cross-encoder then decides their final position. Skipped on
-        // cross-library queries (library == null) to avoid pulling noisy
-        // substring matches from many libraries at once.
+        // Identifier-shape fast path: look up chunks whose QualifiedName
+        // matches the query case-insensitively and surface them to the
+        // cross-encoder even when vector+BM25 hybrid ranked them outside
+        // the top slice. Skipped on cross-library queries (library == null)
+        // to avoid noisy near-matches from many libraries at once. Fast
+        // path is an enhancement over the hybrid pool — a transient Mongo
+        // hiccup or unexpected query shape must NOT regress the search;
+        // catch + log + continue.
         if (queryIsIdentifierShape && library != null && resolvedVersion != null)
         {
-            var chunkRepository = repositoryFactory.GetChunkRepository(profile);
-            hybrid = await InjectIdentifierMatchesAsync(hybrid,
-                                                       chunkRepository,
-                                                       query,
-                                                       library,
-                                                       resolvedVersion,
-                                                       ct
-                                                      );
+            try
+            {
+                var chunkRepository = repositoryFactory.GetChunkRepository(profile);
+                hybrid = await InjectIdentifierMatchesAsync(hybrid,
+                                                           chunkRepository,
+                                                           query,
+                                                           library,
+                                                           resolvedVersion,
+                                                           ct
+                                                          );
+            }
+            catch(Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex,
+                                  "Identifier fast-path skipped for query={Query}, library={Library}, version={Version}; degrading to hybrid-only results",
+                                  query,
+                                  library,
+                                  resolvedVersion
+                                 );
+            }
         }
 
         var rerankActive = ShouldRerank(rankingSettings.ReRankerStrategy, queryIsIdentifierShape, hybrid.Count);
@@ -704,7 +731,7 @@ public static class SearchTools
         return result;
     }
 
-    private static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesAsync(
+    internal static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesAsync(
         IReadOnlyList<HybridCandidate> hybrid,
         IChunkRepository chunkRepository,
         string query,
@@ -712,7 +739,7 @@ public static class SearchTools
         string version,
         CancellationToken ct)
     {
-        var tokens = ExtractIdentifierTokens(query);
+        var tokens = IdentifierTokenizer.ExtractDistinct(query, MinIdentifierTokenLength);
         var matches = new List<DocChunk>();
 
         foreach(var token in tokens.Take(MaxIdentifierLookupTokens))
@@ -726,25 +753,6 @@ public static class SearchTools
         return result;
     }
 
-    /// <summary>
-    ///     Extract identifier-shaped tokens (PascalCase, dotted, ::-joined,
-    ///     snake_case) from a query for QualifiedName lookups. Public so
-    ///     callers and tests can exercise the same tokenization the
-    ///     identifier fast path uses.
-    /// </summary>
-    public static IReadOnlyList<string> ExtractIdentifierTokens(string query)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(query);
-
-        var tokens = smIdentifierTokenRegex
-                    .Matches(query)
-                    .Where(m => m.Value.Length >= MinIdentifierTokenLength)
-                    .Select(m => m.Value)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList();
-        return tokens;
-    }
-
     private static bool IsExactCaseInsensitiveQualifiedNameMatch(DocChunk chunk, string token)
     {
         var result = !string.IsNullOrEmpty(chunk.QualifiedName) &&
@@ -754,12 +762,15 @@ public static class SearchTools
 
     /// <summary>
     ///     Prepend chunks not already present in <paramref name="hybrid" />
-    ///     as synthetic <see cref="HybridCandidate" /> rows with zero vector
-    ///     and BM25 scores. Injected items sit at the head of the pool so
-    ///     the rerank slice picks them up; the cross-encoder decides their
-    ///     final ranking from there.
+    ///     as synthetic <see cref="HybridCandidate" /> rows with zero
+    ///     vector, BM25, and hybrid scores. Zero scores are intentional —
+    ///     these rows exist solely to enter the rerank slice; with rerank
+    ///     disabled they sort to the bottom of the pool. The count is
+    ///     capped at <see cref="MaxInjectedIdentifierMatches" /> so a
+    ///     query that hits a popular <c>QualifiedName</c> can't crowd
+    ///     genuinely top-scored hybrid hits out of the rerank window.
     /// </summary>
-    private static IReadOnlyList<HybridCandidate> InjectIdentifierMatches(
+    internal static IReadOnlyList<HybridCandidate> InjectIdentifierMatches(
         IReadOnlyList<HybridCandidate> hybrid,
         IReadOnlyList<DocChunk> matches)
     {
@@ -771,6 +782,7 @@ public static class SearchTools
             var injected = matches
                           .DistinctBy(c => c.Id, StringComparer.Ordinal)
                           .Where(c => !existing.Contains(c.Id))
+                          .Take(MaxInjectedIdentifierMatches)
                           .Select(c => new HybridCandidate
                                            {
                                                Chunk = c,
@@ -815,17 +827,9 @@ public static class SearchTools
     private const int MaxOverviewResults = 5;
     private const int MinIdentifierTokenLength = 2;
     private const int MaxIdentifierLookupTokens = 4;
+    private const int MaxInjectedIdentifierMatches = 5;
     private static readonly IReadOnlyDictionary<string, double> smEmptyBm25Scores =
         new Dictionary<string, double>(StringComparer.Ordinal);
-
-    // Mirrors Bm25IndexBuilder/Bm25Scorer identifier regex so the fast path
-    // pulls the same identifier shapes (PascalCase, dotted, ::-joined,
-    // snake_case) that BM25 indexes — keeps tokenization consistent across
-    // the retrieval pipeline.
-    private static readonly System.Text.RegularExpressions.Regex smIdentifierTokenRegex =
-        new System.Text.RegularExpressions.Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*",
-                                                  System.Text.RegularExpressions.RegexOptions.Compiled
-                                                 );
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }
