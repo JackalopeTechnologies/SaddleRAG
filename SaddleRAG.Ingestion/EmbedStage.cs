@@ -10,8 +10,6 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
-using SaddleRAG.Database.Repositories;
-using SaddleRAG.Ingestion.Embedding;
 
 #endregion
 
@@ -114,19 +112,7 @@ internal sealed class EmbedStage
     {
         try
         {
-            var texts = batch
-                        .Select(c =>
-                                    TruncateForEmbedding($"[{c.Category}] [{c.LibraryId}] [{c.PageTitle}]\n{c.Content}",
-                                                         MaxEmbedChars
-                                                        )
-                               )
-                        .ToList();
-
-            float[][] embeddings = await EmbedWithRetryAsync(mEmbeddingProvider, mLogger, texts, ct);
-
-            var embeddedChunks = new DocChunk[batch.Count];
-            for(var i = 0; i < batch.Count; i++)
-                embeddedChunks[i] = batch[i] with { Embedding = embeddings[i] };
+            var embeddedChunks = await EmbedBatchAsync(mEmbeddingProvider, mLogger, batch, ct);
 
             // Upsert to MongoDB (supports resume — no duplicates on re-run)
             await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
@@ -155,6 +141,37 @@ internal sealed class EmbedStage
     {
         string result = text.Length > maxChars ? text[..maxChars] : text;
         return result;
+    }
+
+    /// <summary>
+    ///     Embed a single batch of chunks and return them with the
+    ///     <see cref="DocChunk.Embedding" /> field populated. Owns the
+    ///     [Category]+[LibraryId]+[PageTitle]+Content prompt format, the
+    ///     MaxEmbedChars cap, and the retry-once semantics. Used by the
+    ///     batch loop in <see cref="RunAsync" /> and by
+    ///     <see cref="IngestionOrchestrator" />'s single-page ingest path
+    ///     so both call sites compute embeddings the same way.
+    /// </summary>
+    internal static async Task<DocChunk[]> EmbedBatchAsync(IEmbeddingProvider provider,
+                                                           ILogger logger,
+                                                           IReadOnlyList<DocChunk> chunks,
+                                                           CancellationToken ct)
+    {
+        var texts = chunks
+                    .Select(c =>
+                                TruncateForEmbedding($"[{c.Category}] [{c.LibraryId}] [{c.PageTitle}]\n{c.Content}",
+                                                     MaxEmbedChars
+                                                    )
+                           )
+                    .ToList();
+
+        float[][] embeddings = await EmbedWithRetryAsync(provider, logger, texts, ct);
+
+        var embedded = new DocChunk[chunks.Count];
+        for(var i = 0; i < chunks.Count; i++)
+            embedded[i] = chunks[i] with { Embedding = embeddings[i] };
+
+        return embedded;
     }
 
     /// <summary>

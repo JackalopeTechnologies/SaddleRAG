@@ -73,6 +73,68 @@ public sealed class ClassifyStageTests
                                                          };
 
     [Fact]
+    public async Task ClassifyPageAsyncReturnsRelabeledPageOnHighConfidence()
+    {
+        // Direct call to the internal helper that the single-page ingest path
+        // uses. Same behavior as via RunAsync: (HowTo, 0.95) -> relabel +
+        // upsert, no error callback invoked.
+        var classifier = new StubLlmClassifier { Behavior = (_, _) => (DocCategory.HowTo, 0.95f) };
+        var pages = Substitute.For<IPageRepository>();
+        var stage = new ClassifyStage(classifier, pages, Substitute.For<IMonitorBroadcaster>(), NullLogger.Instance);
+        var errorCount = 0;
+
+        var result = await stage.ClassifyPageAsync(NewPage("https://example.test/p1"), "lib-hint", () => errorCount++);
+
+        Assert.Equal(DocCategory.HowTo, result.Category);
+        Assert.Equal(0, errorCount);
+        await pages.Received(1)
+                   .UpsertPageAsync(Arg.Is<PageRecord>(p => p.Category == DocCategory.HowTo),
+                                    Arg.Any<CancellationToken>()
+                                   );
+    }
+
+    [Fact]
+    public async Task ClassifyPageAsyncWithNullOnErrorSwallowsClassifierExceptionWithoutThrowing()
+    {
+        // The single-page ingest path calls ClassifyPageAsync with no onError.
+        // A classifier exception must still be absorbed (returns the original
+        // page) without throwing NullReferenceException on the missing callback.
+        var classifier = new StubLlmClassifier
+                             {
+                                 Behavior = (_, _) => throw new InvalidOperationException("ollama-down")
+                             };
+        var stage = new ClassifyStage(classifier,
+                                      Substitute.For<IPageRepository>(),
+                                      Substitute.For<IMonitorBroadcaster>(),
+                                      NullLogger.Instance
+                                     );
+        var page = NewPage("https://example.test/p1");
+
+        var result = await stage.ClassifyPageAsync(page, "lib-hint");
+
+        Assert.Equal(DocCategory.Unclassified, result.Category);
+    }
+
+    [Fact]
+    public async Task ClassifyPageAsyncWithOnErrorFiresCallbackExactlyOnceOnClassifierException()
+    {
+        var classifier = new StubLlmClassifier
+                             {
+                                 Behavior = (_, _) => throw new InvalidOperationException("ollama-down")
+                             };
+        var stage = new ClassifyStage(classifier,
+                                      Substitute.For<IPageRepository>(),
+                                      Substitute.For<IMonitorBroadcaster>(),
+                                      NullLogger.Instance
+                                     );
+        var errorCount = 0;
+
+        await stage.ClassifyPageAsync(NewPage("https://example.test/p1"), "lib-hint", () => errorCount++);
+
+        Assert.Equal(1, errorCount);
+    }
+
+    [Fact]
     public async Task RunAsyncHighConfidenceClassificationUpsertsPageWithNewCategoryAndForwardsIt()
     {
         var classifier = new StubLlmClassifier

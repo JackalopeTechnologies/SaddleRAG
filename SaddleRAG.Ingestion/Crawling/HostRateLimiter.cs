@@ -91,6 +91,7 @@ public sealed class HostRateLimiter
     private int mConsecutiveSuccesses;
     private int mCurrentConcurrency;
     private long mPenaltyUntilTicks;
+    private int mPermitDeficit;
 
     /// <summary>
     ///     Acquire a slot for one fetch against this host. Honors any active
@@ -143,13 +144,24 @@ public sealed class HostRateLimiter
     /// </summary>
     public void ReportRateLimited(TimeSpan? retryAfter = null)
     {
-        int toRemove;
         lock(mLock)
         {
             mConsecutiveSuccesses = 0;
             int newConcurrency = Math.Max(mMinConcurrency, mCurrentConcurrency / 2);
-            toRemove = mCurrentConcurrency - newConcurrency;
+            int toRemove = mCurrentConcurrency - newConcurrency;
             mCurrentConcurrency = newConcurrency;
+
+            // Drop `toRemove` permits deterministically. Permits sitting in the
+            // channel right now are consumed synchronously; the remainder of
+            // the deficit will be absorbed by future Release calls before they
+            // can write back to the channel. This replaces the older
+            // fire-and-forget DrainPermitsAsync, which raced against subsequent
+            // Acquires when the penalty pause was short (the race surfaced in
+            // tests; production's 30s default penalty masked it).
+            var drained = 0;
+            while (drained < toRemove && mPermits.Reader.TryRead(out _))
+                drained++;
+            mPermitDeficit += toRemove - drained;
         }
 
         var penalty = retryAfter ?? mDefaultPenalty;
@@ -164,9 +176,6 @@ public sealed class HostRateLimiter
             else
                 current = observed;
         }
-
-        if (toRemove > 0)
-            _ = DrainPermitsAsync(toRemove);
     }
 
     /// <summary>
@@ -182,31 +191,20 @@ public sealed class HostRateLimiter
         }
     }
 
-    private async Task DrainPermitsAsync(int count)
-    {
-        var drained = 0;
-        var cancelled = false;
-        while (drained < count && !cancelled)
-        {
-            try
-            {
-                await mPermits.Reader.ReadAsync();
-                drained++;
-            }
-            catch(ChannelClosedException)
-            {
-                cancelled = true;
-            }
-            catch(OperationCanceledException)
-            {
-                cancelled = true;
-            }
-        }
-    }
-
     internal void Release()
     {
-        mPermits.Writer.TryWrite(item: 0);
+        var absorbedByDeficit = false;
+        lock(mLock)
+        {
+            if (mPermitDeficit > 0)
+            {
+                mPermitDeficit--;
+                absorbedByDeficit = true;
+            }
+        }
+
+        if (!absorbedByDeficit)
+            mPermits.Writer.TryWrite(item: 0);
     }
 
     /// <summary>
