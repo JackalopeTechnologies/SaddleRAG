@@ -8,11 +8,12 @@ services:
     ports:
       - "6100:6100"
     environment:
-      SADDLERAG__Onnx__Enabled: "true"
-      SADDLERAG__Onnx__EmbeddingEnabled: "true"
-      SADDLERAG__Onnx__ModelsDir: /data/models
-      SADDLERAG__Ollama__Endpoint: http://ollama:11434
-      SADDLERAG__MongoDB__Profiles__local__ConnectionString: mongodb://mongo:27017
+      Kestrel__Endpoints__Http__Url: http://+:6100
+      MongoDB__Profiles__local__ConnectionString: mongodb://mongo:27017
+      Ollama__Endpoint: http://ollama:11434
+      Onnx__Enabled: "true"
+      Onnx__EmbeddingEnabled: "true"
+      Onnx__ModelsDir: /data/models
     volumes:
       - onnx-models:/data/models
     depends_on:

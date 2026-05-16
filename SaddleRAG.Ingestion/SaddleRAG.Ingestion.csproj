@@ -5,19 +5,35 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <!--
-      ONNX Runtime execution-provider toggle. When UseGpu is true (the default),
-      this project references the DirectML-flavored OnnxRuntime package instead
-      of the CPU-only one and defines the USE_GPU conditional-compilation symbol
-      so OnnxExecutionProviderConfigurator can call AppendExecutionProvider_DML /
-      _CUDA. The production MSI is GPU-flavored — DirectML is a strict superset
-      of the CPU NuGet on Windows 10 1903+, so one MSI ships everywhere and the
-      runtime Onnx.ExecutionProvider setting (chosen at install time by the
-      installer's GPU auto-detect) picks which compiled-in EP to load; CPU is
-      always the fallback when the requested EP is unavailable.
-      Override at build time for a CPU-only local build: dotnet build -p:UseGpu=false
+      ONNX Runtime execution-provider toggle. Three mutually-exclusive build flavors:
+
+        UseGpu=true  (default)    DirectML NuGet — Windows GPU via Direct3D 12;
+                                  covers AMD, Intel, and NVIDIA without a CUDA install.
+                                  Used by the production Windows MSI.
+
+        UseGpuCuda=true           CUDA NuGet — NVIDIA GPU on Linux via CUDA Toolkit.
+                                  Used by the Docker :cuda image.
+
+        UseGpu=false              CPU-only NuGet — no GPU dependency.
+                                  Used by the Docker :cpu / :latest image and the
+                                  Linux CI build.
+
+      Both GPU flavors define USE_GPU so OnnxExecutionProviderConfigurator compiles in
+      the GPU append path. CUDA builds additionally define USE_GPU_CUDA so the
+      DirectML append (Windows-only API) is excluded and CUDA is enabled in
+      OnnxSettings.IsSupportedByBuild.
+
+      Override at build time:
+        dotnet build -p:UseGpu=false      # CPU-only
+        dotnet build -p:UseGpuCuda=true   # CUDA (Linux)
     -->
-    <UseGpu Condition="'$(UseGpu)' == ''">true</UseGpu>
-    <DefineConstants Condition="'$(UseGpu)' == 'true'">$(DefineConstants);USE_GPU</DefineConstants>
+    <UseGpuCuda Condition="'$(UseGpuCuda)' == ''">false</UseGpuCuda>
+    <!-- UseGpu defaults true only when not in CUDA mode -->
+    <UseGpu Condition="'$(UseGpu)' == '' and '$(UseGpuCuda)' != 'true'">true</UseGpu>
+    <!-- USE_GPU: any GPU package is referenced -->
+    <DefineConstants Condition="'$(UseGpu)' == 'true' or '$(UseGpuCuda)' == 'true'">$(DefineConstants);USE_GPU</DefineConstants>
+    <!-- USE_GPU_CUDA: specifically the CUDA NuGet, separates CUDA from DirectML in #if blocks -->
+    <DefineConstants Condition="'$(UseGpuCuda)' == 'true'">$(DefineConstants);USE_GPU_CUDA</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,14 +45,24 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.8" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
     <PackageReference Include="SharpCompress" Version="0.48.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.26.0" Condition="'$(UseGpu)' != 'true'" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.26.0"
+                      Condition="'$(UseGpu)' != 'true' and '$(UseGpuCuda)' != 'true'" />
     <!--
       Microsoft.ML.OnnxRuntime.DirectML lags Microsoft.ML.OnnxRuntime on
       NuGet — DirectML releases are gated on the upstream DirectML.dll
       cadence. 1.24.4 is the latest DirectML build at time of writing; the
       CPU build can stay at 1.26.0. Bump this when DirectML 1.26+ ships.
     -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" Condition="'$(UseGpu)' == 'true'" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4"
+                      Condition="'$(UseGpu)' == 'true' and '$(UseGpuCuda)' != 'true'" />
+    <!--
+      CUDA execution provider. Ships AppendExecutionProvider_CUDA and the
+      libonnxruntime_providers_cuda native binary for Linux x64.
+      Requires CUDA 12.x + cuDNN 9.x at runtime (provided by the nvidia/cuda
+      base image in Dockerfile.cuda). Version matches the CPU NuGet.
+    -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.26.0"
+                      Condition="'$(UseGpuCuda)' == 'true'" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
   </ItemGroup>
 

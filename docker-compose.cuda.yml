@@ -1,0 +1,39 @@
+# docker-compose.cuda.yml
+#
+# Override for the CUDA-enabled SaddleRAG image. Requests an NVIDIA GPU for
+# both the SaddleRAG container (ONNX Runtime CUDA execution provider) and the
+# Ollama container (GPU-accelerated LLM inference via CUDA).
+#
+# Prerequisites:
+#   • NVIDIA GPU with CUDA 12.x support
+#   • NVIDIA Container Toolkit installed on the host
+#     (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
+#
+# The :cuda image must be pulled or built locally first:
+#   docker compose -f docker-compose.yml -f docker-compose.cuda.yml pull
+#   # or: docker build -f Dockerfile.cuda -t ghcr.io/jackalopetechnologies/saddlerag:cuda .
+
+services:
+  saddlerag:
+    image: ghcr.io/jackalopetechnologies/saddlerag:cuda
+    environment:
+      Onnx__ExecutionProvider: Cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

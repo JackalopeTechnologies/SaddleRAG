@@ -177,13 +177,8 @@ public class OnnxSettings
     ///     currently-supported <see cref="OnnxExecutionProvider" />
     ///     (case-insensitive). Used by the <c>set_execution_provider</c>
     ///     MCP tool to validate the LLM's string input before mutating
-    ///     the setting. Only <see cref="OnnxExecutionProvider.Cpu" /> and
-    ///     <see cref="OnnxExecutionProvider.DirectMl" /> are accepted
-    ///     today; <see cref="OnnxExecutionProvider.Cuda" /> stays a
-    ///     defined enum value for future-proofing but is rejected here
-    ///     because no CUDA-flavored OnnxRuntime NuGet ships with the
-    ///     project. Lift the Cuda exclusion when a CUDA build flavor is
-    ///     added to <c>SaddleRAG.Ingestion.csproj</c>.
+    ///     the setting. Delegates to <see cref="IsSupportedByBuild" />
+    ///     so valid values depend on the build flavor (CPU, DirectML, or CUDA).
     /// </summary>
     public static bool IsKnownExecutionProvider(string? value)
     {
@@ -194,19 +189,28 @@ public class OnnxSettings
 
     /// <summary>
     ///     Returns true if <paramref name="provider" /> is one the current
-    ///     build can attempt to load. CPU always; DirectML when the
-    ///     DirectML NuGet is referenced; CUDA never (yet — see
-    ///     <see cref="IsKnownExecutionProvider" />).
+    ///     build can attempt to load.
+    ///     <list type="bullet">
+    ///         <item><see cref="OnnxExecutionProvider.Cpu" /> — always available.</item>
+    ///         <item><see cref="OnnxExecutionProvider.DirectMl" /> — available in DirectML and CPU builds; will gracefully fall back to CPU on any machine lacking DX12.</item>
+    ///         <item><see cref="OnnxExecutionProvider.Cuda" /> — available only in the CUDA build (<c>UseGpuCuda=true</c>, the Docker <c>:cuda</c> image).</item>
+    ///     </list>
     /// </summary>
     public static bool IsSupportedByBuild(OnnxExecutionProvider provider)
     {
+#if USE_GPU_CUDA
         bool result = provider switch
         {
-            OnnxExecutionProvider.Cpu => true,
-            OnnxExecutionProvider.DirectMl => true,
-            OnnxExecutionProvider.Cuda => false,
-            var _ => false
+            OnnxExecutionProvider.Cpu or OnnxExecutionProvider.Cuda => true,
+            _ => false
         };
+#else
+        bool result = provider switch
+        {
+            OnnxExecutionProvider.Cpu or OnnxExecutionProvider.DirectMl => true,
+            _ => false
+        };
+#endif
         return result;
     }
 

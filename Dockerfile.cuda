@@ -1,0 +1,79 @@
+# Dockerfile.cuda
+#
+# CUDA-enabled SaddleRAG image. Build flavor: UseGpuCuda=true (ONNX Runtime
+# references Microsoft.ML.OnnxRuntime.Gpu, which ships the CUDA execution
+# provider binary for linux-x64).
+#
+# Runtime requirements:
+#   • NVIDIA GPU with CUDA 12.x support
+#   • NVIDIA Container Toolkit on the host (installs nvidia-container-runtime)
+#   • docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
+#
+# Base image note: nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 provides
+# CUDA 12.6.3 + cuDNN runtime on Ubuntu 24.04 (Noble), matching the SDK
+# build stage. ONNX Runtime 1.26 requires CUDA 12.x and cuDNN 9.x; the
+# cudnn-runtime tag bundles cuDNN so no separate cuDNN install is needed.
+# The self-contained publish includes the .NET runtime, so we do not need
+# mcr.microsoft.com/dotnet/aspnet as the base here.
+
+# ── Stage 1: build ───────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
+        -c Release \
+        -r linux-x64 \
+        --self-contained true \
+        -p:UseGpuCuda=true \
+        -p:TreatWarningsAsErrors=true \
+        -o /app/publish
+
+# ── Stage 2: CUDA runtime ────────────────────────────────────────────────────
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 AS runtime
+
+# Playwright / Chromium system dependencies + PowerShell (for playwright.ps1).
+# libgomp1 — OpenMP required by ORT CUDA execution provider.
+# libasound2t64 (not libasound2) — Ubuntu Noble's time_t64 transition.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        wget \
+        gnupg \
+        apt-transport-https \
+        libgomp1 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnspr4 \
+        libnss3 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libasound2t64 \
+        xvfb \
+        fonts-liberation \
+    && wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb \
+    && dpkg -i /tmp/packages-microsoft-prod.deb \
+    && rm /tmp/packages-microsoft-prod.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends powershell \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# Install Playwright browsers using the PowerShell script shipped with publish output
+RUN pwsh playwright.ps1 install chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+EXPOSE 6100
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=5 \
+    CMD curl -sf http://localhost:6100/health || exit 1
+
+ENTRYPOINT ["./SaddleRAG.Mcp"]
