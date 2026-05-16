@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using SaddleRAG.Cli.Commands;
+using SaddleRAG.Cli.Handlers;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -268,24 +269,10 @@ ingestCommand.SetAction(async (parseResult, ct) =>
 // list command
 var listCommand = new Command(ListCommandName, ListAllLibrariesDescription);
 listCommand.SetAction(async (parseResult, ct) =>
-                      {
-                          var repo = provider.GetRequiredService<ILibraryRepository>();
-                          var libraries = await repo.GetAllLibrariesAsync();
-
-                          if (libraries.Count == 0)
-                              Console.WriteLine("No libraries ingested yet.");
-                          else
-                          {
-                              foreach(var lib in libraries)
-                              {
-                                  Console
-                                      .WriteLine($"  {lib.Id} — {lib.Name} (current: {lib.CurrentVersion}, versions: {string.Join(", ", lib.AllVersions)})"
-                                                );
-                              }
-                          }
-
-                          return 0;
-                      }
+                          await ListLibrariesHandler.RunAsync(provider.GetRequiredService<ILibraryRepository>(),
+                                                              Console.Out,
+                                                              ct
+                                                             )
                      );
 
 // status command
@@ -294,34 +281,16 @@ var statusLibOption = new Option<string>(LibraryIdOptionName)
                           { Description = LibraryIdDescription, Required = true };
 statusCommand.Options.Add(statusLibOption);
 statusCommand.SetAction(async (parseResult, ct) =>
-                        {
-                            var libraryId = parseResult.GetValue(statusLibOption) ??
-                                            throw new
-                                                InvalidOperationException($"Required option '{LibraryIdOptionName}' missing"
-                                                                         );
-                            var libRepo = provider.GetRequiredService<ILibraryRepository>();
-                            var pageRepo = provider.GetRequiredService<IPageRepository>();
-                            var chunkRepo = provider.GetRequiredService<IChunkRepository>();
-
-                            var lib = await libRepo.GetLibraryAsync(libraryId);
-                            if (lib == null)
-                                Console.WriteLine($"Library '{libraryId}' not found.");
-                            else
-                            {
-                                Console.WriteLine($"Library: {lib.Name} ({lib.Id})");
-                                Console.WriteLine($"Current Version: {lib.CurrentVersion}");
-                                Console.WriteLine($"All Versions: {string.Join(", ", lib.AllVersions)}");
-
-                                foreach(var ver in lib.AllVersions)
-                                {
-                                    int pages = await pageRepo.GetPageCountAsync(libraryId, ver);
-                                    int chunks = await chunkRepo.GetChunkCountAsync(libraryId, ver);
-                                    Console.WriteLine($"  v{ver}: {pages} pages, {chunks} chunks");
-                                }
-                            }
-
-                            return 0;
-                        }
+                            await StatusHandler.RunAsync(parseResult.GetValue(statusLibOption) ??
+                                                         throw new
+                                                             InvalidOperationException($"Required option '{LibraryIdOptionName}' missing"
+                                                                                      ),
+                                                         provider.GetRequiredService<ILibraryRepository>(),
+                                                         provider.GetRequiredService<IPageRepository>(),
+                                                         provider.GetRequiredService<IChunkRepository>(),
+                                                         Console.Out,
+                                                         ct
+                                                        )
                        );
 
 // dryrun command
