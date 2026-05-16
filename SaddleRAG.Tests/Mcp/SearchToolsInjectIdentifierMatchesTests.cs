@@ -8,7 +8,9 @@
 
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Mcp.Tools;
 using SaddleRAG.Tests.Monitor;
 
@@ -133,6 +135,7 @@ public sealed class SearchToolsInjectIdentifierMatchesTests
         var fakeRepo = new FakeChunkRepository();
         fakeRepo.ThrowOnFindByQualifiedName((lib, ver, qn) => new InvalidOperationException($"mongo down: {qn}"));
         var logger = Substitute.For<ILogger<SearchTools.SearchToolsLog>>();
+        var metrics = Substitute.For<IQueryMetrics>();
 
         var result =
             await SearchTools.InjectIdentifierMatchesOrFallbackAsync(hybrid,
@@ -141,6 +144,7 @@ public sealed class SearchToolsInjectIdentifierMatchesTests
                                                                     "lib",
                                                                     "1.0",
                                                                     logger,
+                                                                    metrics,
                                                                     TestContext.Current.CancellationToken
                                                                    );
 
@@ -161,6 +165,7 @@ public sealed class SearchToolsInjectIdentifierMatchesTests
         var fakeRepo = new FakeChunkRepository();
         fakeRepo.ThrowOnFindByQualifiedName((lib, ver, qn) => new OperationCanceledException());
         var logger = Substitute.For<ILogger<SearchTools.SearchToolsLog>>();
+        var metrics = Substitute.For<IQueryMetrics>();
 
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => SearchTools.InjectIdentifierMatchesOrFallbackAsync(hybrid,
@@ -169,6 +174,7 @@ public sealed class SearchToolsInjectIdentifierMatchesTests
                                                                     "lib",
                                                                     "1.0",
                                                                     logger,
+                                                                    metrics,
                                                                     TestContext.Current.CancellationToken
                                                                    ));
         logger.DidNotReceive()
@@ -178,6 +184,69 @@ public sealed class SearchToolsInjectIdentifierMatchesTests
                    Arg.Any<Exception?>(),
                    Arg.Any<Func<object, Exception?, string>>()
                   );
+        metrics.DidNotReceive()
+               .Record(Arg.Any<string>(),
+                       Arg.Any<TimeSpan>(),
+                       Arg.Any<bool>(),
+                       Arg.Any<int?>(),
+                       Arg.Any<string?>()
+                      );
+    }
+
+    [Fact]
+    public async Task InjectIdentifierMatchesOrFallbackAsyncRecordsSuccessMetricWithInjectedCount()
+    {
+        var hybrid = new[] { MakeHybridCandidate("hybrid-1", "Unrelated") };
+        var fakeRepo = new FakeChunkRepository();
+        fakeRepo.SetQualifiedNameMatches("MovePvt", [MakeChunk("symbol-chunk", "MovePvt")]);
+        var logger = Substitute.For<ILogger<SearchTools.SearchToolsLog>>();
+        var metrics = Substitute.For<IQueryMetrics>();
+
+        await SearchTools.InjectIdentifierMatchesOrFallbackAsync(hybrid,
+                                                                 fakeRepo,
+                                                                 "MovePvt",
+                                                                 "lib",
+                                                                 "1.0",
+                                                                 logger,
+                                                                 metrics,
+                                                                 TestContext.Current.CancellationToken
+                                                                );
+
+        metrics.Received(requiredNumberOfCalls: 1)
+               .Record(QueryMetricOperations.IdentifierFastPath,
+                       Arg.Any<TimeSpan>(),
+                       success: true,
+                       resultCount: 1,
+                       note: "library=lib"
+                      );
+    }
+
+    [Fact]
+    public async Task InjectIdentifierMatchesOrFallbackAsyncRecordsFailureMetricWithExceptionType()
+    {
+        var hybrid = new[] { MakeHybridCandidate("hybrid-1", "Unrelated") };
+        var fakeRepo = new FakeChunkRepository();
+        fakeRepo.ThrowOnFindByQualifiedName((lib, ver, qn) => new InvalidOperationException("mongo down"));
+        var logger = Substitute.For<ILogger<SearchTools.SearchToolsLog>>();
+        var metrics = Substitute.For<IQueryMetrics>();
+
+        await SearchTools.InjectIdentifierMatchesOrFallbackAsync(hybrid,
+                                                                 fakeRepo,
+                                                                 "MovePvt",
+                                                                 "lib",
+                                                                 "1.0",
+                                                                 logger,
+                                                                 metrics,
+                                                                 TestContext.Current.CancellationToken
+                                                                );
+
+        metrics.Received(requiredNumberOfCalls: 1)
+               .Record(QueryMetricOperations.IdentifierFastPath,
+                       Arg.Any<TimeSpan>(),
+                       success: false,
+                       resultCount: null,
+                       note: "InvalidOperationException library=lib"
+                      );
     }
 
     private static SearchTools.HybridCandidate MakeHybridCandidate(string id, string qualifiedName) =>

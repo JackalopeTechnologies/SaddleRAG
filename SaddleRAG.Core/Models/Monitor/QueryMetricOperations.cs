@@ -26,4 +26,13 @@ public static class QueryMetricOperations
 
     /// <summary>Re-ranker call after hybrid blending.</summary>
     public const string Rerank = "rerank";
+
+    /// <summary>
+    ///     Identifier-shape fast path inside <c>search_docs</c>. Records both
+    ///     success (with the number of QualifiedName-matched chunks injected,
+    ///     possibly zero) and failure (with the exception type as the note)
+    ///     so an SLO can alert on a high failure rate that the
+    ///     LogLevel.Warning emit alone wouldn't surface.
+    /// </summary>
+    public const string IdentifierFastPath = "identifier_fast_path";
 }
