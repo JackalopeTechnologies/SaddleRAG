@@ -24,7 +24,12 @@ namespace SaddleRAG.Ingestion.Embedding;
 public class OllamaBootstrapper
 {
     private static readonly HttpClient smHttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(minutes: 5) };
-    private static readonly HttpClient smClient = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 5) };
+
+    // 1-second probe timeout: short enough that 30 retries finish in well
+    // under a minute when Ollama just isn't there (Windows fresh install),
+    // long enough to clear the latency budget of a healthy reachable
+    // sidecar response.
+    private static readonly HttpClient smClient = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 1) };
 
     public OllamaBootstrapper(IOptions<OllamaSettings> settings,
                               ILogger<OllamaBootstrapper> logger)
@@ -41,16 +46,26 @@ public class OllamaBootstrapper
 
     /// <summary>
     ///     Full bootstrap sequence: install → start → pull models.
-    ///     When Ollama is already reachable (e.g. the Docker sidecar is up),
-    ///     installation and service-start are skipped — only model availability
-    ///     is verified, which avoids the Linux <see cref="PlatformNotSupportedException" />
-    ///     that <see cref="EnsureInstalledAsync" /> would throw in a container.
+    ///     Probes <see cref="OllamaSettings.Endpoint" /> with a bounded
+    ///     retry loop before falling through to install. Docker sidecar
+    ///     deployments need the patience — `depends_on` only waits for the
+    ///     ollama container to be created, not for the network listener to
+    ///     come up, so the first probe can race against ollama's startup
+    ///     and return false on a healthy system. Without the retry, the
+    ///     SaddleRAG container would fall through to <see cref="EnsureInstalledAsync" />
+    ///     and throw <see cref="PlatformNotSupportedException" /> on Linux.
     /// </summary>
     public async Task BootstrapAsync(IReadOnlyList<string>? additionalModels = null,
                                      CancellationToken ct = default)
     {
-        if (await IsReachableAsync(ct))
-            mLogger.LogInformation("Ollama already reachable at {Endpoint}, skipping install/start", mSettings.Endpoint);
+        var reachable = await WaitForReachableAsync(IsReachableAsync,
+                                                    BootstrapReachabilityMaxAttempts,
+                                                    BootstrapReachabilityPollMs,
+                                                    ct
+                                                   );
+
+        if (reachable)
+            mLogger.LogInformation("Ollama reachable at {Endpoint}, skipping install/start", mSettings.Endpoint);
         else
         {
             await EnsureInstalledAsync(ct);
@@ -59,6 +74,37 @@ public class OllamaBootstrapper
 
         await EnsureModelsAsync(additionalModels, ct);
         mLogger.LogInformation("Ollama bootstrap complete");
+    }
+
+    /// <summary>
+    ///     Probe <paramref name="probe" /> until it returns true or
+    ///     <paramref name="maxAttempts" /> is exhausted, sleeping
+    ///     <paramref name="delayMs" /> between attempts. Returns true on
+    ///     the first successful probe; returns false only after every
+    ///     attempt has failed. Exposed internally so tests can drive the
+    ///     retry loop with a stub probe instead of an HTTP server.
+    /// </summary>
+    internal static async Task<bool> WaitForReachableAsync(Func<CancellationToken, Task<bool>> probe,
+                                                           int maxAttempts,
+                                                           int delayMs,
+                                                           CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        if (maxAttempts < 1)
+            throw new ArgumentOutOfRangeException(nameof(maxAttempts), maxAttempts, "maxAttempts must be >= 1");
+        if (delayMs < 0)
+            throw new ArgumentOutOfRangeException(nameof(delayMs), delayMs, "delayMs must be >= 0");
+
+        var reachable = false;
+
+        for(var attempt = 0; attempt < maxAttempts && !reachable; attempt++)
+        {
+            reachable = await probe(ct);
+            if (!reachable && attempt < maxAttempts - 1)
+                await Task.Delay(delayMs, ct);
+        }
+
+        return reachable;
     }
 
     /// <summary>
@@ -136,6 +182,12 @@ public class OllamaBootstrapper
     private const int PostInstallDelayMs = 3000;
     private const int ServicePollDelayMs = 1000;
     private const int ProgressLogInterval = 10;
+    // Bootstrap-time reachability probe: 30 attempts × 1s = ~30s wall
+    // clock with smClient's 1s HTTP timeout absorbing connection-refused
+    // and DNS-fail fast. Tuned for "Docker sidecar warming up" without
+    // blowing the budget for "Windows fresh install with no Ollama yet."
+    private const int BootstrapReachabilityMaxAttempts = 30;
+    private const int BootstrapReachabilityPollMs = 1000;
 
     private const string OllamaExeNameWindows = "ollama.exe";
     private const string OllamaExeNamePosix = "ollama";
