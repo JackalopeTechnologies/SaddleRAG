@@ -197,7 +197,14 @@ public sealed class JobRepository : IJobRepository
         return result;
     }
 
-    private static FilterDefinition<JobRecord>? BuildDeleteFilter(JobType? jobType,
+    /// <summary>
+    ///     Compose a Mongo filter from the optional bulk-delete criteria.
+    ///     Returns <c>null</c> when every criterion is null/empty so a
+    ///     caller-side typo can't accidentally truncate the entire jobs
+    ///     collection. Exposed as <c>internal static</c> so the
+    ///     refuse-all-null safety net is unit-tested.
+    /// </summary>
+    internal static FilterDefinition<JobRecord>? BuildDeleteFilter(JobType? jobType,
                                                                    JobStatus? status,
                                                                    string? libraryId,
                                                                    string? version,
