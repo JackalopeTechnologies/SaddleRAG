@@ -125,10 +125,10 @@ public static class Bm25Scorer
 
     /// <summary>
     ///     Tokenize a query the SAME way <see cref="Bm25IndexBuilder" />
-    ///     tokenizes chunks. Lowercased prose tokens AND original-cased
-    ///     identifier tokens, deduped. Public so callers (e.g.,
-    ///     <c>SearchTools</c>) can pre-feed the term list into the
-    ///     lookup if they want.
+    ///     tokenizes chunks. Lowercased prose tokens AND identifier tokens
+    ///     via <see cref="IdentifierTokenizer.EmitRawAndLowercase" />
+    ///     (raw casing plus a lowercase mirror so case-mismatched dotted
+    ///     queries match indexed mixed-case identifiers), deduped.
     /// </summary>
     public static IReadOnlyList<string> ExtractQueryTerms(string query)
     {
@@ -136,13 +136,11 @@ public static class Bm25Scorer
 
         var terms = new List<string>();
 
-        // Lowercase prose tokens.
         foreach(var match in smProseTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
             terms.Add(match.Value.ToLowerInvariant());
 
-        // Original-cased identifier tokens.
-        foreach(var match in smIdentifierTokenRegex.Matches(query).Where(m => m.Value.Length >= MinTokenLength))
-            terms.Add(match.Value);
+        foreach(var token in IdentifierTokenizer.EmitRawAndLowercase(query, MinTokenLength))
+            terms.Add(token);
 
         var distinct = terms.Distinct(StringComparer.Ordinal).ToList();
         return distinct;
@@ -153,7 +151,4 @@ public static class Bm25Scorer
     private const double B = 0.75;
 
     private static readonly Regex smProseTokenRegex = new Regex("[A-Za-z][A-Za-z0-9]+", RegexOptions.Compiled);
-
-    private static readonly Regex smIdentifierTokenRegex =
-        new Regex(@"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::|->)[A-Za-z_][A-Za-z0-9_]*)*", RegexOptions.Compiled);
 }

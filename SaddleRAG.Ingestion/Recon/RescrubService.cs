@@ -83,7 +83,23 @@ public class RescrubService
         RescrubResult result;
 
         if (profile == null)
-            result = new RescrubResult { LibraryId = libraryId, Version = version, ReconNeeded = true };
+        {
+            // Symbol extraction and reclassification require profile-driven
+            // language/style hints, so they can't run. BM25 shard rebuild
+            // has no profile dependency, so we still refresh indexes —
+            // letting a tokenizer change reach the corpus without forcing
+            // recon_library first. ReconNeeded stays true so callers know
+            // full symbol metadata is still missing.
+            result = await RunIndexesOnlyRescrubAsync(chunkRepo,
+                                                     indexRepo,
+                                                     bm25ShardRepo,
+                                                     libraryId,
+                                                     version,
+                                                     options,
+                                                     onProgress,
+                                                     ct
+                                                    );
+        }
         else
         {
             result = await RunRescrubAsync(chunkRepo,
@@ -101,6 +117,109 @@ public class RescrubService
         }
 
         return result;
+    }
+
+    private async Task<RescrubResult> RunIndexesOnlyRescrubAsync(IChunkRepository chunkRepo,
+                                                                 ILibraryIndexRepository indexRepo,
+                                                                 IBm25ShardRepository bm25ShardRepo,
+                                                                 string libraryId,
+                                                                 string version,
+                                                                 RescrubOptions options,
+                                                                 Action<int, int>? onProgress,
+                                                                 CancellationToken ct)
+    {
+        var chunks = await chunkRepo.GetChunksAsync(libraryId, version, ct);
+        var scoped = options.MaxChunks.HasValue ? chunks.Take(options.MaxChunks.Value).ToList() : chunks.ToList();
+        var boundaryIssues = options.BoundaryAudit ? ChunkBoundaryAudit.CountIssues(scoped) : 0;
+
+        var indexesBuilt = false;
+        if (options is { RebuildIndexes: true, DryRun: false })
+        {
+            await PersistIndexesOnlyAsync(indexRepo, bm25ShardRepo, libraryId, version, scoped, ct);
+            indexesBuilt = true;
+        }
+
+        // Single end-of-method callback — chunks weren't mutated, so per-chunk progress would misrepresent the work.
+        onProgress?.Invoke(scoped.Count, scoped.Count);
+
+        mLogger.LogInformation("Rescrub {Library}/{Version} (indexes-only, no profile): processed={Processed}, indexesBuilt={IndexesBuilt}, dryRun={DryRun}",
+                               libraryId,
+                               version,
+                               scoped.Count,
+                               indexesBuilt,
+                               options.DryRun
+                              );
+
+        var result = new RescrubResult
+                         {
+                             LibraryId = libraryId,
+                             Version = version,
+                             Processed = scoped.Count,
+                             Changed = 0,
+                             BoundaryIssues = boundaryIssues,
+                             DidReclassify = false,
+                             IndexesBuilt = indexesBuilt,
+                             DryRun = options.DryRun,
+                             SampleDiffs = [],
+                             ReconNeeded = true,
+                             ExcludedCount = 0,
+                             Hints = []
+                         };
+        return result;
+    }
+
+    private async Task PersistIndexesOnlyAsync(ILibraryIndexRepository indexRepo,
+                                               IBm25ShardRepository bm25ShardRepo,
+                                               string libraryId,
+                                               string version,
+                                               IReadOnlyList<DocChunk> chunks,
+                                               CancellationToken ct)
+    {
+        var existingIndex = await indexRepo.GetAsync(libraryId, version, ct);
+        var fenceSymbols = CodeFenceScanner.ScanContents(chunks.Select(c => c.Content));
+
+        var bm25Build = Bm25IndexBuilder.Build(libraryId, version, chunks);
+        await bm25ShardRepo.ReplaceShardsAsync(libraryId, version, bm25Build.Shards, ct);
+
+        // Manifest carries forward any prior parser/classifier markers when
+        // an index already exists so a later recon_library can still
+        // auto-detect drift. When no prior index exists, LastParserVersion
+        // stays at 0 (the sentinel for "parser never ran on this build") —
+        // writing ParserVersionInfo.Current here would lie because symbol
+        // extraction is skipped on the no-profile path. LastProfileHash is
+        // always cleared in this path: if a profile existed and was deleted,
+        // a non-empty hash would point at a profile that's gone — clearing
+        // forces downstream recon to treat the library as profile-less.
+        var carryoverProfileHash = existingIndex?.Manifest.LastProfileHash;
+        if (!string.IsNullOrEmpty(carryoverProfileHash))
+        {
+            mLogger.LogWarning("Indexes-only rescrub for {Library}/{Version}: existing index has LastProfileHash={Hash} but profile is missing; clearing hash so recon_library treats this as profile-less",
+                               libraryId,
+                               version,
+                               carryoverProfileHash
+                              );
+        }
+
+        var manifest = new LibraryManifest
+                           {
+                               LastParserVersion = existingIndex?.Manifest.LastParserVersion ?? 0,
+                               LastProfileHash = string.Empty,
+                               LastClassifierVersion = existingIndex?.Manifest.LastClassifierVersion ??
+                                                       mClassifier.GetCurrentVersion(),
+                               LastBuiltUtc = DateTime.UtcNow
+                           };
+
+        var index = new LibraryIndex
+                        {
+                            Id = LibraryIndexRepository.MakeId(libraryId, version),
+                            LibraryId = libraryId,
+                            Version = version,
+                            Bm25 = bm25Build.Stats,
+                            CodeFenceSymbols = fenceSymbols.ToList(),
+                            Manifest = manifest
+                        };
+
+        await indexRepo.UpsertAsync(index, ct);
     }
 
     private async Task<RescrubResult> RunRescrubAsync(IChunkRepository chunkRepo,

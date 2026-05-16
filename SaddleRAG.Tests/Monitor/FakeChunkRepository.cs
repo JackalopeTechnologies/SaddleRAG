@@ -55,11 +55,37 @@ internal sealed class FakeChunkRepository : IChunkRepository
     public Task<int> GetChunkCountAsync(string libraryId, string version, CancellationToken ct = default) =>
         throw new NotSupportedException("FakeChunkRepository: GetChunkCountAsync not supported in this test");
 
+    private readonly Dictionary<string, IReadOnlyList<DocChunk>> mQualifiedNameMatches =
+        new Dictionary<string, IReadOnlyList<DocChunk>>(StringComparer.Ordinal);
+
+    private Func<string, string, string, Exception>? mFindByQualifiedNameThrow;
+
     public Task<IReadOnlyList<DocChunk>> FindByQualifiedNameAsync(string libraryId,
                                                                   string version,
                                                                   string qualifiedName,
-                                                                  CancellationToken ct = default) =>
-        throw new NotSupportedException("FakeChunkRepository: FindByQualifiedNameAsync not supported in this test");
+                                                                  CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(qualifiedName);
+
+        if (mFindByQualifiedNameThrow != null)
+            throw mFindByQualifiedNameThrow(libraryId, version, qualifiedName);
+
+        var matches = mQualifiedNameMatches.GetValueOrDefault(qualifiedName) ?? [];
+        return Task.FromResult(matches);
+    }
+
+    public void SetQualifiedNameMatches(string qualifiedName, IReadOnlyList<DocChunk> matches)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(qualifiedName);
+        ArgumentNullException.ThrowIfNull(matches);
+        mQualifiedNameMatches[qualifiedName] = matches;
+    }
+
+    public void ThrowOnFindByQualifiedName(Func<string, string, string, Exception> exceptionFactory)
+    {
+        ArgumentNullException.ThrowIfNull(exceptionFactory);
+        mFindByQualifiedNameThrow = exceptionFactory;
+    }
 
     public Task<IReadOnlyList<string>> GetQualifiedNamesAsync(string libraryId,
                                                               string version,
