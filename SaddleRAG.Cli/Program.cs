@@ -92,15 +92,12 @@ const string ProfileCommandName = "profile";
 const string ProfileCommandDescription = "Show or switch MongoDB connection profiles";
 const string ListAvailableProfilesDescription = "List available profiles";
 const string MongoDbProfileEnvVar = "SADDLERAG_MONGODB_PROFILE";
-const string ActiveMarker = " ←";
 const string ScanCommandName = "scan";
 const string ScanCommandDescription = "Scan project dependencies and index documentation";
 const string PathOptionName = "--path";
 const string PathOptionDescription = "Path to project root, .sln, .csproj, package.json, or requirements.txt";
 const string ProfileOptionName = "--profile";
 const string ProfileOptionDescription = "Database profile name";
-const string QueuedStatus = "queued";
-const string FailedStatus = "failed";
 
 #endregion
 
@@ -623,42 +620,11 @@ var profileCommand = new Command(ProfileCommandName, ProfileCommandDescription);
 
 var profileListCommand = new Command(ListCommandName, ListAvailableProfilesDescription);
 profileListCommand.SetAction(parseResult =>
-                             {
-                                 var settings = provider.GetRequiredService<IOptions<SaddleRagDbSettings>>().Value;
-                                 var activeOverride = Environment.GetEnvironmentVariable(MongoDbProfileEnvVar);
-                                 (var activeConn, var activeDb) = settings.Resolve();
-
-                                 Console.WriteLine($"Active: {activeOverride ?? settings.ActiveProfile ?? "(direct)"}");
-                                 Console.WriteLine($"Connected to: {activeConn} / {activeDb}");
-                                 Console.WriteLine();
-
-                                 if (settings.Profiles.Count == 0)
-                                 {
-                                     Console
-                                         .WriteLine("No profiles defined. Using direct ConnectionString/DatabaseName.");
-                                 }
-                                 else
-                                 {
-                                     foreach((var name, var profile) in settings.Profiles)
-                                     {
-                                         var isActive = name.Equals(activeOverride ?? settings.ActiveProfile,
-                                                                    StringComparison.OrdinalIgnoreCase
-                                                                   );
-                                         var marker = isActive ? ActiveMarker : string.Empty;
-                                         Console
-                                             .WriteLine($"  {name}: {profile.ConnectionString} / {profile.DatabaseName}{marker}"
-                                                       );
-                                         if (!string.IsNullOrEmpty(profile.Description))
-                                             Console.WriteLine($"    {profile.Description}");
-                                     }
-                                 }
-
-                                 Console.WriteLine();
-                                 Console.WriteLine("Switch profiles:");
-                                 Console.WriteLine("  Set SADDLERAG_MONGODB_PROFILE=company  (environment variable)");
-                                 Console.WriteLine("  Or edit ActiveProfile in appsettings.json");
-                                 return 0;
-                             }
+                                 ProfileListHandler.Run(provider.GetRequiredService<IOptions<SaddleRagDbSettings>>()
+                                                                .Value,
+                                                        Environment.GetEnvironmentVariable(MongoDbProfileEnvVar),
+                                                        Console.Out
+                                                       )
                             );
 
 profileCommand.Subcommands.Add(profileListCommand);
@@ -681,48 +647,7 @@ scanCommand.SetAction(async (parseResult, ct) =>
                           var indexer = provider.GetRequiredService<DependencyIndexer>();
                           var report = await indexer.IndexProjectAsync(path, profile, ct: ct);
 
-                          Console.WriteLine();
-                          Console.WriteLine("=== Dependency Scan Report ===");
-                          Console.WriteLine($"Project path:             {report.ProjectPath}");
-                          Console.WriteLine($"Total dependencies found:  {report.TotalDependencies}");
-                          Console.WriteLine($"Filtered out:              {report.FilteredOut}");
-                          Console.WriteLine($"Already cached:            {report.AlreadyCached}");
-                          Console.WriteLine($"Cached (different version): {report.CachedDifferentVersion}");
-                          Console.WriteLine($"Newly queued:              {report.NewlyQueued}");
-                          Console.WriteLine($"Resolution failed:         {report.ResolutionFailed}");
-
-                          var queuedPackages = report.Packages
-                                                     .Where(p => p.Status == QueuedStatus)
-                                                     .ToList();
-
-                          if (queuedPackages.Count > 0)
-                          {
-                              Console.WriteLine();
-                              Console.WriteLine($"Queued for scraping ({queuedPackages.Count}):");
-                              foreach(var pkg in queuedPackages)
-                              {
-                                  Console
-                                      .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} -> {pkg.DocUrl}");
-                              }
-                          }
-
-                          var failedPackages = report.Packages
-                                                     .Where(p => p.Status == FailedStatus)
-                                                     .ToList();
-
-                          if (failedPackages.Count > 0)
-                          {
-                              Console.WriteLine();
-                              Console.WriteLine($"Failed ({failedPackages.Count}):");
-                              foreach(var pkg in failedPackages)
-                              {
-                                  Console
-                                      .WriteLine($"  {pkg.EcosystemId}/{pkg.PackageId} {pkg.Version} — {pkg.ErrorMessage}"
-                                                );
-                              }
-                          }
-
-                          return 0;
+                          return ScanReportRenderer.Render(report, Console.Out);
                       }
                      );
 
