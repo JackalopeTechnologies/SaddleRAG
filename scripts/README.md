@@ -38,4 +38,10 @@ If you want to enforce one later, parse `./coverage-results/html/Summary.txt` (o
 
 ### CI parity
 
-`build-linux` in `.github/workflows/build.yml` runs the same `--collect` flag and uploads the cobertura XML to Codecov (tokenless OIDC for public repos) plus a workflow artifact. Local results should match CI's exactly when run on the same revision with the same filter.
+`build-linux` in `.github/workflows/build.yml` runs the same `--collect` flag and the same `reportgenerator` invocation, then:
+
+- Renders the markdown summary on the workflow run page via `$GITHUB_STEP_SUMMARY`.
+- Posts/updates a sticky coverage comment on the PR.
+- Uploads the cobertura XML + full HTML drill-down report as a workflow artifact.
+
+Local results should match CI's exactly when run on the same revision with the same filter.

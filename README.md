@@ -1,7 +1,5 @@
 # SaddleRAG
 
-[![codecov](https://codecov.io/gh/JackalopeTechnologies/SaddleRAG/branch/master/graph/badge.svg)](https://codecov.io/gh/JackalopeTechnologies/SaddleRAG)
-
 **Documentation Retrieval-Augmented Generation for AI coding assistants.**
 
 SaddleRAG scrapes documentation websites, classifies and chunks the content with a local LLM, generates vector embeddings, and stores everything in MongoDB. It exposes the indexed documentation through MCP (Model Context Protocol) tools so that AI assistants like Claude Code, GitHub Copilot, and others can search your documentation library in real time.
@@ -165,7 +163,7 @@ Both scripts:
 
 Pass `--no-open` (bash) or `-NoOpen` (PowerShell) to skip the browser launch; pass `--filter <expr>` / `-Filter <expr>` to override the default `Category!=Integration` xUnit filter.
 
-The same `--collect` flag runs in CI on the `build-linux` job; the resulting `coverage.cobertura.xml` is uploaded to Codecov (badge above) and as a workflow artifact for download.
+The same `--collect` flag runs in CI on the `build-linux` job. The coverage summary is rendered on the workflow run page (via `$GITHUB_STEP_SUMMARY`) and posted as a sticky comment on each PR; the full cobertura XML and HTML drill-down report are uploaded as a workflow artifact for download.
 
 ### Connect Your AI Assistant
 

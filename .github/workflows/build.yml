@@ -107,6 +107,12 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
 
+    # pull-requests: write lets the sticky-coverage-comment step post + update
+    # the PR comment. contents/packages come from the workflow-level grant.
+    permissions:
+      contents: read
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@v5
 
@@ -154,24 +160,38 @@ jobs:
         # test project run.
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category!=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
 
-      - name: Upload coverage to Codecov
-        # codecov/codecov-action@v4 supports tokenless OIDC upload for public
-        # repos — no CODECOV_TOKEN needed. fail_ci_if_error stays false so a
-        # Codecov outage doesn't break the build status; the artifact upload
-        # below is the redundant copy.
+      - name: Generate coverage report
+        # Mirrors scripts/coverage.{ps1,sh} so dev-local and CI produce the
+        # same outputs. MarkdownSummaryGithub feeds the step summary +
+        # sticky PR comment below; HtmlInline_AzurePipelines is the
+        # downloadable drill-down. TextSummary is for console eyeballing.
         if: success() || failure()
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage-results/**/coverage.cobertura.xml
-          flags: linux
-          fail_ci_if_error: false
+        run: |
+          dotnet tool restore
+          dotnet tool run reportgenerator \
+            "-reports:./coverage-results/**/coverage.cobertura.xml" \
+            "-targetdir:./coverage-results/report" \
+            "-reporttypes:MarkdownSummaryGithub;TextSummary;HtmlInline_AzurePipelines"
 
-      - name: Upload coverage XML artifact
+      - name: Render coverage on workflow summary
+        if: success() || failure()
+        run: cat ./coverage-results/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage
+          path: ./coverage-results/report/SummaryGithub.md
+
+      - name: Upload coverage artifact
         if: success() || failure()
         uses: actions/upload-artifact@v5
         with:
-          name: coverage-cobertura-${{ steps.version.outputs.PackageVersion }}
-          path: ./coverage-results/**/coverage.cobertura.xml
+          name: coverage-${{ steps.version.outputs.PackageVersion }}
+          path: |
+            ./coverage-results/**/coverage.cobertura.xml
+            ./coverage-results/report/**
           # Fail loudly when the Test step "succeeded" but produced no XML —
           # signals a coverlet.collector attach failure that the green check
           # would otherwise hide.
