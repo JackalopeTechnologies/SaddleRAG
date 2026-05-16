@@ -107,12 +107,6 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
 
-    # pull-requests: write lets the sticky-coverage-comment step post + update
-    # the PR comment. contents/packages come from the workflow-level grant.
-    permissions:
-      contents: read
-      pull-requests: write
-
     steps:
       - uses: actions/checkout@v5
 
@@ -157,47 +151,17 @@ jobs:
         # --collect:"XPlat Code Coverage" picks up coverlet.collector
         # already referenced by SaddleRAG.Tests.csproj. Output lands under
         # ./coverage-results/<guid>/coverage.cobertura.xml — one file per
-        # test project run.
+        # test project run. The downstream coverage-report job merges this
+        # with integration-test-linux's coverage XML and renders a single
+        # combined report + sticky PR comment.
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category!=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
 
-      - name: Generate coverage report
-        # Mirrors scripts/coverage.{ps1,sh} so dev-local and CI produce the
-        # same outputs. MarkdownSummaryGithub feeds the step summary +
-        # sticky PR comment below; HtmlInline_AzurePipelines is the
-        # downloadable drill-down. TextSummary is for console eyeballing.
-        # REPORTGENERATOR_LICENSE (optional) unlocks ReportGenerator Pro
-        # features when the secret is set; the tool runs in free-tier
-        # mode when the var is empty, so CI doesn't break when the
-        # secret is missing.
-        if: success() || failure()
-        env:
-          REPORTGENERATOR_LICENSE: ${{ secrets.REPORTGENERATOR_LICENSE }}
-        run: |
-          dotnet tool restore
-          dotnet tool run reportgenerator \
-            "-reports:./coverage-results/**/coverage.cobertura.xml" \
-            "-targetdir:./coverage-results/report" \
-            "-reporttypes:MarkdownSummaryGithub;TextSummary;HtmlInline_AzurePipelines"
-
-      - name: Render coverage on workflow summary
-        if: success() || failure()
-        run: cat ./coverage-results/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: coverage
-          path: ./coverage-results/report/SummaryGithub.md
-
-      - name: Upload coverage artifact
+      - name: Upload unit coverage XML
         if: success() || failure()
         uses: actions/upload-artifact@v5
         with:
-          name: coverage-${{ steps.version.outputs.PackageVersion }}
-          path: |
-            ./coverage-results/**/coverage.cobertura.xml
-            ./coverage-results/report/**
+          name: coverage-unit-${{ steps.version.outputs.PackageVersion }}
+          path: ./coverage-results/**/coverage.cobertura.xml
           # Fail loudly when the Test step "succeeded" but produced no XML —
           # signals a coverlet.collector attach failure that the green check
           # would otherwise hide.
@@ -340,6 +304,18 @@ jobs:
         with:
           dotnet-version: '10.x'
 
+      - name: Determine version
+        # Matches build-linux so the coverage artifact uploaded below can be
+        # paired with the unit-coverage artifact by the coverage-report job.
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0"
+          fi
+          echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Restore
         run: dotnet restore SaddleRAG.slnx -p:UseGpu=false
 
@@ -390,8 +366,123 @@ jobs:
           curl -L -f --retry 3 --retry-delay 5 -o "$MXBAI_DIR/spm.model" \
             https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1/resolve/main/spm.model
 
-      - name: Run integration tests
-        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category=Integration"
+      - name: Run integration tests (with coverage)
+        # --collect:"XPlat Code Coverage" captures the lines integration tests
+        # actually exercise (Mongo-backed repositories, real PageCrawler /
+        # Playwright paths, ONNX provider). The coverage-report job merges
+        # this XML with build-linux's unit XML so the PR comment reflects the
+        # union, not unit-only.
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
+
+      - name: Upload integration coverage XML
+        if: success() || failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-integration-${{ steps.version.outputs.PackageVersion }}
+          path: ./coverage-results/**/coverage.cobertura.xml
+          # Mirrors build-linux: if the test step "succeeded" but produced no
+          # XML, that's a coverlet attach failure and we want it to be loud
+          # rather than silently degrade the merged report.
+          if-no-files-found: error
+
+  coverage-report:
+    # Merges unit-test coverage (build-linux) with integration-test coverage
+    # (integration-test-linux) into a single report + sticky PR comment. Runs
+    # whenever at least one upstream produced XML so a partial signal still
+    # surfaces — e.g. one test step failed but its upload-artifact step still
+    # ran (it's gated on success() || failure()), or one whole job failed and
+    # the other succeeded. The Verify step below decides what's actionable.
+    # `if: !cancelled()` is needed to override GitHub Actions' default of
+    # skipping when a `needs:` dependency fails.
+    runs-on: ubuntu-latest
+    needs: [build-linux, integration-test-linux]
+    if: ${{ !cancelled() }}
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.x'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0"
+          fi
+          echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download unit coverage XML
+        # continue-on-error so a build-linux failure doesn't block surfacing
+        # whatever integration coverage we have. The downstream
+        # reportgenerator step glob-merges everything that landed.
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: coverage-unit-${{ steps.version.outputs.PackageVersion }}
+          path: ./coverage-artifacts/unit
+
+      - name: Download integration coverage XML
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: coverage-integration-${{ steps.version.outputs.PackageVersion }}
+          path: ./coverage-artifacts/integration
+
+      - name: Verify at least one XML landed
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          matches=( ./coverage-artifacts/**/coverage.cobertura.xml )
+          if (( ${#matches[@]} == 0 )); then
+            echo "::error::No coverage XML was downloaded from either upstream job."
+            exit 1
+          fi
+          echo "Found ${#matches[@]} coverage XML file(s) to merge:"
+          printf '  %s\n' "${matches[@]}"
+
+      - name: Generate merged coverage report
+        # MarkdownSummaryGithub feeds the step summary + sticky PR comment;
+        # HtmlInline_AzurePipelines is the downloadable drill-down;
+        # TextSummary is for log eyeballing. REPORTGENERATOR_LICENSE
+        # (optional) unlocks Pro features when the secret is set — runs in
+        # free-tier mode otherwise so CI doesn't break when the secret is
+        # missing.
+        env:
+          REPORTGENERATOR_LICENSE: ${{ secrets.REPORTGENERATOR_LICENSE }}
+        run: |
+          dotnet tool restore
+          dotnet tool run reportgenerator \
+            "-reports:./coverage-artifacts/**/coverage.cobertura.xml" \
+            "-targetdir:./coverage-artifacts/report" \
+            "-reporttypes:MarkdownSummaryGithub;TextSummary;HtmlInline_AzurePipelines"
+
+      - name: Render coverage on workflow summary
+        run: cat ./coverage-artifacts/report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage
+          path: ./coverage-artifacts/report/SummaryGithub.md
+
+      - name: Upload merged coverage artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-${{ steps.version.outputs.PackageVersion }}
+          path: |
+            ./coverage-artifacts/**/coverage.cobertura.xml
+            ./coverage-artifacts/report/**
+          if-no-files-found: error
 
   build:
     # Aggregate gate that resolves the historically-named "build" status

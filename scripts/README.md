@@ -52,10 +52,10 @@ If you want to enforce one later, parse `./coverage-results/html/Summary.txt` (o
 
 ### CI parity
 
-`build-linux` in `.github/workflows/build.yml` runs the same `--collect` flag and the same `reportgenerator` invocation, then:
+CI splits collection across two jobs and merges them in a third:
 
-- Renders the markdown summary on the workflow run page via `$GITHUB_STEP_SUMMARY`.
-- Posts/updates a sticky coverage comment on the PR.
-- Uploads the cobertura XML + full HTML drill-down report as a workflow artifact.
+- `build-linux` runs `--filter "Category!=Integration" --collect:"XPlat Code Coverage"` and uploads the cobertura XML as `coverage-unit-<version>`.
+- `integration-test-linux` runs `--filter "Category=Integration" --collect:"XPlat Code Coverage"` (against a real Mongo service + Playwright + cached ONNX models) and uploads its XML as `coverage-integration-<version>`.
+- `coverage-report` downloads both, runs `reportgenerator` over the union, renders the markdown summary on the workflow run page via `$GITHUB_STEP_SUMMARY`, posts/updates the sticky coverage comment on the PR, and uploads the merged XML + HTML drill-down as the `coverage-<version>` workflow artifact.
 
-Local results should match CI's exactly when run on the same revision with the same filter.
+The dev script only runs the unit half, so local numbers will be lower than the CI sticky comment by whatever the integration tests lift them.

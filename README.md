@@ -163,7 +163,7 @@ Both scripts:
 
 Pass `--no-open` (bash) or `-NoOpen` (PowerShell) to skip the browser launch; pass `--filter <expr>` / `-Filter <expr>` to override the default `Category!=Integration` xUnit filter.
 
-The same `--collect` flag runs in CI on the `build-linux` job. The coverage summary is rendered on the workflow run page (via `$GITHUB_STEP_SUMMARY`) and posted as a sticky comment on each PR; the full cobertura XML and HTML drill-down report are uploaded as a workflow artifact for download.
+CI collects coverage from two jobs — `build-linux` (unit) and `integration-test-linux` (Mongo / Playwright / ONNX integration) — and merges them in a `coverage-report` job. The merged summary is rendered on the workflow run page (via `$GITHUB_STEP_SUMMARY`) and posted as a sticky comment on each PR; the full cobertura XML and HTML drill-down are uploaded as a workflow artifact for download.
 
 ### Connect Your AI Assistant
 
