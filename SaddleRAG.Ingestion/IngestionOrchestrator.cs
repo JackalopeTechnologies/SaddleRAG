@@ -60,6 +60,7 @@ public class IngestionOrchestrator
         mBroadcaster = broadcaster;
         mLogger = logger;
         mCrawlStage = new CrawlStage(crawler, logger);
+        mClassifyStage = new ClassifyStage(llmClassifier, pageRepository, broadcaster, logger);
         mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
     }
 
@@ -68,6 +69,7 @@ public class IngestionOrchestrator
 
     private readonly CategoryAwareChunker mChunker;
     private readonly IChunkRepository mChunkRepository;
+    private readonly ClassifyStage mClassifyStage;
 
     private readonly PageCrawler mCrawler;
     private readonly CrawlStage mCrawlStage;
@@ -170,14 +172,13 @@ public class IngestionOrchestrator
                                              onProgress,
                                              cts
                                             );
-        var classifyTask =
-            RunClassifyStageAsync(job,
-                                  crawlToClassify.Reader,
-                                  classifyToChunk.Writer,
-                                  progress,
-                                  onProgress,
-                                  cts
-                                 );
+        var classifyTask = mClassifyStage.RunAsync(job,
+                                                   crawlToClassify.Reader,
+                                                   classifyToChunk.Writer,
+                                                   progress,
+                                                   onProgress,
+                                                   cts
+                                                  );
         var chunkTask = RunChunkStageAsync(classifyToChunk.Reader, chunkToEmbed.Writer, progress, onProgress, cts);
         var embedTask = RunEmbedStageAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
         var indexTask = mIndexStage.RunAsync(profile,
@@ -522,70 +523,6 @@ public class IngestionOrchestrator
             await mLibraryRepository.SetSuspectAsync(job.LibraryId, job.Version, reasons, ct);
         else
             await mLibraryRepository.ClearSuspectAsync(job.LibraryId, job.Version, ct);
-    }
-
-    #endregion
-
-    #region Classify stage
-
-    private async Task RunClassifyStageAsync(ScrapeJob job,
-                                             ChannelReader<PageRecord> input,
-                                             ChannelWriter<PageRecord> output,
-                                             ScrapeJobRecord progress,
-                                             Action<ScrapeJobRecord>? onProgress,
-                                             CancellationTokenSource cts)
-    {
-        try
-        {
-            await foreach(var page in input.ReadAllAsync(cts.Token))
-            {
-                var classified = await ClassifyPageAsync(page, job, progress);
-                await output.WriteAsync(classified, cts.Token);
-                progress.PagesClassified++;
-                onProgress?.Invoke(progress);
-                mBroadcaster.RecordPageClassified(progress.Id);
-            }
-        }
-        catch(OperationCanceledException)
-        {
-            output.TryComplete();
-            throw;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogError(ex, "Classify stage fatal error");
-            output.TryComplete(ex);
-            await cts.CancelAsync();
-            throw;
-        }
-        finally
-        {
-            output.TryComplete();
-        }
-    }
-
-    private async Task<PageRecord> ClassifyPageAsync(PageRecord page, ScrapeJob job, ScrapeJobRecord progress)
-    {
-        PageRecord result;
-        try
-        {
-            (var category, float confidence) = await mLlmClassifier.ClassifyAsync(page, job.LibraryHint);
-            if (category != DocCategory.Unclassified && confidence > 0)
-            {
-                result = page with { Category = category };
-                await mPageRepository.UpsertPageAsync(result);
-            }
-            else
-                result = page;
-        }
-        catch(Exception ex)
-        {
-            mLogger.LogWarning(ex, "LLM classification failed for {Url}, passing as Unclassified", page.Url);
-            progress.IncrementErrorCount();
-            result = page;
-        }
-
-        return result;
     }
 
     #endregion
