@@ -1,5 +1,7 @@
 # SaddleRAG
 
+[![codecov](https://codecov.io/gh/JackalopeTechnologies/SaddleRAG/branch/master/graph/badge.svg)](https://codecov.io/gh/JackalopeTechnologies/SaddleRAG)
+
 **Documentation Retrieval-Augmented Generation for AI coding assistants.**
 
 SaddleRAG scrapes documentation websites, classifies and chunks the content with a local LLM, generates vector embeddings, and stores everything in MongoDB. It exposes the indexed documentation through MCP (Model Context Protocol) tools so that AI assistants like Claude Code, GitHub Copilot, and others can search your documentation library in real time.
@@ -139,6 +141,31 @@ dotnet run --project SaddleRAG.Mcp
 ```
 
 The server starts on `http://localhost:6100` by default. Configuration is in `SaddleRAG.Mcp/appsettings.Development.json`.
+
+### Running Tests with Coverage
+
+The repo has a pinned `dotnet-reportgenerator-globaltool` in `.config/dotnet-tools.json` and two helper scripts that wrap `dotnet test --collect:"XPlat Code Coverage"` and produce an HTML report.
+
+```powershell
+# Windows
+scripts/coverage.ps1
+```
+
+```bash
+# Linux / macOS
+scripts/coverage.sh
+```
+
+Both scripts:
+
+1. Restore the local tool manifest (`reportgenerator`)
+2. Run the test project with coverage collection into `./coverage-results`
+3. Generate an HTML report in `./coverage-results/html/index.html`, print the text summary, and (by default) open it in your browser
+4. Exit 0 on a successful test run — no coverage gate is enforced
+
+Pass `--no-open` (bash) or `-NoOpen` (PowerShell) to skip the browser launch; pass `--filter <expr>` / `-Filter <expr>` to override the default `Category!=Integration` xUnit filter.
+
+The same `--collect` flag runs in CI on the `build-linux` job; the resulting `coverage.cobertura.xml` is uploaded to Codecov (badge above) and as a workflow artifact for download.
 
 ### Connect Your AI Assistant
 

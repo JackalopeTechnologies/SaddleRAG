@@ -147,8 +147,28 @@ jobs:
       - name: Build
         run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }}
 
-      - name: Test
-        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category!=Integration"
+      - name: Test (with coverage)
+        # `--collect:"XPlat Code Coverage"` picks up coverlet.collector
+        # already referenced by SaddleRAG.Tests.csproj. Output lands under
+        # ./coverage-results/<guid>/coverage.cobertura.xml — one file per
+        # test project run. The Codecov upload step below globs the tree.
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category!=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
+
+      - name: Upload coverage to Codecov
+        if: success() || failure()
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage-results/**/coverage.cobertura.xml
+          flags: linux
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage XML artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-cobertura-${{ steps.version.outputs.PackageVersion }}
+          path: ./coverage-results/**/coverage.cobertura.xml
 
       - name: Publish
         run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime linux-x64 --self-contained true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }} --output ./artifacts/linux/publish
