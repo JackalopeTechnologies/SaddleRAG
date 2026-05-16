@@ -1,0 +1,44 @@
+# docker-compose.macos.yml
+#
+# Override for macOS hosts. The container runtime on macOS (Docker Desktop,
+# OrbStack, Colima) runs Linux containers in a VM and cannot pass Apple
+# Silicon's Metal GPU through to those containers — so an in-container
+# Ollama on a Mac is CPU-only and slow.
+#
+# This override drops the bundled `ollama` service and points SaddleRAG at
+# an Ollama instance running natively on the macOS host, where it can use
+# Metal acceleration on M-series chips.
+#
+# Prerequisites:
+#   • Install Ollama on the host:
+#       brew install ollama
+#   • Start it (foreground or as a launch agent):
+#       brew services start ollama
+#     -- or --
+#       ollama serve
+#   • Confirm it is listening:
+#       curl http://localhost:11434
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.macos.yml up -d
+#
+# Note: ONNX embedding and reranking still run on CPU inside the Linux
+# container — CoreML execution-provider support is tracked separately.
+
+services:
+  saddlerag:
+    environment:
+      Ollama__Endpoint: http://host.docker.internal:11434
+    # host-gateway resolves host.docker.internal on Linux Docker Desktop
+    # and is a no-op on macOS Docker Desktop where the alias is built in.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mongo:
+        condition: service_started
+    # Replace the implicit "depends_on: ollama" from docker-compose.yml.
+
+  # Disable the bundled ollama service — Ollama runs on the host.
+  ollama:
+    profiles:
+      - disabled
