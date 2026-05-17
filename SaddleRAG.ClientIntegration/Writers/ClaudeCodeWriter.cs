@@ -19,7 +19,6 @@ namespace SaddleRAG.ClientIntegration.Writers;
 public sealed class ClaudeCodeWriter : IClientWriter
 {
     private const string Name = "claude-code";
-    private const string SkillResourceName = "SaddleRAG.ClientIntegration.Resources.saddlerag-first.md";
     private const string KeyMcpServers = "mcpServers";
     private const string KeySaddleRag = "saddlerag";
     private const string KeyPermissions = "permissions";
@@ -31,7 +30,6 @@ public sealed class ClaudeCodeWriter : IClientWriter
     private const string ConfigFileName = ".claude.json";
     private const string ClaudeUserDir = ".claude";
     private const string SkillsSubDir = "skills";
-    private const string SkillFolderName = "saddlerag-first";
     private const string SkillFileName = "SKILL.md";
 
     private const string MsgRegisterDidNotRun = "register did not run";
@@ -48,12 +46,12 @@ public sealed class ClaudeCodeWriter : IClientWriter
     private static readonly UTF8Encoding smUtf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private readonly string mConfigPath;
-    private readonly string mSkillPath;
+    private readonly string mSkillsBaseDir;
 
-    public ClaudeCodeWriter(string configPath, string skillPath)
+    public ClaudeCodeWriter(string configPath, string skillsBaseDir)
     {
         mConfigPath = configPath;
-        mSkillPath = skillPath;
+        mSkillsBaseDir = skillsBaseDir;
     }
 
     public string ClientName => Name;
@@ -62,8 +60,8 @@ public sealed class ClaudeCodeWriter : IClientWriter
     {
         string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string config = Path.Combine(profile, ConfigFileName);
-        string skill = Path.Combine(profile, ClaudeUserDir, SkillsSubDir, SkillFolderName, SkillFileName);
-        return new ClaudeCodeWriter(config, skill);
+        string skillsBase = Path.Combine(profile, ClaudeUserDir, SkillsSubDir);
+        return new ClaudeCodeWriter(config, skillsBase);
     }
 
     public async Task<RegisterResult> RegisterAsync(SaddleRagEndpoint endpoint, CancellationToken ct)
@@ -76,8 +74,9 @@ public sealed class ClaudeCodeWriter : IClientWriter
             ApplyMcpEntry(root, endpoint);
             ApplyPermissionsAllow(root, endpoint.ReadOnlyToolPermissions);
             await SaveRootAsync(root, ct);
-            await WriteSkillFileAsync(ct);
-            res = RegisterResult.Ok(Name, mConfigPath, MsgRegistered, mSkillPath);
+            foreach (SkillDescriptor skill in SkillManifest.pmAll)
+                await WriteSkillFileAsync(skill, ct);
+            res = RegisterResult.Ok(Name, mConfigPath, MsgRegistered, mSkillsBaseDir);
         }
         catch (JsonException ex)
         {
@@ -116,12 +115,16 @@ public sealed class ClaudeCodeWriter : IClientWriter
                 res = UnregisterResult.Failed(Name, mConfigPath, $"I/O error on {mConfigPath}: {ex.Message}");
             }
         }
-        if (File.Exists(mSkillPath))
+        foreach (SkillDescriptor skill in SkillManifest.pmAll)
         {
-            File.Delete(mSkillPath);
-            string? skillDir = Path.GetDirectoryName(mSkillPath);
-            if (!string.IsNullOrEmpty(skillDir) && Directory.Exists(skillDir) && !Directory.EnumerateFileSystemEntries(skillDir).Any())
-                Directory.Delete(skillDir);
+            string skillPath = SkillPath(skill);
+            if (File.Exists(skillPath))
+            {
+                File.Delete(skillPath);
+                string? skillDir = Path.GetDirectoryName(skillPath);
+                if (!string.IsNullOrEmpty(skillDir) && Directory.Exists(skillDir) && !Directory.EnumerateFileSystemEntries(skillDir).Any())
+                    Directory.Delete(skillDir);
+            }
         }
         return res;
     }
@@ -151,15 +154,19 @@ public sealed class ClaudeCodeWriter : IClientWriter
                 notes = $"config file malformed: {ex.Message}";
             }
         }
+        bool allSkillsInstalled = SkillManifest.pmAll.All(s => File.Exists(SkillPath(s)));
         return new StatusResult(
             Name,
             mConfigPath,
             fileExists,
             entryPresent,
             endpointMatches,
-            File.Exists(mSkillPath),
+            allSkillsInstalled,
             notes);
     }
+
+    private string SkillPath(SkillDescriptor skill) =>
+        Path.Combine(mSkillsBaseDir, skill.FolderName, SkillFileName);
 
     private async Task<JsonObject> LoadRootAsync(CancellationToken ct)
     {
@@ -236,16 +243,17 @@ public sealed class ClaudeCodeWriter : IClientWriter
         return removed;
     }
 
-    private async Task WriteSkillFileAsync(CancellationToken ct)
+    private async Task WriteSkillFileAsync(SkillDescriptor skill, CancellationToken ct)
     {
-        string? dir = Path.GetDirectoryName(mSkillPath);
+        string skillPath = SkillPath(skill);
+        string? dir = Path.GetDirectoryName(skillPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);
         Assembly asm = typeof(ClaudeCodeWriter).Assembly;
-        await using Stream? stream = asm.GetManifestResourceStream(SkillResourceName)
-                                     ?? throw new InvalidOperationException($"Embedded resource not found: {SkillResourceName}");
+        await using Stream? stream = asm.GetManifestResourceStream(skill.ResourceName)
+                                     ?? throw new InvalidOperationException($"Embedded resource not found: {skill.ResourceName}");
         using StreamReader reader = new(stream, Encoding.UTF8);
         string content = await reader.ReadToEndAsync(ct);
-        await File.WriteAllTextAsync(mSkillPath, content, smUtf8NoBom, ct);
+        await File.WriteAllTextAsync(skillPath, content, smUtf8NoBom, ct);
     }
 }

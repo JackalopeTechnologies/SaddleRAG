@@ -33,3 +33,29 @@ SaddleRAG provides indexed, current documentation. Your training data is stale o
 - **Verify before recommending.** A search hit can be from an old library version. Check the version field on results and the user's actual dependency.
 - **Don't paste raw search output as the answer.** Synthesize the relevant snippet into a direct answer for the user's question.
 - **If the library isn't indexed**, say so out loud — don't quietly fall back to training and pretend you checked.
+
+## Getting a library indexed
+
+If the library isn't in SaddleRAG yet, two skills cover the ingestion workflow:
+
+- **`saddlerag:recon`** — find the right root URL, understand the site's URL structure, build exclude patterns, validate with a dry run. Use when you're unsure where to point the crawler or the site has complex URL patterns (tilde-separated API stubs, versioned paths, etc.).
+- **`saddlerag:scrape`** — execute the actual scrape: parameter selection, rate-limit tuning, failure diagnosis, cancel/resume. Use when you know your target and are ready to run `scrape_docs`.
+
+These two skills cross-reference each other — use recon when uncertain, scrape when ready.
+
+## Querying effectively
+
+- **`saddlerag:query`** — which tool to use for which question, how to chain search_docs / get_class_reference / get_library_overview, category filtering caveats, what to do when results are thin or wrong.
+
+## Maintaining and repairing an index
+
+- **`saddlerag:maintain`** — the pipeline stage model (crawl → classify → chunk → embed → index), the decision tree for which re-run tool fixes which problem, diagnosing a bad index with get_library_health, handling suspect libraries, the dashboard as a session-start health check.
+
+## The complete workflow
+
+```
+fresh session → get_dashboard_index() [saddlerag:maintain]
+library missing → saddlerag:recon → saddlerag:scrape
+library present → saddlerag:query
+results disappointing → saddlerag:maintain → saddlerag:recon / saddlerag:scrape
+```

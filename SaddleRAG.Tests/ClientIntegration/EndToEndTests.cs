@@ -18,11 +18,13 @@ public sealed class EndToEndTests : IDisposable
 {
     private readonly string mFakeProfile;
     private readonly string mClaudeCodeConfig;
-    private readonly string mClaudeCodeSkill;
+    private readonly string mClaudeCodeSkillsBaseDir;
+    private readonly string mClaudeCodeFirstSkill;
     private readonly string mClaudeDesktopConfig;
     private readonly string mVsCodeMcp;
     private readonly string mCopilotCliConfig;
-    private readonly string mCopilotCliSkill;
+    private readonly string mCopilotCliSkillsBaseDir;
+    private readonly string mCopilotCliFirstSkill;
 
     public EndToEndTests()
     {
@@ -32,12 +34,14 @@ public sealed class EndToEndTests : IDisposable
         Directory.CreateDirectory(mFakeProfile);
         Directory.CreateDirectory(fakeAppData);
 
-        mClaudeCodeConfig    = Path.Combine(mFakeProfile, ".claude.json");
-        mClaudeCodeSkill     = Path.Combine(mFakeProfile, ".claude", "skills", "saddlerag-first", "SKILL.md");
-        mClaudeDesktopConfig = Path.Combine(fakeAppData, "Claude", "claude_desktop_config.json");
-        mVsCodeMcp           = Path.Combine(fakeAppData, "Code", "User", "mcp.json");
-        mCopilotCliConfig    = Path.Combine(mFakeProfile, ".copilot", "mcp-config.json");
-        mCopilotCliSkill     = Path.Combine(mFakeProfile, ".copilot", "skills", "saddlerag-first", "SKILL.md");
+        mClaudeCodeConfig        = Path.Combine(mFakeProfile, ".claude.json");
+        mClaudeCodeSkillsBaseDir = Path.Combine(mFakeProfile, ".claude", "skills");
+        mClaudeCodeFirstSkill    = Path.Combine(mClaudeCodeSkillsBaseDir, "saddlerag-first", "SKILL.md");
+        mClaudeDesktopConfig     = Path.Combine(fakeAppData, "Claude", "claude_desktop_config.json");
+        mVsCodeMcp               = Path.Combine(fakeAppData, "Code", "User", "mcp.json");
+        mCopilotCliConfig        = Path.Combine(mFakeProfile, ".copilot", "mcp-config.json");
+        mCopilotCliSkillsBaseDir = Path.Combine(mFakeProfile, ".copilot", "skills");
+        mCopilotCliFirstSkill    = Path.Combine(mCopilotCliSkillsBaseDir, "saddlerag-first", "SKILL.md");
     }
 
     public void Dispose()
@@ -52,10 +56,10 @@ public sealed class EndToEndTests : IDisposable
     {
         var writers = new IClientWriter[]
         {
-            new ClaudeCodeWriter(mClaudeCodeConfig, mClaudeCodeSkill),
+            new ClaudeCodeWriter(mClaudeCodeConfig, mClaudeCodeSkillsBaseDir),
             new ClaudeDesktopWriter(mClaudeDesktopConfig),
             new VsCodeMcpWriter(mVsCodeMcp),
-            new CopilotCliWriter(mCopilotCliConfig, mCopilotCliSkill)
+            new CopilotCliWriter(mCopilotCliConfig, mCopilotCliSkillsBaseDir)
         };
         var registrar = new ClientRegistrar(writers);
 
@@ -67,8 +71,8 @@ public sealed class EndToEndTests : IDisposable
         Assert.Contains("saddlerag", await File.ReadAllTextAsync(mClaudeDesktopConfig, TestContext.Current.CancellationToken));
         Assert.Contains("saddlerag", await File.ReadAllTextAsync(mVsCodeMcp, TestContext.Current.CancellationToken));
         Assert.Contains("saddlerag", await File.ReadAllTextAsync(mCopilotCliConfig, TestContext.Current.CancellationToken));
-        Assert.True(File.Exists(mClaudeCodeSkill));
-        Assert.True(File.Exists(mCopilotCliSkill));
+        Assert.True(File.Exists(mClaudeCodeFirstSkill));
+        Assert.True(File.Exists(mCopilotCliFirstSkill));
 
         var unregisterResult = await registrar.UnregisterAsync(TestContext.Current.CancellationToken);
         Assert.True(unregisterResult.AllUnregisterSucceeded);
@@ -81,7 +85,7 @@ public sealed class EndToEndTests : IDisposable
             Assert.DoesNotContain("saddlerag", await File.ReadAllTextAsync(mVsCodeMcp, TestContext.Current.CancellationToken));
         if (File.Exists(mCopilotCliConfig))
             Assert.DoesNotContain("saddlerag", await File.ReadAllTextAsync(mCopilotCliConfig, TestContext.Current.CancellationToken));
-        Assert.False(File.Exists(mClaudeCodeSkill));
-        Assert.False(File.Exists(mCopilotCliSkill));
+        Assert.False(File.Exists(mClaudeCodeFirstSkill));
+        Assert.False(File.Exists(mCopilotCliFirstSkill));
     }
 }
