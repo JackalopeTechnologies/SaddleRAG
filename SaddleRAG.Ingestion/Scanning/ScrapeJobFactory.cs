@@ -27,7 +27,8 @@ public static class ScrapeJobFactory
                                           string? hint = null,
                                           int maxPages = DefaultMaxPages,
                                           int fetchDelayMs = ScrapeJob.DefaultFetchDelayMs,
-                                          bool forceClean = false)
+                                          bool forceClean = false,
+                                          int[]? additionalRateLimitStatusCodes = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
@@ -48,7 +49,8 @@ public static class ScrapeJobFactory
                           InScopeDepth = DefaultInScopeDepth,
                           SameHostDepth = DefaultSameHostDepth,
                           OffSiteDepth = DefaultOffSiteDepth,
-                          ForceClean = forceClean
+                          ForceClean = forceClean,
+                          AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes
                       };
         return job;
     }

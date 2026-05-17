@@ -118,6 +118,14 @@ public record ScrapeJob
     public bool SeedFromStoredPages { get; init; }
 
     /// <summary>
+    ///     Additional HTTP status codes to treat as rate-limit signals, on top of
+    ///     the built-in defaults (429, 503). Use for site-specific soft-limit
+    ///     responses: 502 for Infragistics and similar CDNs, 520–522 for
+    ///     Cloudflare rate walls.
+    /// </summary>
+    public IReadOnlyList<int>? AdditionalRateLimitStatusCodes { get; init; }
+
+    /// <summary>
     ///     Default per-page fetch delay. Zero means "no fixed delay" — pacing is
     ///     handled adaptively by <c>HostRateLimiter</c> based on per-host response
     ///     status (slows down on 429/503, speeds up on sustained success). A

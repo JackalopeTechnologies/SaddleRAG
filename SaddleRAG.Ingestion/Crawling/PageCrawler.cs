@@ -1281,7 +1281,7 @@ public class PageCrawler : IPageCrawler
                 limiter.ReportSuccess();
                 await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx);
                 break;
-            case true when HostRateLimiter.IsRateLimitStatus(response.Status):
+            case true when HostRateLimiter.IsRateLimitStatus(response.Status, ctx.Job.AdditionalRateLimitStatusCodes):
             {
                 await HandleRateLimitedAsync(response, limiter, ctx, originalUrl);
                 mAuditWriter.RecordFailed(ctx.AuditCtx,

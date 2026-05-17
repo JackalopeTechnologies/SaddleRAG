@@ -208,17 +208,23 @@ public sealed class HostRateLimiter
     }
 
     /// <summary>
-    ///     Textbook rate-limit signals: 429 (Too Many Requests) and 503
-    ///     (Service Unavailable). These always warrant AIMD halving and
-    ///     a penalty pause regardless of URL scope.
+    ///     Returns true if <paramref name="httpStatus"/> should trigger AIMD halving
+    ///     and a penalty pause. The built-in defaults (429, 503) always apply;
+    ///     <paramref name="additionalStatusCodes"/> extends that set for site-specific
+    ///     signals (e.g. 502 for Infragistics CDN, 520–522 for Cloudflare rate walls).
     /// </summary>
-    public static bool IsRateLimitStatus(int httpStatus) =>
-        httpStatus switch
+    public static bool IsRateLimitStatus(int httpStatus, IReadOnlyList<int>? additionalStatusCodes = null)
+    {
+        bool res = httpStatus switch
             {
                 HttpTooManyRequests => true,
                 HttpServiceUnavailable => true,
                 var _ => false
             };
+        if (!res && additionalStatusCodes != null)
+            res = additionalStatusCodes.Contains(httpStatus);
+        return res;
+    }
 
     /// <summary>
     ///     HTTP 403 (Forbidden). Edge WAFs (Cloudflare, Akamai, AWS WAF)
