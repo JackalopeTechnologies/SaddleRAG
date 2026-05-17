@@ -259,6 +259,19 @@ public sealed class HostRateLimiterTests
         Assert.False(HostRateLimiter.IsRateLimitStatus(httpStatus));
     }
 
+    [Theory]
+    [InlineData(502)]
+    [InlineData(520)]
+    [InlineData(521)]
+    public void IsRateLimitStatusTrueForAdditionalCodes(int httpStatus)
+    {
+        // Additional codes extend the default set — they do not replace it.
+        int[] additional = [502, 520, 521];
+        Assert.True(HostRateLimiter.IsRateLimitStatus(httpStatus, additional));
+        Assert.True(HostRateLimiter.IsRateLimitStatus(httpStatus: 429, additional));
+        Assert.True(HostRateLimiter.IsRateLimitStatus(httpStatus: 503, additional));
+    }
+
     [Fact]
     public void IsForbiddenStatusOnlyTrueFor403()
     {

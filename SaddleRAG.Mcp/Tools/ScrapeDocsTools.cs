@@ -65,6 +65,10 @@ public static class ScrapeDocsTools
                                                 string[]? allowedUrlPatterns = null,
                                                 [Description("Optional URL patterns (regex) to exclude.")]
                                                 string[]? excludedUrlPatterns = null,
+                                                [Description("Additional HTTP status codes to treat as rate-limit signals, on top of the built-in defaults (429, 503). " +
+                                                             "Use for site-specific soft-limit responses: [502] for Infragistics and similar CDNs, " +
+                                                             "[520, 521, 522] for Cloudflare rate walls.")]
+                                                int[]? additionalRateLimitStatusCodes = null,
                                                 [Description("Resume the most recent scrape for this (libraryId, version), reusing its RootUrl/patterns"
                                                             )]
                                                 bool resume = false,
@@ -134,7 +138,8 @@ public static class ScrapeDocsTools
                                          ExcludedUrlPatterns = excludedUrlPatterns ?? previousJob.ExcludedUrlPatterns,
                                          MaxPages = maxPages,
                                          FetchDelayMs = fetchDelayMs,
-                                         ForceClean = force
+                                         ForceClean = force,
+                                         AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes ?? previousJob.AdditionalRateLimitStatusCodes
                                      };
                 }
             }
@@ -166,7 +171,8 @@ public static class ScrapeDocsTools
                                               fetchDelayMs,
                                               force,
                                               allowedUrlPatterns,
-                                              excludedUrlPatterns
+                                              excludedUrlPatterns,
+                                              additionalRateLimitStatusCodes
                                              );
                 var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
                 await scrapeAuditRepo.DeleteByLibraryVersionAsync(libraryId, version, ct);
@@ -213,7 +219,8 @@ public static class ScrapeDocsTools
                                             int fetchDelayMs,
                                             bool force,
                                             string[]? allowedUrlPatterns,
-                                            string[]? excludedUrlPatterns)
+                                            string[]? excludedUrlPatterns,
+                                            int[]? additionalRateLimitStatusCodes)
     {
         ScrapeJob job;
         if (allowedUrlPatterns != null || excludedUrlPatterns != null)
@@ -228,7 +235,8 @@ public static class ScrapeDocsTools
                           ExcludedUrlPatterns = excludedUrlPatterns ?? [],
                           MaxPages = maxPages,
                           FetchDelayMs = fetchDelayMs,
-                          ForceClean = force
+                          ForceClean = force,
+                          AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes
                       };
         }
         else
@@ -239,7 +247,8 @@ public static class ScrapeDocsTools
                                                  hint,
                                                  maxPages,
                                                  fetchDelayMs,
-                                                 force
+                                                 force,
+                                                 additionalRateLimitStatusCodes
                                                 );
         }
 
