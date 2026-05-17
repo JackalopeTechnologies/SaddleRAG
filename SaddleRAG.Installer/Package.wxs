@@ -220,7 +220,7 @@
         <SetProperty Id="RegisterAiClients"
                      Before="RegisterAiClients"
                      Sequence="execute"
-                     Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients --claude-code=[REGISTER_CLAUDE_CODE] --claude-desktop=[REGISTER_CLAUDE_DESKTOP] --vscode-mcp=[REGISTER_VSCODE_MCP] --copilot-cli=[REGISTER_COPILOT_CLI] --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
+                     Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients --claude-code --claude-desktop --vscode-mcp --copilot-cli --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
 
         <CustomAction Id="RegisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
