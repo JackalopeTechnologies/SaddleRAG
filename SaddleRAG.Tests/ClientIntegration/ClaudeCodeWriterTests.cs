@@ -17,14 +17,16 @@ public sealed class ClaudeCodeWriterTests : IDisposable
 {
     private readonly string mTempDir;
     private readonly string mConfigPath;
-    private readonly string mSkillPath;
+    private readonly string mSkillsBaseDir;
+    private readonly string mFirstSkillPath;
 
     public ClaudeCodeWriterTests()
     {
         mTempDir = Path.Combine(Path.GetTempPath(), "saddlerag-cc-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(mTempDir);
         mConfigPath = Path.Combine(mTempDir, ".claude.json");
-        mSkillPath = Path.Combine(mTempDir, ".claude", "skills", "saddlerag-first", "SKILL.md");
+        mSkillsBaseDir = Path.Combine(mTempDir, ".claude", "skills");
+        mFirstSkillPath = Path.Combine(mSkillsBaseDir, "saddlerag-first", "SKILL.md");
     }
 
     public void Dispose()
@@ -45,7 +47,7 @@ public sealed class ClaudeCodeWriterTests : IDisposable
         if (File.Exists(fixtureInput))
             File.Copy(fixtureInput, mConfigPath, overwrite: true);
 
-        var writer = new ClaudeCodeWriter(mConfigPath, mSkillPath);
+        var writer = new ClaudeCodeWriter(mConfigPath, mSkillsBaseDir);
         var result = await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Message);
@@ -61,11 +63,11 @@ public sealed class ClaudeCodeWriterTests : IDisposable
     [Fact]
     public async Task RegisterDropsSkillFile()
     {
-        var writer = new ClaudeCodeWriter(mConfigPath, mSkillPath);
+        var writer = new ClaudeCodeWriter(mConfigPath, mSkillsBaseDir);
         await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
-        Assert.True(File.Exists(mSkillPath));
-        string content = await File.ReadAllTextAsync(mSkillPath, TestContext.Current.CancellationToken);
+        Assert.True(File.Exists(mFirstSkillPath));
+        string content = await File.ReadAllTextAsync(mFirstSkillPath, TestContext.Current.CancellationToken);
         Assert.Contains("saddlerag-first", content);
     }
 
@@ -75,7 +77,7 @@ public sealed class ClaudeCodeWriterTests : IDisposable
         File.Copy(TestPaths.FixtureFile("claude-code", "malformed-json", "input.json"), mConfigPath, overwrite: true);
         string before = await File.ReadAllTextAsync(mConfigPath, TestContext.Current.CancellationToken);
 
-        var writer = new ClaudeCodeWriter(mConfigPath, mSkillPath);
+        var writer = new ClaudeCodeWriter(mConfigPath, mSkillsBaseDir);
         var result = await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
@@ -89,7 +91,7 @@ public sealed class ClaudeCodeWriterTests : IDisposable
     public async Task UnregisterRemovesSaddleRagOnly()
     {
         File.Copy(TestPaths.FixtureFile("claude-code", "other-servers-only", "input.json"), mConfigPath, overwrite: true);
-        var writer = new ClaudeCodeWriter(mConfigPath, mSkillPath);
+        var writer = new ClaudeCodeWriter(mConfigPath, mSkillsBaseDir);
         await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
         var result = await writer.UnregisterAsync(TestContext.Current.CancellationToken);
@@ -100,13 +102,13 @@ public sealed class ClaudeCodeWriterTests : IDisposable
         string actual = await File.ReadAllTextAsync(mConfigPath, TestContext.Current.CancellationToken);
         Assert.Contains("azure-devops", actual);
         Assert.DoesNotContain("saddlerag", actual);
-        Assert.False(File.Exists(mSkillPath));
+        Assert.False(File.Exists(mFirstSkillPath));
     }
 
     [Fact]
     public async Task UnregisterMissingFileIsNoOp()
     {
-        var writer = new ClaudeCodeWriter(mConfigPath, mSkillPath);
+        var writer = new ClaudeCodeWriter(mConfigPath, mSkillsBaseDir);
 
         var result = await writer.UnregisterAsync(TestContext.Current.CancellationToken);
 

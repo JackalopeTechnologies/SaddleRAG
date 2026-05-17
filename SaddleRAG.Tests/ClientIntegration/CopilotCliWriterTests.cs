@@ -17,14 +17,16 @@ public sealed class CopilotCliWriterTests : IDisposable
 {
     private readonly string mTempDir;
     private readonly string mConfigPath;
-    private readonly string mSkillPath;
+    private readonly string mSkillsBaseDir;
+    private readonly string mFirstSkillPath;
 
     public CopilotCliWriterTests()
     {
         mTempDir = Path.Combine(Path.GetTempPath(), "saddlerag-copilot-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(mTempDir);
         mConfigPath = Path.Combine(mTempDir, ".copilot", "mcp-config.json");
-        mSkillPath = Path.Combine(mTempDir, ".copilot", "skills", "saddlerag-first", "SKILL.md");
+        mSkillsBaseDir = Path.Combine(mTempDir, ".copilot", "skills");
+        mFirstSkillPath = Path.Combine(mSkillsBaseDir, "saddlerag-first", "SKILL.md");
     }
 
     public void Dispose()
@@ -48,7 +50,7 @@ public sealed class CopilotCliWriterTests : IDisposable
             File.Copy(fixtureInput, mConfigPath, overwrite: true);
         }
 
-        var writer = new CopilotCliWriter(mConfigPath, mSkillPath);
+        var writer = new CopilotCliWriter(mConfigPath, mSkillsBaseDir);
         var result = await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Message);
@@ -64,11 +66,11 @@ public sealed class CopilotCliWriterTests : IDisposable
     [Fact]
     public async Task RegisterDropsSkillFile()
     {
-        var writer = new CopilotCliWriter(mConfigPath, mSkillPath);
+        var writer = new CopilotCliWriter(mConfigPath, mSkillsBaseDir);
         await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
-        Assert.True(File.Exists(mSkillPath));
-        string content = await File.ReadAllTextAsync(mSkillPath, TestContext.Current.CancellationToken);
+        Assert.True(File.Exists(mFirstSkillPath));
+        string content = await File.ReadAllTextAsync(mFirstSkillPath, TestContext.Current.CancellationToken);
         Assert.Contains("saddlerag-first", content);
     }
 
@@ -80,7 +82,7 @@ public sealed class CopilotCliWriterTests : IDisposable
         File.Copy(TestPaths.FixtureFile("copilot-cli", "malformed-json", "input.json"), mConfigPath, overwrite: true);
         string before = await File.ReadAllTextAsync(mConfigPath, TestContext.Current.CancellationToken);
 
-        var writer = new CopilotCliWriter(mConfigPath, mSkillPath);
+        var writer = new CopilotCliWriter(mConfigPath, mSkillsBaseDir);
         var result = await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
@@ -94,7 +96,7 @@ public sealed class CopilotCliWriterTests : IDisposable
         string configDir = Path.GetDirectoryName(mConfigPath) ?? mTempDir;
         Directory.CreateDirectory(configDir);
         File.Copy(TestPaths.FixtureFile("copilot-cli", "other-servers-only", "input.json"), mConfigPath, overwrite: true);
-        var writer = new CopilotCliWriter(mConfigPath, mSkillPath);
+        var writer = new CopilotCliWriter(mConfigPath, mSkillsBaseDir);
         await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
 
         var result = await writer.UnregisterAsync(TestContext.Current.CancellationToken);
@@ -105,13 +107,13 @@ public sealed class CopilotCliWriterTests : IDisposable
         string actual = await File.ReadAllTextAsync(mConfigPath, TestContext.Current.CancellationToken);
         Assert.Contains("filesystem", actual);
         Assert.DoesNotContain("saddlerag", actual);
-        Assert.False(File.Exists(mSkillPath));
+        Assert.False(File.Exists(mFirstSkillPath));
     }
 
     [Fact]
     public async Task UnregisterMissingFileIsNoOp()
     {
-        var writer = new CopilotCliWriter(mConfigPath, mSkillPath);
+        var writer = new CopilotCliWriter(mConfigPath, mSkillsBaseDir);
 
         var result = await writer.UnregisterAsync(TestContext.Current.CancellationToken);
 
@@ -128,7 +130,7 @@ public sealed class CopilotCliWriterTests : IDisposable
         CopilotCliWriter writer = CopilotCliWriter.ForCurrentUser();
 
         Assert.Contains(overrideDir, writer.ConfigPath);
-        Assert.Contains(overrideDir, writer.SkillPath);
+        Assert.Contains(overrideDir, writer.SkillsBaseDir);
     }
 
     private static string NormalizeJson(string raw)
