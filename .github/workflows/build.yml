@@ -6,10 +6,10 @@ on:
   pull_request:
     branches: [master]
   release:
-    # Triggered when a draft release is created. CI builds the artifacts
-    # and uploads them to the draft. The draft remains unpublished until
-    # manually reviewed and published, at which point GitHub creates the
-    # tag and fires release.published.
+    # Triggered when a published (or pre-release) release is created via
+    # `gh release create vX.Y.Z --prerelease`. CI builds the artifacts and
+    # uploads them to the existing release. Draft releases do NOT trigger
+    # GitHub Actions, so we create releases as published pre-releases directly.
     types: [created]
 
 permissions:
@@ -103,7 +103,6 @@ jobs:
         with:
           files: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
-          draft: true
 
       - name: Kill orphan processes
         if: always()
@@ -196,9 +195,8 @@ jobs:
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
 
       - name: Upload to GitHub Release
-        # Uploads to the draft release created when gh release create --draft
-        # was run. Both jobs run in parallel; whichever arrives first finds the
-        # draft and uploads its artifact; the other appends to it.
+        # Both jobs run in parallel; whichever arrives first finds the existing
+        # pre-release and uploads its artifact; the other appends to it.
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
@@ -206,7 +204,6 @@ jobs:
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
-          draft: true
 
   docker:
     runs-on: ubuntu-latest
