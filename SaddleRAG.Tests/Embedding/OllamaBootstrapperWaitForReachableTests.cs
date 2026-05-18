@@ -99,23 +99,25 @@ public sealed class OllamaBootstrapperWaitForReachableTests
     [Fact]
     public async Task DoesNotSleepAfterFinalAttemptWhenProbeStillFails()
     {
-        // Pin to a small budget: maxAttempts=2 with a long delay (500ms).
-        // If the loop sleeps after the final probe, the call takes ~500ms;
-        // if it correctly skips the trailing delay, it takes ~0ms.
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        // Inject a counter in place of Task.Delay so the assertion is
+        // deterministic and independent of wall-clock or scheduler jitter.
+        var sleepCount = 0;
+        Task DelayFactory(int ms, CancellationToken _)
+        {
+            sleepCount++;
+            return Task.CompletedTask;
+        }
 
         await OllamaBootstrapper.WaitForReachableAsync(_ => Task.FromResult(false),
                                                        maxAttempts: 2,
                                                        delayMs: 500,
-                                                       TestContext.Current.CancellationToken
+                                                       TestContext.Current.CancellationToken,
+                                                       DelayFactory
                                                       );
 
-        stopwatch.Stop();
-        // One sleep between the two attempts (500ms) is fine; a second
-        // sleep after the final failed probe would push past ~750ms.
-        Assert.True(stopwatch.ElapsedMilliseconds < 750,
-                    $"WaitForReachableAsync slept after final failed probe; elapsed={stopwatch.ElapsedMilliseconds}ms"
-                   );
+        // maxAttempts=2 → one inter-attempt sleep (between attempt 0 and 1),
+        // zero sleeps after the final failed probe.
+        Assert.Equal(expected: 1, sleepCount);
     }
 
     [Fact]

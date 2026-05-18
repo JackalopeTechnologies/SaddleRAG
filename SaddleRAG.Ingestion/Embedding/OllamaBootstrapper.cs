@@ -84,10 +84,12 @@ public class OllamaBootstrapper
     ///     attempt has failed. Exposed internally so tests can drive the
     ///     retry loop with a stub probe instead of an HTTP server.
     /// </summary>
-    internal static async Task<bool> WaitForReachableAsync(Func<CancellationToken, Task<bool>> probe,
-                                                           int maxAttempts,
-                                                           int delayMs,
-                                                           CancellationToken ct)
+    internal static async Task<bool> WaitForReachableAsync(
+        Func<CancellationToken, Task<bool>> probe,
+        int maxAttempts,
+        int delayMs,
+        CancellationToken ct,
+        Func<int, CancellationToken, Task>? delayFactory = null)
     {
         ArgumentNullException.ThrowIfNull(probe);
         if (maxAttempts < 1)
@@ -95,13 +97,14 @@ public class OllamaBootstrapper
         if (delayMs < 0)
             throw new ArgumentOutOfRangeException(nameof(delayMs), delayMs, "delayMs must be >= 0");
 
+        var delay = delayFactory ?? ((ms, t) => Task.Delay(ms, t));
         var reachable = false;
 
         for(var attempt = 0; attempt < maxAttempts && !reachable; attempt++)
         {
             reachable = await probe(ct);
             if (!reachable && attempt < maxAttempts - 1)
-                await Task.Delay(delayMs, ct);
+                await delay(delayMs, ct);
         }
 
         return reachable;
@@ -339,6 +342,11 @@ public class OllamaBootstrapper
                     mLogger.LogWarning("Ollama installer exited with code {Code}", process.ExitCode);
             }
 
+            // Brief pause to let the installer's background processes (registry
+            // writes, PATH updates) get started before we probe. We are NOT
+            // relying on this delay to guarantee completion — FindOllamaExecutable()
+            // is called immediately after and throws if the executable still
+            // isn't present.
             await Task.Delay(PostInstallDelayMs, ct);
 
             RefreshPathEnvironment();
