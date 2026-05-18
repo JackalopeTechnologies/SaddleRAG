@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Interfaces;
@@ -110,6 +111,7 @@ internal sealed class EmbedStage
                                                  Action<ScrapeJobRecord>? onProgress,
                                                  CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         try
         {
             var embeddedChunks = await EmbedBatchAsync(mEmbeddingProvider, mLogger, batch, ct);
@@ -123,11 +125,20 @@ internal sealed class EmbedStage
 
             await output.WriteAsync(embeddedChunks, ct);
 
-            mLogger.LogDebug("Embedded and stored batch of {Count} chunks", embeddedChunks.Length);
+            long embedMs = sw.ElapsedMilliseconds;
+            mLogger.LogInformation("Embedded batch in {EmbedMs}ms count={Count}",
+                                   embedMs,
+                                   embeddedChunks.Length
+                                  );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogWarning(ex, "Embedding failed for batch of {Count} chunks, skipping", batch.Count);
+            long embedMs = sw.ElapsedMilliseconds;
+            mLogger.LogWarning(ex,
+                               "Embedding failed for batch of {Count} chunks after {EmbedMs}ms, skipping",
+                               batch.Count,
+                               embedMs
+                              );
             progress.IncrementErrorCount();
         }
     }
