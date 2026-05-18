@@ -99,7 +99,8 @@ public sealed class ChunkStageTimingTests
         using var cts = new CancellationTokenSource();
         await stage.RunAsync(input.Reader, output.Writer, NewProgress(), null, cts);
 
-        var info = logger.Entries.FirstOrDefault(e => e.Level == LogLevel.Information && e.Message.Contains("Chunked"));
+        var info = logger.Entries.FirstOrDefault(e => e.Level == LogLevel.Information
+                                                      && e.Message.Contains("Chunked"));
         Assert.NotEqual(default, info);
         Assert.Contains("https://example.test/p1", info.Message);
         Assert.Contains("count=1", info.Message);
