@@ -24,8 +24,9 @@ public sealed class RenderModeVoter
     private const int VoteSampleSize = 5;
     private const int DeltaThreshold = 3;
 
-    private readonly object mLock = new();
+    private readonly Lock mLock = new();
     private readonly List<int> mDeltas = new();
+    private int mCachedMedian = -1;
 
     /// <summary>
     ///     Number of valid samples recorded so far.
@@ -64,7 +65,7 @@ public sealed class RenderModeVoter
             lock(mLock)
             {
                 if (mDeltas.Count >= VoteSampleSize)
-                    res = Median(mDeltas) > DeltaThreshold
+                    res = mCachedMedian > DeltaThreshold
                         ? Core.Enums.RenderMode.SPA
                         : Core.Enums.RenderMode.SSR;
             }
@@ -86,7 +87,7 @@ public sealed class RenderModeVoter
             lock(mLock)
             {
                 if (mDeltas.Count >= VoteSampleSize)
-                    res = Median(mDeltas) > DeltaThreshold;
+                    res = mCachedMedian > DeltaThreshold;
             }
 
             return res;
@@ -106,7 +107,7 @@ public sealed class RenderModeVoter
             lock(mLock)
             {
                 if (mDeltas.Count >= VoteSampleSize)
-                    res = Median(mDeltas);
+                    res = mCachedMedian;
             }
 
             return res;
@@ -120,14 +121,23 @@ public sealed class RenderModeVoter
     /// </summary>
     public void RecordSample(int domCount, int loadCount)
     {
-        if (domCount >= 0 && loadCount >= 0)
+        bool validSample = domCount >= 0 && loadCount >= 0;
+
+        if (validSample)
         {
             lock(mLock)
             {
                 if (mDeltas.Count < VoteSampleSize)
-                    mDeltas.Add(loadCount - domCount);
+                    AddDelta(loadCount - domCount);
             }
         }
+    }
+
+    private void AddDelta(int delta)
+    {
+        mDeltas.Add(delta);
+        if (mDeltas.Count == VoteSampleSize)
+            mCachedMedian = Median(mDeltas);
     }
 
     private static int Median(List<int> values)
