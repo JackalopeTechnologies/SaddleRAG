@@ -7,19 +7,27 @@
 #region Usings
 
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Ingestion;
+using SaddleRAG.Ingestion.Chunking;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
+using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Ingestion.Suspect;
+using SaddleRAG.Ingestion.Symbols;
 
 #endregion
 
 namespace SaddleRAG.Tests.Audit;
 
 /// <summary>
-///     Verifies that <see cref="PageCrawler.DryRunAsync" /> records skip and fetch
-///     audit events for a minimal single-page dry run.
+///     Verifies that <see cref="IngestionOrchestrator.DryRunAsync" /> records
+///     skip and fetch audit events for a minimal single-page dry run.
 /// </summary>
 public sealed class DryRunAuditTests
 {
@@ -168,21 +176,74 @@ public sealed class DryRunAuditTests
     [Trait("Category", "Integration")]
     public async Task DryRunRecordsAuditEntriesForLibraryAndVersion()
     {
+        const string LibraryId = "dryrun-test";
+        const string Version = "1.0";
+        const string JobId = "test-job-01";
+
         var auditWriter = new SpyAuditWriter();
         var pageRepo = new NullPageRepository();
         var gitHubScraper = new GitHubRepoScraper(pageRepo, NullLogger<GitHubRepoScraper>.Instance);
+        var broadcaster = new NullMonitorBroadcaster();
         var crawler = new PageCrawler(pageRepo,
                                       gitHubScraper,
                                       auditWriter,
-                                      new NullMonitorBroadcaster(),
+                                      broadcaster,
                                       NullLogger<PageCrawler>.Instance
                                      );
+
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        var vectorSearch = Substitute.For<IVectorSearchProvider>();
+        var libraryRepo = Substitute.For<ILibraryRepository>();
+        var libraryProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var libraryIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var bm25ShardRepo = Substitute.For<IBm25ShardRepository>();
+
+        var embeddingProvider = Substitute.For<IEmbeddingProvider>();
+        embeddingProvider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(),
+                                     Arg.Any<EmbedRole>(),
+                                     Arg.Any<CancellationToken>())
+                         .Returns(call =>
+                                  {
+                                      var texts = call.Arg<IReadOnlyList<string>>();
+                                      var emb = new float[texts.Count][];
+                                      for(var i = 0; i < texts.Count; i++)
+                                          emb[i] = new float[VectorDim];
+                                      return Task.FromResult(emb);
+                                  }
+                                 );
+
+        var ollamaSettings = new OllamaSettings();
+        ollamaSettings.ClassificationModels.Add(new OllamaModelEntry { Name = "test-classifier:latest" });
+        var llmClassifier = new LlmClassifier(Options.Create(ollamaSettings),
+                                              NullLogger<LlmClassifier>.Instance
+                                             );
+
+        var symbolExtractor = new SymbolExtractor();
+        var chunker = new CategoryAwareChunker(symbolExtractor);
+        var suspectDetector = new SuspectDetector();
+
+        var orchestrator = new IngestionOrchestrator(crawler,
+                                                     llmClassifier,
+                                                     chunker,
+                                                     embeddingProvider,
+                                                     vectorSearch,
+                                                     libraryRepo,
+                                                     pageRepo,
+                                                     chunkRepo,
+                                                     libraryProfileRepo,
+                                                     libraryIndexRepo,
+                                                     bm25ShardRepo,
+                                                     suspectDetector,
+                                                     auditWriter,
+                                                     broadcaster,
+                                                     NullLogger<IngestionOrchestrator>.Instance
+                                                    );
 
         var job = new ScrapeJob
                       {
                           RootUrl = "https://example.com/",
-                          LibraryId = "dryrun-test",
-                          Version = "1.0",
+                          LibraryId = LibraryId,
+                          Version = Version,
                           LibraryHint = "Dry run test",
                           AllowedUrlPatterns = ["example.com"],
                           ExcludedUrlPatterns = [],
@@ -192,16 +253,13 @@ public sealed class DryRunAuditTests
                           OffSiteDepth = 0
                       };
 
-        const string LibraryId = "dryrun-test";
-        const string Version = "1.0";
-        const string JobId = "test-job-01";
-
-        await crawler.DryRunAsync(job,
-                                  LibraryId,
-                                  Version,
-                                  JobId,
-                                  ct: TestContext.Current.CancellationToken
-                                 );
+        await orchestrator.DryRunAsync(job,
+                                       LibraryId,
+                                       Version,
+                                       JobId,
+                                       onProgress: null,
+                                       ct: TestContext.Current.CancellationToken
+                                      );
 
         Assert.True(auditWriter.FetchedCalls.Count > 0 || auditWriter.SkippedCalls.Count > 0,
                     "DryRunAsync should have recorded at least one audit event."
@@ -212,4 +270,6 @@ public sealed class DryRunAuditTests
                                               );
         Assert.True(allMatchLibrary, "All audit calls should carry the supplied library, version, and jobId.");
     }
+
+    private const int VectorDim = 4;
 }

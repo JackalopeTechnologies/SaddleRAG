@@ -317,12 +317,14 @@ dryrunCommand.SetAction(async (parseResult, ct) =>
                                               FetchDelayMs = delay
                                           };
 
-                            var crawler = provider.GetRequiredService<PageCrawler>();
-                            var report = await crawler.DryRunAsync(job,
-                                                                   DryrunCommandName,
-                                                                   DryrunCommandName,
-                                                                   Guid.NewGuid().ToString("N")
-                                                                  );
+                            var orchestrator = provider.GetRequiredService<IngestionOrchestrator>();
+                            var report = await orchestrator.DryRunAsync(job,
+                                                                        libraryId: DryrunCommandName,
+                                                                        version: DryrunCommandName,
+                                                                        jobId: Guid.NewGuid().ToString("N"),
+                                                                        onProgress: null,
+                                                                        ct: ct
+                                                                       );
 
                             return DryrunReportRenderer.Render(report, maxPages, Console.Out);
                         }
