@@ -209,12 +209,7 @@ public sealed class DryrunReportRendererTests
     public void RenderModeUnknownSectionAppearsWhenVoteIncomplete()
     {
         using var sw = new StringWriter();
-        var report = NewReport() with
-                     {
-                         DetectedRenderMode = RenderMode.Unknown,
-                         MedianContentNodeDelta = -1,
-                         LoadWaitRecommended = true
-                     };
+        var report = NewReport();
 
         DryrunReportRenderer.Render(report, maxPagesLimit: 200, sw);
         string output = sw.ToString();
