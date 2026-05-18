@@ -96,7 +96,6 @@ jobs:
         with:
           files: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
-          draft: true
 
       - name: Kill orphan processes
         if: always()
@@ -188,7 +187,7 @@ jobs:
       - name: Upload to GitHub Release
         # Idempotent upsert via softprops/action-gh-release — same action
         # build-windows uses for the MSI. Both jobs run in parallel; whichever
-        # arrives first creates the draft release with the prerelease flag,
+        # arrives first creates the release with the prerelease flag,
         # the other appends its artifact files. No coordination required.
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -197,7 +196,6 @@ jobs:
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
-          draft: true
 
   docker:
     runs-on: ubuntu-latest
