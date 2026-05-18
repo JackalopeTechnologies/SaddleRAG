@@ -104,6 +104,8 @@ public class PageCrawler : IPageCrawler
 
         public SiteExtensionState ExtensionState { get; } = new SiteExtensionState();
 
+        public required RenderModeVoter Voter { get; init; }
+
         public int PageCount => Volatile.Read(ref mPageCount);
         public int InFlightCount => Volatile.Read(ref mInFlight);
 
@@ -264,6 +266,7 @@ public class PageCrawler : IPageCrawler
         var samplePages = new List<DryRunPageEntry>();
         var errors = new List<DryRunFetchError>();
         var extensionState = new SiteExtensionState();
+        var voter = new RenderModeVoter();
 
         while (queue.Count > 0 && !ct.IsCancellationRequested)
         {
@@ -293,6 +296,7 @@ public class PageCrawler : IPageCrawler
                                               pagesByHost,
                                               stats,
                                               extensionState,
+                                              voter,
                                               ct
                                              );
                 int maxPages = job.MaxPages > 0 ? job.MaxPages : stats.TotalPages;
@@ -317,9 +321,9 @@ public class PageCrawler : IPageCrawler
                              HitMaxPagesLimit = stats.HitMaxLimit,
                              PagesRemainingInQueue = queue.Count,
                              SamplePendingUrls = queue.Take(SamplePendingUrlCount).Select(e => e.Url).ToList(),
-                             DetectedRenderMode = RenderMode.Unknown,
-                             MedianContentNodeDelta = -1,
-                             LoadWaitRecommended = true
+                             DetectedRenderMode = voter.RenderMode,
+                             MedianContentNodeDelta = voter.MedianDelta,
+                             LoadWaitRecommended = voter.IsLoadWaitNeeded
                          };
 
         return report;
@@ -340,6 +344,7 @@ public class PageCrawler : IPageCrawler
                                                Dictionary<string, int> pagesByHost,
                                                DryRunStats stats,
                                                SiteExtensionState extensionState,
+                                               RenderModeVoter voter,
                                                CancellationToken ct)
     {
         var filterSkip = IsAllowed(url, job);
@@ -381,6 +386,7 @@ public class PageCrawler : IPageCrawler
                                                pagesByHost,
                                                stats,
                                                extensionState,
+                                               voter,
                                                ct
                                               );
                 break;
@@ -401,6 +407,7 @@ public class PageCrawler : IPageCrawler
                                                 Dictionary<string, int> pagesByHost,
                                                 DryRunStats stats,
                                                 SiteExtensionState extensionState,
+                                                RenderModeVoter voter,
                                                 CancellationToken ct)
     {
         bool inScope = IsInRootScope(url, rootScope);
@@ -445,6 +452,7 @@ public class PageCrawler : IPageCrawler
                                        inScope,
                                        stats,
                                        extensionState,
+                                       voter,
                                        ct
                                       );
         }
@@ -465,6 +473,7 @@ public class PageCrawler : IPageCrawler
                                             bool inScope,
                                             DryRunStats stats,
                                             SiteExtensionState extensionState,
+                                            RenderModeVoter voter,
                                             CancellationToken ct)
     {
         mLogger.LogDebug("[dry-run] Fetching {Url}", url);
@@ -474,12 +483,16 @@ public class PageCrawler : IPageCrawler
         {
             IResponse? response;
             string fetchUrl;
-            (page, response, fetchUrl) = await FetchWithExtensionRecoveryAsync(url,
-                                                                               page,
-                                                                               browser,
-                                                                               extensionState,
-                                                                               ct
-                                                                              );
+            int domCount;
+            int loadCount;
+            (page, response, fetchUrl, domCount, loadCount) =
+                await FetchWithExtensionRecoveryAsync(url,
+                                                      page,
+                                                      browser,
+                                                      extensionState,
+                                                      voter,
+                                                      ct
+                                                     );
 
             switch(response)
             {
@@ -520,6 +533,8 @@ public class PageCrawler : IPageCrawler
                                                                pagesByHost,
                                                                stats,
                                                                extensionState,
+                                                               domCount,
+                                                               loadCount,
                                                                ct
                                                               );
                     break;
@@ -559,6 +574,8 @@ public class PageCrawler : IPageCrawler
                                                             Dictionary<string, int> pagesByHost,
                                                             DryRunStats stats,
                                                             SiteExtensionState extensionState,
+                                                            int domCount,
+                                                            int loadCount,
                                                             CancellationToken ct)
     {
         await ExpandCollapsibleNavigationAsync(page);
@@ -598,8 +615,8 @@ public class PageCrawler : IPageCrawler
                                     InScope = inScope,
                                     ContentBytes = content.Length,
                                     LinksFound = links.Count,
-                                    ContentNodesAtDom = -1,
-                                    ContentNodesAtLoad = -1
+                                    ContentNodesAtDom = domCount,
+                                    ContentNodesAtLoad = loadCount
                                 }
                            );
         }
@@ -684,7 +701,7 @@ public class PageCrawler : IPageCrawler
         var page = await browser.NewPageAsync();
         try
         {
-            var response = await NavigateAndPreparePageAsync(page, url, ct);
+            var (response, _, _) = await NavigateAndPreparePageAsync(page, url, voter: null, ct);
             if (response is { Ok: true })
                 result = await BuildAndPersistPageRecordAsync(page, libraryId, version, url, ct);
             else
@@ -790,7 +807,8 @@ public class PageCrawler : IPageCrawler
                           OnQueued = onQueued,
                           OnFetchError = onFetchError,
                           Token = ct,
-                          AuditCtx = auditCtx
+                          AuditCtx = auditCtx,
+                          Voter = new RenderModeVoter()
                       };
 
         if (resumeUrls != null)
@@ -1187,12 +1205,13 @@ public class PageCrawler : IPageCrawler
         {
             IResponse? response;
             string fetchUrl;
-            (page, response, fetchUrl) = await FetchWithExtensionRecoveryAsync(url,
-                                                                               page,
-                                                                               browser,
-                                                                               ctx.ExtensionState,
-                                                                               ctx.Token
-                                                                              );
+            (page, response, fetchUrl, _, _) = await FetchWithExtensionRecoveryAsync(url,
+                                                                                      page,
+                                                                                      browser,
+                                                                                      ctx.ExtensionState,
+                                                                                      ctx.Voter,
+                                                                                      ctx.Token
+                                                                                     );
 
             await DispatchFetchOutcomeAsync(response,
                                             page,
@@ -1543,27 +1562,45 @@ public class PageCrawler : IPageCrawler
         return result;
     }
 
-    private async Task<IResponse?> NavigateAndPreparePageAsync(IPage page,
-                                                               string url,
-                                                               CancellationToken ct)
+    private async Task<(IResponse? Response, int DomCount, int LoadCount)> NavigateAndPreparePageAsync(
+        IPage page,
+        string url,
+        RenderModeVoter? voter,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(url);
 
         ct.ThrowIfCancellationRequested();
 
-        var result = await page.GotoAsync(url,
-                                          new PageGotoOptions
-                                              {
-                                                  WaitUntil = WaitUntilState.DOMContentLoaded,
-                                                  Timeout = PageTimeoutMs
-                                              }
-                                         );
+        var response = await page.GotoAsync(url,
+                                            new PageGotoOptions
+                                                {
+                                                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                                                    Timeout = PageTimeoutMs
+                                                }
+                                           );
 
-        if (result is { Ok: true })
-            await WaitForPageAndFramesAsync(page, url, ct);
+        int domCount = -1;
+        int loadCount = -1;
 
-        return result;
+        if (response is { Ok: true })
+        {
+            domCount = await MeasureContentNodesAsync(page);
+
+            bool skipLoad = voter is { IsVoteComplete: true, IsLoadWaitNeeded: false };
+            if (!skipLoad)
+            {
+                await WaitForPageAndFramesAsync(page, url, ct);
+                loadCount = await MeasureContentNodesAsync(page);
+            }
+            else
+                loadCount = domCount;
+
+            voter?.RecordSample(domCount, loadCount);
+        }
+
+        return (response, domCount, loadCount);
     }
 
     private async Task WaitForPageAndFramesAsync(IPage page,
@@ -1626,6 +1663,24 @@ public class PageCrawler : IPageCrawler
         {
             mLogger.LogDebug(ex, "Failed waiting for {Target} on {Url}", targetDescription, url);
         }
+    }
+
+    private async Task<int> MeasureContentNodesAsync(IPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        int res = -1;
+
+        try
+        {
+            res = await page.MainFrame.EvaluateAsync<int>(ContentNodeScript);
+        }
+        catch(PlaywrightException ex)
+        {
+            mLogger.LogDebug(ex, "Content node measurement failed on {Url}", page.Url);
+        }
+
+        return res;
     }
 
     private static async Task<bool> HasFrameElementsAsync(IPage page)
@@ -2174,20 +2229,22 @@ public class PageCrawler : IPageCrawler
     ///     upfront apply every pre-discovery URL would 404 and never recover.
     ///     Shared by the real crawl and dry-run paths so they can't drift.
     /// </summary>
-    private async Task<(IPage Page, IResponse? Response, string FetchUrl)>
+    private async Task<(IPage Page, IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
         FetchWithExtensionRecoveryAsync(string url,
                                         IPage page,
                                         IBrowser browser,
                                         SiteExtensionState extensionState,
+                                        RenderModeVoter? voter,
                                         CancellationToken ct)
     {
         string fetchUrl = MaybeApplyKnownExtension(url, extensionState.Value);
-        var response = await NavigateAndPreparePageAsync(page, fetchUrl, ct);
+        var (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, fetchUrl, voter, ct);
 
         if (response is { Status: HttpNotFound } && extensionState.Value == null)
-            (page, response, fetchUrl) = await RetryWithExtensionsAsync(url, page, browser, extensionState, ct);
+            (page, response, fetchUrl, domCount, loadCount) =
+                await RetryWithExtensionsAsync(url, page, browser, extensionState, voter, ct);
 
-        return (page, response, fetchUrl);
+        return (page, response, fetchUrl, domCount, loadCount);
     }
 
     /// <summary>
@@ -2229,15 +2286,18 @@ public class PageCrawler : IPageCrawler
     ///     Try each known extension (.html, .htm, .aspx) on a 404 URL.
     ///     Returns updated page, response, and fetch URL.
     /// </summary>
-    private async Task<(IPage Page, IResponse? Response, string FetchUrl)>
+    private async Task<(IPage Page, IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
         RetryWithExtensionsAsync(string url,
                                  IPage page,
                                  IBrowser browser,
                                  SiteExtensionState extensionState,
+                                 RenderModeVoter? voter,
                                  CancellationToken ct)
     {
         string fetchUrl = url;
         IResponse? response = null;
+        int domCount = -1;
+        int loadCount = -1;
 
         foreach(string ext in smExtensionsToStrip)
         {
@@ -2245,7 +2305,7 @@ public class PageCrawler : IPageCrawler
             mLogger.LogDebug("Got 404 for {Url}, retrying with {Ext}: {RetryUrl}", url, ext, retryUrl);
             await page.CloseAsync();
             page = await browser.NewPageAsync();
-            response = await NavigateAndPreparePageAsync(page, retryUrl, ct);
+            (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, retryUrl, voter, ct);
 
             if (response is { Ok: true })
             {
@@ -2256,7 +2316,7 @@ public class PageCrawler : IPageCrawler
             }
         }
 
-        return (page, response, fetchUrl);
+        return (page, response, fetchUrl, domCount, loadCount);
     }
 
     private static string? NormalizeUrl(string url, bool keepExtension = false)
@@ -2328,6 +2388,10 @@ public class PageCrawler : IPageCrawler
         string canonical = NormalizeUrl(url, keepExtension: false) ?? url;
         return ComputeHash(canonical);
     }
+
+    private const string ContentNodeScript =
+        "() => [...document.querySelectorAll('p,li,pre,code,h1,h2,h3,h4,blockquote,td')]" +
+        ".filter(el => { const t = el.innerText; return t && t.trim().split(/\\s+/).length > 7; }).length";
 
     private const int PageTimeoutMs = 30000;
     private const int LoadStateTimeoutMs = 5000;
