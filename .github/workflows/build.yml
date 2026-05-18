@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
       - uses: actions/checkout@v5
@@ -85,7 +85,7 @@ jobs:
         run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ steps.version.outputs.PackageVersion }}/publish -d Version=${{ steps.version.outputs.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
 
       - name: Upload MSI artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}
           path: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
@@ -158,7 +158,7 @@ jobs:
 
       - name: Upload unit coverage XML
         if: success() || failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-unit-${{ steps.version.outputs.PackageVersion }}
           path: ./coverage-results/**/coverage.cobertura.xml
@@ -178,7 +178,7 @@ jobs:
           sha256sum "./artifacts/${TARBALL}" > "./artifacts/${TARBALL}.sha256"
 
       - name: Upload linux artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: SaddleRAG.Mcp-linux-${{ steps.version.outputs.PackageVersion }}
           path: |
@@ -340,7 +340,7 @@ jobs:
         # correctly. Models live where OnnxProviderIntegrationTests
         # expects them: Scratch/onnx-spike/models/{name}/.
         id: cache-onnx-models
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: Scratch/onnx-spike/models
           key: onnx-models-nomic-v1.5-fp16-mxbai-base-v1-quantized
@@ -376,7 +376,7 @@ jobs:
 
       - name: Upload integration coverage XML
         if: success() || failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-integration-${{ steps.version.outputs.PackageVersion }}
           path: ./coverage-results/**/coverage.cobertura.xml
@@ -425,14 +425,14 @@ jobs:
         # whatever integration coverage we have. The downstream
         # reportgenerator step glob-merges everything that landed.
         continue-on-error: true
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: coverage-unit-${{ steps.version.outputs.PackageVersion }}
           path: ./coverage-artifacts/unit
 
       - name: Download integration coverage XML
         continue-on-error: true
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: coverage-integration-${{ steps.version.outputs.PackageVersion }}
           path: ./coverage-artifacts/integration
@@ -476,7 +476,7 @@ jobs:
           path: ./coverage-artifacts/report/SummaryGithub.md
 
       - name: Upload merged coverage artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ steps.version.outputs.PackageVersion }}
           path: |
