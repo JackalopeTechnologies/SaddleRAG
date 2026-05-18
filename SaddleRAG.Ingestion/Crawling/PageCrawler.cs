@@ -325,7 +325,9 @@ public class PageCrawler : IPageCrawler
                              SamplePendingUrls = queue.Take(SamplePendingUrlCount).Select(e => e.Url).ToList(),
                              DetectedRenderMode = voter.RenderMode,
                              MedianContentNodeDelta = voter.MedianDelta,
-                             LoadWaitRecommended = voter.IsLoadWaitNeeded
+                             LoadWaitRecommended = voter.IsLoadWaitNeeded,
+                             CategoryHistogram = new Dictionary<DocCategory, int>(),
+                             StageTimings = StageTimings.Empty
                          };
 
         return report;

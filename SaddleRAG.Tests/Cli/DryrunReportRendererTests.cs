@@ -50,7 +50,9 @@ public sealed class DryrunReportRendererTests
                 SamplePendingUrls = samplePendingUrls ?? [],
                 DetectedRenderMode = RenderMode.Unknown,
                 MedianContentNodeDelta = -1,
-                LoadWaitRecommended = true
+                LoadWaitRecommended = true,
+                CategoryHistogram = new Dictionary<DocCategory, int>(),
+                StageTimings = StageTimings.Empty
             };
 
     private static DryRunFetchError Error(string url, string kind, string message) =>

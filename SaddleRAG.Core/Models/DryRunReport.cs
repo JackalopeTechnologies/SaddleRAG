@@ -151,4 +151,22 @@ public record DryRunReport
     /// </summary>
 
     public required bool LoadWaitRecommended { get; init; }
+
+
+    /// <summary>
+    ///     Number of pages per <see cref="DocCategory" /> resolved by the
+    ///     classifier during the dry run. Empty when no pages were
+    ///     classified (e.g. crawl returned zero pages).
+    /// </summary>
+
+    public required IReadOnlyDictionary<DocCategory, int> CategoryHistogram { get; init; }
+
+
+    /// <summary>
+    ///     Per-stage millisecond totals and sample counts observed during
+    ///     the dry run. <see cref="StageTimings.Empty" /> when no pages
+    ///     flowed through a stage.
+    /// </summary>
+
+    public required StageTimings StageTimings { get; init; }
 }
