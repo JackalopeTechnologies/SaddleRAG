@@ -445,12 +445,12 @@ public class PageCrawler : IPageCrawler
     private async Task RunWorkerPoolAsync(CrawlContext ctx, IBrowser browser, int workerCount, CancellationToken ct)
     {
         var workerPages = new IPage[workerCount + 1];
-        for(var i = 0; i < workerPages.Length; i++)
-            workerPages[i] = await browser.NewPageAsync();
-
         var workerTasks = new Task[workerCount + 1];
         try
         {
+            for(var i = 0; i < workerPages.Length; i++)
+                workerPages[i] = await browser.NewPageAsync();
+
             for(var i = 0; i < workerCount; i++)
             {
                 int workerIndex = i;
@@ -464,7 +464,7 @@ public class PageCrawler : IPageCrawler
         finally
         {
             ctx.CompleteAllEntries();
-            foreach(var page in workerPages)
+            foreach(var page in workerPages.Where(p => p != null))
             {
                 try
                 {
@@ -795,12 +795,12 @@ public class PageCrawler : IPageCrawler
         {
             IResponse? response;
             string fetchUrl;
-            (page, response, fetchUrl, _, _) = await FetchWithExtensionRecoveryAsync(url,
-                                                                                      page,
-                                                                                      ctx.ExtensionState,
-                                                                                      ctx.Voter,
-                                                                                      ctx.Token
-                                                                                     );
+            (response, fetchUrl, _, _) = await FetchWithExtensionRecoveryAsync(url,
+                                                                                page,
+                                                                                ctx.ExtensionState,
+                                                                                ctx.Voter,
+                                                                                ctx.Token
+                                                                               );
 
             await DispatchFetchOutcomeAsync(response,
                                             page,
@@ -1864,7 +1864,7 @@ public class PageCrawler : IPageCrawler
     ///     upfront apply every pre-discovery URL would 404 and never recover.
     ///     Shared by the real crawl and dry-run paths so they can't drift.
     /// </summary>
-    private async Task<(IPage Page, IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
+    private async Task<(IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
         FetchWithExtensionRecoveryAsync(string url,
                                         IPage page,
                                         SiteExtensionState extensionState,
@@ -1875,10 +1875,10 @@ public class PageCrawler : IPageCrawler
         var (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, fetchUrl, voter, ct);
 
         if (response is { Status: HttpNotFound } && extensionState.Value == null)
-            (page, response, fetchUrl, domCount, loadCount) =
+            (response, fetchUrl, domCount, loadCount) =
                 await RetryWithExtensionsAsync(url, page, extensionState, voter, ct);
 
-        return (page, response, fetchUrl, domCount, loadCount);
+        return (response, fetchUrl, domCount, loadCount);
     }
 
     /// <summary>
@@ -1920,7 +1920,7 @@ public class PageCrawler : IPageCrawler
     ///     Try each known extension (.html, .htm, .aspx) on a 404 URL.
     ///     Returns updated page, response, and fetch URL.
     /// </summary>
-    private async Task<(IPage Page, IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
+    private async Task<(IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
         RetryWithExtensionsAsync(string url,
                                  IPage page,
                                  SiteExtensionState extensionState,
@@ -1947,7 +1947,7 @@ public class PageCrawler : IPageCrawler
             }
         }
 
-        return (page, response, fetchUrl, domCount, loadCount);
+        return (response, fetchUrl, domCount, loadCount);
     }
 
     private static string? NormalizeUrl(string url, bool keepExtension = false)
