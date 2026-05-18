@@ -1595,7 +1595,7 @@ public class PageCrawler : IPageCrawler
                 loadCount = await MeasureContentNodesAsync(page);
             }
             else
-                loadCount = domCount;
+                loadCount = -1;
 
             voter?.RecordSample(domCount, loadCount);
         }
@@ -1673,7 +1673,7 @@ public class PageCrawler : IPageCrawler
 
         try
         {
-            res = await page.MainFrame.EvaluateAsync<int>(ContentNodeScript);
+            res = await page.MainFrame.EvaluateAsync<int>(smContentNodeScript);
         }
         catch(PlaywrightException ex)
         {
@@ -2389,9 +2389,11 @@ public class PageCrawler : IPageCrawler
         return ComputeHash(canonical);
     }
 
-    private const string ContentNodeScript =
+    private const int ContentNodeMinWords = 7;
+
+    private static readonly string smContentNodeScript =
         "() => [...document.querySelectorAll('p,li,pre,code,h1,h2,h3,h4,blockquote,td')]" +
-        ".filter(el => { const t = el.innerText; return t && t.trim().split(/\\s+/).length > 7; }).length";
+        $".filter(el => {{ const t = el.innerText; return t && t.trim().split(/\\s+/).length > {ContentNodeMinWords}; }}).length";
 
     private const int PageTimeoutMs = 30000;
     private const int LoadStateTimeoutMs = 5000;
