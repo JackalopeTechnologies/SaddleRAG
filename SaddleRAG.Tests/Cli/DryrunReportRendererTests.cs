@@ -266,9 +266,33 @@ public sealed class DryrunReportRendererTests
 
         var rendered = output.ToString();
         Assert.Contains("Stage timings:", rendered);
-        Assert.Contains("Fetch:    1000ms total over 10 samples (avg 100ms)", rendered);
-        Assert.Contains("Classify:  500ms total over 10 samples (avg 50ms)", rendered);
-        Assert.Contains("Chunk:      50ms total over 10 samples (avg 5ms)", rendered);
-        Assert.Contains("Embed:     200ms total over 2 batches (avg 100ms)", rendered);
+        Assert.Contains("Fetch: 1000ms total over 10 samples (avg 100ms)", rendered);
+        Assert.Contains("Classify: 500ms total over 10 samples (avg 50ms)", rendered);
+        Assert.Contains("Chunk: 50ms total over 10 samples (avg 5ms)", rendered);
+        Assert.Contains("Embed: 200ms total over 2 batches (avg 100ms)", rendered);
+    }
+
+    [Fact]
+    public void RenderOmitsCategoryHistogramSectionWhenEmpty()
+    {
+        var output = new StringWriter();
+        var report = NewReport();
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.DoesNotContain("Category histogram:", rendered);
+    }
+
+    [Fact]
+    public void RenderOmitsStageTimingsSectionWhenAllSampleCountsAreZero()
+    {
+        var output = new StringWriter();
+        var report = NewReport();
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.DoesNotContain("Stage timings:", rendered);
     }
 }

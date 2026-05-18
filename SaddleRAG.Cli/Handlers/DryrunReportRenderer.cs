@@ -137,16 +137,16 @@ public static class DryrunReportRenderer
             long embedAvg = report.StageTimings.EmbedBatchCount > 0
                                 ? report.StageTimings.TotalEmbedMs / report.StageTimings.EmbedBatchCount
                                 : 0;
-            output.WriteLine($"  Fetch:    {report.StageTimings.TotalFetchMs}ms total "
+            output.WriteLine($"  Fetch: {report.StageTimings.TotalFetchMs}ms total "
                              + $"over {report.StageTimings.FetchSampleCount} samples (avg {fetchAvg}ms)"
                             );
-            output.WriteLine($"  Classify:  {report.StageTimings.TotalClassifyMs}ms total "
+            output.WriteLine($"  Classify: {report.StageTimings.TotalClassifyMs}ms total "
                              + $"over {report.StageTimings.ClassifySampleCount} samples (avg {classifyAvg}ms)"
                             );
-            output.WriteLine($"  Chunk:      {report.StageTimings.TotalChunkMs}ms total "
+            output.WriteLine($"  Chunk: {report.StageTimings.TotalChunkMs}ms total "
                              + $"over {report.StageTimings.ChunkSampleCount} samples (avg {chunkAvg}ms)"
                             );
-            output.WriteLine($"  Embed:     {report.StageTimings.TotalEmbedMs}ms total "
+            output.WriteLine($"  Embed: {report.StageTimings.TotalEmbedMs}ms total "
                              + $"over {report.StageTimings.EmbedBatchCount} batches (avg {embedAvg}ms)"
                             );
         }
