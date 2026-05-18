@@ -3,9 +3,14 @@ name: Build
 on:
   push:
     branches: [master]
-    tags: ['v*']
   pull_request:
     branches: [master]
+  release:
+    # Triggered when a draft release is created. CI builds the artifacts
+    # and uploads them to the draft. The draft remains unpublished until
+    # manually reviewed and published, at which point GitHub creates the
+    # tag and fires release.published.
+    types: [created]
 
 permissions:
   contents: write
@@ -27,7 +32,9 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+          if ("${{ github.event_name }}" -eq "release") {
+              $version = "${{ github.event.release.tag_name }}" -replace '^v', ''
+          } elseif ($env:GITHUB_REF -like 'refs/tags/v*') {
               $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
           } else {
               $version = "0.0.0"
@@ -91,11 +98,12 @@ jobs:
           path: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
         with:
           files: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
+          draft: true
 
       - name: Kill orphan processes
         if: always()
@@ -117,7 +125,10 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="0.0.0"
@@ -185,17 +196,17 @@ jobs:
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
 
       - name: Upload to GitHub Release
-        # Idempotent upsert via softprops/action-gh-release — same action
-        # build-windows uses for the MSI. Both jobs run in parallel; whichever
-        # arrives first creates the release with the prerelease flag,
-        # the other appends its artifact files. No coordination required.
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        # Uploads to the draft release created when gh release create --draft
+        # was run. Both jobs run in parallel; whichever arrives first finds the
+        # draft and uploads its artifact; the other appends to it.
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
+          draft: true
 
   docker:
     runs-on: ubuntu-latest
