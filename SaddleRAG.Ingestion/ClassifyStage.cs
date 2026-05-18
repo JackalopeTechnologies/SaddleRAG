@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
@@ -108,10 +109,13 @@ internal sealed class ClassifyStage
     /// </summary>
     internal async Task<PageRecord> ClassifyPageAsync(PageRecord page, string libraryHint, Action? onError = null)
     {
+        var sw = Stopwatch.StartNew();
         PageRecord result;
+        var category = DocCategory.Unclassified;
+        var confidence = 0f;
         try
         {
-            (var category, float confidence) = await mLlmClassifier.ClassifyAsync(page, libraryHint);
+            (category, confidence) = await mLlmClassifier.ClassifyAsync(page, libraryHint);
             if (category != DocCategory.Unclassified && confidence > 0)
             {
                 result = page with { Category = category };
@@ -126,6 +130,14 @@ internal sealed class ClassifyStage
             onError?.Invoke();
             result = page;
         }
+
+        long classifyMs = sw.ElapsedMilliseconds;
+        mLogger.LogInformation("Classified {Url} in {ClassifyMs}ms category={Category} confidence={Confidence:F2}",
+                               page.Url,
+                               classifyMs,
+                               category,
+                               confidence
+                              );
 
         return result;
     }
