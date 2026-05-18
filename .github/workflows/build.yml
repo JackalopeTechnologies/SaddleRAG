@@ -5,12 +5,12 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
-  release:
-    # Triggered when a published (or pre-release) release is created via
-    # `gh release create vX.Y.Z --prerelease`. CI builds the artifacts and
-    # uploads them to the existing release. Draft releases do NOT trigger
-    # GitHub Actions, so we create releases as published pre-releases directly.
-    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build and upload (e.g. 0.1.7) — a draft release for v{version} must already exist'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -32,8 +32,8 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ("${{ github.event_name }}" -eq "release") {
-              $version = "${{ github.event.release.tag_name }}" -replace '^v', ''
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+              $version = "${{ inputs.version }}"
           } elseif ($env:GITHUB_REF -like 'refs/tags/v*') {
               $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
           } else {
@@ -97,12 +97,14 @@ jobs:
           name: SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}
           path: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
 
-      - name: Create GitHub Release
-        if: github.event_name == 'release'
+      - name: Upload MSI to draft release
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ steps.version.outputs.PackageVersion }}
           files: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
+          draft: true
 
       - name: Kill orphan processes
         if: always()
@@ -124,9 +126,8 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
@@ -194,16 +195,18 @@ jobs:
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
 
-      - name: Upload to GitHub Release
-        # Both jobs run in parallel; whichever arrives first finds the existing
-        # pre-release and uploads its artifact; the other appends to it.
-        if: github.event_name == 'release'
+      - name: Upload tarball to draft release
+        # Both jobs run in parallel; whichever arrives first finds the draft
+        # and uploads its artifact; the other appends to it.
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ steps.version.outputs.PackageVersion }}
           files: |
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
+          draft: true
 
   docker:
     runs-on: ubuntu-latest
