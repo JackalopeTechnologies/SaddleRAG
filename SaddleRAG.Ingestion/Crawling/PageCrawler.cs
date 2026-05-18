@@ -1495,6 +1495,7 @@ public class PageCrawler : IPageCrawler
                                                     CrawlEntry entry,
                                                     CrawlContext ctx)
     {
+        var sw = Stopwatch.StartNew();
         string title = await page.TitleAsync();
         await ExpandCollapsibleNavigationAsync(page);
         string content = await ExtractMainContentAsync(page);
@@ -1525,6 +1526,7 @@ public class PageCrawler : IPageCrawler
 
         await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
         int newCount = ctx.IncrementPageCount();
+        long fetchMs = sw.ElapsedMilliseconds;
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);
 
         mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), pageDepth);
@@ -1541,6 +1543,13 @@ public class PageCrawler : IPageCrawler
                               );
 
         ctx.OnPageFetched?.Invoke(newCount);
+
+        mLogger.LogInformation("Fetched {Url} in {FetchMs}ms ({ContentBytes} bytes, {LinkCount} links)",
+                               fetchUrl,
+                               fetchMs,
+                               content.Length,
+                               links.Count
+                              );
 
         if (ctx.Job.FetchDelayMs > 0)
             await Task.Delay(ctx.Job.FetchDelayMs, ctx.Token);
