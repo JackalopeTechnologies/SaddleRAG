@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Interfaces;
@@ -85,9 +86,12 @@ internal sealed class ChunkStage
                                       Action<ScrapeJobRecord>? onProgress,
                                       CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
+        var chunkCount = 0;
         try
         {
             var chunks = mChunker.Chunk(page);
+            chunkCount = chunks.Count;
             if (chunks.Count > 0)
             {
                 await output.WriteAsync(chunks.ToArray(), ct);
@@ -102,5 +106,12 @@ internal sealed class ChunkStage
             mLogger.LogWarning(ex, "Chunking failed for {Url}, skipping page", page.Url);
             progress.IncrementErrorCount();
         }
+
+        long chunkMs = sw.ElapsedMilliseconds;
+        mLogger.LogInformation("Chunked {Url} in {ChunkMs}ms count={ChunkCount}",
+                               page.Url,
+                               chunkMs,
+                               chunkCount
+                              );
     }
 }
