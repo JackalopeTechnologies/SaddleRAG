@@ -111,6 +111,8 @@ internal sealed class DryRunAccumulator
 
     public void RecordFetchMs(long ms)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(ms);
+
         lock(mLock)
         {
             mTotalFetchMs += ms;
@@ -131,6 +133,8 @@ internal sealed class DryRunAccumulator
 
     public void RecordClassified(DocCategory category, long classifyMs)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(classifyMs);
+
         lock(mLock)
         {
             mCategoryHistogram.TryGetValue(category, out int existing);
@@ -142,6 +146,8 @@ internal sealed class DryRunAccumulator
 
     public void RecordChunked(long chunkMs)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(chunkMs);
+
         lock(mLock)
         {
             mTotalChunkMs += chunkMs;
@@ -151,6 +157,8 @@ internal sealed class DryRunAccumulator
 
     public void RecordEmbeddedBatch(long embedMs)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(embedMs);
+
         lock(mLock)
         {
             mTotalEmbedMs += embedMs;

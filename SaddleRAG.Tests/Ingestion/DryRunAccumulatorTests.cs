@@ -85,15 +85,23 @@ public sealed class DryRunAccumulatorTests
 
         var snap = acc.Snapshot();
         Assert.Equal(2, snap.SamplePages.Count);
+        Assert.Equal("https://a/", snap.SamplePages[0].Url);
+        Assert.Equal("https://b/", snap.SamplePages[1].Url);
     }
 
     [Fact]
     public async Task ConcurrentRecordFetchMsProducesCorrectTotal()
     {
         var acc = new DryRunAccumulator();
+        using var gate = new ManualResetEventSlim(initialState: false);
         var tasks = Enumerable.Range(0, 100)
-                              .Select(_ => Task.Run(() => acc.RecordFetchMs(1)))
+                              .Select(_ => Task.Run(() =>
+                                                    {
+                                                        gate.Wait();
+                                                        acc.RecordFetchMs(1);
+                                                    }))
                               .ToArray();
+        gate.Set();
         await Task.WhenAll(tasks);
 
         Assert.Equal(100, acc.Snapshot().Timings.FetchSampleCount);
