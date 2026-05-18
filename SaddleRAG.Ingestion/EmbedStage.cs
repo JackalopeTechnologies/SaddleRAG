@@ -60,7 +60,9 @@ internal sealed class EmbedStage
                                ChannelWriter<DocChunk[]> output,
                                ScrapeJobRecord progress,
                                Action<ScrapeJobRecord>? onProgress,
-                               CancellationTokenSource cts)
+                               CancellationTokenSource cts,
+                               IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                               DryRunAccumulator? dryRunAcc = null)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
@@ -79,13 +81,13 @@ internal sealed class EmbedStage
                 {
                     var toEmbed = batch.Take(EmbedBatchSize).ToList();
                     batch = batch.Skip(EmbedBatchSize).ToList();
-                    await EmbedAndForwardBatchAsync(toEmbed, output, progress, onProgress, cts.Token);
+                    await EmbedAndForwardBatchAsync(toEmbed, output, progress, onProgress, cts.Token, persistMode, dryRunAcc);
                 }
             }
 
             // Flush remaining chunks
             if (batch.Count > 0)
-                await EmbedAndForwardBatchAsync(batch, output, progress, onProgress, cts.Token);
+                await EmbedAndForwardBatchAsync(batch, output, progress, onProgress, cts.Token, persistMode, dryRunAcc);
         }
         catch(OperationCanceledException)
         {
@@ -109,15 +111,18 @@ internal sealed class EmbedStage
                                                  ChannelWriter<DocChunk[]> output,
                                                  ScrapeJobRecord progress,
                                                  Action<ScrapeJobRecord>? onProgress,
-                                                 CancellationToken ct)
+                                                 CancellationToken ct,
+                                                 IngestionPersistenceMode persistMode,
+                                                 DryRunAccumulator? dryRunAcc)
     {
         var sw = Stopwatch.StartNew();
         try
         {
             var embeddedChunks = await EmbedBatchAsync(mEmbeddingProvider, mLogger, batch, ct);
 
-            // Upsert to MongoDB (supports resume — no duplicates on re-run)
-            await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
+            if (persistMode == IngestionPersistenceMode.Full)
+                await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
+
             progress.ChunksEmbedded += embeddedChunks.Length;
             onProgress?.Invoke(progress);
             for(var ei = 0; ei < embeddedChunks.Length; ei++)
@@ -126,6 +131,7 @@ internal sealed class EmbedStage
             await output.WriteAsync(embeddedChunks, ct);
 
             long embedMs = sw.ElapsedMilliseconds;
+            dryRunAcc?.RecordEmbeddedBatch(embedMs);
             mLogger.LogInformation("Embedded batch in {EmbedMs}ms count={Count}",
                                    embedMs,
                                    embeddedChunks.Length

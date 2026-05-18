@@ -61,7 +61,9 @@ internal sealed class ClassifyStage
                                ChannelWriter<PageRecord> output,
                                ScrapeJobRecord progress,
                                Action<ScrapeJobRecord>? onProgress,
-                               CancellationTokenSource cts)
+                               CancellationTokenSource cts,
+                               IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                               DryRunAccumulator? dryRunAcc = null)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(input);
@@ -73,7 +75,12 @@ internal sealed class ClassifyStage
         {
             await foreach(var page in input.ReadAllAsync(cts.Token))
             {
-                var classified = await ClassifyPageAsync(page, job.LibraryHint, () => progress.IncrementErrorCount());
+                var classified = await ClassifyPageAsync(page,
+                                                         job.LibraryHint,
+                                                         () => progress.IncrementErrorCount(),
+                                                         persistMode,
+                                                         dryRunAcc
+                                                        );
                 await output.WriteAsync(classified, cts.Token);
                 progress.PagesClassified++;
                 onProgress?.Invoke(progress);
@@ -107,7 +114,11 @@ internal sealed class ClassifyStage
     ///     wires it to <c>progress.IncrementErrorCount</c>; the single-page
     ///     path passes <c>null</c> because there is no progress object).
     /// </summary>
-    internal async Task<PageRecord> ClassifyPageAsync(PageRecord page, string libraryHint, Action? onError = null)
+    internal async Task<PageRecord> ClassifyPageAsync(PageRecord page,
+                                                      string libraryHint,
+                                                      Action? onError = null,
+                                                      IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                                                      DryRunAccumulator? dryRunAcc = null)
     {
         var sw = Stopwatch.StartNew();
         PageRecord result;
@@ -119,7 +130,8 @@ internal sealed class ClassifyStage
             if (category != DocCategory.Unclassified && confidence > 0)
             {
                 result = page with { Category = category };
-                await mPageRepository.UpsertPageAsync(result);
+                if (persistMode == IngestionPersistenceMode.Full)
+                    await mPageRepository.UpsertPageAsync(result);
             }
             else
                 result = page;
@@ -132,6 +144,7 @@ internal sealed class ClassifyStage
         }
 
         long classifyMs = sw.ElapsedMilliseconds;
+        dryRunAcc?.RecordClassified(result.Category, classifyMs);
         mLogger.LogInformation("Classified {Url} in {ClassifyMs}ms category={Category} confidence={Confidence:F2}",
                                page.Url,
                                classifyMs,

@@ -50,7 +50,8 @@ internal sealed class ChunkStage
                                ChannelWriter<DocChunk[]> output,
                                ScrapeJobRecord progress,
                                Action<ScrapeJobRecord>? onProgress,
-                               CancellationTokenSource cts)
+                               CancellationTokenSource cts,
+                               DryRunAccumulator? dryRunAcc = null)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
@@ -60,7 +61,7 @@ internal sealed class ChunkStage
         try
         {
             await foreach(var page in input.ReadAllAsync(cts.Token))
-                await ChunkPageAsync(page, output, progress, onProgress, cts.Token);
+                await ChunkPageAsync(page, output, progress, onProgress, cts.Token, dryRunAcc);
         }
         catch(OperationCanceledException)
         {
@@ -84,7 +85,8 @@ internal sealed class ChunkStage
                                       ChannelWriter<DocChunk[]> output,
                                       ScrapeJobRecord progress,
                                       Action<ScrapeJobRecord>? onProgress,
-                                      CancellationToken ct)
+                                      CancellationToken ct,
+                                      DryRunAccumulator? dryRunAcc)
     {
         var sw = Stopwatch.StartNew();
         var chunkCount = 0;
@@ -108,6 +110,7 @@ internal sealed class ChunkStage
         }
 
         long chunkMs = sw.ElapsedMilliseconds;
+        dryRunAcc?.RecordChunked(chunkMs);
         mLogger.LogInformation("Chunked {Url} in {ChunkMs}ms count={ChunkCount}",
                                page.Url,
                                chunkMs,
