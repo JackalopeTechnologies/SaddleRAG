@@ -7,6 +7,7 @@
 
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+using SaddleRAG.Core.Enums;
 
 namespace SaddleRAG.Core.Models;
 
@@ -125,4 +126,29 @@ public record DryRunReport
     /// </summary>
 
     public required IReadOnlyList<string> SamplePendingUrls { get; init; }
+
+
+    /// <summary>
+    ///     Render mode detected by sampling the first pages of the crawl.
+    ///     <see cref="RenderMode.Unknown" /> if fewer than 5 pages were fetched.
+    /// </summary>
+
+    public required RenderMode DetectedRenderMode { get; init; }
+
+
+    /// <summary>
+    ///     Median delta in substantial content nodes (elements with more than
+    ///     7 rendered words) between DOMContentLoaded and LoadState.Load,
+    ///     across the sample pages. -1 when vote is not complete.
+    /// </summary>
+
+    public required int MedianContentNodeDelta { get; init; }
+
+
+    /// <summary>
+    ///     Whether the Load-state wait is recommended for this site.
+    ///     False for SSR sites — skipping it saves 4–5 seconds per page.
+    /// </summary>
+
+    public required bool LoadWaitRecommended { get; init; }
 }

@@ -7,6 +7,7 @@
 #region Usings
 
 using SaddleRAG.Cli.Handlers;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 
 #endregion
@@ -46,7 +47,10 @@ public sealed class DryrunReportRendererTests
                 ElapsedTime = TimeSpan.FromSeconds(12.5),
                 HitMaxPagesLimit = hitMaxPagesLimit,
                 PagesRemainingInQueue = 0,
-                SamplePendingUrls = samplePendingUrls ?? []
+                SamplePendingUrls = samplePendingUrls ?? [],
+                DetectedRenderMode = RenderMode.Unknown,
+                MedianContentNodeDelta = -1,
+                LoadWaitRecommended = true
             };
 
     private static DryRunFetchError Error(string url, string kind, string message) =>

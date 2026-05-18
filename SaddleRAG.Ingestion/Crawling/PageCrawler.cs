@@ -316,7 +316,10 @@ public class PageCrawler : IPageCrawler
                              ElapsedTime = DateTime.UtcNow - startTime,
                              HitMaxPagesLimit = stats.HitMaxLimit,
                              PagesRemainingInQueue = queue.Count,
-                             SamplePendingUrls = queue.Take(SamplePendingUrlCount).Select(e => e.Url).ToList()
+                             SamplePendingUrls = queue.Take(SamplePendingUrlCount).Select(e => e.Url).ToList(),
+                             DetectedRenderMode = RenderMode.Unknown,
+                             MedianContentNodeDelta = -1,
+                             LoadWaitRecommended = true
                          };
 
         return report;
@@ -594,7 +597,9 @@ public class PageCrawler : IPageCrawler
                                     OutOfScopeDepth = effectiveDepth,
                                     InScope = inScope,
                                     ContentBytes = content.Length,
-                                    LinksFound = links.Count
+                                    LinksFound = links.Count,
+                                    ContentNodesAtDom = -1,
+                                    ContentNodesAtLoad = -1
                                 }
                            );
         }
