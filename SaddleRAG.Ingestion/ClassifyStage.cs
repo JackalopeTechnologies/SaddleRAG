@@ -114,11 +114,12 @@ internal sealed class ClassifyStage
     ///     wires it to <c>progress.IncrementErrorCount</c>; the single-page
     ///     path passes <c>null</c> because there is no progress object).
     /// </summary>
-    internal async Task<PageRecord> ClassifyPageAsync(PageRecord page,
-                                                      string libraryHint,
-                                                      Action? onError = null,
-                                                      IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
-                                                      DryRunAccumulator? dryRunAcc = null)
+    internal async Task<PageRecord> ClassifyPageAsync(
+        PageRecord page,
+        string libraryHint,
+        Action? onError = null,
+        IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+        DryRunAccumulator? dryRunAcc = null)
     {
         var sw = Stopwatch.StartNew();
         PageRecord result;

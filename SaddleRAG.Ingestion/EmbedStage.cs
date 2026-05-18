@@ -81,13 +81,27 @@ internal sealed class EmbedStage
                 {
                     var toEmbed = batch.Take(EmbedBatchSize).ToList();
                     batch = batch.Skip(EmbedBatchSize).ToList();
-                    await EmbedAndForwardBatchAsync(toEmbed, output, progress, onProgress, cts.Token, persistMode, dryRunAcc);
+                    await EmbedAndForwardBatchAsync(toEmbed,
+                                                   output,
+                                                   progress,
+                                                   onProgress,
+                                                   cts.Token,
+                                                   persistMode,
+                                                   dryRunAcc
+                                                  );
                 }
             }
 
             // Flush remaining chunks
             if (batch.Count > 0)
-                await EmbedAndForwardBatchAsync(batch, output, progress, onProgress, cts.Token, persistMode, dryRunAcc);
+                await EmbedAndForwardBatchAsync(batch,
+                                                output,
+                                                progress,
+                                                onProgress,
+                                                cts.Token,
+                                                persistMode,
+                                                dryRunAcc
+                                               );
         }
         catch(OperationCanceledException)
         {
