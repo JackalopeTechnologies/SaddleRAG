@@ -727,9 +727,16 @@ public class PageCrawler : IPageCrawler
                 var repoKey = $"{owner}/{repo}";
                 if (ctx.ClonedRepos.TryAdd(repoKey, value: 0))
                 {
-                    mLogger.LogInformation("Delegating to GitHub scraper for {Repo}", repoKey);
-                    await mGitHubScraper.ScrapeRepositoryAsync(owner, repo, ctx.Job, ctx.PageOutput, ctx.Token);
-                    ctx.DryRunAcc?.RecordGitHubRepo($"{owner}/{repo}");
+                    ctx.DryRunAcc?.RecordGitHubRepo(repoKey);
+                    if (ctx.PersistMode == IngestionPersistenceMode.Full)
+                    {
+                        mLogger.LogInformation("Delegating to GitHub scraper for {Repo}", repoKey);
+                        await mGitHubScraper.ScrapeRepositoryAsync(owner, repo, ctx.Job, ctx.PageOutput, ctx.Token);
+                    }
+                    else
+                    {
+                        mLogger.LogInformation("Skipping GitHub scrape for {Repo} (dry-run)", repoKey);
+                    }
                 }
 
                 break;
