@@ -342,6 +342,11 @@ public class OllamaBootstrapper
                     mLogger.LogWarning("Ollama installer exited with code {Code}", process.ExitCode);
             }
 
+            // Brief pause to let the installer's background processes (registry
+            // writes, PATH updates) get started before we probe. We are NOT
+            // relying on this delay to guarantee completion — FindOllamaExecutable()
+            // is called immediately after and throws if the executable still
+            // isn't present.
             await Task.Delay(PostInstallDelayMs, ct);
 
             RefreshPathEnvironment();
