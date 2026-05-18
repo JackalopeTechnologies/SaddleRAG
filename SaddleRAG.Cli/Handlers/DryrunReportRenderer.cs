@@ -109,6 +109,48 @@ public static class DryrunReportRenderer
             output.WriteLine($"  Median content-node delta: {report.MedianContentNodeDelta}");
         }
 
+        if (report.CategoryHistogram.Count > 0)
+        {
+            output.WriteLine();
+            output.WriteLine("Category histogram:");
+            foreach((var category, var count) in report.CategoryHistogram.OrderByDescending(kv => kv.Value))
+                output.WriteLine($"  {category}: {count}");
+        }
+
+        bool anyTimingSamples = report.StageTimings.FetchSampleCount > 0
+                                || report.StageTimings.ClassifySampleCount > 0
+                                || report.StageTimings.ChunkSampleCount > 0
+                                || report.StageTimings.EmbedBatchCount > 0;
+        if (anyTimingSamples)
+        {
+            output.WriteLine();
+            output.WriteLine("Stage timings:");
+            long fetchAvg = report.StageTimings.FetchSampleCount > 0
+                                ? report.StageTimings.TotalFetchMs / report.StageTimings.FetchSampleCount
+                                : 0;
+            long classifyAvg = report.StageTimings.ClassifySampleCount > 0
+                                   ? report.StageTimings.TotalClassifyMs / report.StageTimings.ClassifySampleCount
+                                   : 0;
+            long chunkAvg = report.StageTimings.ChunkSampleCount > 0
+                                ? report.StageTimings.TotalChunkMs / report.StageTimings.ChunkSampleCount
+                                : 0;
+            long embedAvg = report.StageTimings.EmbedBatchCount > 0
+                                ? report.StageTimings.TotalEmbedMs / report.StageTimings.EmbedBatchCount
+                                : 0;
+            output.WriteLine($"  Fetch:    {report.StageTimings.TotalFetchMs}ms total "
+                             + $"over {report.StageTimings.FetchSampleCount} samples (avg {fetchAvg}ms)"
+                            );
+            output.WriteLine($"  Classify:  {report.StageTimings.TotalClassifyMs}ms total "
+                             + $"over {report.StageTimings.ClassifySampleCount} samples (avg {classifyAvg}ms)"
+                            );
+            output.WriteLine($"  Chunk:      {report.StageTimings.TotalChunkMs}ms total "
+                             + $"over {report.StageTimings.ChunkSampleCount} samples (avg {chunkAvg}ms)"
+                            );
+            output.WriteLine($"  Embed:     {report.StageTimings.TotalEmbedMs}ms total "
+                             + $"over {report.StageTimings.EmbedBatchCount} batches (avg {embedAvg}ms)"
+                            );
+        }
+
         return 0;
     }
 

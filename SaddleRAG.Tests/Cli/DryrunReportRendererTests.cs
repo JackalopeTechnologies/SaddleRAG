@@ -219,4 +219,56 @@ public sealed class DryrunReportRendererTests
         Assert.Contains("Render mode: Unknown", output);
         Assert.Contains("(fewer than 5 pages sampled)", output);
     }
+
+    [Fact]
+    public void RenderEmitsCategoryHistogramSectionWhenPresent()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             CategoryHistogram = new Dictionary<DocCategory, int>
+                                                     {
+                                                         [DocCategory.HowTo] = 7,
+                                                         [DocCategory.Sample] = 3,
+                                                         [DocCategory.ApiReference] = 12
+                                                     }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Category histogram:", rendered);
+        Assert.Contains("ApiReference: 12", rendered);
+        Assert.Contains("HowTo: 7", rendered);
+        Assert.Contains("Sample: 3", rendered);
+    }
+
+    [Fact]
+    public void RenderEmitsStageTimingsSectionWithAveragesWhenSampleCountsArePositive()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             StageTimings = new StageTimings
+                                                {
+                                                    TotalFetchMs = 1000,
+                                                    FetchSampleCount = 10,
+                                                    TotalClassifyMs = 500,
+                                                    ClassifySampleCount = 10,
+                                                    TotalChunkMs = 50,
+                                                    ChunkSampleCount = 10,
+                                                    TotalEmbedMs = 200,
+                                                    EmbedBatchCount = 2
+                                                }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Stage timings:", rendered);
+        Assert.Contains("Fetch:    1000ms total over 10 samples (avg 100ms)", rendered);
+        Assert.Contains("Classify:  500ms total over 10 samples (avg 50ms)", rendered);
+        Assert.Contains("Chunk:      50ms total over 10 samples (avg 5ms)", rendered);
+        Assert.Contains("Embed:     200ms total over 2 batches (avg 100ms)", rendered);
+    }
 }
