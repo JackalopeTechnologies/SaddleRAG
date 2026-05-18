@@ -280,26 +280,23 @@ public class IngestionOrchestrator
 
         int maxPagesForCallback = job.MaxPages > 0 ? job.MaxPages : 0;
 
-        var crawlTask = mCrawler.CrawlAsync(job,
-                                            crawlToClassify.Writer,
-                                            jobId,
-                                            resumeUrls: null,
-                                            seedUrls: null,
-                                            pageCount =>
-                                            {
-                                                progress.PagesFetched = pageCount;
-                                                onProgress?.Invoke(pageCount,
-                                                                   maxPagesForCallback > 0
-                                                                       ? maxPagesForCallback
-                                                                       : pageCount
-                                                                  );
-                                            },
-                                            onQueued: null,
-                                            onFetchError: null,
-                                            IngestionPersistenceMode.DryRun,
-                                            acc,
-                                            cts.Token
-                                           );
+        var crawlTask = mCrawlStage.RunAsync(job,
+                                             crawlToClassify.Writer,
+                                             resumeUrls: null,
+                                             seedUrls: null,
+                                             progress,
+                                             updatedProgress =>
+                                             {
+                                                 onProgress?.Invoke(updatedProgress.PagesFetched,
+                                                                    maxPagesForCallback > 0
+                                                                        ? maxPagesForCallback
+                                                                        : updatedProgress.PagesFetched
+                                                                   );
+                                             },
+                                             cts,
+                                             IngestionPersistenceMode.DryRun,
+                                             acc
+                                            );
 
         var classifyTask = mClassifyStage.RunAsync(job,
                                                    crawlToClassify.Reader,
