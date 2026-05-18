@@ -13,19 +13,8 @@ using SaddleRAG.Core.Models;
 
 namespace SaddleRAG.Ingestion.Crawling;
 
-/// <summary>
-///     Minimal seam for the streaming-pipeline crawl stage: a single
-///     channel-producing async crawl call. The concrete <see cref="PageCrawler" />
-///     also offers <c>FetchSinglePageAsync</c> and <c>DryRunAsync</c>; those stay
-///     on the concrete type because they are not part of the pipeline contract.
-/// </summary>
 internal interface IPageCrawler
 {
-    /// <summary>
-    ///     Crawl <paramref name="job" />'s root URL, writing each fetched page
-    ///     to <paramref name="output" /> and completing the channel when the
-    ///     crawl finishes naturally.
-    /// </summary>
     Task CrawlAsync(ScrapeJob job,
                     ChannelWriter<PageRecord> output,
                     string jobId = "",
@@ -34,5 +23,7 @@ internal interface IPageCrawler
                     Action<int>? onPageFetched = null,
                     Action<int>? onQueued = null,
                     Action? onFetchError = null,
+                    IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                    DryRunAccumulator? dryRunAcc = null,
                     CancellationToken ct = default);
 }

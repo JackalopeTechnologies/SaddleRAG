@@ -49,6 +49,8 @@ public sealed class CrawlStageTests
                                Action<int>? onPageFetched = null,
                                Action<int>? onQueued = null,
                                Action? onFetchError = null,
+                               IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                               DryRunAccumulator? dryRunAcc = null,
                                CancellationToken ct = default)
         {
             var call = new CrawlAsyncCall(job,

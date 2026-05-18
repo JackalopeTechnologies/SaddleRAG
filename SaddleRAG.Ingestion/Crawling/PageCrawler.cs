@@ -94,6 +94,8 @@ public class PageCrawler : IPageCrawler
         public required Action? OnFetchError { get; init; }
         public required CancellationToken Token { get; init; }
         public required AuditContext AuditCtx { get; init; }
+        public required IngestionPersistenceMode PersistMode { get; init; }
+        public DryRunAccumulator? DryRunAcc { get; init; }
 
         /// <summary>
         ///     URLs that 403'd in-scope on every retry attempt and were
@@ -758,15 +760,17 @@ public class PageCrawler : IPageCrawler
     ///     that pull entries off a shared channel; each fetch is gated by a
     ///     <see cref="HostRateLimiter" /> keyed on the URL's host.
     /// </summary>
-    public async Task CrawlAsync(ScrapeJob job,
-                                 ChannelWriter<PageRecord> output,
-                                 string jobId = "",
-                                 IReadOnlySet<string>? resumeUrls = null,
-                                 IReadOnlyList<string>? seedUrls = null,
-                                 Action<int>? onPageFetched = null,
-                                 Action<int>? onQueued = null,
-                                 Action? onFetchError = null,
-                                 CancellationToken ct = default)
+    async Task IPageCrawler.CrawlAsync(ScrapeJob job,
+                                       ChannelWriter<PageRecord> output,
+                                       string jobId,
+                                       IReadOnlySet<string>? resumeUrls,
+                                       IReadOnlyList<string>? seedUrls,
+                                       Action<int>? onPageFetched,
+                                       Action<int>? onQueued,
+                                       Action? onFetchError,
+                                       IngestionPersistenceMode persistMode,
+                                       DryRunAccumulator? dryRunAcc,
+                                       CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(output);
@@ -808,7 +812,9 @@ public class PageCrawler : IPageCrawler
                           OnFetchError = onFetchError,
                           Token = ct,
                           AuditCtx = auditCtx,
-                          Voter = new RenderModeVoter()
+                          Voter = new RenderModeVoter(),
+                          PersistMode = persistMode,
+                          DryRunAcc = dryRunAcc,
                       };
 
         if (resumeUrls != null)
@@ -1132,6 +1138,7 @@ public class PageCrawler : IPageCrawler
                                            skipReason.Value.Detail
                                           );
                 mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.Value.Reason.ToString());
+                ctx.DryRunAcc?.RecordFilteredSkip();
                 break;
             }
             case true when GitHubRepoScraper.TryParseGitHubUrl(url, out string owner, out string repo):
@@ -1140,6 +1147,7 @@ public class PageCrawler : IPageCrawler
                 {
                     mLogger.LogInformation("Delegating to GitHub scraper for {Repo}", repoKey);
                     await mGitHubScraper.ScrapeRepositoryAsync(owner, repo, ctx.Job, ctx.PageOutput, ctx.Token);
+                    ctx.DryRunAcc?.RecordGitHubRepo($"{owner}/{repo}");
                 }
 
                 break;
@@ -1178,6 +1186,7 @@ public class PageCrawler : IPageCrawler
                                        detail
                                       );
             mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.ToString());
+            ctx.DryRunAcc?.RecordDepthLimitedSkip();
         }
         else
             await FetchCrawlPageAsync(entry, inScope, ctx, browser);
@@ -1238,6 +1247,15 @@ public class PageCrawler : IPageCrawler
                                       exDepth,
                                       ex.Message
                                      );
+            ctx.DryRunAcc?.RecordFetchError(new DryRunFetchError
+                                                {
+                                                    Url = url,
+                                                    HttpStatus = 0,
+                                                    ErrorKind = ex.GetType().Name,
+                                                    Message = ex.Message.Length > ErrorMessageMaxLength
+                                                                  ? ex.Message[..ErrorMessageMaxLength]
+                                                                  : ex.Message
+                                                });
             mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message, url);
         }
         finally
@@ -1270,6 +1288,13 @@ public class PageCrawler : IPageCrawler
                                       nullDepth,
                                       NoResponseError
                                      );
+            ctx.DryRunAcc?.RecordFetchError(new DryRunFetchError
+                                                {
+                                                    Url = originalUrl,
+                                                    HttpStatus = 0,
+                                                    ErrorKind = "NoResponse",
+                                                    Message = NoResponseError
+                                                });
             mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError, originalUrl);
         }
         else
@@ -1346,6 +1371,13 @@ public class PageCrawler : IPageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status}"
                                          );
+                ctx.DryRunAcc?.RecordFetchError(new DryRunFetchError
+                                                    {
+                                                        Url = originalUrl,
+                                                        HttpStatus = response.Status,
+                                                        ErrorKind = $"Http{response.Status}",
+                                                        Message = response.StatusText
+                                                    });
                 mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}", originalUrl);
                 break;
             }
@@ -1524,10 +1556,28 @@ public class PageCrawler : IPageCrawler
                                  ParentUrl = entry.ParentUrl
                              };
 
-        await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
+        if (ctx.PersistMode == IngestionPersistenceMode.Full)
+            await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
         int newCount = ctx.IncrementPageCount();
         long fetchMs = sw.ElapsedMilliseconds;
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);
+
+        ctx.DryRunAcc?.RecordFetchMs(fetchMs);
+
+        bool inScopeFinal = IsInRootScope(fetchUrl, ctx.RootScope);
+        string hostKey = CrawlBudget.BuildHostKey(new Uri(fetchUrl));
+        ctx.DryRunAcc?.RecordTotalPage(hostKey, pageDepth, inScopeFinal);
+
+        ctx.DryRunAcc?.RecordSamplePage(new DryRunPageEntry
+                                            {
+                                                Url = fetchUrl,
+                                                OutOfScopeDepth = pageDepth,
+                                                InScope = inScopeFinal,
+                                                ContentBytes = content.Length,
+                                                LinksFound = links.Count,
+                                                ContentNodesAtDom = -1,
+                                                ContentNodesAtLoad = -1
+                                            });
 
         mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), pageDepth);
         mBroadcaster.RecordFetch(ctx.AuditCtx.JobId, fetchUrl);

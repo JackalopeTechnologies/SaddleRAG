@@ -75,7 +75,7 @@ internal sealed class CrawlStage
                                           progress.IncrementErrorCount();
                                           onProgress?.Invoke(progress);
                                       },
-                                      cts.Token
+                                      ct: cts.Token
                                      );
         }
         catch(OperationCanceledException)
