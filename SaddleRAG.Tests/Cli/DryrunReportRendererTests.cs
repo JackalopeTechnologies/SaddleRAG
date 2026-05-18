@@ -166,4 +166,60 @@ public sealed class DryrunReportRendererTests
         Assert.Contains("Sample URLs still in queue (first 2):", rendered);
         Assert.Contains("https://example/a", rendered);
     }
+
+    [Fact]
+    public void RenderModeSSRSectionAppearsWhenVoteComplete()
+    {
+        using var sw = new StringWriter();
+        var report = NewReport() with
+                     {
+                         DetectedRenderMode = RenderMode.SSR,
+                         MedianContentNodeDelta = 0,
+                         LoadWaitRecommended = false
+                     };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 200, sw);
+        string output = sw.ToString();
+
+        Assert.Contains("Render mode: SSR", output);
+        Assert.Contains("Load-state wait: not needed", output);
+        Assert.Contains("Median content-node delta: 0", output);
+    }
+
+    [Fact]
+    public void RenderModeSPASectionAppearsWhenVoteComplete()
+    {
+        using var sw = new StringWriter();
+        var report = NewReport() with
+                     {
+                         DetectedRenderMode = RenderMode.SPA,
+                         MedianContentNodeDelta = 28,
+                         LoadWaitRecommended = true
+                     };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 200, sw);
+        string output = sw.ToString();
+
+        Assert.Contains("Render mode: SPA", output);
+        Assert.Contains("Load-state wait: required", output);
+        Assert.Contains("Median content-node delta: 28", output);
+    }
+
+    [Fact]
+    public void RenderModeUnknownSectionAppearsWhenVoteIncomplete()
+    {
+        using var sw = new StringWriter();
+        var report = NewReport() with
+                     {
+                         DetectedRenderMode = RenderMode.Unknown,
+                         MedianContentNodeDelta = -1,
+                         LoadWaitRecommended = true
+                     };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 200, sw);
+        string output = sw.ToString();
+
+        Assert.Contains("Render mode: Unknown", output);
+        Assert.Contains("(fewer than 5 pages sampled)", output);
+    }
 }

@@ -6,6 +6,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 
 #endregion
@@ -90,8 +91,31 @@ public static class DryrunReportRenderer
                 output.WriteLine($"  {pending}");
         }
 
+        output.WriteLine();
+        output.WriteLine("Render mode detection:");
+        output.WriteLine(report.DetectedRenderMode switch
+                         {
+                             RenderMode.Unknown => RenderModeUnknownLabel,
+                             RenderMode.SSR     => RenderModeSSRLabel,
+                             RenderMode.SPA     => RenderModeSPALabel,
+                             _                  => $"  Render mode: {report.DetectedRenderMode}"
+                         }
+                        );
+
+        if (report.DetectedRenderMode != RenderMode.Unknown)
+        {
+            string waitLabel = report.LoadWaitRecommended ? LoadWaitRequired : LoadWaitNotNeeded;
+            output.WriteLine($"  Load-state wait: {waitLabel}");
+            output.WriteLine($"  Median content-node delta: {report.MedianContentNodeDelta}");
+        }
+
         return 0;
     }
 
     private const int ErrorPreviewCount = 5;
+    private const string RenderModeUnknownLabel = "  Render mode: Unknown (fewer than 5 pages sampled)";
+    private const string RenderModeSSRLabel = "  Render mode: SSR";
+    private const string RenderModeSPALabel = "  Render mode: SPA";
+    private const string LoadWaitRequired = "required";
+    private const string LoadWaitNotNeeded = "not needed";
 }
