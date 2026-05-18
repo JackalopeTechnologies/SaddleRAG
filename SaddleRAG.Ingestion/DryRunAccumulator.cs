@@ -26,7 +26,7 @@ namespace SaddleRAG.Ingestion;
 ///         internal collections.
 ///     </para>
 /// </summary>
-internal sealed class DryRunAccumulator
+public sealed class DryRunAccumulator
 {
     public DryRunAccumulator(int samplePageLimit = DefaultSamplePageLimit)
     {

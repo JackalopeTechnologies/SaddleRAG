@@ -258,6 +258,7 @@ builder.Services.AddSingleton<RechunkService>();
 builder.Services.AddSingleton<GitHubRepoScraper>();
 
 builder.Services.AddSingleton<PageCrawler>();
+builder.Services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
 
 builder.Services.AddSingleton<CategoryAwareChunker>();
 

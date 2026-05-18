@@ -13,7 +13,16 @@ using SaddleRAG.Core.Models;
 
 namespace SaddleRAG.Ingestion.Crawling;
 
-internal interface IPageCrawler
+/// <summary>
+///     Crawls a documentation site for the ingestion pipeline.
+///     Stream-oriented: each fetched page is written to the supplied
+///     <see cref="ChannelWriter{T}" /> as soon as it is parsed so the
+///     downstream classify / chunk / embed stages can work in parallel
+///     with the crawl. Implementations: <see cref="PageCrawler" /> (live
+///     Playwright crawl). Test doubles substitute for this interface to
+///     stub crawl output in unit tests.
+/// </summary>
+public interface IPageCrawler
 {
     Task CrawlAsync(ScrapeJob job,
                     ChannelWriter<PageRecord> output,
@@ -26,4 +35,14 @@ internal interface IPageCrawler
                     IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
                     DryRunAccumulator? dryRunAcc = null,
                     CancellationToken ct = default);
+
+    /// <summary>
+    ///     Fetch a single page for an existing (libraryId, version) without
+    ///     starting a full crawl. Used by the single-page top-up path on
+    ///     <see cref="IngestionOrchestrator.IngestSinglePageAsync" />.
+    /// </summary>
+    Task<PageRecord?> FetchSinglePageAsync(string libraryId,
+                                           string version,
+                                           string url,
+                                           CancellationToken ct = default);
 }

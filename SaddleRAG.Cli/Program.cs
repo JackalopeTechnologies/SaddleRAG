@@ -108,6 +108,7 @@ services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.Secti
 services.AddSingleton<OllamaBootstrapper>();
 services.AddSingleton<GitHubRepoScraper>();
 services.AddSingleton<PageCrawler>();
+services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
 services.AddSingleton<IScrapeAuditWriter>(sp =>
                                               new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>())
                                          );

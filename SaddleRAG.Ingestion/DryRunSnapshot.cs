@@ -20,7 +20,7 @@ namespace SaddleRAG.Ingestion;
 ///     the accumulator's internal storage and safe to read without
 ///     synchronization.
 /// </summary>
-internal record DryRunSnapshot
+public record DryRunSnapshot
 {
     public required int TotalPages { get; init; }
     public required int InScopePages { get; init; }

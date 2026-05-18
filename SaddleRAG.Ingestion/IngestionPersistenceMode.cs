@@ -15,7 +15,7 @@ namespace SaddleRAG.Ingestion;
 ///     state. The orchestrator additionally omits IndexStage and the
 ///     IngestionFinalizer in DryRun mode.
 /// </summary>
-internal enum IngestionPersistenceMode
+public enum IngestionPersistenceMode
 {
     Full,
     DryRun
