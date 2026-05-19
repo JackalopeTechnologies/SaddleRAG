@@ -11,9 +11,12 @@ namespace SaddleRAG.Ingestion;
 ///     <see cref="Full" /> is the real-scrape behavior: PageRepository,
 ///     ChunkRepository, vector index, BM25 index, library metadata — all
 ///     written. <see cref="DryRun" /> exercises crawl + classify + chunk +
-///     embed but skips every Upsert call so the run produces no persisted
-///     state. The orchestrator additionally omits IndexStage and the
-///     IngestionFinalizer in DryRun mode.
+///     embed but skips every Upsert into the page / chunk / library
+///     repositories. The audit log is still written so the dry-run path
+///     produces the same audit timeline as a real scrape; the MCP layer
+///     pre-deletes prior audit rows for the (library, version) before
+///     each dry-run job. The orchestrator additionally omits IndexStage
+///     and the IngestionFinalizer in DryRun mode.
 /// </summary>
 public enum IngestionPersistenceMode
 {

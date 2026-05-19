@@ -24,11 +24,9 @@ namespace SaddleRAG.Ingestion;
 ///     are absorbed locally (skip + ErrorCount++); stage-level cancellation
 ///     or non-embed exceptions fault the channel and cancel the shared CTS.
 ///     The truncation + retry helpers are exposed as <c>internal static</c>
-///     so the single-page ingest path on <see cref="IngestionOrchestrator" />
-///     can share the same formatting + retry semantics without duplicating
-///     code. A future PR can fold the single-page path into the stage
-///     proper; until then this seam is the smallest contract that prevents
-///     drift between batch and single-page embedding.
+///     so the prompt format, the <see cref="MaxEmbedChars" /> cap, and the
+///     retry-once semantics live in exactly one place and can be reused by
+///     other callers without duplicating code.
 /// </summary>
 internal sealed class EmbedStage
 {
@@ -164,9 +162,8 @@ internal sealed class EmbedStage
     }
 
     /// <summary>
-    ///     Truncate <paramref name="text" /> to <paramref name="maxChars" />
-    ///     characters. Shared with <see cref="IngestionOrchestrator" />'s
-    ///     single-page ingest path so both formatters cap identically.
+    ///     Caps the prompt at <paramref name="maxChars" /> before sending to
+    ///     the embedding provider.
     /// </summary>
     internal static string TruncateForEmbedding(string text, int maxChars)
     {
@@ -175,13 +172,10 @@ internal sealed class EmbedStage
     }
 
     /// <summary>
-    ///     Embed a single batch of chunks and return them with the
-    ///     <see cref="DocChunk.Embedding" /> field populated. Owns the
+    ///     Embed a single batch and return chunks with the
+    ///     <see cref="DocChunk.Embedding" /> field populated. Centralizes the
     ///     [Category]+[LibraryId]+[PageTitle]+Content prompt format, the
-    ///     MaxEmbedChars cap, and the retry-once semantics. Used by the
-    ///     batch loop in <see cref="RunAsync" /> and by
-    ///     <see cref="IngestionOrchestrator" />'s single-page ingest path
-    ///     so both call sites compute embeddings the same way.
+    ///     <see cref="MaxEmbedChars" /> cap, and the retry-once semantics.
     /// </summary>
     internal static async Task<DocChunk[]> EmbedBatchAsync(IEmbeddingProvider provider,
                                                            ILogger logger,
@@ -207,8 +201,6 @@ internal sealed class EmbedStage
 
     /// <summary>
     ///     Retry-once helper around <see cref="IEmbeddingProvider.EmbedAsync" />.
-    ///     Shared with <see cref="IngestionOrchestrator" />'s single-page
-    ///     ingest path so both observe the same one-shot retry semantics.
     /// </summary>
     internal static async Task<float[][]> EmbedWithRetryAsync(IEmbeddingProvider provider,
                                                               ILogger logger,
@@ -220,7 +212,7 @@ internal sealed class EmbedStage
         {
             result = await provider.EmbedAsync(texts, ct: ct);
         }
-        catch(Exception ex)
+        catch(Exception ex) when(ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Embedding failed, retrying once");
             result = await provider.EmbedAsync(texts, ct: ct);

@@ -456,10 +456,12 @@ public class PageCrawler : IPageCrawler
             for(var i = 0; i < workerCount; i++)
             {
                 int workerIndex = i;
-                workerTasks[workerIndex] = Task.Run(() => RunCrawlWorkerAsync(ctx, browser, workerPages[workerIndex]), ct);
+                workerTasks[workerIndex] = Task.Run(() => RunCrawlWorkerAsync(ctx, workerPages[workerIndex]),
+                                                    ct
+                                                   );
             }
 
-            workerTasks[workerCount] = Task.Run(() => RunRetryWorkerAsync(ctx, browser, workerPages[workerCount]), ct);
+            workerTasks[workerCount] = Task.Run(() => RunRetryWorkerAsync(ctx, workerPages[workerCount]), ct);
 
             await Task.WhenAll(workerTasks);
         }
@@ -480,11 +482,11 @@ public class PageCrawler : IPageCrawler
         }
     }
 
-    private async Task RunCrawlWorkerAsync(CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task RunCrawlWorkerAsync(CrawlContext ctx, IPage page)
     {
         var keepGoing = true;
         while (keepGoing)
-            keepGoing = await TryProcessNextAsync(ctx, browser, page);
+            keepGoing = await TryProcessNextAsync(ctx, page);
     }
 
     /// <summary>
@@ -492,14 +494,14 @@ public class PageCrawler : IPageCrawler
     ///     channel. Returns false only when both channels are completed and
     ///     drained, signalling the worker to exit.
     /// </summary>
-    private async Task<bool> TryProcessNextAsync(CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task<bool> TryProcessNextAsync(CrawlContext ctx, IPage page)
     {
         bool keepGoing;
 
         if (ctx.InScopeEntries.Reader.TryRead(out var entry) ||
             ctx.OffPathEntries.Reader.TryRead(out entry))
         {
-            await HandleCrawlEntryAsync(entry, ctx, browser, page);
+            await HandleCrawlEntryAsync(entry, ctx, page);
             keepGoing = true;
         }
         else
@@ -555,7 +557,7 @@ public class PageCrawler : IPageCrawler
     ///     Runs alongside the main worker pool — main work isn't blocked on
     ///     retries, but retries also don't compete with main work for slots.
     /// </summary>
-    private async Task RunRetryWorkerAsync(CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task RunRetryWorkerAsync(CrawlContext ctx, IPage page)
     {
         var keepReading = true;
         while (keepReading)
@@ -571,7 +573,7 @@ public class PageCrawler : IPageCrawler
 
             if (keepReading && ctx.RetryEntries.Reader.TryRead(out var entry))
             {
-                await HandleRetryEntryAsync(entry, ctx, browser, page);
+                await HandleRetryEntryAsync(entry, ctx, page);
                 keepReading = await DelayBetweenRetriesAsync(ctx.Token);
             }
         }
@@ -596,11 +598,11 @@ public class PageCrawler : IPageCrawler
     ///     Process a retry attempt without re-checking <c>Visited</c> or the
     ///     gated-path filter — both were satisfied on the original attempt.
     /// </summary>
-    private async Task HandleRetryEntryAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task HandleRetryEntryAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         try
         {
-            await ProcessCrawlEntryAsync(entry, ctx, browser, page);
+            await ProcessCrawlEntryAsync(entry, ctx, page);
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
@@ -620,7 +622,7 @@ public class PageCrawler : IPageCrawler
         }
     }
 
-    private async Task HandleCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task HandleCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         try
         {
@@ -683,7 +685,7 @@ public class PageCrawler : IPageCrawler
             }
 
             if (firstVisit)
-                await ProcessCrawlEntryAsync(entry, ctx, browser, page);
+                await ProcessCrawlEntryAsync(entry, ctx, page);
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
@@ -699,7 +701,7 @@ public class PageCrawler : IPageCrawler
         }
     }
 
-    private async Task ProcessCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task ProcessCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         string url = entry.Url;
         var skipReason = IsAllowed(url, ctx.Job);
@@ -743,12 +745,12 @@ public class PageCrawler : IPageCrawler
 
                 break;
             default:
-                await ProcessCrawlScopeAsync(entry, ctx, browser, page);
+                await ProcessCrawlScopeAsync(entry, ctx, page);
                 break;
         }
     }
 
-    private async Task ProcessCrawlScopeAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task ProcessCrawlScopeAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         string url = entry.Url;
         bool inScope = IsInRootScope(url, ctx.RootScope);
@@ -780,10 +782,13 @@ public class PageCrawler : IPageCrawler
             ctx.DryRunAcc?.RecordDepthLimitedSkip();
         }
         else
-            await FetchCrawlPageAsync(entry, inScope, ctx, browser, page);
+            await FetchCrawlPageAsync(entry, inScope, ctx, page);
     }
 
-    private async Task FetchCrawlPageAsync(CrawlEntry entry, bool inScope, CrawlContext ctx, IBrowser browser, IPage page)
+    private async Task FetchCrawlPageAsync(CrawlEntry entry,
+                                           bool inScope,
+                                           CrawlContext ctx,
+                                           IPage page)
     {
         string url = entry.Url;
         bool fetchSameHost = !inScope && IsSameHost(url, ctx.RootScope);
@@ -1952,6 +1957,8 @@ public class PageCrawler : IPageCrawler
         IResponse? response = null;
         int domCount = -1;
         int loadCount = -1;
+
+        mLogger.LogDebug("Extension recovery navigating shared worker page for {Url}; prior page state may leak", url);
 
         foreach(string ext in smExtensionsToStrip)
         {

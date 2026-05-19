@@ -106,13 +106,11 @@ internal sealed class ClassifyStage
     }
 
     /// <summary>
-    ///     Classify a single page using the LLM and upsert if high-confidence.
-    ///     Exposed as <c>internal</c> so the orchestrator's single-page ingest
-    ///     path can reuse the exact same classify-and-absorb semantics that
-    ///     the streaming stage applies per page. <paramref name="onError" />
-    ///     is invoked once on any classifier exception (the streaming path
-    ///     wires it to <c>progress.IncrementErrorCount</c>; the single-page
-    ///     path passes <c>null</c> because there is no progress object).
+    ///     Classify a single page using the LLM and upsert if the result has
+    ///     non-zero confidence and a non-Unclassified category and persistence
+    ///     mode is Full. <paramref name="onError" /> is invoked exactly once on
+    ///     any classifier exception so callers can opt into error counting
+    ///     without owning a try/catch.
     /// </summary>
     internal async Task<PageRecord> ClassifyPageAsync(
         PageRecord page,

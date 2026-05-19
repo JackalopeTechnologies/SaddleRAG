@@ -209,7 +209,6 @@ public class IngestionOrchestrator
             throw;
         }
 
-        // BM25 build + library metadata upsert + suspect evaluation.
         await mFinalizer.RunAsync(job, progress, ct);
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
