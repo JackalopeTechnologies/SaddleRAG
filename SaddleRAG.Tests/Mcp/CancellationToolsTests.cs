@@ -6,8 +6,9 @@
 
 #region Usings
 
-using Microsoft.Extensions.Hosting;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Mcp.Tools;
 
@@ -18,74 +19,88 @@ namespace SaddleRAG.Tests.Mcp;
 public sealed class CancellationToolsTests
 {
     [Fact]
-    public async Task CancelScrapeSignalledReturnsSignalledOutcome()
+    public async Task CancelJobSignalledReturnsSignalledOutcome()
     {
-        var runner = MakeRunnerSubstitute();
-        runner.CancelAsync("abc", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.Signalled);
+        var service = MakeServiceSubstitute();
+        service.CancelAsync("abc", Arg.Any<string?>(), Arg.Any<CancellationToken>())
+               .Returns(CancelScrapeOutcome.Signalled);
 
-        var json = await CancellationTools.CancelScrape(runner,
-                                                        "abc",
-                                                        TestContext.Current.CancellationToken
-                                                       );
+        var json = await CancellationTools.CancelJob(service,
+                                                     "abc",
+                                                     profile: null,
+                                                     TestContext.Current.CancellationToken
+                                                    );
 
         Assert.Contains("\"Outcome\": \"Signalled\"", json);
     }
 
     [Fact]
-    public async Task CancelScrapeNotFoundReturnsNotFoundOutcome()
+    public async Task CancelJobNotFoundReturnsNotFoundOutcome()
     {
-        var runner = MakeRunnerSubstitute();
-        runner.CancelAsync("missing", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.NotFound);
+        var service = MakeServiceSubstitute();
+        service.CancelAsync("missing", Arg.Any<string?>(), Arg.Any<CancellationToken>())
+               .Returns(CancelScrapeOutcome.NotFound);
 
-        var json = await CancellationTools.CancelScrape(runner,
-                                                        "missing",
-                                                        TestContext.Current.CancellationToken
-                                                       );
+        var json = await CancellationTools.CancelJob(service,
+                                                     "missing",
+                                                     profile: null,
+                                                     TestContext.Current.CancellationToken
+                                                    );
 
         Assert.Contains("\"Outcome\": \"NotFound\"", json);
     }
 
     [Fact]
-    public async Task CancelScrapeOrphanCleanedUpReturnsOrphanOutcome()
+    public async Task CancelJobOrphanCleanedUpReturnsOrphanOutcome()
     {
-        var runner = MakeRunnerSubstitute();
-        runner.CancelAsync("orphan", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.OrphanCleanedUp);
+        var service = MakeServiceSubstitute();
+        service.CancelAsync("orphan", Arg.Any<string?>(), Arg.Any<CancellationToken>())
+               .Returns(CancelScrapeOutcome.OrphanCleanedUp);
 
-        var json = await CancellationTools.CancelScrape(runner,
-                                                        "orphan",
-                                                        TestContext.Current.CancellationToken
-                                                       );
+        var json = await CancellationTools.CancelJob(service,
+                                                     "orphan",
+                                                     profile: null,
+                                                     TestContext.Current.CancellationToken
+                                                    );
 
         Assert.Contains("\"Outcome\": \"OrphanCleanedUp\"", json);
     }
 
     [Fact]
-    public async Task CancelScrapeAlreadyTerminalReturnsTerminalOutcome()
+    public async Task CancelJobAlreadyTerminalReturnsTerminalOutcome()
     {
-        var runner = MakeRunnerSubstitute();
-        runner.CancelAsync("done", Arg.Any<CancellationToken>()).Returns(CancelScrapeOutcome.AlreadyTerminal);
+        var service = MakeServiceSubstitute();
+        service.CancelAsync("done", Arg.Any<string?>(), Arg.Any<CancellationToken>())
+               .Returns(CancelScrapeOutcome.AlreadyTerminal);
 
-        var json = await CancellationTools.CancelScrape(runner,
-                                                        "done",
-                                                        TestContext.Current.CancellationToken
-                                                       );
+        var json = await CancellationTools.CancelJob(service,
+                                                     "done",
+                                                     profile: null,
+                                                     TestContext.Current.CancellationToken
+                                                    );
 
         Assert.Contains("\"Outcome\": \"AlreadyTerminal\"", json);
     }
 
-    private static ScrapeJobRunner MakeRunnerSubstitute()
+    [Fact]
+    public async Task CancelJobNotCancellableReturnsRefusalOutcome()
     {
-        var lifetime = Substitute.For<IHostApplicationLifetime>();
-        lifetime.ApplicationStopping.Returns(CancellationToken.None);
+        var service = MakeServiceSubstitute();
+        service.CancelAsync("delete-1", Arg.Any<string?>(), Arg.Any<CancellationToken>())
+               .Returns(CancelScrapeOutcome.NotCancellable);
 
-        var runner = Substitute.ForPartsOf<ScrapeJobRunner>(null,
-                                                            null,
-                                                            null,
-                                                            null,
-                                                            null,
-                                                            null,
-                                                            lifetime
-                                                           );
-        return runner;
+        var json = await CancellationTools.CancelJob(service,
+                                                     "delete-1",
+                                                     profile: null,
+                                                     TestContext.Current.CancellationToken
+                                                    );
+
+        Assert.Contains("\"Outcome\": \"NotCancellable\"", json);
     }
+
+    private static JobCancellationService MakeServiceSubstitute() =>
+        Substitute.ForPartsOf<JobCancellationService>(Substitute.For<IJobCancellationRegistry>(),
+                                                       Substitute.For<RepositoryFactory>([null]),
+                                                       Substitute.For<IMonitorBroadcaster>()
+                                                      );
 }

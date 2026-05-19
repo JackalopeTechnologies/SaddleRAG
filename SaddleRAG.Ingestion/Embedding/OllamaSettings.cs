@@ -145,7 +145,7 @@ public class OllamaSettings
     public const string DefaultEmbeddingModel = "nomic-embed-text";
     public const int DefaultEmbeddingDimensions = 768;
     public const int DefaultModelPullTimeoutSeconds = 600;
-    public const int DefaultWarmModelTimeoutSeconds = 30;
+    public const int DefaultWarmModelTimeoutSeconds = 90;
     public const float DefaultReconMinConfidence = 0.6f;
 
     private const string ClassificationModelsConfigPath = "Ollama.ClassificationModels";

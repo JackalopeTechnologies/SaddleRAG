@@ -21,8 +21,9 @@ It returns:
 
 A job is **stale** when `recentJobs[].Stale = true` (Running but no progress for 4+ hours). Cancel it:
 ```
-cancel_scrape(jobId="<id>")
+cancel_job(jobId="<id>")
 ```
+(`cancel_job` replaces the older `cancel_scrape` and works for every cancellable job type — scrape, dryrun_scrape, rechunk, reembed, reextract. Atomic mutations — renames, deletes, dependency indexing, URL corrections, cleanup jobs — return `NotCancellable` and must run to completion.)
 
 A library is **suspect** when its URL has been flagged as wrong. Do not re-scrape — fix the URL first:
 ```
@@ -111,7 +112,7 @@ Are chunks too large / too small / splitting in wrong places?
 | `inspect_scrape` | URL-by-URL audit log from a scrape job | Understanding what was fetched, excluded, or errored |
 | `submit_url_correction` | Clears suspect flag, corrects URL, re-queues | Suspect library with wrong root URL |
 | `delete_version` | Removes all data for a (library, version) | Starting completely fresh |
-| `cancel_scrape` | Stops a running or stale job | Stale job, wrong config caught mid-run |
+| `cancel_job` | Stops any cancellable running or stale job (scrape, dryrun_scrape, rechunk, reembed, reextract) | Stale job, wrong config caught mid-run |
 
 ---
 

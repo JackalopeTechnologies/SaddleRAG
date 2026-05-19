@@ -34,9 +34,9 @@ public static class MonitorApiEndpoints
                   );
     }
 
-    private static async Task<IResult> CancelJob(string jobId, ScrapeJobRunner runner)
+    private static async Task<IResult> CancelJob(string jobId, JobCancellationService cancellation)
     {
-        await runner.CancelAsync(jobId);
+        await cancellation.CancelAsync(jobId);
         return Results.Ok(new { JobId = jobId, Status = CancelRequestedStatus });
     }
 

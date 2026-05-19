@@ -34,23 +34,27 @@ public class RescrubJobRunner
     public RescrubJobRunner(RescrubService service,
                             RepositoryFactory repositoryFactory,
                             IMonitorBroadcaster broadcaster,
+                            IJobCancellationRegistry cancellationRegistry,
                             IHostApplicationLifetime lifetime,
                             ILogger<RescrubJobRunner> logger)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(cancellationRegistry);
         ArgumentNullException.ThrowIfNull(lifetime);
         ArgumentNullException.ThrowIfNull(logger);
         mService = service;
         mRepositoryFactory = repositoryFactory;
         mBroadcaster = broadcaster;
+        mCancellationRegistry = cancellationRegistry;
         mAppStoppingToken = lifetime.ApplicationStopping;
         mLogger = logger;
     }
 
     private readonly CancellationToken mAppStoppingToken;
     private readonly IMonitorBroadcaster mBroadcaster;
+    private readonly IJobCancellationRegistry mCancellationRegistry;
     private readonly ILogger<RescrubJobRunner> mLogger;
     private readonly RepositoryFactory mRepositoryFactory;
     private readonly RescrubService mService;
@@ -108,9 +112,12 @@ public class RescrubJobRunner
                                jobRecord.Version
                               );
 
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
+        mCancellationRegistry.Register(jobRecord.Id, cts);
+
         try
         {
-            await ExecuteRescrubAsync(jobRecord, jobRepo);
+            await ExecuteRescrubAsync(jobRecord, jobRepo, cts.Token);
         }
         catch(OperationCanceledException)
         {
@@ -120,9 +127,13 @@ public class RescrubJobRunner
         {
             await MarkFailedAsync(jobRecord, jobRepo, ex);
         }
+        finally
+        {
+            mCancellationRegistry.Unregister(jobRecord.Id);
+        }
     }
 
-    private async Task ExecuteRescrubAsync(JobRecord jobRecord, IJobRepository jobRepo)
+    private async Task ExecuteRescrubAsync(JobRecord jobRecord, IJobRepository jobRepo, CancellationToken ct)
     {
         var chunkRepo = mRepositoryFactory.GetChunkRepository(jobRecord.Profile);
         var profileRepo = mRepositoryFactory.GetLibraryProfileRepository(jobRecord.Profile);
@@ -142,7 +153,7 @@ public class RescrubJobRunner
                                                  jobRecord.Version ?? string.Empty,
                                                  options,
                                                  (processed, total) => ProgressTick(jobRecord, jobRepo, processed, total),
-                                                 mAppStoppingToken
+                                                 ct
                                                 );
 
         jobRecord.Status = JobStatus.Completed;

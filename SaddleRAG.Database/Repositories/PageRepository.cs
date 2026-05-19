@@ -31,16 +31,29 @@ public class PageRepository : IPageRepository
     {
         ArgumentNullException.ThrowIfNull(page);
 
-        var filter = Builders<PageRecord>.Filter.And(Builders<PageRecord>.Filter.Eq(p => p.LibraryId, page.LibraryId),
-                                                     Builders<PageRecord>.Filter.Eq(p => p.Version, page.Version),
-                                                     Builders<PageRecord>.Filter.Eq(p => p.Url, page.Url)
-                                                    );
+        var filter = BuildUpsertFilter(page);
 
         await mContext.Pages.ReplaceOneAsync(filter,
                                              page,
                                              new ReplaceOptions { IsUpsert = true },
                                              ct
                                             );
+    }
+
+    /// <summary>
+    ///     Filters the upsert by the synthetic <see cref="PageRecord.Id" />,
+    ///     which is the canonical URL hash. Filtering by raw
+    ///     <see cref="PageRecord.Url" /> collides with Mongo's unique
+    ///     <c>_id</c> index whenever the same logical page is fetched under
+    ///     two URL variants (e.g. <c>/License</c> and <c>/License.html</c>) —
+    ///     the URL filter misses the existing doc, the upsert switches to
+    ///     insert, and the duplicate canonical Id is rejected.
+    /// </summary>
+    internal static FilterDefinition<PageRecord> BuildUpsertFilter(PageRecord page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        var filter = Builders<PageRecord>.Filter.Eq(p => p.Id, page.Id);
+        return filter;
     }
 
     /// <inheritdoc />

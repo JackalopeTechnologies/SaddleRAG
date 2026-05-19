@@ -105,7 +105,12 @@ public sealed class BackgroundJobRunnerBroadcasterTests
         var broadcaster = Substitute.For<IMonitorBroadcaster>();
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
-        var runner = new BackgroundJobRunner(factory, broadcaster, lifetime, NullLogger<BackgroundJobRunner>.Instance);
+        var registry = new JobCancellationRegistry();
+        var runner = new BackgroundJobRunner(factory,
+                                             broadcaster,
+                                             registry,
+                                             lifetime,
+                                             NullLogger<BackgroundJobRunner>.Instance);
         return (runner, broadcaster, jobRepo);
     }
 

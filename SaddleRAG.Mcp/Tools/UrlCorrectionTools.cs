@@ -46,6 +46,7 @@ public static class UrlCorrectionTools
     public static async Task<string> SubmitUrlCorrection(RepositoryFactory repositoryFactory,
                                                          ScrapeJobRunner scrapeRunner,
                                                          IBackgroundJobRunner backgroundRunner,
+                                                         JobCancellationService cancellation,
                                                          [Description("Library identifier")] string library,
                                                          [Description("Version")] string version,
                                                          [Description("Corrected docs root URL")]
@@ -59,6 +60,7 @@ public static class UrlCorrectionTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(scrapeRunner);
         ArgumentNullException.ThrowIfNull(backgroundRunner);
+        ArgumentNullException.ThrowIfNull(cancellation);
         ArgumentException.ThrowIfNullOrEmpty(library);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(newUrl);
@@ -116,7 +118,10 @@ public static class UrlCorrectionTools
                                                               var cancelledIds = new List<string>();
                                                               foreach(var existing in activeJobs)
                                                               {
-                                                                  await scrapeRunner.CancelAsync(existing.Id, jobCt);
+                                                                  await cancellation.CancelAsync(existing.Id,
+                                                                                                 profile,
+                                                                                                 jobCt
+                                                                                                );
                                                                   cancelledIds.Add(existing.Id);
                                                               }
 

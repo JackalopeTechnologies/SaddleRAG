@@ -11,6 +11,7 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Mcp;
 using SaddleRAG.Mcp.Tools;
 
 #endregion
@@ -128,6 +129,7 @@ public sealed class HealthToolsTests
         libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).Returns([]);
 
         var json = await HealthTools.GetDashboardIndex(factory,
+                                                       new McpWarmupState(),
                                                        profile: null,
                                                        TestContext.Current.CancellationToken
                                                       );
@@ -182,6 +184,7 @@ public sealed class HealthToolsTests
                            );
 
         string json = await HealthTools.GetDashboardIndex(factory,
+                                                          new McpWarmupState(),
                                                           profile: null,
                                                           TestContext.Current.CancellationToken
                                                          );
@@ -218,6 +221,7 @@ public sealed class HealthToolsTests
                .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
+                                                          new McpWarmupState(),
                                                           profile: null,
                                                           TestContext.Current.CancellationToken
                                                          );
@@ -264,6 +268,7 @@ public sealed class HealthToolsTests
                .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
+                                                          new McpWarmupState(),
                                                           profile: null,
                                                           TestContext.Current.CancellationToken
                                                          );
@@ -311,6 +316,7 @@ public sealed class HealthToolsTests
                .Returns([orphan]);
 
         string json = await HealthTools.GetDashboardIndex(factory,
+                                                          new McpWarmupState(),
                                                           profile: null,
                                                           TestContext.Current.CancellationToken
                                                          );

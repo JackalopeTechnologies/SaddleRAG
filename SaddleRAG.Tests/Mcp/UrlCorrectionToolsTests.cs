@@ -30,7 +30,8 @@ public sealed class UrlCorrectionToolsTests
         ILibraryProfileRepository ProfileRepo,
         ILibraryIndexRepository IndexRepo,
         IBm25ShardRepository Bm25Repo,
-        IJobRepository JobRepo);
+        IJobRepository JobRepo,
+        JobCancellationService Cancellation);
 
     [Fact]
     public async Task SubmitUrlCorrectionDryRunReportsCascadeWithoutWriting()
@@ -42,6 +43,7 @@ public sealed class UrlCorrectionToolsTests
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeNoopBackgroundRunner(),
+                                                                harness.Cancellation,
                                                                 "foo",
                                                                 "1.0",
                                                                 "https://docs.foo.com",
@@ -55,8 +57,8 @@ public sealed class UrlCorrectionToolsTests
         Assert.Contains("\"Pages\": 20", json);
         await harness.Runner.DidNotReceive()
                      .QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        await harness.Runner.DidNotReceive()
-                     .CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await harness.Cancellation.DidNotReceive()
+                     .CancelAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -70,6 +72,7 @@ public sealed class UrlCorrectionToolsTests
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeNoopBackgroundRunner(),
+                                                                harness.Cancellation,
                                                                 "foo",
                                                                 "1.0",
                                                                 "https://docs.foo.com",
@@ -80,7 +83,8 @@ public sealed class UrlCorrectionToolsTests
 
         Assert.Contains("\"WouldCancel\":", json);
         Assert.Contains("\"orphan-1\"", json);
-        await harness.Runner.DidNotReceive().CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await harness.Cancellation.DidNotReceive()
+                     .CancelAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -95,6 +99,7 @@ public sealed class UrlCorrectionToolsTests
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeInlineBackgroundRunner(),
+                                                                harness.Cancellation,
                                                                 "foo",
                                                                 "1.0",
                                                                 "https://docs.foo.com",
@@ -129,7 +134,7 @@ public sealed class UrlCorrectionToolsTests
         var second = MakeJobRecord("running-2", "foo", "1.0", JobStatus.Running);
         harness.JobRepo.ListActiveAsync("foo", "1.0", JobType.Scrape, Arg.Any<CancellationToken>())
                .Returns([first, second]);
-        harness.Runner.CancelAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        harness.Cancellation.CancelAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
                .Returns(CancelScrapeOutcome.Signalled);
         harness.Runner.QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
                .Returns("new-job-id");
@@ -137,6 +142,7 @@ public sealed class UrlCorrectionToolsTests
         var json = await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory,
                                                                 harness.Runner,
                                                                 MakeInlineBackgroundRunner(),
+                                                                harness.Cancellation,
                                                                 "foo",
                                                                 "1.0",
                                                                 "https://docs.foo.com",
@@ -147,8 +153,10 @@ public sealed class UrlCorrectionToolsTests
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await harness.Runner.Received(requiredNumberOfCalls: 1).CancelAsync("running-1", Arg.Any<CancellationToken>());
-        await harness.Runner.Received(requiredNumberOfCalls: 1).CancelAsync("running-2", Arg.Any<CancellationToken>());
+        await harness.Cancellation.Received(requiredNumberOfCalls: 1)
+                     .CancelAsync("running-1", Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await harness.Cancellation.Received(requiredNumberOfCalls: 1)
+                     .CancelAsync("running-2", Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     private static JobRecord MakeJobRecord(string id, string library, string version, JobStatus status) =>
@@ -195,9 +203,19 @@ public sealed class UrlCorrectionToolsTests
                                                             null,
                                                             null,
                                                             null,
+                                                            new JobCancellationRegistry(),
                                                             lifetime
                                                            );
         runner.QueueAsync(Arg.Any<ScrapeJob>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(string.Empty);
+
+        var cancellation = Substitute.ForPartsOf<JobCancellationService>(
+            Substitute.For<IJobCancellationRegistry>(),
+            factory,
+            Substitute.For<IMonitorBroadcaster>()
+        );
+        cancellation.CancelAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+                    .Returns(CancelScrapeOutcome.Signalled);
+
         return new TestHarness(factory,
                                libraryRepo,
                                runner,
@@ -206,7 +224,8 @@ public sealed class UrlCorrectionToolsTests
                                profileRepo,
                                indexRepo,
                                bm25Repo,
-                               jobRepo
+                               jobRepo,
+                               cancellation
                               );
     }
 

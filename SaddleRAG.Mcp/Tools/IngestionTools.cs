@@ -33,7 +33,11 @@ public static class IngestionTools
                  "Returns { JobId, Status: 'Queued' } immediately; poll get_job_status for the " +
                  "full DryRunReport including page counts, crawl depth, and GitHub repos found. " +
                  "Use this BEFORE running scrape_docs on a new library to verify " +
-                 "the URL patterns are correct and the crawl scope is reasonable."
+                 "the URL patterns are correct and the crawl scope is reasonable. " +
+                 "Pass seedUrls when the home page does not link to all sections (e.g., DocFX " +
+                 "sites whose /api/ tree is reachable only through namespace index pages) — " +
+                 "the seeds are added to the crawl queue alongside rootUrl, mirroring exactly " +
+                 "what a real scrape_docs call with the same seedUrls would discover."
                 )]
     public static async Task<string> DryRunScrape(IngestionOrchestrator orchestrator,
                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))]
@@ -53,6 +57,11 @@ public static class IngestionTools
                                                   string[]? allowedUrlPatterns = null,
                                                   [Description("Excluded URL patterns (regex)")]
                                                   string[]? excludedUrlPatterns = null,
+                                                  [Description("Additional seed URLs added to the crawl queue alongside rootUrl. " +
+                                                               "Same semantics as scrape_docs.seedUrls — use for sites where the home " +
+                                                               "page does not link to every section that needs indexing."
+                                                              )]
+                                                  string[]? seedUrls = null,
                                                   [Description("Max pages to fetch in dry run, 0 = unlimited")]
                                                   int maxPages = DefaultDryRunMaxPages,
                                                   [Description("Delay between fetches in ms")]
@@ -84,6 +93,7 @@ public static class IngestionTools
                           LibraryHint = DryRunHint,
                           AllowedUrlPatterns = allowed,
                           ExcludedUrlPatterns = excludedUrlPatterns ?? [],
+                          SeedUrls = seedUrls,
                           MaxPages = maxPages,
                           FetchDelayMs = fetchDelayMs,
                           SameHostDepth = sameHostDepth,

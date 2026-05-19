@@ -19,10 +19,11 @@ This skill covers how to run `scrape_docs` effectively. If you're uncertain abou
 | `hint` | Seeds the LLM classifier | Be specific: `"Infragistics WPF controls — how-to guides and API reference"` |
 | `fetchDelayMs` | Floor delay per worker | Not a global rate cap — see concurrency note below |
 | `excludedUrlPatterns` | Regex list against full URL | Applied before fetch; blocks both the page and its children |
+| `seedUrls` | Extra URLs added to the crawl queue alongside `url` | Use when the home page does not link to every section — see "Multi-seed sites" below |
 | `additionalRateLimitStatusCodes` | Extra HTTP codes to treat as rate-limit signals, added on top of the built-in defaults (429, 503) | Omit for most sites; add [502] for Infragistics-style CDNs, [520, 521, 522] for Cloudflare |
 | `maxPages` | Safety cap | Set to a few hundred for a first run on an unknown site |
 | `force` | Re-scrape even if cached | Use when source docs have changed |
-| `resume` | Restart from where a cancelled job left off | Reuses stored job config; `url` is optional |
+| `resume` | Restart from where a cancelled job left off | Reuses stored job config (including `seedUrls`); `url` is optional |
 
 ---
 
@@ -73,6 +74,31 @@ The built-in defaults (429, 503) always apply. This parameter adds site-specific
 
 ---
 
+## Multi-seed sites (`seedUrls`)
+
+Some docs sites are organized so that the home page doesn't link to every section that needs indexing. The two common shapes:
+
+1. **DocFX-generated sites** where the API tree lives under `/api/` and is reachable only through namespace index pages (`/api/MyLib/index.htm`) — never from the top navigation. The home page links to "Build / License / ReleaseNotes" etc., and `/api` itself returns 404. The crawler can't discover the API tree from `url` alone.
+2. **Multi-domain doc sets** where a product wraps two distinct hubs (e.g. `docs.example.com` for guides and `api.example.com` for reference) and the home page links only one.
+
+Symptom: the dry-run page count is suspiciously low and the audit log shows `Http404` on URLs like `/api` or `/reference` — those parent paths don't exist but their children do.
+
+Fix: pass `seedUrls` listing each hub entry point. They go into the crawl queue alongside `url`, filtered through the same `allowedUrlPatterns`. A single scrape then fans out from every seed.
+
+```json
+{
+  "url": "https://spatial.mathdotnet.com",
+  "libraryId": "mathnet-spatial",
+  "version": "current",
+  "hint": "Math.NET Spatial — .NET 2D/3D geometry library",
+  "seedUrls": ["https://spatial.mathdotnet.com/api/MathNet.Spatial/index.htm"]
+}
+```
+
+To confirm the seed strategy without committing to a real scrape, run two dry-runs (one rooted at `url`, one rooted at each prospective seed), union the URL sets, and verify recall against your expected pages. `dryrun_scrape` honors `seedUrls` too, so once you settle on the right list you can preview the merged crawl in a single call.
+
+---
+
 ## Monitoring a running scrape
 
 ```
@@ -92,8 +118,10 @@ Watch for:
 If you catch a problem mid-scrape:
 
 ```
-cancel_scrape(jobId="<id>")
+cancel_job(jobId="<id>")
 ```
+
+(`cancel_job` replaces the older `cancel_scrape` and now works for any cancellable job type — scrape, dryrun_scrape, rechunk, reembed, reextract. Atomic mutations like renames, deletes, dependency indexing, URL corrections, and cleanup jobs return `NotCancellable` and must run to completion.)
 
 Partial results are kept. Fix your patterns, then either:
 - `scrape_docs(libraryId=..., version=..., resume=true)` — restart from stored state, reusing the previous job's URL and patterns (you can override individual params)

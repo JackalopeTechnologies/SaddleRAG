@@ -39,9 +39,12 @@ public static class ScrapeDocsTools
                  "URL or crawl patterns. For routine refreshes of an already-scraped library, prefer rescrape_library " +
                  "(library + version only — config is pulled from the most recent scrape job and stored pages seed " +
                  "the crawl). Pass allowedUrlPatterns / excludedUrlPatterns only if the auto-derived host filter is too " +
-                 "narrow or too broad. resume=true reuses the most recent ScrapeJob's rootUrl and patterns when url is " +
-                 "omitted. If the library is flagged URL_SUSPECT, resume=true returns Status=Refused — call " +
-                 "submit_url_correction(library, version, newUrl) first to clear the flag and re-queue with a corrected URL."
+                 "narrow or too broad. Pass seedUrls when the home page does not link to all sections that need indexing " +
+                 "(e.g., DocFX-generated sites where the /api/ tree is reachable only through namespace index pages, not " +
+                 "from the nav bar) — each seed URL is added to the crawl queue alongside the root, so a single scrape " +
+                 "fans out from multiple entry points. resume=true reuses the most recent ScrapeJob's rootUrl, patterns, " +
+                 "and seedUrls when url is omitted. If the library is flagged URL_SUSPECT, resume=true returns Status=Refused — " +
+                 "call submit_url_correction(library, version, newUrl) first to clear the flag and re-queue with a corrected URL."
                 )]
     public static async Task<string> ScrapeDocs(ScrapeJobRunner runner,
                                                 RepositoryFactory repositoryFactory,
@@ -69,7 +72,14 @@ public static class ScrapeDocsTools
                                                              "Use for site-specific soft-limit responses: [502] for Infragistics and similar CDNs, " +
                                                              "[520, 521, 522] for Cloudflare rate walls.")]
                                                 int[]? additionalRateLimitStatusCodes = null,
-                                                [Description("Resume the most recent scrape for this (libraryId, version), reusing its RootUrl/patterns"
+                                                [Description("Additional seed URLs added to the crawl queue alongside the root. Use for sites where " +
+                                                             "the home page does not link to every section that needs indexing — e.g., on DocFX-style " +
+                                                             "sites, pass [\"https://site/api/MyLib/index.htm\"] so the /api/ tree is reachable. Each seed " +
+                                                             "is filtered through allowedUrlPatterns just like links discovered during the crawl, so " +
+                                                             "out-of-scope seeds are dropped at the audit boundary."
+                                                            )]
+                                                string[]? seedUrls = null,
+                                                [Description("Resume the most recent scrape for this (libraryId, version), reusing its RootUrl/patterns/seedUrls"
                                                             )]
                                                 bool resume = false,
                                                 [Description("Optional database profile name")]
@@ -136,6 +146,7 @@ public static class ScrapeDocsTools
                                          LibraryHint = hint ?? previousJob.LibraryHint,
                                          AllowedUrlPatterns = allowedUrlPatterns ?? previousJob.AllowedUrlPatterns,
                                          ExcludedUrlPatterns = excludedUrlPatterns ?? previousJob.ExcludedUrlPatterns,
+                                         SeedUrls = seedUrls ?? previousJob.SeedUrls,
                                          MaxPages = maxPages,
                                          FetchDelayMs = fetchDelayMs,
                                          ForceClean = force,
@@ -172,7 +183,8 @@ public static class ScrapeDocsTools
                                               force,
                                               allowedUrlPatterns,
                                               excludedUrlPatterns,
-                                              additionalRateLimitStatusCodes
+                                              additionalRateLimitStatusCodes,
+                                              seedUrls
                                              );
                 var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
                 await scrapeAuditRepo.DeleteByLibraryVersionAsync(libraryId, version, ct);
@@ -220,7 +232,8 @@ public static class ScrapeDocsTools
                                             bool force,
                                             string[]? allowedUrlPatterns,
                                             string[]? excludedUrlPatterns,
-                                            int[]? additionalRateLimitStatusCodes)
+                                            int[]? additionalRateLimitStatusCodes,
+                                            string[]? seedUrls)
     {
         ScrapeJob job;
         if (allowedUrlPatterns != null || excludedUrlPatterns != null)
@@ -236,7 +249,8 @@ public static class ScrapeDocsTools
                           MaxPages = maxPages,
                           FetchDelayMs = fetchDelayMs,
                           ForceClean = force,
-                          AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes
+                          AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes,
+                          SeedUrls = seedUrls
                       };
         }
         else
@@ -250,6 +264,8 @@ public static class ScrapeDocsTools
                                                  force,
                                                  additionalRateLimitStatusCodes
                                                 );
+            if (seedUrls is { Length: > 0 })
+                job = job with { SeedUrls = seedUrls };
         }
 
         return job;

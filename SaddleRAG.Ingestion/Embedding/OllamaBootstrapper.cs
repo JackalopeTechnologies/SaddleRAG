@@ -25,11 +25,23 @@ public class OllamaBootstrapper
 {
     private static readonly HttpClient smHttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(minutes: 5) };
 
-    // 1-second probe timeout: short enough that 30 retries finish in well
-    // under a minute when Ollama just isn't there (Windows fresh install),
-    // long enough to clear the latency budget of a healthy reachable
-    // sidecar response.
-    private static readonly HttpClient smClient = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 1) };
+    // 15-second probe timeout: a healthy Ollama responds in well under a
+    // second, but a busy one (mid model-load, large response in flight)
+    // can stall for several seconds. The previous 1-second cap was too
+    // tight: bootstrap probes would falsely report unreachable, the
+    // bootstrapper would spawn a second `ollama serve` to try to fix it,
+    // and that duplicate would spin forever logging "bind: address already
+    // in use" while the original was actually fine. Generous probe timeout
+    // + reduced attempt count keeps the bootstrap wall clock similar
+    // (~45s worst case) while eliminating the false-negative path.
+    private static readonly HttpClient smClient = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 15) };
+
+    // Set to true the first time LaunchOllamaAsync runs in this process.
+    // Subsequent calls bail out immediately so a probe that briefly fails
+    // partway through bootstrap can't trigger a second `ollama serve` and
+    // leave a duplicate process spamming the log. Process-wide because
+    // OllamaBootstrapper is registered as a singleton.
+    private static int psLaunchAttempted;
 
     public OllamaBootstrapper(IOptions<OllamaSettings> settings,
                               ILogger<OllamaBootstrapper> logger)
@@ -111,10 +123,16 @@ public class OllamaBootstrapper
     }
 
     /// <summary>
-    ///     Pre-load the configured generate-capable models (classification +
-    ///     reranking) into Ollama VRAM so the first user request doesn't
-    ///     pay a multi-second cold-load penalty. Uses keep_alive=-1 so the
-    ///     models stay resident across idle gaps.
+    ///     Pre-load the configured classification model into Ollama VRAM
+    ///     with <c>keep_alive=-1</c> so the first user request doesn't
+    ///     pay a multi-second cold-load penalty. Sends a classifier-priming
+    ///     prompt and verifies the model returns a "READY" acknowledgement
+    ///     so we have evidence the model actually loaded and can serve --
+    ///     a 200 response with empty body is a degenerate "warm" that
+    ///     would still leave the first real classify call cold-loading.
+    ///     Throws on timeout, HTTP error, or missing/unrecognised response
+    ///     so the warmup host can mark the bootstrap as failed instead of
+    ///     silently flipping the MCP healthy when nothing is actually ready.
     /// </summary>
     public async Task WarmModelsAsync(CancellationToken ct = default)
     {
@@ -133,48 +151,105 @@ public class OllamaBootstrapper
 
         if (distinct.Count > 0)
         {
-            using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
             var endpoint = new Uri(new Uri(mSettings.Endpoint), GenerateEndpointPath);
 
             foreach(string model in distinct)
-            {
-                var sw = Stopwatch.StartNew();
-                try
-                {
-                    var payload = new
-                                      {
-                                          model,
-                                          prompt = WarmupPrompt,
-                                          stream = false,
-                                          keep_alive = KeepAliveForever
-                                      };
-                    var response = await client.PostAsJsonAsync(endpoint, payload, ct);
-                    response.EnsureSuccessStatusCode();
-                    sw.Stop();
-                    mLogger.LogInformation("Warmed {Model} in {Ms}ms", model, sw.ElapsedMilliseconds);
-                }
-                catch(OperationCanceledException ex) when(!ct.IsCancellationRequested)
-                {
-                    sw.Stop();
-                    mLogger.LogWarning(ex,
-                                       "Timed out warming {Model} after {Ms}ms (timeout {TimeoutSeconds}s)",
-                                       model,
-                                       sw.ElapsedMilliseconds,
-                                       timeoutSeconds
-                                      );
-                }
-                catch(Exception ex) when(ex is not OperationCanceledException)
-                {
-                    sw.Stop();
-                    mLogger.LogWarning(ex, "Failed to warm {Model} after {Ms}ms", model, sw.ElapsedMilliseconds);
-                }
-            }
+                await WarmSingleModelAsync(client, endpoint, model, timeoutSeconds, ct);
         }
     }
 
+    /// <summary>
+    ///     Send the classifier-priming warm prompt for one model and verify
+    ///     the model replied with the expected READY acknowledgement.
+    ///     Exposed <c>internal</c> so tests can drive the HTTP path with a
+    ///     stubbed <see cref="HttpClient" /> without spinning up Ollama.
+    /// </summary>
+    internal async Task WarmSingleModelAsync(HttpClient client,
+                                             Uri endpoint,
+                                             string model,
+                                             int timeoutSeconds,
+                                             CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentException.ThrowIfNullOrEmpty(model);
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var payload = new
+                              {
+                                  model,
+                                  prompt = WarmupPrompt,
+                                  stream = false,
+                                  keep_alive = KeepAliveForever
+                              };
+            var response = await client.PostAsJsonAsync(endpoint, payload, ct);
+            response.EnsureSuccessStatusCode();
+            var body = await response.Content.ReadAsStringAsync(ct);
+            sw.Stop();
+
+            if (!ResponseContainsExpectedToken(body))
+            {
+                mLogger.LogError("Warm of {Model} returned HTTP 200 but response did not contain '{Token}'. Body: {Body}",
+                                 model,
+                                 ExpectedWarmupToken,
+                                 Truncate(body, maxLength: WarmupBodyLogCap));
+                throw new
+                    InvalidOperationException($"Ollama warm of '{model}' returned an unexpected body. Expected response containing '{ExpectedWarmupToken}'."
+                                             );
+            }
+
+            mLogger.LogInformation("Warmed {Model} in {Ms}ms (response acknowledged)", model, sw.ElapsedMilliseconds);
+        }
+        catch(OperationCanceledException) when(!ct.IsCancellationRequested)
+        {
+            sw.Stop();
+            mLogger.LogError("Timed out warming {Model} after {Ms}ms (timeout {TimeoutSeconds}s)",
+                             model,
+                             sw.ElapsedMilliseconds,
+                             timeoutSeconds
+                            );
+            throw new
+                TimeoutException($"Ollama warm of '{model}' did not complete within {timeoutSeconds}s. Verify only one ollama serve process is running and the model is fully downloaded."
+                                );
+        }
+    }
+
+    private static bool ResponseContainsExpectedToken(string body)
+    {
+        bool res = false;
+        if (!string.IsNullOrEmpty(body))
+            res = body.Contains(ExpectedWarmupToken, StringComparison.OrdinalIgnoreCase);
+        return res;
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        string res = value;
+        if (!string.IsNullOrEmpty(value) && value.Length > maxLength)
+            res = value[..maxLength] + WarmupBodyTruncatedSuffix;
+        return res;
+    }
+
     private const string GenerateEndpointPath = "/api/generate";
-    private const string WarmupPrompt = ".";
+    // Classifier-priming warm prompt. Two jobs:
+    //   1. Force Ollama to actually load + activate the model (a request
+    //      with prompt="." has occasionally been observed to skip token
+    //      generation entirely on some Ollama builds, returning HTTP 200
+    //      against a model that never finished loading -- the warm
+    //      contract is "model is ready to classify on first real call",
+    //      so we need observable token output).
+    //   2. Prime the model on its actual job so the warm pass doubles as
+    //      a sanity check that the model loaded into a usable state.
+    // The expected reply is a single "READY" token; the validator checks
+    // case-insensitively so minor capitalization drift doesn't fail warm.
+    private const string WarmupPrompt =
+        "You are about to be used as a documentation classifier. You will receive documentation pages and assign each to one of these categories: Overview, HowTo, Sample, Code, ApiReference, ChangeLog, Unclassified. To confirm you have loaded and understood, reply with exactly the single word: READY";
+    private const string ExpectedWarmupToken = "READY";
+    private const int WarmupBodyLogCap = 256;
+    private const string WarmupBodyTruncatedSuffix = "...";
     private const int KeepAliveForever = -1;
     private const int MinimumWarmModelTimeoutSeconds = 1;
 
@@ -185,12 +260,20 @@ public class OllamaBootstrapper
     private const int PostInstallDelayMs = 3000;
     private const int ServicePollDelayMs = 1000;
     private const int ProgressLogInterval = 10;
-    // Bootstrap-time reachability probe: 30 attempts × 1s = ~30s wall
-    // clock with smClient's 1s HTTP timeout absorbing connection-refused
-    // and DNS-fail fast. Tuned for "Docker sidecar warming up" without
-    // blowing the budget for "Windows fresh install with no Ollama yet."
-    private const int BootstrapReachabilityMaxAttempts = 30;
+    // Bootstrap-time reachability probe: 3 attempts × 15s probe timeout
+    // + 1s delay = ~48s worst-case wall clock when Ollama is genuinely
+    // unreachable. Healthy responses come back in well under 1s so the
+    // normal case is still near-instant. The longer per-probe timeout
+    // (vs. the previous 1s) eliminates the false-negative that triggered
+    // a duplicate `ollama serve` launch when the existing Ollama was
+    // momentarily slow.
+    private const int BootstrapReachabilityMaxAttempts = 3;
     private const int BootstrapReachabilityPollMs = 1000;
+    // Post-launch poll: tighter per-call timeout (2s) because the freshly-
+    // spawned `ollama serve` should bind its socket in well under a second.
+    // If 2s isn't enough, something is wrong with the launch itself and
+    // longer per-attempt waiting won't help.
+    private const int PostLaunchProbeTimeoutSeconds = 2;
 
     private const string OllamaExeNameWindows = "ollama.exe";
     private const string OllamaExeNamePosix = "ollama";
@@ -391,7 +474,40 @@ public class OllamaBootstrapper
             await LaunchOllamaAsync(ct);
     }
 
+    /// <summary>
+    ///     Internal test seam: when set, <see cref="LaunchOllamaInternalAsync" />
+    ///     calls this delegate instead of <see cref="Process.Start(ProcessStartInfo)" />.
+    ///     The single-shot-guard test uses this to verify the guard prevents
+    ///     a second spawn without actually launching a real `ollama serve`.
+    ///     Tests reset to null in a finally block.
+    /// </summary>
+    internal static Func<ProcessStartInfo, Process?>? pmProcessStarterOverride;
+
+    /// <summary>
+    ///     Reset the process-wide single-shot launch flag. Tests call this
+    ///     between cases to exercise the guard repeatedly; never invoked in
+    ///     production code.
+    /// </summary>
+    internal static void ResetLaunchGuardForTesting() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
+
     private async Task LaunchOllamaAsync(CancellationToken ct)
+    {
+        // Atomic single-shot guard: prevents a second `ollama serve` spawn
+        // when the bootstrap probe transiently fails part-way through
+        // startup. Interlocked.Exchange returns the previous value, so a
+        // non-zero result means another caller already won the race and
+        // launched (or is about to launch) the process. The original wedge
+        // we saw was multiple `ollama serve` processes spamming "bind:
+        // address already in use" while the legitimate listener was hung
+        // on its own model-load -- this is the structural fix.
+        bool alreadyAttempted = Interlocked.Exchange(ref psLaunchAttempted, value: 1) != 0;
+        if (alreadyAttempted)
+            mLogger.LogInformation("Skipping Ollama launch -- this process already attempted one this session");
+        else
+            await LaunchOllamaInternalAsync(ct);
+    }
+
+    private async Task LaunchOllamaInternalAsync(CancellationToken ct)
     {
         mLogger.LogInformation("Ollama not reachable, attempting to start...");
 
@@ -399,29 +515,32 @@ public class OllamaBootstrapper
 
         try
         {
-            Process.Start(new ProcessStartInfo
-                              {
-                                  FileName = ollamaPath,
-                                  Arguments = "serve",
-                                  UseShellExecute = false,
-                                  CreateNoWindow = true,
-                                  RedirectStandardOutput = true,
-                                  RedirectStandardError = true
-                              }
-                         );
+            var startInfo = new ProcessStartInfo
+                                {
+                                    FileName = ollamaPath,
+                                    Arguments = "serve",
+                                    UseShellExecute = false,
+                                    CreateNoWindow = true,
+                                    RedirectStandardOutput = true,
+                                    RedirectStandardError = true
+                                };
+            var started = pmProcessStarterOverride != null
+                              ? pmProcessStarterOverride(startInfo)
+                              : Process.Start(startInfo);
 
-            var started = false;
-            for(var i = 0; i < MaxStartWaitSeconds; i++)
+            if (started != null)
+                mLogger.LogInformation("Spawned ollama serve (PID {Pid})", started.Id);
+
+            var bound = false;
+            for(var i = 0; i < MaxStartWaitSeconds && !bound; i++)
             {
                 await Task.Delay(ServicePollDelayMs, ct);
-                if (!started && await IsReachableAsync(ct))
-                {
-                    mLogger.LogInformation("Ollama started successfully");
-                    started = true;
-                }
+                bound = await IsReachableAsync(PostLaunchProbeTimeoutSeconds, ct);
+                if (bound)
+                    mLogger.LogInformation("Ollama started successfully (bound after {Seconds}s)", i + 1);
             }
 
-            if (!started)
+            if (!bound)
             {
                 throw new
                     TimeoutException($"Ollama started but not reachable after {MaxStartWaitSeconds}s at {mSettings.Endpoint}"
@@ -436,6 +555,55 @@ public class OllamaBootstrapper
                                           ex
                                          );
         }
+    }
+
+    /// <summary>
+    ///     Probe the configured endpoint with an explicit per-call timeout
+    ///     in seconds. Used by the post-launch poll which wants tighter
+    ///     per-attempt budgets than the 15s default on smClient.
+    /// </summary>
+    private async Task<bool> IsReachableAsync(int timeoutSeconds, CancellationToken ct) =>
+        await IsReachableAsync(smClient, new Uri(mSettings.Endpoint), timeoutSeconds, ct);
+
+    /// <summary>
+    ///     Pure-static probe helper: GET <paramref name="endpoint" /> through
+    ///     <paramref name="client" /> with a per-call timeout, returning true
+    ///     on HTTP success and false on timeout, transport error, or any
+    ///     other exception. Exposed <c>internal static</c> so tests can drive
+    ///     the probe with a stubbed <see cref="HttpClient" /> without
+    ///     hard-coding network access. External cancellation propagates
+    ///     untouched (the catch only suppresses transport/timeout errors).
+    /// </summary>
+    internal static async Task<bool> IsReachableAsync(HttpClient client,
+                                                      Uri endpoint,
+                                                      int timeoutSeconds,
+                                                      CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(endpoint);
+        if (timeoutSeconds < 1)
+            throw new ArgumentOutOfRangeException(nameof(timeoutSeconds),
+                                                  timeoutSeconds,
+                                                  "timeoutSeconds must be >= 1");
+
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        bool result;
+        try
+        {
+            var response = await client.GetAsync(endpoint, probeCts.Token);
+            result = response.IsSuccessStatusCode;
+        }
+        catch(OperationCanceledException) when(ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            result = false;
+        }
+
+        return result;
     }
 
     private async Task<bool> IsReachableAsync(CancellationToken ct)
