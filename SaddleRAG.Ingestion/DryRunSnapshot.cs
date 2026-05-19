@@ -34,5 +34,8 @@ public record DryRunSnapshot
     public required IReadOnlyDictionary<DocCategory, int> CategoryHistogram { get; init; }
     public required IReadOnlyList<DryRunPageEntry> SamplePages { get; init; }
     public required IReadOnlyList<DryRunFetchError> Errors { get; init; }
+    public required RenderMode RenderMode { get; init; }
+    public required int MedianContentNodeDelta { get; init; }
+    public required bool LoadWaitRecommended { get; init; }
     public required StageTimings Timings { get; init; }
 }

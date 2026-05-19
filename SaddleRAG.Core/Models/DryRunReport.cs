@@ -112,17 +112,16 @@ public record DryRunReport
 
 
     /// <summary>
-    ///     Pages that were queued but not fetched when the crawl ended
-    ///     (either because MaxPages was hit or the run was cancelled).
-    ///     High value = crawler found lots more to do but got cut off.
+    ///     Reserved for future use. The streaming dry-run path does not currently
+    ///     surface pending-queue depth and always emits 0.
     /// </summary>
 
     public required int PagesRemainingInQueue { get; init; }
 
 
     /// <summary>
-    ///     First N URLs that were in the queue when the run ended.
-    ///     Useful for verifying allow-list patterns are doing what you expect.
+    ///     Reserved for future use. The streaming dry-run path does not currently
+    ///     surface pending URLs and always emits empty.
     /// </summary>
 
     public required IReadOnlyList<string> SamplePendingUrls { get; init; }

@@ -425,6 +425,8 @@ public class PageCrawler : IPageCrawler
                               );
         }
 
+        dryRunAcc?.RecordRenderMode(ctx.Voter.RenderMode, ctx.Voter.MedianDelta, ctx.Voter.IsLoadWaitNeeded);
+
         mLogger.LogInformation("Crawl complete for {LibraryId} v{Version}: {Count} pages, {Hosts} hosts, {Dropped} dropped",
                                job.LibraryId,
                                job.Version,
@@ -802,7 +804,9 @@ public class PageCrawler : IPageCrawler
         {
             IResponse? response;
             string fetchUrl;
-            (response, fetchUrl, _, _) = await FetchWithExtensionRecoveryAsync(url,
+            int domCount;
+            int loadCount;
+            (response, fetchUrl, domCount, loadCount) = await FetchWithExtensionRecoveryAsync(url,
                                                                                 page,
                                                                                 ctx.ExtensionState,
                                                                                 ctx.Voter,
@@ -815,7 +819,9 @@ public class PageCrawler : IPageCrawler
                                             entry,
                                             ctx,
                                             limiter,
-                                            url
+                                            url,
+                                            domCount,
+                                            loadCount
                                            );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
@@ -853,7 +859,9 @@ public class PageCrawler : IPageCrawler
                                                  CrawlEntry entry,
                                                  CrawlContext ctx,
                                                  HostRateLimiter limiter,
-                                                 string originalUrl)
+                                                 string originalUrl,
+                                                 int domCount,
+                                                 int loadCount)
     {
         if (response == null)
         {
@@ -888,7 +896,9 @@ public class PageCrawler : IPageCrawler
                                              entry,
                                              ctx,
                                              limiter,
-                                             originalUrl
+                                             originalUrl,
+                                             domCount,
+                                             loadCount
                                             );
         }
     }
@@ -899,7 +909,9 @@ public class PageCrawler : IPageCrawler
                                                   CrawlEntry entry,
                                                   CrawlContext ctx,
                                                   HostRateLimiter limiter,
-                                                  string originalUrl)
+                                                  string originalUrl,
+                                                  int domCount,
+                                                  int loadCount)
     {
         bool inScope = IsInRootScope(originalUrl, ctx.RootScope);
         bool sameHost = !inScope && IsSameHost(originalUrl, ctx.RootScope);
@@ -911,7 +923,7 @@ public class PageCrawler : IPageCrawler
         {
             case true when response.Ok:
                 limiter.ReportSuccess();
-                await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx);
+                await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx, domCount, loadCount);
                 break;
             case true when HostRateLimiter.IsRateLimitStatus(response.Status, ctx.Job.AdditionalRateLimitStatusCodes):
             {
@@ -1108,7 +1120,9 @@ public class PageCrawler : IPageCrawler
     private async Task CompleteSuccessfulFetchAsync(IPage page,
                                                     string fetchUrl,
                                                     CrawlEntry entry,
-                                                    CrawlContext ctx)
+                                                    CrawlContext ctx,
+                                                    int domCount,
+                                                    int loadCount)
     {
         var sw = Stopwatch.StartNew();
         string title = await page.TitleAsync();
@@ -1158,8 +1172,8 @@ public class PageCrawler : IPageCrawler
                                                 InScope = inScopeFinal,
                                                 ContentBytes = content.Length,
                                                 LinksFound = links.Count,
-                                                ContentNodesAtDom = -1,
-                                                ContentNodesAtLoad = -1
+                                                ContentNodesAtDom = domCount,
+                                                ContentNodesAtLoad = loadCount
                                             });
 
         mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), pageDepth);

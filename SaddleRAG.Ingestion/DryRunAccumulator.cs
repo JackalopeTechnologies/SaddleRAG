@@ -6,8 +6,10 @@
 
 #region Usings
 
+using System.Collections.ObjectModel;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Ingestion.Crawling;
 
 #endregion
 
@@ -15,15 +17,17 @@ namespace SaddleRAG.Ingestion;
 
 /// <summary>
 ///     Thread-safe in-memory bucket the dry-run pipeline writes into
-///     instead of the live repositories. The crawl stage's 8 parallel
-///     workers all call Record* concurrently; the classify, chunk, and
-///     embed stages are each single-consumer so they call from one
-///     thread, but they share the accumulator with the crawl stage so
-///     every mutator still locks.
+///     instead of the live repositories. The crawl stage's parallel
+///     workers (<see cref="PageCrawler" />'s worker pool) all call
+///     Record* concurrently; the classify, chunk, and embed stages are
+///     each single-consumer so they call from one thread, but they
+///     share the accumulator with the crawl stage so every mutator
+///     still locks.
 ///     <para>
 ///         Callers consume <see cref="Snapshot" /> only after the pipeline
-///         has drained; the snapshot returns immutable copies of the
-///         internal collections.
+///         has drained; the snapshot returns isolated copies of the
+///         internal collections exposed through read-only interfaces,
+///         safe to read without synchronization.
 ///     </para>
 /// </summary>
 public sealed class DryRunAccumulator
@@ -60,7 +64,11 @@ public sealed class DryRunAccumulator
     private long mTotalEmbedMs;
     private int mEmbedBatchCount;
 
-    public void RecordTotalPage(string hostKey, int depth, bool inScope)
+    private RenderMode mRenderMode = RenderMode.Unknown;
+    private int mMedianContentNodeDelta = -1;
+    private bool mLoadWaitRecommended = true;
+
+    internal void RecordTotalPage(string hostKey, int depth, bool inScope)
     {
         ArgumentException.ThrowIfNullOrEmpty(hostKey);
 
@@ -78,19 +86,19 @@ public sealed class DryRunAccumulator
         }
     }
 
-    public void RecordFilteredSkip()
+    internal void RecordFilteredSkip()
     {
         lock(mLock)
             mFilteredSkips++;
     }
 
-    public void RecordDepthLimitedSkip()
+    internal void RecordDepthLimitedSkip()
     {
         lock(mLock)
             mDepthLimitedSkips++;
     }
 
-    public void RecordGitHubRepo(string ownerSlashRepo)
+    internal void RecordGitHubRepo(string ownerSlashRepo)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerSlashRepo);
 
@@ -98,7 +106,7 @@ public sealed class DryRunAccumulator
             mGitHubRepos.Add(ownerSlashRepo);
     }
 
-    public void RecordFetchError(DryRunFetchError error)
+    internal void RecordFetchError(DryRunFetchError error)
     {
         ArgumentNullException.ThrowIfNull(error);
 
@@ -109,7 +117,7 @@ public sealed class DryRunAccumulator
         }
     }
 
-    public void RecordFetchMs(long ms)
+    internal void RecordFetchMs(long ms)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(ms);
 
@@ -120,7 +128,7 @@ public sealed class DryRunAccumulator
         }
     }
 
-    public void RecordSamplePage(DryRunPageEntry entry)
+    internal void RecordSamplePage(DryRunPageEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
 
@@ -131,7 +139,7 @@ public sealed class DryRunAccumulator
         }
     }
 
-    public void RecordClassified(DocCategory category, long classifyMs)
+    internal void RecordClassified(DocCategory category, long classifyMs)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(classifyMs);
 
@@ -144,7 +152,7 @@ public sealed class DryRunAccumulator
         }
     }
 
-    public void RecordChunked(long chunkMs)
+    internal void RecordChunked(long chunkMs)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(chunkMs);
 
@@ -155,7 +163,7 @@ public sealed class DryRunAccumulator
         }
     }
 
-    public void RecordEmbeddedBatch(long embedMs)
+    internal void RecordEmbeddedBatch(long embedMs)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(embedMs);
 
@@ -163,6 +171,16 @@ public sealed class DryRunAccumulator
         {
             mTotalEmbedMs += embedMs;
             mEmbedBatchCount++;
+        }
+    }
+
+    internal void RecordRenderMode(RenderMode mode, int medianContentNodeDelta, bool loadWaitRecommended)
+    {
+        lock(mLock)
+        {
+            mRenderMode = mode;
+            mMedianContentNodeDelta = medianContentNodeDelta;
+            mLoadWaitRecommended = loadWaitRecommended;
         }
     }
 
@@ -179,12 +197,18 @@ public sealed class DryRunAccumulator
                              DepthLimitedSkips = mDepthLimitedSkips,
                              FilteredSkips = mFilteredSkips,
                              FetchErrors = mFetchErrors,
-                             PagesByHost = new Dictionary<string, int>(mPagesByHost, StringComparer.OrdinalIgnoreCase),
-                             DepthDistribution = new Dictionary<int, int>(mDepthDistribution),
-                             GitHubRepos = mGitHubRepos.OrderBy(r => r).ToList(),
-                             CategoryHistogram = new Dictionary<DocCategory, int>(mCategoryHistogram),
-                             SamplePages = mSamplePages.ToList(),
-                             Errors = mErrors.ToList(),
+                             PagesByHost = new ReadOnlyDictionary<string, int>(
+                                 new Dictionary<string, int>(mPagesByHost, StringComparer.OrdinalIgnoreCase)),
+                             DepthDistribution = new ReadOnlyDictionary<int, int>(
+                                 new Dictionary<int, int>(mDepthDistribution)),
+                             GitHubRepos = mGitHubRepos.OrderBy(r => r).ToList().AsReadOnly(),
+                             CategoryHistogram = new ReadOnlyDictionary<DocCategory, int>(
+                                 new Dictionary<DocCategory, int>(mCategoryHistogram)),
+                             SamplePages = mSamplePages.ToList().AsReadOnly(),
+                             Errors = mErrors.ToList().AsReadOnly(),
+                             RenderMode = mRenderMode,
+                             MedianContentNodeDelta = mMedianContentNodeDelta,
+                             LoadWaitRecommended = mLoadWaitRecommended,
                              Timings = new StageTimings
                                            {
                                                TotalFetchMs = mTotalFetchMs,

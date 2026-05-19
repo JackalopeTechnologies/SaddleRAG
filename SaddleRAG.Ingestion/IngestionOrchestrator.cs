@@ -350,9 +350,9 @@ public class IngestionOrchestrator
                              HitMaxPagesLimit = job.MaxPages > 0 && snapshot.TotalPages >= job.MaxPages,
                              PagesRemainingInQueue = 0,
                              SamplePendingUrls = [],
-                             DetectedRenderMode = RenderMode.Unknown,
-                             MedianContentNodeDelta = -1,
-                             LoadWaitRecommended = true,
+                             DetectedRenderMode = snapshot.RenderMode,
+                             MedianContentNodeDelta = snapshot.MedianContentNodeDelta,
+                             LoadWaitRecommended = snapshot.LoadWaitRecommended,
                              CategoryHistogram = snapshot.CategoryHistogram,
                              StageTimings = snapshot.Timings
                          };
