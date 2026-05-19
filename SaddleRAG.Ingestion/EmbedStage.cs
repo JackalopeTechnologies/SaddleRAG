@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Interfaces;
@@ -23,11 +24,9 @@ namespace SaddleRAG.Ingestion;
 ///     are absorbed locally (skip + ErrorCount++); stage-level cancellation
 ///     or non-embed exceptions fault the channel and cancel the shared CTS.
 ///     The truncation + retry helpers are exposed as <c>internal static</c>
-///     so the single-page ingest path on <see cref="IngestionOrchestrator" />
-///     can share the same formatting + retry semantics without duplicating
-///     code. A future PR can fold the single-page path into the stage
-///     proper; until then this seam is the smallest contract that prevents
-///     drift between batch and single-page embedding.
+///     so the prompt format, the <see cref="MaxEmbedChars" /> cap, and the
+///     retry-once semantics live in exactly one place and can be reused by
+///     other callers without duplicating code.
 /// </summary>
 internal sealed class EmbedStage
 {
@@ -59,7 +58,9 @@ internal sealed class EmbedStage
                                ChannelWriter<DocChunk[]> output,
                                ScrapeJobRecord progress,
                                Action<ScrapeJobRecord>? onProgress,
-                               CancellationTokenSource cts)
+                               CancellationTokenSource cts,
+                               IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                               DryRunAccumulator? dryRunAcc = null)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
@@ -78,13 +79,27 @@ internal sealed class EmbedStage
                 {
                     var toEmbed = batch.Take(EmbedBatchSize).ToList();
                     batch = batch.Skip(EmbedBatchSize).ToList();
-                    await EmbedAndForwardBatchAsync(toEmbed, output, progress, onProgress, cts.Token);
+                    await EmbedAndForwardBatchAsync(toEmbed,
+                                                   output,
+                                                   progress,
+                                                   onProgress,
+                                                   cts.Token,
+                                                   persistMode,
+                                                   dryRunAcc
+                                                  );
                 }
             }
 
             // Flush remaining chunks
             if (batch.Count > 0)
-                await EmbedAndForwardBatchAsync(batch, output, progress, onProgress, cts.Token);
+                await EmbedAndForwardBatchAsync(batch,
+                                                output,
+                                                progress,
+                                                onProgress,
+                                                cts.Token,
+                                                persistMode,
+                                                dryRunAcc
+                                               );
         }
         catch(OperationCanceledException)
         {
@@ -108,14 +123,18 @@ internal sealed class EmbedStage
                                                  ChannelWriter<DocChunk[]> output,
                                                  ScrapeJobRecord progress,
                                                  Action<ScrapeJobRecord>? onProgress,
-                                                 CancellationToken ct)
+                                                 CancellationToken ct,
+                                                 IngestionPersistenceMode persistMode,
+                                                 DryRunAccumulator? dryRunAcc)
     {
+        var sw = Stopwatch.StartNew();
         try
         {
             var embeddedChunks = await EmbedBatchAsync(mEmbeddingProvider, mLogger, batch, ct);
 
-            // Upsert to MongoDB (supports resume — no duplicates on re-run)
-            await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
+            if (persistMode == IngestionPersistenceMode.Full)
+                await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
+
             progress.ChunksEmbedded += embeddedChunks.Length;
             onProgress?.Invoke(progress);
             for(var ei = 0; ei < embeddedChunks.Length; ei++)
@@ -123,19 +142,28 @@ internal sealed class EmbedStage
 
             await output.WriteAsync(embeddedChunks, ct);
 
-            mLogger.LogDebug("Embedded and stored batch of {Count} chunks", embeddedChunks.Length);
+            long embedMs = sw.ElapsedMilliseconds;
+            dryRunAcc?.RecordEmbeddedBatch(embedMs);
+            mLogger.LogInformation("Embedded batch in {EmbedMs}ms count={Count}",
+                                   embedMs,
+                                   embeddedChunks.Length
+                                  );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogWarning(ex, "Embedding failed for batch of {Count} chunks, skipping", batch.Count);
+            long embedMs = sw.ElapsedMilliseconds;
+            mLogger.LogWarning(ex,
+                               "Embedding failed for batch of {Count} chunks after {EmbedMs}ms, skipping",
+                               batch.Count,
+                               embedMs
+                              );
             progress.IncrementErrorCount();
         }
     }
 
     /// <summary>
-    ///     Truncate <paramref name="text" /> to <paramref name="maxChars" />
-    ///     characters. Shared with <see cref="IngestionOrchestrator" />'s
-    ///     single-page ingest path so both formatters cap identically.
+    ///     Caps the prompt at <paramref name="maxChars" /> before sending to
+    ///     the embedding provider.
     /// </summary>
     internal static string TruncateForEmbedding(string text, int maxChars)
     {
@@ -144,13 +172,10 @@ internal sealed class EmbedStage
     }
 
     /// <summary>
-    ///     Embed a single batch of chunks and return them with the
-    ///     <see cref="DocChunk.Embedding" /> field populated. Owns the
+    ///     Embed a single batch and return chunks with the
+    ///     <see cref="DocChunk.Embedding" /> field populated. Centralizes the
     ///     [Category]+[LibraryId]+[PageTitle]+Content prompt format, the
-    ///     MaxEmbedChars cap, and the retry-once semantics. Used by the
-    ///     batch loop in <see cref="RunAsync" /> and by
-    ///     <see cref="IngestionOrchestrator" />'s single-page ingest path
-    ///     so both call sites compute embeddings the same way.
+    ///     <see cref="MaxEmbedChars" /> cap, and the retry-once semantics.
     /// </summary>
     internal static async Task<DocChunk[]> EmbedBatchAsync(IEmbeddingProvider provider,
                                                            ILogger logger,
@@ -176,8 +201,6 @@ internal sealed class EmbedStage
 
     /// <summary>
     ///     Retry-once helper around <see cref="IEmbeddingProvider.EmbedAsync" />.
-    ///     Shared with <see cref="IngestionOrchestrator" />'s single-page
-    ///     ingest path so both observe the same one-shot retry semantics.
     /// </summary>
     internal static async Task<float[][]> EmbedWithRetryAsync(IEmbeddingProvider provider,
                                                               ILogger logger,
@@ -189,7 +212,7 @@ internal sealed class EmbedStage
         {
             result = await provider.EmbedAsync(texts, ct: ct);
         }
-        catch(Exception ex)
+        catch(Exception ex) when(ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Embedding failed, retrying once");
             result = await provider.EmbedAsync(texts, ct: ct);

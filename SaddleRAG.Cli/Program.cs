@@ -108,6 +108,7 @@ services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.Secti
 services.AddSingleton<OllamaBootstrapper>();
 services.AddSingleton<GitHubRepoScraper>();
 services.AddSingleton<PageCrawler>();
+services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
 services.AddSingleton<IScrapeAuditWriter>(sp =>
                                               new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>())
                                          );
@@ -316,12 +317,14 @@ dryrunCommand.SetAction(async (parseResult, ct) =>
                                               FetchDelayMs = delay
                                           };
 
-                            var crawler = provider.GetRequiredService<PageCrawler>();
-                            var report = await crawler.DryRunAsync(job,
-                                                                   DryrunCommandName,
-                                                                   DryrunCommandName,
-                                                                   Guid.NewGuid().ToString("N")
-                                                                  );
+                            var orchestrator = provider.GetRequiredService<IngestionOrchestrator>();
+                            var report = await orchestrator.DryRunAsync(job,
+                                                                        libraryId: DryrunCommandName,
+                                                                        version: DryrunCommandName,
+                                                                        jobId: Guid.NewGuid().ToString("N"),
+                                                                        onProgress: null,
+                                                                        ct: ct
+                                                                       );
 
                             return DryrunReportRenderer.Render(report, maxPages, Console.Out);
                         }

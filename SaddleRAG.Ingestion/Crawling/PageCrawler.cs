@@ -44,21 +44,6 @@ public class PageCrawler : IPageCrawler
     private record FrameStats(int TextLength, int LinkTextLength);
 
     /// <summary>
-    ///     Mutable counters for the dry-run BFS loop.
-    ///     Used instead of ref parameters since the helper methods are async.
-    /// </summary>
-    private class DryRunStats
-    {
-        public int TotalPages { get; set; }
-        public int InScopePages { get; set; }
-        public int OutOfScopePages { get; set; }
-        public int DepthLimitedSkips { get; set; }
-        public int FilteredSkips { get; set; }
-        public int FetchErrors { get; set; }
-        public bool HitMaxLimit { get; set; }
-    }
-
-    /// <summary>
     ///     Mutable holder for the file extension a site uses (.html, .htm, .aspx)
     ///     once a 404-recovery probe finds one that works. Shared by the real
     ///     crawl and dry-run paths so both stop probing after the first hit and
@@ -94,6 +79,8 @@ public class PageCrawler : IPageCrawler
         public required Action? OnFetchError { get; init; }
         public required CancellationToken Token { get; init; }
         public required AuditContext AuditCtx { get; init; }
+        public required IngestionPersistenceMode PersistMode { get; init; }
+        public DryRunAccumulator? DryRunAcc { get; init; }
 
         /// <summary>
         ///     URLs that 403'd in-scope on every retry attempt and were
@@ -103,6 +90,8 @@ public class PageCrawler : IPageCrawler
         public ConcurrentBag<string> DroppedInScopeUrls { get; } = [];
 
         public SiteExtensionState ExtensionState { get; } = new SiteExtensionState();
+
+        public required RenderModeVoter Voter { get; init; }
 
         public int PageCount => Volatile.Read(ref mPageCount);
         public int InFlightCount => Volatile.Read(ref mInFlight);
@@ -212,408 +201,6 @@ public class PageCrawler : IPageCrawler
     private readonly IPageRepository mPageRepository;
 
     /// <summary>
-    ///     Dry-run a crawl: actually fetch every page with Playwright,
-    ///     resolve all links, but DO NOT store anything to MongoDB or
-    ///     clone any GitHub repos. Returns a detailed report so you can
-    ///     decide whether the real crawl will produce reasonable results.
-    /// </summary>
-    public async Task<DryRunReport> DryRunAsync(ScrapeJob job,
-                                                string libraryId,
-                                                string version,
-                                                string jobId,
-                                                Action<int, int>? onProgress = null,
-                                                CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(job);
-        ArgumentException.ThrowIfNullOrEmpty(libraryId);
-        ArgumentException.ThrowIfNullOrEmpty(version);
-        ArgumentException.ThrowIfNullOrEmpty(jobId);
-
-        var auditCtx = new AuditContext
-                           {
-                               JobId = jobId,
-                               LibraryId = libraryId,
-                               Version = version
-                           };
-
-        var startTime = DateTime.UtcNow;
-
-        using var playwright = await Playwright.CreateAsync();
-        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-                                                                            {
-                                                                                Headless = true,
-                                                                                Args =
-                                                                                    [
-                                                                                        $"--user-agent={BrowserUserAgent}"
-                                                                                    ]
-                                                                            }
-                                                                       );
-
-        var rootUri = new Uri(job.RootUrl);
-        var rootScope = ComputeRootScope(rootUri);
-
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var queue = new Queue<CrawlEntry>();
-        string normalizedRoot = NormalizeUrl(job.RootUrl) ?? job.RootUrl;
-        queue.Enqueue(new CrawlEntry(normalizedRoot, InScopeDepth: 0, SameHostDepth: 0, OffSiteDepth: 0));
-
-        var stats = new DryRunStats();
-        var depthDist = new Dictionary<int, int>();
-        var pagesByHost = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var githubRepos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var samplePages = new List<DryRunPageEntry>();
-        var errors = new List<DryRunFetchError>();
-        var extensionState = new SiteExtensionState();
-
-        while (queue.Count > 0 && !ct.IsCancellationRequested)
-        {
-            if (job.MaxPages > 0 && stats.TotalPages >= job.MaxPages)
-            {
-                stats.HitMaxLimit = true;
-                break;
-            }
-
-            var entry = queue.Dequeue();
-            string url = entry.Url;
-
-            if (visited.Add(url))
-            {
-                await ProcessDryRunEntryAsync(url,
-                                              entry,
-                                              job,
-                                              rootScope,
-                                              auditCtx,
-                                              browser,
-                                              visited,
-                                              queue,
-                                              githubRepos,
-                                              samplePages,
-                                              errors,
-                                              depthDist,
-                                              pagesByHost,
-                                              stats,
-                                              extensionState,
-                                              ct
-                                             );
-                int maxPages = job.MaxPages > 0 ? job.MaxPages : stats.TotalPages;
-                onProgress?.Invoke(stats.TotalPages, maxPages);
-            }
-        }
-
-        var report = new DryRunReport
-                         {
-                             TotalPages = stats.TotalPages,
-                             InScopePages = stats.InScopePages,
-                             OutOfScopePages = stats.OutOfScopePages,
-                             DepthLimitedSkips = stats.DepthLimitedSkips,
-                             FilteredSkips = stats.FilteredSkips,
-                             FetchErrors = stats.FetchErrors,
-                             DepthDistribution = depthDist,
-                             PagesByHost = pagesByHost,
-                             GitHubReposToClone = githubRepos.OrderBy(r => r).ToList(),
-                             SamplePages = samplePages,
-                             Errors = errors,
-                             ElapsedTime = DateTime.UtcNow - startTime,
-                             HitMaxPagesLimit = stats.HitMaxLimit,
-                             PagesRemainingInQueue = queue.Count,
-                             SamplePendingUrls = queue.Take(SamplePendingUrlCount).Select(e => e.Url).ToList()
-                         };
-
-        return report;
-    }
-
-    private async Task ProcessDryRunEntryAsync(string url,
-                                               CrawlEntry entry,
-                                               ScrapeJob job,
-                                               RootScope rootScope,
-                                               AuditContext auditCtx,
-                                               IBrowser browser,
-                                               HashSet<string> visited,
-                                               Queue<CrawlEntry> queue,
-                                               HashSet<string> githubRepos,
-                                               List<DryRunPageEntry> samplePages,
-                                               List<DryRunFetchError> errors,
-                                               Dictionary<int, int> depthDist,
-                                               Dictionary<string, int> pagesByHost,
-                                               DryRunStats stats,
-                                               SiteExtensionState extensionState,
-                                               CancellationToken ct)
-    {
-        var filterSkip = IsAllowed(url, job);
-        switch(true)
-        {
-            case true when filterSkip != null:
-            {
-                stats.FilteredSkips++;
-                string host = SafeGetHost(url);
-                bool inScope = IsInRootScope(url, rootScope);
-                bool sameHost = !inScope && IsSameHost(url, rootScope);
-                int depth = inScope  ? entry.InScopeDepth :
-                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
-                mAuditWriter.RecordSkipped(auditCtx,
-                                           url,
-                                           parentUrl: null,
-                                           host,
-                                           depth,
-                                           filterSkip.Value.Reason,
-                                           filterSkip.Value.Detail
-                                          );
-                break;
-            }
-            case true when GitHubRepoScraper.TryParseGitHubUrl(url, out string owner, out string repo):
-                githubRepos.Add($"{owner}/{repo}");
-                break;
-            default:
-                await ProcessInScopeEntryAsync(url,
-                                               entry,
-                                               job,
-                                               rootScope,
-                                               auditCtx,
-                                               browser,
-                                               visited,
-                                               queue,
-                                               samplePages,
-                                               errors,
-                                               depthDist,
-                                               pagesByHost,
-                                               stats,
-                                               extensionState,
-                                               ct
-                                              );
-                break;
-        }
-    }
-
-    private async Task ProcessInScopeEntryAsync(string url,
-                                                CrawlEntry entry,
-                                                ScrapeJob job,
-                                                RootScope rootScope,
-                                                AuditContext auditCtx,
-                                                IBrowser browser,
-                                                HashSet<string> visited,
-                                                Queue<CrawlEntry> queue,
-                                                List<DryRunPageEntry> samplePages,
-                                                List<DryRunFetchError> errors,
-                                                Dictionary<int, int> depthDist,
-                                                Dictionary<string, int> pagesByHost,
-                                                DryRunStats stats,
-                                                SiteExtensionState extensionState,
-                                                CancellationToken ct)
-    {
-        bool inScope = IsInRootScope(url, rootScope);
-        bool sameHost = !inScope && IsSameHost(url, rootScope);
-        bool depthExceeded = inScope  ? job.InScopeDepth > 0 && entry.InScopeDepth >= job.InScopeDepth :
-                             sameHost ? entry.SameHostDepth >= job.SameHostDepth :
-                                        entry.OffSiteDepth >= job.OffSiteDepth;
-
-        if (depthExceeded)
-        {
-            stats.DepthLimitedSkips++;
-            string host = SafeGetHost(url);
-            int displayDepth = inScope  ? entry.InScopeDepth :
-                               sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
-            var skipReason = sameHost ? AuditSkipReason.SameHostDepth : AuditSkipReason.OffSiteDepth;
-            string detail = sameHost
-                                ? $"depth={displayDepth} limit={job.SameHostDepth}"
-                                : $"depth={displayDepth} limit={job.OffSiteDepth}";
-            mAuditWriter.RecordSkipped(auditCtx,
-                                       url,
-                                       parentUrl: null,
-                                       host,
-                                       displayDepth,
-                                       skipReason,
-                                       detail
-                                      );
-        }
-        else
-        {
-            await FetchDryRunPageAsync(url,
-                                       entry,
-                                       job,
-                                       rootScope,
-                                       auditCtx,
-                                       browser,
-                                       visited,
-                                       queue,
-                                       samplePages,
-                                       errors,
-                                       depthDist,
-                                       pagesByHost,
-                                       inScope,
-                                       stats,
-                                       extensionState,
-                                       ct
-                                      );
-        }
-    }
-
-    private async Task FetchDryRunPageAsync(string url,
-                                            CrawlEntry entry,
-                                            ScrapeJob job,
-                                            RootScope rootScope,
-                                            AuditContext auditCtx,
-                                            IBrowser browser,
-                                            HashSet<string> visited,
-                                            Queue<CrawlEntry> queue,
-                                            List<DryRunPageEntry> samplePages,
-                                            List<DryRunFetchError> errors,
-                                            Dictionary<int, int> depthDist,
-                                            Dictionary<string, int> pagesByHost,
-                                            bool inScope,
-                                            DryRunStats stats,
-                                            SiteExtensionState extensionState,
-                                            CancellationToken ct)
-    {
-        mLogger.LogDebug("[dry-run] Fetching {Url}", url);
-
-        var page = await browser.NewPageAsync();
-        try
-        {
-            IResponse? response;
-            string fetchUrl;
-            (page, response, fetchUrl) = await FetchWithExtensionRecoveryAsync(url,
-                                                                               page,
-                                                                               browser,
-                                                                               extensionState,
-                                                                               ct
-                                                                              );
-
-            switch(response)
-            {
-                case null:
-                    stats.FetchErrors++;
-                    errors.Add(new DryRunFetchError
-                                   {
-                                       Url = url,
-                                       HttpStatus = 0,
-                                       ErrorKind = "NoResponse",
-                                       Message = "Playwright returned null response"
-                                   }
-                              );
-                    break;
-                case { Ok: false }:
-                    stats.FetchErrors++;
-                    errors.Add(new DryRunFetchError
-                                   {
-                                       Url = url,
-                                       HttpStatus = response.Status,
-                                       ErrorKind = $"Http{response.Status}",
-                                       Message = response.StatusText
-                                   }
-                              );
-                    break;
-                default:
-                    await ProcessSuccessfulDryRunResponseAsync(page,
-                                                               fetchUrl,
-                                                               entry,
-                                                               job,
-                                                               rootScope,
-                                                               auditCtx,
-                                                               inScope,
-                                                               visited,
-                                                               queue,
-                                                               samplePages,
-                                                               depthDist,
-                                                               pagesByHost,
-                                                               stats,
-                                                               extensionState,
-                                                               ct
-                                                              );
-                    break;
-            }
-        }
-        catch(Exception ex)
-        {
-            stats.FetchErrors++;
-            errors.Add(new DryRunFetchError
-                           {
-                               Url = url,
-                               HttpStatus = 0,
-                               ErrorKind = ex.GetType().Name,
-                               Message = ex.Message.Length > ErrorMessageMaxLength
-                                             ? ex.Message[..ErrorMessageMaxLength]
-                                             : ex.Message
-                           }
-                      );
-        }
-        finally
-        {
-            await page.CloseAsync();
-        }
-    }
-
-    private async Task ProcessSuccessfulDryRunResponseAsync(IPage page,
-                                                            string url,
-                                                            CrawlEntry entry,
-                                                            ScrapeJob job,
-                                                            RootScope rootScope,
-                                                            AuditContext auditCtx,
-                                                            bool inScope,
-                                                            HashSet<string> visited,
-                                                            Queue<CrawlEntry> queue,
-                                                            List<DryRunPageEntry> samplePages,
-                                                            Dictionary<int, int> depthDist,
-                                                            Dictionary<string, int> pagesByHost,
-                                                            DryRunStats stats,
-                                                            SiteExtensionState extensionState,
-                                                            CancellationToken ct)
-    {
-        await ExpandCollapsibleNavigationAsync(page);
-        string content = await ExtractMainContentAsync(page);
-        var links = await ExtractLinksAsync(page);
-
-        stats.TotalPages++;
-        if (inScope)
-            stats.InScopePages++;
-        else
-            stats.OutOfScopePages++;
-
-        bool urlSameHost = !inScope && IsSameHost(url, rootScope);
-        int effectiveDepth = inScope     ? entry.InScopeDepth :
-                             urlSameHost ? entry.SameHostDepth : entry.OffSiteDepth;
-
-        depthDist.TryGetValue(effectiveDepth, out int existing);
-        depthDist[effectiveDepth] = existing + 1;
-
-        // Use the scheme://host key for the report's per-host page count.
-        string hostKey = CrawlBudget.BuildHostKey(new Uri(url));
-        pagesByHost.TryGetValue(hostKey, out int hostCount);
-        pagesByHost[hostKey] = hostCount + 1;
-
-        // Use SafeGetHost for the audit event so the dryrun path produces the same
-        // host string as the live-crawl path (empty string for file:// URLs rather
-        // than the "file://" literal that BuildHostKey returns for empty-host schemes).
-        mAuditWriter.RecordFetched(auditCtx, url, parentUrl: null, SafeGetHost(url), effectiveDepth);
-        mBroadcaster.RecordFetch(auditCtx.JobId, url);
-
-        if (samplePages.Count < SamplePageLimit)
-        {
-            samplePages.Add(new DryRunPageEntry
-                                {
-                                    Url = url,
-                                    OutOfScopeDepth = effectiveDepth,
-                                    InScope = inScope,
-                                    ContentBytes = content.Length,
-                                    LinksFound = links.Count
-                                }
-                           );
-        }
-
-        EnqueueDiscoveredLinks(links,
-                               visited.Contains,
-                               job,
-                               rootScope,
-                               entry,
-                               (child, _) => queue.Enqueue(child),
-                               extensionState.Value != null,
-                               auditCtx
-                              );
-
-        if (job.FetchDelayMs > 0)
-            await Task.Delay(job.FetchDelayMs, ct);
-    }
-
-    /// <summary>
     ///     Fetch a single URL into a <see cref="PageRecord" /> without
     ///     starting a BFS — used by the <c>add_page</c> top-up path. Goes
     ///     through the same Playwright + 403 retry loop a regular crawl
@@ -679,7 +266,7 @@ public class PageCrawler : IPageCrawler
         var page = await browser.NewPageAsync();
         try
         {
-            var response = await NavigateAndPreparePageAsync(page, url, ct);
+            var (response, _, _) = await NavigateAndPreparePageAsync(page, url, voter: null, ct);
             if (response is { Ok: true })
                 result = await BuildAndPersistPageRecordAsync(page, libraryId, version, url, ct);
             else
@@ -736,15 +323,17 @@ public class PageCrawler : IPageCrawler
     ///     that pull entries off a shared channel; each fetch is gated by a
     ///     <see cref="HostRateLimiter" /> keyed on the URL's host.
     /// </summary>
-    public async Task CrawlAsync(ScrapeJob job,
-                                 ChannelWriter<PageRecord> output,
-                                 string jobId = "",
-                                 IReadOnlySet<string>? resumeUrls = null,
-                                 IReadOnlyList<string>? seedUrls = null,
-                                 Action<int>? onPageFetched = null,
-                                 Action<int>? onQueued = null,
-                                 Action? onFetchError = null,
-                                 CancellationToken ct = default)
+    async Task IPageCrawler.CrawlAsync(ScrapeJob job,
+                                       ChannelWriter<PageRecord> output,
+                                       string jobId,
+                                       IReadOnlySet<string>? resumeUrls,
+                                       IReadOnlyList<string>? seedUrls,
+                                       Action<int>? onPageFetched,
+                                       Action<int>? onQueued,
+                                       Action? onFetchError,
+                                       IngestionPersistenceMode persistMode,
+                                       DryRunAccumulator? dryRunAcc,
+                                       CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(output);
@@ -785,7 +374,10 @@ public class PageCrawler : IPageCrawler
                           OnQueued = onQueued,
                           OnFetchError = onFetchError,
                           Token = ct,
-                          AuditCtx = auditCtx
+                          AuditCtx = auditCtx,
+                          Voter = new RenderModeVoter(),
+                          PersistMode = persistMode,
+                          DryRunAcc = dryRunAcc,
                       };
 
         if (resumeUrls != null)
@@ -833,6 +425,8 @@ public class PageCrawler : IPageCrawler
                               );
         }
 
+        dryRunAcc?.RecordRenderMode(ctx.Voter.RenderMode, ctx.Voter.MedianDelta, ctx.Voter.IsLoadWaitNeeded);
+
         mLogger.LogInformation("Crawl complete for {LibraryId} v{Version}: {Count} pages, {Hosts} hosts, {Dropped} dropped",
                                job.LibraryId,
                                job.Version,
@@ -852,26 +446,47 @@ public class PageCrawler : IPageCrawler
     /// </summary>
     private async Task RunWorkerPoolAsync(CrawlContext ctx, IBrowser browser, int workerCount, CancellationToken ct)
     {
+        var workerPages = new IPage[workerCount + 1];
         var workerTasks = new Task[workerCount + 1];
-        for(var i = 0; i < workerCount; i++)
-            workerTasks[i] = Task.Run(() => RunCrawlWorkerAsync(ctx, browser), ct);
-        workerTasks[workerCount] = Task.Run(() => RunRetryWorkerAsync(ctx, browser), ct);
-
         try
         {
+            for(var i = 0; i < workerPages.Length; i++)
+                workerPages[i] = await browser.NewPageAsync();
+
+            for(var i = 0; i < workerCount; i++)
+            {
+                int workerIndex = i;
+                workerTasks[workerIndex] = Task.Run(() => RunCrawlWorkerAsync(ctx, workerPages[workerIndex]),
+                                                    ct
+                                                   );
+            }
+
+            workerTasks[workerCount] = Task.Run(() => RunRetryWorkerAsync(ctx, workerPages[workerCount]), ct);
+
             await Task.WhenAll(workerTasks);
         }
         finally
         {
             ctx.CompleteAllEntries();
+            foreach(var page in workerPages.Where(p => p != null))
+            {
+                try
+                {
+                    await page.CloseAsync();
+                }
+                catch(PlaywrightException)
+                {
+                    // Page may already be closed if the worker crashed.
+                }
+            }
         }
     }
 
-    private async Task RunCrawlWorkerAsync(CrawlContext ctx, IBrowser browser)
+    private async Task RunCrawlWorkerAsync(CrawlContext ctx, IPage page)
     {
         var keepGoing = true;
         while (keepGoing)
-            keepGoing = await TryProcessNextAsync(ctx, browser);
+            keepGoing = await TryProcessNextAsync(ctx, page);
     }
 
     /// <summary>
@@ -879,14 +494,14 @@ public class PageCrawler : IPageCrawler
     ///     channel. Returns false only when both channels are completed and
     ///     drained, signalling the worker to exit.
     /// </summary>
-    private async Task<bool> TryProcessNextAsync(CrawlContext ctx, IBrowser browser)
+    private async Task<bool> TryProcessNextAsync(CrawlContext ctx, IPage page)
     {
         bool keepGoing;
 
         if (ctx.InScopeEntries.Reader.TryRead(out var entry) ||
             ctx.OffPathEntries.Reader.TryRead(out entry))
         {
-            await HandleCrawlEntryAsync(entry, ctx, browser);
+            await HandleCrawlEntryAsync(entry, ctx, page);
             keepGoing = true;
         }
         else
@@ -942,7 +557,7 @@ public class PageCrawler : IPageCrawler
     ///     Runs alongside the main worker pool — main work isn't blocked on
     ///     retries, but retries also don't compete with main work for slots.
     /// </summary>
-    private async Task RunRetryWorkerAsync(CrawlContext ctx, IBrowser browser)
+    private async Task RunRetryWorkerAsync(CrawlContext ctx, IPage page)
     {
         var keepReading = true;
         while (keepReading)
@@ -958,7 +573,7 @@ public class PageCrawler : IPageCrawler
 
             if (keepReading && ctx.RetryEntries.Reader.TryRead(out var entry))
             {
-                await HandleRetryEntryAsync(entry, ctx, browser);
+                await HandleRetryEntryAsync(entry, ctx, page);
                 keepReading = await DelayBetweenRetriesAsync(ctx.Token);
             }
         }
@@ -983,11 +598,11 @@ public class PageCrawler : IPageCrawler
     ///     Process a retry attempt without re-checking <c>Visited</c> or the
     ///     gated-path filter — both were satisfied on the original attempt.
     /// </summary>
-    private async Task HandleRetryEntryAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser)
+    private async Task HandleRetryEntryAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         try
         {
-            await ProcessCrawlEntryAsync(entry, ctx, browser);
+            await ProcessCrawlEntryAsync(entry, ctx, page);
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
@@ -1007,7 +622,7 @@ public class PageCrawler : IPageCrawler
         }
     }
 
-    private async Task HandleCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser)
+    private async Task HandleCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         try
         {
@@ -1070,7 +685,7 @@ public class PageCrawler : IPageCrawler
             }
 
             if (firstVisit)
-                await ProcessCrawlEntryAsync(entry, ctx, browser);
+                await ProcessCrawlEntryAsync(entry, ctx, page);
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
@@ -1086,7 +701,7 @@ public class PageCrawler : IPageCrawler
         }
     }
 
-    private async Task ProcessCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser)
+    private async Task ProcessCrawlEntryAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         string url = entry.Url;
         var skipReason = IsAllowed(url, ctx.Job);
@@ -1109,24 +724,33 @@ public class PageCrawler : IPageCrawler
                                            skipReason.Value.Detail
                                           );
                 mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.Value.Reason.ToString());
+                ctx.DryRunAcc?.RecordFilteredSkip();
                 break;
             }
             case true when GitHubRepoScraper.TryParseGitHubUrl(url, out string owner, out string repo):
                 var repoKey = $"{owner}/{repo}";
                 if (ctx.ClonedRepos.TryAdd(repoKey, value: 0))
                 {
-                    mLogger.LogInformation("Delegating to GitHub scraper for {Repo}", repoKey);
-                    await mGitHubScraper.ScrapeRepositoryAsync(owner, repo, ctx.Job, ctx.PageOutput, ctx.Token);
+                    ctx.DryRunAcc?.RecordGitHubRepo(repoKey);
+                    if (ctx.PersistMode == IngestionPersistenceMode.Full)
+                    {
+                        mLogger.LogInformation("Delegating to GitHub scraper for {Repo}", repoKey);
+                        await mGitHubScraper.ScrapeRepositoryAsync(owner, repo, ctx.Job, ctx.PageOutput, ctx.Token);
+                    }
+                    else
+                    {
+                        mLogger.LogInformation("Skipping GitHub scrape for {Repo} (dry-run)", repoKey);
+                    }
                 }
 
                 break;
             default:
-                await ProcessCrawlScopeAsync(entry, ctx, browser);
+                await ProcessCrawlScopeAsync(entry, ctx, page);
                 break;
         }
     }
 
-    private async Task ProcessCrawlScopeAsync(CrawlEntry entry, CrawlContext ctx, IBrowser browser)
+    private async Task ProcessCrawlScopeAsync(CrawlEntry entry, CrawlContext ctx, IPage page)
     {
         string url = entry.Url;
         bool inScope = IsInRootScope(url, ctx.RootScope);
@@ -1155,12 +779,16 @@ public class PageCrawler : IPageCrawler
                                        detail
                                       );
             mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.ToString());
+            ctx.DryRunAcc?.RecordDepthLimitedSkip();
         }
         else
-            await FetchCrawlPageAsync(entry, inScope, ctx, browser);
+            await FetchCrawlPageAsync(entry, inScope, ctx, page);
     }
 
-    private async Task FetchCrawlPageAsync(CrawlEntry entry, bool inScope, CrawlContext ctx, IBrowser browser)
+    private async Task FetchCrawlPageAsync(CrawlEntry entry,
+                                           bool inScope,
+                                           CrawlContext ctx,
+                                           IPage page)
     {
         string url = entry.Url;
         bool fetchSameHost = !inScope && IsSameHost(url, ctx.RootScope);
@@ -1177,17 +805,18 @@ public class PageCrawler : IPageCrawler
 
         using var slot = await limiter.AcquireAsync(ctx.Token);
 
-        var page = await browser.NewPageAsync();
         try
         {
             IResponse? response;
             string fetchUrl;
-            (page, response, fetchUrl) = await FetchWithExtensionRecoveryAsync(url,
-                                                                               page,
-                                                                               browser,
-                                                                               ctx.ExtensionState,
-                                                                               ctx.Token
-                                                                              );
+            int domCount;
+            int loadCount;
+            (response, fetchUrl, domCount, loadCount) = await FetchWithExtensionRecoveryAsync(url,
+                                                                                page,
+                                                                                ctx.ExtensionState,
+                                                                                ctx.Voter,
+                                                                                ctx.Token
+                                                                               );
 
             await DispatchFetchOutcomeAsync(response,
                                             page,
@@ -1195,7 +824,9 @@ public class PageCrawler : IPageCrawler
                                             entry,
                                             ctx,
                                             limiter,
-                                            url
+                                            url,
+                                            domCount,
+                                            loadCount
                                            );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
@@ -1214,11 +845,16 @@ public class PageCrawler : IPageCrawler
                                       exDepth,
                                       ex.Message
                                      );
+            ctx.DryRunAcc?.RecordFetchError(new DryRunFetchError
+                                                {
+                                                    Url = url,
+                                                    HttpStatus = 0,
+                                                    ErrorKind = ex.GetType().Name,
+                                                    Message = ex.Message.Length > ErrorMessageMaxLength
+                                                                  ? ex.Message[..ErrorMessageMaxLength]
+                                                                  : ex.Message
+                                                });
             mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message, url);
-        }
-        finally
-        {
-            await page.CloseAsync();
         }
     }
 
@@ -1228,7 +864,9 @@ public class PageCrawler : IPageCrawler
                                                  CrawlEntry entry,
                                                  CrawlContext ctx,
                                                  HostRateLimiter limiter,
-                                                 string originalUrl)
+                                                 string originalUrl,
+                                                 int domCount,
+                                                 int loadCount)
     {
         if (response == null)
         {
@@ -1246,6 +884,13 @@ public class PageCrawler : IPageCrawler
                                       nullDepth,
                                       NoResponseError
                                      );
+            ctx.DryRunAcc?.RecordFetchError(new DryRunFetchError
+                                                {
+                                                    Url = originalUrl,
+                                                    HttpStatus = 0,
+                                                    ErrorKind = "NoResponse",
+                                                    Message = NoResponseError
+                                                });
             mBroadcaster.RecordError(ctx.AuditCtx.JobId, NoResponseError, originalUrl);
         }
         else
@@ -1256,7 +901,9 @@ public class PageCrawler : IPageCrawler
                                              entry,
                                              ctx,
                                              limiter,
-                                             originalUrl
+                                             originalUrl,
+                                             domCount,
+                                             loadCount
                                             );
         }
     }
@@ -1267,7 +914,9 @@ public class PageCrawler : IPageCrawler
                                                   CrawlEntry entry,
                                                   CrawlContext ctx,
                                                   HostRateLimiter limiter,
-                                                  string originalUrl)
+                                                  string originalUrl,
+                                                  int domCount,
+                                                  int loadCount)
     {
         bool inScope = IsInRootScope(originalUrl, ctx.RootScope);
         bool sameHost = !inScope && IsSameHost(originalUrl, ctx.RootScope);
@@ -1279,7 +928,7 @@ public class PageCrawler : IPageCrawler
         {
             case true when response.Ok:
                 limiter.ReportSuccess();
-                await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx);
+                await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx, domCount, loadCount);
                 break;
             case true when HostRateLimiter.IsRateLimitStatus(response.Status, ctx.Job.AdditionalRateLimitStatusCodes):
             {
@@ -1322,6 +971,13 @@ public class PageCrawler : IPageCrawler
                                           dispatchDepth,
                                           $"HTTP {response.Status}"
                                          );
+                ctx.DryRunAcc?.RecordFetchError(new DryRunFetchError
+                                                    {
+                                                        Url = originalUrl,
+                                                        HttpStatus = response.Status,
+                                                        ErrorKind = $"Http{response.Status}",
+                                                        Message = response.StatusText
+                                                    });
                 mBroadcaster.RecordError(ctx.AuditCtx.JobId, $"HTTP {response.Status}", originalUrl);
                 break;
             }
@@ -1469,8 +1125,11 @@ public class PageCrawler : IPageCrawler
     private async Task CompleteSuccessfulFetchAsync(IPage page,
                                                     string fetchUrl,
                                                     CrawlEntry entry,
-                                                    CrawlContext ctx)
+                                                    CrawlContext ctx,
+                                                    int domCount,
+                                                    int loadCount)
     {
+        var sw = Stopwatch.StartNew();
         string title = await page.TitleAsync();
         await ExpandCollapsibleNavigationAsync(page);
         string content = await ExtractMainContentAsync(page);
@@ -1499,9 +1158,28 @@ public class PageCrawler : IPageCrawler
                                  ParentUrl = entry.ParentUrl
                              };
 
-        await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
+        if (ctx.PersistMode == IngestionPersistenceMode.Full)
+            await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
         int newCount = ctx.IncrementPageCount();
+        long fetchMs = sw.ElapsedMilliseconds;
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);
+
+        ctx.DryRunAcc?.RecordFetchMs(fetchMs);
+
+        bool inScopeFinal = IsInRootScope(fetchUrl, ctx.RootScope);
+        string hostKey = CrawlBudget.BuildHostKey(new Uri(fetchUrl));
+        ctx.DryRunAcc?.RecordTotalPage(hostKey, pageDepth, inScopeFinal);
+
+        ctx.DryRunAcc?.RecordSamplePage(new DryRunPageEntry
+                                            {
+                                                Url = fetchUrl,
+                                                OutOfScopeDepth = pageDepth,
+                                                InScope = inScopeFinal,
+                                                ContentBytes = content.Length,
+                                                LinksFound = links.Count,
+                                                ContentNodesAtDom = domCount,
+                                                ContentNodesAtLoad = loadCount
+                                            });
 
         mAuditWriter.RecordFetched(ctx.AuditCtx, fetchUrl, entry.ParentUrl, SafeGetHost(fetchUrl), pageDepth);
         mBroadcaster.RecordFetch(ctx.AuditCtx.JobId, fetchUrl);
@@ -1517,6 +1195,13 @@ public class PageCrawler : IPageCrawler
                               );
 
         ctx.OnPageFetched?.Invoke(newCount);
+
+        mLogger.LogInformation("Fetched {Url} in {FetchMs}ms ({ContentBytes} bytes, {LinkCount} links)",
+                               fetchUrl,
+                               fetchMs,
+                               content.Length,
+                               links.Count
+                              );
 
         if (ctx.Job.FetchDelayMs > 0)
             await Task.Delay(ctx.Job.FetchDelayMs, ctx.Token);
@@ -1538,27 +1223,45 @@ public class PageCrawler : IPageCrawler
         return result;
     }
 
-    private async Task<IResponse?> NavigateAndPreparePageAsync(IPage page,
-                                                               string url,
-                                                               CancellationToken ct)
+    private async Task<(IResponse? Response, int DomCount, int LoadCount)> NavigateAndPreparePageAsync(
+        IPage page,
+        string url,
+        RenderModeVoter? voter,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(url);
 
         ct.ThrowIfCancellationRequested();
 
-        var result = await page.GotoAsync(url,
-                                          new PageGotoOptions
-                                              {
-                                                  WaitUntil = WaitUntilState.DOMContentLoaded,
-                                                  Timeout = PageTimeoutMs
-                                              }
-                                         );
+        var response = await page.GotoAsync(url,
+                                            new PageGotoOptions
+                                                {
+                                                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                                                    Timeout = PageTimeoutMs
+                                                }
+                                           );
 
-        if (result is { Ok: true })
-            await WaitForPageAndFramesAsync(page, url, ct);
+        int domCount = -1;
+        int loadCount = -1;
 
-        return result;
+        if (response is { Ok: true })
+        {
+            domCount = await MeasureContentNodesAsync(page);
+
+            bool skipLoad = voter is { IsVoteComplete: true, IsLoadWaitNeeded: false };
+            if (!skipLoad)
+            {
+                await WaitForPageAndFramesAsync(page, url, ct);
+                loadCount = await MeasureContentNodesAsync(page);
+            }
+            else
+                loadCount = -1;
+
+            voter?.RecordSample(domCount, loadCount);
+        }
+
+        return (response, domCount, loadCount);
     }
 
     private async Task WaitForPageAndFramesAsync(IPage page,
@@ -1621,6 +1324,24 @@ public class PageCrawler : IPageCrawler
         {
             mLogger.LogDebug(ex, "Failed waiting for {Target} on {Url}", targetDescription, url);
         }
+    }
+
+    private async Task<int> MeasureContentNodesAsync(IPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        int res = -1;
+
+        try
+        {
+            res = await page.MainFrame.EvaluateAsync<int>(smContentNodeScript);
+        }
+        catch(PlaywrightException ex)
+        {
+            mLogger.LogDebug(ex, "Content node measurement failed on {Url}", page.Url);
+        }
+
+        return res;
     }
 
     private static async Task<bool> HasFrameElementsAsync(IPage page)
@@ -2169,20 +1890,21 @@ public class PageCrawler : IPageCrawler
     ///     upfront apply every pre-discovery URL would 404 and never recover.
     ///     Shared by the real crawl and dry-run paths so they can't drift.
     /// </summary>
-    private async Task<(IPage Page, IResponse? Response, string FetchUrl)>
+    private async Task<(IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
         FetchWithExtensionRecoveryAsync(string url,
                                         IPage page,
-                                        IBrowser browser,
                                         SiteExtensionState extensionState,
+                                        RenderModeVoter? voter,
                                         CancellationToken ct)
     {
         string fetchUrl = MaybeApplyKnownExtension(url, extensionState.Value);
-        var response = await NavigateAndPreparePageAsync(page, fetchUrl, ct);
+        var (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, fetchUrl, voter, ct);
 
         if (response is { Status: HttpNotFound } && extensionState.Value == null)
-            (page, response, fetchUrl) = await RetryWithExtensionsAsync(url, page, browser, extensionState, ct);
+            (response, fetchUrl, domCount, loadCount) =
+                await RetryWithExtensionsAsync(url, page, extensionState, voter, ct);
 
-        return (page, response, fetchUrl);
+        return (response, fetchUrl, domCount, loadCount);
     }
 
     /// <summary>
@@ -2224,23 +1946,25 @@ public class PageCrawler : IPageCrawler
     ///     Try each known extension (.html, .htm, .aspx) on a 404 URL.
     ///     Returns updated page, response, and fetch URL.
     /// </summary>
-    private async Task<(IPage Page, IResponse? Response, string FetchUrl)>
+    private async Task<(IResponse? Response, string FetchUrl, int DomCount, int LoadCount)>
         RetryWithExtensionsAsync(string url,
                                  IPage page,
-                                 IBrowser browser,
                                  SiteExtensionState extensionState,
+                                 RenderModeVoter? voter,
                                  CancellationToken ct)
     {
         string fetchUrl = url;
         IResponse? response = null;
+        int domCount = -1;
+        int loadCount = -1;
+
+        mLogger.LogDebug("Extension recovery navigating shared worker page for {Url}; prior page state may leak", url);
 
         foreach(string ext in smExtensionsToStrip)
         {
             string retryUrl = url + ext;
             mLogger.LogDebug("Got 404 for {Url}, retrying with {Ext}: {RetryUrl}", url, ext, retryUrl);
-            await page.CloseAsync();
-            page = await browser.NewPageAsync();
-            response = await NavigateAndPreparePageAsync(page, retryUrl, ct);
+            (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, retryUrl, voter, ct);
 
             if (response is { Ok: true })
             {
@@ -2251,7 +1975,7 @@ public class PageCrawler : IPageCrawler
             }
         }
 
-        return (page, response, fetchUrl);
+        return (response, fetchUrl, domCount, loadCount);
     }
 
     private static string? NormalizeUrl(string url, bool keepExtension = false)
@@ -2324,14 +2048,18 @@ public class PageCrawler : IPageCrawler
         return ComputeHash(canonical);
     }
 
+    private const int ContentNodeMinWords = 7;
+
+    private static readonly string smContentNodeScript =
+        "() => [...document.querySelectorAll('p,li,pre,code,h1,h2,h3,h4,blockquote,td')]" +
+        $".filter(el => {{ const t = el.innerText; return t && t.trim().split(/\\s+/).length > {ContentNodeMinWords}; }}).length";
+
     private const int PageTimeoutMs = 30000;
     private const int LoadStateTimeoutMs = 5000;
     private const int FrameDiscoveryTimeoutMs = 2000;
     private const int FrameDiscoveryPollDelayMs = 100;
     private const int StableFramePollCount = 2;
     private const int CollapsibleExpansionDelayMs = 200;
-    private const int SamplePendingUrlCount = 30;
-    private const int SamplePageLimit = 50;
     private const int RegexTimeoutMs = 100;
     private const int ErrorMessageMaxLength = 200;
     private const int HttpNotFound = 404;

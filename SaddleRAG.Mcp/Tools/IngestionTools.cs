@@ -15,7 +15,6 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
-using SaddleRAG.Ingestion.Crawling;
 
 #endregion
 
@@ -36,7 +35,7 @@ public static class IngestionTools
                  "Use this BEFORE running scrape_docs on a new library to verify " +
                  "the URL patterns are correct and the crawl scope is reasonable."
                 )]
-    public static async Task<string> DryRunScrape(PageCrawler crawler,
+    public static async Task<string> DryRunScrape(IngestionOrchestrator orchestrator,
                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                   IBackgroundJobRunner runner,
                                                   RepositoryFactory repositoryFactory,
@@ -67,7 +66,7 @@ public static class IngestionTools
                                                   string? profile = null,
                                                   CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(crawler);
+        ArgumentNullException.ThrowIfNull(orchestrator);
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(broadcaster);
@@ -117,7 +116,7 @@ public static class IngestionTools
                                             {
                                                 var auditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
                                                 await auditRepo.DeleteByLibraryVersionAsync(library, version, jobCt);
-                                                var report = await crawler.DryRunAsync(job,
+                                                var report = await orchestrator.DryRunAsync(job,
                                                                       library,
                                                                       version,
                                                                       record.Id,

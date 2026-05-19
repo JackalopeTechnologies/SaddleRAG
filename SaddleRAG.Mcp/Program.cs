@@ -258,6 +258,7 @@ builder.Services.AddSingleton<RechunkService>();
 builder.Services.AddSingleton<GitHubRepoScraper>();
 
 builder.Services.AddSingleton<PageCrawler>();
+builder.Services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
 
 builder.Services.AddSingleton<CategoryAwareChunker>();
 
@@ -463,6 +464,9 @@ if (prewarmMode)
     {
         app.Logger.LogError(ex, "[Prewarm] Failed during host start/stop");
 
+        if (StartupFailureReporter.IsPortBindFailure(ex))
+            StartupFailureReporter.WriteBanner(StartupFailureReporter.ExtractPort(ex, monitorPort));
+
         exitCode = 1;
     }
 }
@@ -551,7 +555,15 @@ else
     MonitorSnapshotEndpoints.Map(app);
 
 
-    app.Run();
+    try
+    {
+        app.Run();
+    }
+    catch(Exception ex) when (StartupFailureReporter.IsPortBindFailure(ex))
+    {
+        StartupFailureReporter.WriteBanner(StartupFailureReporter.ExtractPort(ex, monitorPort));
+        exitCode = 1;
+    }
 }
 
 Log.CloseAndFlush();

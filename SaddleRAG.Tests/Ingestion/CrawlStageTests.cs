@@ -49,6 +49,8 @@ public sealed class CrawlStageTests
                                Action<int>? onPageFetched = null,
                                Action<int>? onQueued = null,
                                Action? onFetchError = null,
+                               IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                               DryRunAccumulator? dryRunAcc = null,
                                CancellationToken ct = default)
         {
             var call = new CrawlAsyncCall(job,
@@ -64,6 +66,12 @@ public sealed class CrawlStageTests
             Calls.Add(call);
             return Behavior?.Invoke(call) ?? Task.CompletedTask;
         }
+
+        public Task<PageRecord?> FetchSinglePageAsync(string libraryId,
+                                                      string version,
+                                                      string url,
+                                                      CancellationToken ct = default) =>
+            Task.FromResult<PageRecord?>(null);
     }
 
     private static ScrapeJob NewJob() => new()

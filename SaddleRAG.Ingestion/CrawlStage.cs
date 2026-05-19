@@ -50,7 +50,9 @@ internal sealed class CrawlStage
                                IReadOnlyList<string>? seedUrls,
                                ScrapeJobRecord progress,
                                Action<ScrapeJobRecord>? onProgress,
-                               CancellationTokenSource cts)
+                               CancellationTokenSource cts,
+                               IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                               DryRunAccumulator? dryRunAcc = null)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(output);
@@ -75,6 +77,8 @@ internal sealed class CrawlStage
                                           progress.IncrementErrorCount();
                                           onProgress?.Invoke(progress);
                                       },
+                                      persistMode,
+                                      dryRunAcc,
                                       cts.Token
                                      );
         }

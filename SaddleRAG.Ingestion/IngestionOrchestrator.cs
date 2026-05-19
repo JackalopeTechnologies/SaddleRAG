@@ -28,7 +28,7 @@ namespace SaddleRAG.Ingestion;
 /// </summary>
 public class IngestionOrchestrator
 {
-    public IngestionOrchestrator(PageCrawler crawler,
+    public IngestionOrchestrator(IPageCrawler crawler,
                                  LlmClassifier llmClassifier,
                                  CategoryAwareChunker chunker,
                                  IEmbeddingProvider embeddingProvider,
@@ -74,7 +74,7 @@ public class IngestionOrchestrator
     private readonly ChunkStage mChunkStage;
     private readonly ClassifyStage mClassifyStage;
 
-    private readonly PageCrawler mCrawler;
+    private readonly IPageCrawler mCrawler;
     private readonly CrawlStage mCrawlStage;
     private readonly IEmbeddingProvider mEmbeddingProvider;
     private readonly EmbedStage mEmbedStage;
@@ -209,7 +209,6 @@ public class IngestionOrchestrator
             throw;
         }
 
-        // BM25 build + library metadata upsert + suspect evaluation.
         await mFinalizer.RunAsync(job, progress, ct);
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
@@ -230,6 +229,176 @@ public class IngestionOrchestrator
     private const string SinglePageStatusIndexed = "Indexed";
     private const string SinglePageStatusEmpty = "Empty";
     private const string SinglePageStatusFailed = "Failed";
+
+    #region Dry run
+
+    /// <summary>
+    ///     Run the streaming pipeline for a dry-run scrape. Same crawl,
+    ///     classify, chunk, and embed stages as <see cref="IngestAsync" />,
+    ///     but every Upsert call is skipped (persistence mode DryRun) and
+    ///     the index stage and finalizer are omitted. Returns a
+    ///     <see cref="DryRunReport" /> built from an in-memory accumulator
+    ///     populated by the stages.
+    /// </summary>
+    public async Task<DryRunReport> DryRunAsync(ScrapeJob job,
+                                                string libraryId,
+                                                string version,
+                                                string jobId,
+                                                Action<int, int>? onProgress = null,
+                                                CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+
+        var startTime = DateTime.UtcNow;
+        var acc = new DryRunAccumulator();
+
+        var crawlToClassify = Channel.CreateBounded<PageRecord>(new BoundedChannelOptions(PageChannelCapacity)
+                                                                    { FullMode = BoundedChannelFullMode.Wait }
+                                                               );
+        var classifyToChunk = Channel.CreateBounded<PageRecord>(new BoundedChannelOptions(PageChannelCapacity)
+                                                                    { FullMode = BoundedChannelFullMode.Wait }
+                                                               );
+        var chunkToEmbed = Channel.CreateBounded<DocChunk[]>(new BoundedChannelOptions(ChunkChannelCapacity)
+                                                                 { FullMode = BoundedChannelFullMode.Wait }
+                                                            );
+        var embedToDrain = Channel.CreateBounded<DocChunk[]>(new BoundedChannelOptions(ChunkChannelCapacity)
+                                                                 { FullMode = BoundedChannelFullMode.Wait }
+                                                            );
+
+        var progress = new ScrapeJobRecord
+                           {
+                               Id = jobId,
+                               Job = job
+                           };
+        progress.PipelineState = nameof(ScrapeJobStatus.Running);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        int maxPagesForCallback = job.MaxPages > 0 ? job.MaxPages : 0;
+
+        var crawlTask = mCrawlStage.RunAsync(job,
+                                             crawlToClassify.Writer,
+                                             resumeUrls: null,
+                                             seedUrls: null,
+                                             progress,
+                                             updatedProgress =>
+                                             {
+                                                 onProgress?.Invoke(updatedProgress.PagesFetched,
+                                                                    maxPagesForCallback > 0
+                                                                        ? maxPagesForCallback
+                                                                        : updatedProgress.PagesFetched
+                                                                   );
+                                             },
+                                             cts,
+                                             IngestionPersistenceMode.DryRun,
+                                             acc
+                                            );
+
+        var classifyTask = mClassifyStage.RunAsync(job,
+                                                   crawlToClassify.Reader,
+                                                   classifyToChunk.Writer,
+                                                   progress,
+                                                   onProgress: null,
+                                                   cts,
+                                                   IngestionPersistenceMode.DryRun,
+                                                   acc
+                                                  );
+
+        var chunkTask = mChunkStage.RunAsync(classifyToChunk.Reader,
+                                             chunkToEmbed.Writer,
+                                             progress,
+                                             onProgress: null,
+                                             cts,
+                                             acc
+                                            );
+
+        var embedTask = mEmbedStage.RunAsync(chunkToEmbed.Reader,
+                                             embedToDrain.Writer,
+                                             progress,
+                                             onProgress: null,
+                                             cts,
+                                             IngestionPersistenceMode.DryRun,
+                                             acc
+                                            );
+
+        var drain = new DrainStage();
+        var drainTask = drain.RunAsync(embedToDrain.Reader, cts.Token);
+
+        mBroadcaster.RecordJobStarted(progress.Id, job.LibraryId, job.Version, job.RootUrl ?? string.Empty);
+
+        try
+        {
+            await Task.WhenAll(crawlTask, classifyTask, chunkTask, embedTask, drainTask);
+        }
+        catch(OperationCanceledException)
+        {
+            progress.PipelineState = nameof(ScrapeJobStatus.Cancelled);
+            mBroadcaster.RecordJobCancelled(progress.Id);
+            throw;
+        }
+        catch(Exception ex) when(ex is not OperationCanceledException)
+        {
+            mLogger.LogError(ex, "Dry-run pipeline failed for {LibraryId} v{Version}", libraryId, version);
+            progress.PipelineState = nameof(ScrapeJobStatus.Failed);
+            progress.ErrorMessage = ex.Message;
+            mBroadcaster.RecordJobFailed(progress.Id, ex.Message);
+            throw;
+        }
+
+        var snapshot = acc.Snapshot();
+        var elapsed = DateTime.UtcNow - startTime;
+
+        var result = new DryRunReport
+                         {
+                             TotalPages = snapshot.TotalPages,
+                             InScopePages = snapshot.InScopePages,
+                             OutOfScopePages = snapshot.OutOfScopePages,
+                             DepthLimitedSkips = snapshot.DepthLimitedSkips,
+                             FilteredSkips = snapshot.FilteredSkips,
+                             FetchErrors = snapshot.FetchErrors,
+                             DepthDistribution = snapshot.DepthDistribution,
+                             PagesByHost = snapshot.PagesByHost,
+                             GitHubReposToClone = snapshot.GitHubRepos,
+                             SamplePages = snapshot.SamplePages,
+                             Errors = snapshot.Errors,
+                             ElapsedTime = elapsed,
+                             HitMaxPagesLimit = job.MaxPages > 0 && snapshot.TotalPages >= job.MaxPages,
+                             PagesRemainingInQueue = 0,
+                             SamplePendingUrls = [],
+                             DetectedRenderMode = snapshot.RenderMode,
+                             MedianContentNodeDelta = snapshot.MedianContentNodeDelta,
+                             LoadWaitRecommended = snapshot.LoadWaitRecommended,
+                             CategoryHistogram = snapshot.CategoryHistogram,
+                             StageTimings = snapshot.Timings
+                         };
+
+        progress.PipelineState = nameof(ScrapeJobStatus.Completed);
+        mBroadcaster.RecordJobCompleted(progress.Id, snapshot.TotalPages);
+
+        mLogger.LogInformation("Dry run complete for {LibraryId} v{Version}: {Total} pages in {Elapsed}s — " +
+                               "fetch={FetchMs}ms ({FetchCount} samples) classify={ClassifyMs}ms ({ClassifyCount}) " +
+                               "chunk={ChunkMs}ms ({ChunkCount}) embed={EmbedMs}ms ({EmbedCount} batches)",
+                               libraryId,
+                               version,
+                               snapshot.TotalPages,
+                               elapsed.TotalSeconds,
+                               snapshot.Timings.TotalFetchMs,
+                               snapshot.Timings.FetchSampleCount,
+                               snapshot.Timings.TotalClassifyMs,
+                               snapshot.Timings.ClassifySampleCount,
+                               snapshot.Timings.TotalChunkMs,
+                               snapshot.Timings.ChunkSampleCount,
+                               snapshot.Timings.TotalEmbedMs,
+                               snapshot.Timings.EmbedBatchCount
+                              );
+
+        return result;
+    }
+
+    #endregion
 
     #region Single-page top-up
 

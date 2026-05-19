@@ -7,6 +7,7 @@
 
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+using SaddleRAG.Core.Enums;
 
 namespace SaddleRAG.Core.Models;
 
@@ -111,18 +112,60 @@ public record DryRunReport
 
 
     /// <summary>
-    ///     Pages that were queued but not fetched when the crawl ended
-    ///     (either because MaxPages was hit or the run was cancelled).
-    ///     High value = crawler found lots more to do but got cut off.
+    ///     Reserved for future use. The streaming dry-run path does not currently
+    ///     surface pending-queue depth and always emits 0.
     /// </summary>
 
     public required int PagesRemainingInQueue { get; init; }
 
 
     /// <summary>
-    ///     First N URLs that were in the queue when the run ended.
-    ///     Useful for verifying allow-list patterns are doing what you expect.
+    ///     Reserved for future use. The streaming dry-run path does not currently
+    ///     surface pending URLs and always emits empty.
     /// </summary>
 
     public required IReadOnlyList<string> SamplePendingUrls { get; init; }
+
+
+    /// <summary>
+    ///     Render mode detected by sampling the first pages of the crawl.
+    ///     <see cref="RenderMode.Unknown" /> if fewer than 5 pages were fetched.
+    /// </summary>
+
+    public required RenderMode DetectedRenderMode { get; init; }
+
+
+    /// <summary>
+    ///     Median delta in substantial content nodes (elements with more than
+    ///     7 rendered words) between DOMContentLoaded and LoadState.Load,
+    ///     across the sample pages. -1 when vote is not complete.
+    /// </summary>
+
+    public required int MedianContentNodeDelta { get; init; }
+
+
+    /// <summary>
+    ///     Whether the Load-state wait is recommended for this site.
+    ///     False for SSR sites — skipping it saves 4–5 seconds per page.
+    /// </summary>
+
+    public required bool LoadWaitRecommended { get; init; }
+
+
+    /// <summary>
+    ///     Number of pages per <see cref="DocCategory" /> resolved by the
+    ///     classifier during the dry run. Empty when no pages were
+    ///     classified (e.g. crawl returned zero pages).
+    /// </summary>
+
+    public required IReadOnlyDictionary<DocCategory, int> CategoryHistogram { get; init; }
+
+
+    /// <summary>
+    ///     Per-stage millisecond totals and sample counts observed during
+    ///     the dry run. <see cref="StageTimings.Empty" /> when no pages
+    ///     flowed through a stage.
+    /// </summary>
+
+    public required StageTimings StageTimings { get; init; }
 }

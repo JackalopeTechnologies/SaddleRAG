@@ -7,6 +7,7 @@
 #region Usings
 
 using SaddleRAG.Cli.Handlers;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 
 #endregion
@@ -46,7 +47,12 @@ public sealed class DryrunReportRendererTests
                 ElapsedTime = TimeSpan.FromSeconds(12.5),
                 HitMaxPagesLimit = hitMaxPagesLimit,
                 PagesRemainingInQueue = 0,
-                SamplePendingUrls = samplePendingUrls ?? []
+                SamplePendingUrls = samplePendingUrls ?? [],
+                DetectedRenderMode = RenderMode.Unknown,
+                MedianContentNodeDelta = -1,
+                LoadWaitRecommended = true,
+                CategoryHistogram = new Dictionary<DocCategory, int>(),
+                StageTimings = StageTimings.Empty
             };
 
     private static DryRunFetchError Error(string url, string kind, string message) =>
@@ -161,5 +167,187 @@ public sealed class DryrunReportRendererTests
         var rendered = output.ToString();
         Assert.Contains("Sample URLs still in queue (first 2):", rendered);
         Assert.Contains("https://example/a", rendered);
+    }
+
+    [Fact]
+    public void RenderModeSSRSectionAppearsWhenVoteComplete()
+    {
+        using var sw = new StringWriter();
+        var report = NewReport() with
+                     {
+                         DetectedRenderMode = RenderMode.SSR,
+                         MedianContentNodeDelta = 0,
+                         LoadWaitRecommended = false
+                     };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 200, sw);
+        string output = sw.ToString();
+
+        Assert.Contains("Render mode: SSR", output);
+        Assert.Contains("Load-state wait: not needed", output);
+        Assert.Contains("Median content-node delta: 0", output);
+    }
+
+    [Fact]
+    public void RenderModeSPASectionAppearsWhenVoteComplete()
+    {
+        using var sw = new StringWriter();
+        var report = NewReport() with
+                     {
+                         DetectedRenderMode = RenderMode.SPA,
+                         MedianContentNodeDelta = 28,
+                         LoadWaitRecommended = true
+                     };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 200, sw);
+        string output = sw.ToString();
+
+        Assert.Contains("Render mode: SPA", output);
+        Assert.Contains("Load-state wait: required", output);
+        Assert.Contains("Median content-node delta: 28", output);
+    }
+
+    [Fact]
+    public void RenderModeUnknownSectionAppearsWhenVoteIncomplete()
+    {
+        using var sw = new StringWriter();
+        var report = NewReport();
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 200, sw);
+        string output = sw.ToString();
+
+        Assert.Contains("Render mode: Unknown", output);
+        Assert.Contains("(fewer than 5 pages sampled)", output);
+    }
+
+    [Fact]
+    public void RenderEmitsCategoryHistogramSectionWhenPresent()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             CategoryHistogram = new Dictionary<DocCategory, int>
+                                                     {
+                                                         [DocCategory.HowTo] = 7,
+                                                         [DocCategory.Sample] = 3,
+                                                         [DocCategory.ApiReference] = 12
+                                                     }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Category histogram:", rendered);
+        Assert.Contains("ApiReference: 12", rendered);
+        Assert.Contains("HowTo: 7", rendered);
+        Assert.Contains("Sample: 3", rendered);
+    }
+
+    [Fact]
+    public void RenderEmitsStageTimingsSectionWithAveragesWhenSampleCountsArePositive()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             StageTimings = new StageTimings
+                                                {
+                                                    TotalFetchMs = 1000,
+                                                    FetchSampleCount = 10,
+                                                    TotalClassifyMs = 500,
+                                                    ClassifySampleCount = 10,
+                                                    TotalChunkMs = 50,
+                                                    ChunkSampleCount = 10,
+                                                    TotalEmbedMs = 200,
+                                                    EmbedBatchCount = 2
+                                                }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Stage timings:", rendered);
+        Assert.Contains("Fetch: 1000ms total over 10 samples (avg 100ms)", rendered);
+        Assert.Contains("Classify: 500ms total over 10 samples (avg 50ms)", rendered);
+        Assert.Contains("Chunk: 50ms total over 10 samples (avg 5ms)", rendered);
+        Assert.Contains("Embed: 200ms total over 2 batches (avg 100ms)", rendered);
+    }
+
+    [Fact]
+    public void RenderOmitsCategoryHistogramSectionWhenEmpty()
+    {
+        var output = new StringWriter();
+        var report = NewReport();
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.DoesNotContain("Category histogram:", rendered);
+    }
+
+    [Fact]
+    public void RenderOmitsStageTimingsSectionWhenAllSampleCountsAreZero()
+    {
+        var output = new StringWriter();
+        var report = NewReport();
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.DoesNotContain("Stage timings:", rendered);
+    }
+
+    [Fact]
+    public void RenderStageTimingsAverageUsesIntegerTruncation()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             StageTimings = new StageTimings
+                                                {
+                                                    TotalFetchMs = 999,
+                                                    FetchSampleCount = 10,
+                                                    TotalClassifyMs = 0,
+                                                    ClassifySampleCount = 0,
+                                                    TotalChunkMs = 0,
+                                                    ChunkSampleCount = 0,
+                                                    TotalEmbedMs = 0,
+                                                    EmbedBatchCount = 0
+                                                }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Stage timings:", rendered);
+        Assert.Contains("Fetch: 999ms total over 10 samples (avg 99ms)", rendered);
+    }
+
+    [Fact]
+    public void RenderStageTimingsSectionRendersWhenOnlyFetchHasSamples()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             StageTimings = new StageTimings
+                                                {
+                                                    TotalFetchMs = 500,
+                                                    FetchSampleCount = 5,
+                                                    TotalClassifyMs = 0,
+                                                    ClassifySampleCount = 0,
+                                                    TotalChunkMs = 0,
+                                                    ChunkSampleCount = 0,
+                                                    TotalEmbedMs = 0,
+                                                    EmbedBatchCount = 0
+                                                }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Stage timings:", rendered);
+        Assert.Contains("Fetch: 500ms total over 5 samples (avg 100ms)", rendered);
+        Assert.Contains("Classify: 0ms total over 0 samples (avg 0ms)", rendered);
+        Assert.Contains("Chunk: 0ms total over 0 samples (avg 0ms)", rendered);
+        Assert.Contains("Embed: 0ms total over 0 batches (avg 0ms)", rendered);
     }
 }

@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Diagnostics;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Interfaces;
@@ -49,7 +50,8 @@ internal sealed class ChunkStage
                                ChannelWriter<DocChunk[]> output,
                                ScrapeJobRecord progress,
                                Action<ScrapeJobRecord>? onProgress,
-                               CancellationTokenSource cts)
+                               CancellationTokenSource cts,
+                               DryRunAccumulator? dryRunAcc = null)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(output);
@@ -59,7 +61,7 @@ internal sealed class ChunkStage
         try
         {
             await foreach(var page in input.ReadAllAsync(cts.Token))
-                await ChunkPageAsync(page, output, progress, onProgress, cts.Token);
+                await ChunkPageAsync(page, output, progress, onProgress, cts.Token, dryRunAcc);
         }
         catch(OperationCanceledException)
         {
@@ -83,8 +85,10 @@ internal sealed class ChunkStage
                                       ChannelWriter<DocChunk[]> output,
                                       ScrapeJobRecord progress,
                                       Action<ScrapeJobRecord>? onProgress,
-                                      CancellationToken ct)
+                                      CancellationToken ct,
+                                      DryRunAccumulator? dryRunAcc)
     {
+        var sw = Stopwatch.StartNew();
         try
         {
             var chunks = mChunker.Chunk(page);
@@ -96,10 +100,22 @@ internal sealed class ChunkStage
                 for(var ci = 0; ci < chunks.Count; ci++)
                     mBroadcaster.RecordChunkGenerated(progress.Id);
             }
+
+            long chunkMs = sw.ElapsedMilliseconds;
+            dryRunAcc?.RecordChunked(chunkMs);
+            mLogger.LogInformation("Chunked {Url} in {ChunkMs}ms count={ChunkCount}",
+                                   page.Url,
+                                   chunkMs,
+                                   chunks.Count
+                                  );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogWarning(ex, "Chunking failed for {Url}, skipping page", page.Url);
+            long chunkMs = sw.ElapsedMilliseconds;
+            mLogger.LogWarning(ex,
+                               "Chunking failed for {Url} after {ChunkMs}ms, skipping page",
+                               page.Url,
+                               chunkMs);
             progress.IncrementErrorCount();
         }
     }

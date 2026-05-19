@@ -14,18 +14,16 @@ using SaddleRAG.Core.Models;
 namespace SaddleRAG.Ingestion.Crawling;
 
 /// <summary>
-///     Minimal seam for the streaming-pipeline crawl stage: a single
-///     channel-producing async crawl call. The concrete <see cref="PageCrawler" />
-///     also offers <c>FetchSinglePageAsync</c> and <c>DryRunAsync</c>; those stay
-///     on the concrete type because they are not part of the pipeline contract.
+///     Crawls a documentation site for the ingestion pipeline.
+///     Stream-oriented: each fetched page is written to the supplied
+///     <see cref="ChannelWriter{T}" /> as soon as it is parsed so the
+///     downstream classify / chunk / embed stages can work in parallel
+///     with the crawl. Implementations: <see cref="PageCrawler" /> (live
+///     Playwright crawl). Test doubles substitute for this interface to
+///     stub crawl output in unit tests.
 /// </summary>
-internal interface IPageCrawler
+public interface IPageCrawler
 {
-    /// <summary>
-    ///     Crawl <paramref name="job" />'s root URL, writing each fetched page
-    ///     to <paramref name="output" /> and completing the channel when the
-    ///     crawl finishes naturally.
-    /// </summary>
     Task CrawlAsync(ScrapeJob job,
                     ChannelWriter<PageRecord> output,
                     string jobId = "",
@@ -34,5 +32,17 @@ internal interface IPageCrawler
                     Action<int>? onPageFetched = null,
                     Action<int>? onQueued = null,
                     Action? onFetchError = null,
+                    IngestionPersistenceMode persistMode = IngestionPersistenceMode.Full,
+                    DryRunAccumulator? dryRunAcc = null,
                     CancellationToken ct = default);
+
+    /// <summary>
+    ///     Fetch a single page for an existing (libraryId, version) without
+    ///     starting a full crawl. Used by the single-page top-up path on
+    ///     <see cref="IngestionOrchestrator.IngestSinglePageAsync" />.
+    /// </summary>
+    Task<PageRecord?> FetchSinglePageAsync(string libraryId,
+                                           string version,
+                                           string url,
+                                           CancellationToken ct = default);
 }
