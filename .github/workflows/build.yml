@@ -3,12 +3,13 @@ name: Build
 on:
   push:
     branches: [master]
+    tags: ['v*']
   pull_request:
     branches: [master]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build and upload (e.g. 0.1.7) — a draft release for v{version} must already exist'
+        description: 'Version to build and upload (e.g. 0.1.7). The workflow creates a draft release if one does not exist.'
         required: true
         type: string
 
@@ -107,7 +108,7 @@ jobs:
         # by the Upload MSI artifact step above, so nothing is lost when the
         # upload skips.
         id: release-state
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -119,7 +120,7 @@ jobs:
           Write-Host "Release ${tag}: isDraft=${state}"
 
       - name: Upload MSI to draft release
-        if: github.event_name == 'workflow_dispatch' && steps.release-state.outputs.is_draft != 'false'
+        if: (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && steps.release-state.outputs.is_draft != 'false'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.PackageVersion }}
@@ -220,7 +221,7 @@ jobs:
         # Mirrors build-windows: gate the asset upload on the release being
         # a draft (or missing). See the comment there for the full rationale.
         id: release-state
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -232,7 +233,7 @@ jobs:
       - name: Upload tarball to draft release
         # Both jobs run in parallel; whichever arrives first finds the draft
         # and uploads its artifact; the other appends to it.
-        if: github.event_name == 'workflow_dispatch' && steps.release-state.outputs.is_draft != 'false'
+        if: (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && steps.release-state.outputs.is_draft != 'false'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.PackageVersion }}
