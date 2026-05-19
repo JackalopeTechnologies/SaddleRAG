@@ -25,11 +25,23 @@ public class OllamaBootstrapper
 {
     private static readonly HttpClient smHttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(minutes: 5) };
 
-    // 1-second probe timeout: short enough that 30 retries finish in well
-    // under a minute when Ollama just isn't there (Windows fresh install),
-    // long enough to clear the latency budget of a healthy reachable
-    // sidecar response.
-    private static readonly HttpClient smClient = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 1) };
+    // 15-second probe timeout: a healthy Ollama responds in well under a
+    // second, but a busy one (mid model-load, large response in flight)
+    // can stall for several seconds. The previous 1-second cap was too
+    // tight: bootstrap probes would falsely report unreachable, the
+    // bootstrapper would spawn a second `ollama serve` to try to fix it,
+    // and that duplicate would spin forever logging "bind: address already
+    // in use" while the original was actually fine. Generous probe timeout
+    // + reduced attempt count keeps the bootstrap wall clock similar
+    // (~45s worst case) while eliminating the false-negative path.
+    private static readonly HttpClient smClient = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds: 15) };
+
+    // Set to true the first time LaunchOllamaAsync runs in this process.
+    // Subsequent calls bail out immediately so a probe that briefly fails
+    // partway through bootstrap can't trigger a second `ollama serve` and
+    // leave a duplicate process spamming the log. Process-wide because
+    // OllamaBootstrapper is registered as a singleton.
+    private static int psLaunchAttempted;
 
     public OllamaBootstrapper(IOptions<OllamaSettings> settings,
                               ILogger<OllamaBootstrapper> logger)
@@ -185,12 +197,20 @@ public class OllamaBootstrapper
     private const int PostInstallDelayMs = 3000;
     private const int ServicePollDelayMs = 1000;
     private const int ProgressLogInterval = 10;
-    // Bootstrap-time reachability probe: 30 attempts × 1s = ~30s wall
-    // clock with smClient's 1s HTTP timeout absorbing connection-refused
-    // and DNS-fail fast. Tuned for "Docker sidecar warming up" without
-    // blowing the budget for "Windows fresh install with no Ollama yet."
-    private const int BootstrapReachabilityMaxAttempts = 30;
+    // Bootstrap-time reachability probe: 3 attempts × 15s probe timeout
+    // + 1s delay = ~48s worst-case wall clock when Ollama is genuinely
+    // unreachable. Healthy responses come back in well under 1s so the
+    // normal case is still near-instant. The longer per-probe timeout
+    // (vs. the previous 1s) eliminates the false-negative that triggered
+    // a duplicate `ollama serve` launch when the existing Ollama was
+    // momentarily slow.
+    private const int BootstrapReachabilityMaxAttempts = 3;
     private const int BootstrapReachabilityPollMs = 1000;
+    // Post-launch poll: tighter per-call timeout (2s) because the freshly-
+    // spawned `ollama serve` should bind its socket in well under a second.
+    // If 2s isn't enough, something is wrong with the launch itself and
+    // longer per-attempt waiting won't help.
+    private const int PostLaunchProbeTimeoutSeconds = 2;
 
     private const string OllamaExeNameWindows = "ollama.exe";
     private const string OllamaExeNamePosix = "ollama";
@@ -393,35 +413,53 @@ public class OllamaBootstrapper
 
     private async Task LaunchOllamaAsync(CancellationToken ct)
     {
+        // Atomic single-shot guard: prevents a second `ollama serve` spawn
+        // when the bootstrap probe transiently fails part-way through
+        // startup. Interlocked.Exchange returns the previous value, so a
+        // non-zero result means another caller already won the race and
+        // launched (or is about to launch) the process. The original wedge
+        // we saw was multiple `ollama serve` processes spamming "bind:
+        // address already in use" while the legitimate listener was hung
+        // on its own model-load -- this is the structural fix.
+        bool alreadyAttempted = Interlocked.Exchange(ref psLaunchAttempted, value: 1) != 0;
+        if (alreadyAttempted)
+            mLogger.LogInformation("Skipping Ollama launch -- this process already attempted one this session");
+        else
+            await LaunchOllamaInternalAsync(ct);
+    }
+
+    private async Task LaunchOllamaInternalAsync(CancellationToken ct)
+    {
         mLogger.LogInformation("Ollama not reachable, attempting to start...");
 
         string ollamaPath = FindOllamaExecutable() ?? OllamaCommandName;
 
         try
         {
-            Process.Start(new ProcessStartInfo
-                              {
-                                  FileName = ollamaPath,
-                                  Arguments = "serve",
-                                  UseShellExecute = false,
-                                  CreateNoWindow = true,
-                                  RedirectStandardOutput = true,
-                                  RedirectStandardError = true
-                              }
-                         );
+            var started = Process.Start(new ProcessStartInfo
+                                            {
+                                                FileName = ollamaPath,
+                                                Arguments = "serve",
+                                                UseShellExecute = false,
+                                                CreateNoWindow = true,
+                                                RedirectStandardOutput = true,
+                                                RedirectStandardError = true
+                                            }
+                                       );
 
-            var started = false;
-            for(var i = 0; i < MaxStartWaitSeconds; i++)
+            if (started != null)
+                mLogger.LogInformation("Spawned ollama serve (PID {Pid})", started.Id);
+
+            var bound = false;
+            for(var i = 0; i < MaxStartWaitSeconds && !bound; i++)
             {
                 await Task.Delay(ServicePollDelayMs, ct);
-                if (!started && await IsReachableAsync(ct))
-                {
-                    mLogger.LogInformation("Ollama started successfully");
-                    started = true;
-                }
+                bound = await IsReachableAsync(PostLaunchProbeTimeoutSeconds, ct);
+                if (bound)
+                    mLogger.LogInformation("Ollama started successfully (bound after {Seconds}s)", i + 1);
             }
 
-            if (!started)
+            if (!bound)
             {
                 throw new
                     TimeoutException($"Ollama started but not reachable after {MaxStartWaitSeconds}s at {mSettings.Endpoint}"
@@ -436,6 +474,29 @@ public class OllamaBootstrapper
                                           ex
                                          );
         }
+    }
+
+    /// <summary>
+    ///     Probe the configured endpoint with an explicit per-call timeout
+    ///     in seconds. Used by the post-launch poll which wants tighter
+    ///     per-attempt budgets than the 15s default on smClient.
+    /// </summary>
+    private async Task<bool> IsReachableAsync(int timeoutSeconds, CancellationToken ct)
+    {
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        bool result;
+        try
+        {
+            var response = await smClient.GetAsync(mSettings.Endpoint, probeCts.Token);
+            result = response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            result = false;
+        }
+
+        return result;
     }
 
     private async Task<bool> IsReachableAsync(CancellationToken ct)
