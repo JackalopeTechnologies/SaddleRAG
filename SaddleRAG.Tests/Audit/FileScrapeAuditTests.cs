@@ -51,62 +51,7 @@ public sealed class FileScrapeAuditTests
 
         var auditWriter = new SpyAuditWriter();
         var pageRepo = new NullPageRepository();
-        var gitHubScraper = new GitHubRepoScraper(pageRepo, NullLogger<GitHubRepoScraper>.Instance);
-        var broadcaster = new NullMonitorBroadcaster();
-        var crawler = new PageCrawler(pageRepo,
-                                      gitHubScraper,
-                                      auditWriter,
-                                      broadcaster,
-                                      NullLogger<PageCrawler>.Instance
-                                     );
-
-        var chunkRepo = Substitute.For<IChunkRepository>();
-        var vectorSearch = Substitute.For<IVectorSearchProvider>();
-        var libraryRepo = Substitute.For<ILibraryRepository>();
-        var libraryProfileRepo = Substitute.For<ILibraryProfileRepository>();
-        var libraryIndexRepo = Substitute.For<ILibraryIndexRepository>();
-        var bm25ShardRepo = Substitute.For<IBm25ShardRepository>();
-
-        var embeddingProvider = Substitute.For<IEmbeddingProvider>();
-        embeddingProvider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(),
-                                     Arg.Any<EmbedRole>(),
-                                     Arg.Any<CancellationToken>())
-                         .Returns(call =>
-                                  {
-                                      var texts = call.Arg<IReadOnlyList<string>>();
-                                      var emb = new float[texts.Count][];
-                                      for(var i = 0; i < texts.Count; i++)
-                                          emb[i] = new float[VectorDim];
-                                      return Task.FromResult(emb);
-                                  }
-                                 );
-
-        var ollamaSettings = new OllamaSettings();
-        ollamaSettings.ClassificationModels.Add(new OllamaModelEntry { Name = "test-classifier:latest" });
-        var llmClassifier = new LlmClassifier(Options.Create(ollamaSettings),
-                                              NullLogger<LlmClassifier>.Instance
-                                             );
-
-        var symbolExtractor = new SymbolExtractor();
-        var chunker = new CategoryAwareChunker(symbolExtractor);
-        var suspectDetector = new SuspectDetector();
-
-        var orchestrator = new IngestionOrchestrator(crawler,
-                                                     llmClassifier,
-                                                     chunker,
-                                                     embeddingProvider,
-                                                     vectorSearch,
-                                                     libraryRepo,
-                                                     pageRepo,
-                                                     chunkRepo,
-                                                     libraryProfileRepo,
-                                                     libraryIndexRepo,
-                                                     bm25ShardRepo,
-                                                     suspectDetector,
-                                                     auditWriter,
-                                                     broadcaster,
-                                                     NullLogger<IngestionOrchestrator>.Instance
-                                                    );
+        var orchestrator = BuildOrchestrator(pageRepo, auditWriter);
 
         // AllowedUrlPatterns = [""] — empty-string regex matches every URL, which is the
         // same default the MCP tool applies when the root host is empty (file:// scheme).
@@ -149,7 +94,138 @@ public sealed class FileScrapeAuditTests
         Assert.Single(distinctHosts);
     }
 
+    #endregion
+
+    #region DryRunOverFileUrlDoesNotCallUpsertPageAsync test
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task DryRunOverFileUrlDoesNotCallUpsertPageAsync()
+    {
+        const string LibraryId = "dryrun-persist-gate-test";
+        const string Version = "1.0";
+        const string JobId = "test-job-persist-gate";
+
+        var fixtureRoot = Path.Combine(AppContext.BaseDirectory, "TestData", "FileScrape");
+        Assert.True(Directory.Exists(fixtureRoot),
+                    $"Test fixture directory must be copied to output. Looked for: {fixtureRoot}"
+                   );
+
+        var rootUrl = new Uri(Path.Combine(fixtureRoot, "index.htm")).AbsoluteUri;
+
+        var pageRepo = Substitute.For<IPageRepository>();
+        pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<PageRecord>>([]));
+        pageRepo.GetPageByUrlAsync(Arg.Any<string>(),
+                                   Arg.Any<string>(),
+                                   Arg.Any<string>(),
+                                   Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<PageRecord?>(result: null));
+
+        var auditWriter = new SpyAuditWriter();
+        var orchestrator = BuildOrchestrator(pageRepo, auditWriter);
+
+        var job = new ScrapeJob
+                      {
+                          RootUrl = rootUrl,
+                          LibraryId = LibraryId,
+                          Version = Version,
+                          LibraryHint = "dry-run persistence-mode gating integration test",
+                          AllowedUrlPatterns = [""],
+                          ExcludedUrlPatterns = [],
+                          MaxPages = 0,
+                          FetchDelayMs = 0,
+                          SameHostDepth = 5,
+                          OffSiteDepth = 0
+                      };
+
+        await orchestrator.DryRunAsync(job,
+                                       LibraryId,
+                                       Version,
+                                       JobId,
+                                       onProgress: null,
+                                       ct: TestContext.Current.CancellationToken
+                                      );
+
+        // Sanity check: the real crawl actually fetched pages, so the gate is being
+        // exercised — without this assertion a future no-op crawl would silently
+        // satisfy DidNotReceive and the regression check would lose its teeth.
+        Assert.True(auditWriter.FetchedCalls.Count > 0,
+                    $"Expected the dry-run crawler to fetch at least one page; got {auditWriter.FetchedCalls.Count}."
+                   );
+
+        // The core contract: dry-run mode must never persist pages, no matter
+        // how many the crawler fetches. The PersistMode == Full gate inside
+        // PageCrawler is the single guarantor of this — drop it and this fails.
+        await pageRepo.DidNotReceiveWithAnyArgs()
+                      .UpsertPageAsync(Arg.Any<PageRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
+    #region Orchestrator helper
+
     private const int VectorDim = 4;
+
+    private static IngestionOrchestrator BuildOrchestrator(IPageRepository pageRepo, SpyAuditWriter auditWriter)
+    {
+        var gitHubScraper = new GitHubRepoScraper(pageRepo, NullLogger<GitHubRepoScraper>.Instance);
+        var broadcaster = new NullMonitorBroadcaster();
+        var crawler = new PageCrawler(pageRepo,
+                                      gitHubScraper,
+                                      auditWriter,
+                                      broadcaster,
+                                      NullLogger<PageCrawler>.Instance
+                                     );
+
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        var vectorSearch = Substitute.For<IVectorSearchProvider>();
+        var libraryRepo = Substitute.For<ILibraryRepository>();
+        var libraryProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var libraryIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var bm25ShardRepo = Substitute.For<IBm25ShardRepository>();
+
+        var embeddingProvider = Substitute.For<IEmbeddingProvider>();
+        embeddingProvider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(),
+                                     Arg.Any<EmbedRole>(),
+                                     Arg.Any<CancellationToken>())
+                         .Returns(call =>
+                                  {
+                                      var texts = call.Arg<IReadOnlyList<string>>();
+                                      var emb = new float[texts.Count][];
+                                      for(var i = 0; i < texts.Count; i++)
+                                          emb[i] = new float[VectorDim];
+                                      return Task.FromResult(emb);
+                                  }
+                                 );
+
+        var ollamaSettings = new OllamaSettings();
+        ollamaSettings.ClassificationModels.Add(new OllamaModelEntry { Name = "test-classifier:latest" });
+        var llmClassifier = new LlmClassifier(Options.Create(ollamaSettings),
+                                              NullLogger<LlmClassifier>.Instance
+                                             );
+
+        var symbolExtractor = new SymbolExtractor();
+        var chunker = new CategoryAwareChunker(symbolExtractor);
+        var suspectDetector = new SuspectDetector();
+
+        return new IngestionOrchestrator(crawler,
+                                         llmClassifier,
+                                         chunker,
+                                         embeddingProvider,
+                                         vectorSearch,
+                                         libraryRepo,
+                                         pageRepo,
+                                         chunkRepo,
+                                         libraryProfileRepo,
+                                         libraryIndexRepo,
+                                         bm25ShardRepo,
+                                         suspectDetector,
+                                         auditWriter,
+                                         broadcaster,
+                                         NullLogger<IngestionOrchestrator>.Instance
+                                        );
+    }
 
     #endregion
 

@@ -295,4 +295,59 @@ public sealed class DryrunReportRendererTests
         var rendered = output.ToString();
         Assert.DoesNotContain("Stage timings:", rendered);
     }
+
+    [Fact]
+    public void RenderStageTimingsAverageUsesIntegerTruncation()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             StageTimings = new StageTimings
+                                                {
+                                                    TotalFetchMs = 999,
+                                                    FetchSampleCount = 10,
+                                                    TotalClassifyMs = 0,
+                                                    ClassifySampleCount = 0,
+                                                    TotalChunkMs = 0,
+                                                    ChunkSampleCount = 0,
+                                                    TotalEmbedMs = 0,
+                                                    EmbedBatchCount = 0
+                                                }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Stage timings:", rendered);
+        Assert.Contains("Fetch: 999ms total over 10 samples (avg 99ms)", rendered);
+    }
+
+    [Fact]
+    public void RenderStageTimingsSectionRendersWhenOnlyFetchHasSamples()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             StageTimings = new StageTimings
+                                                {
+                                                    TotalFetchMs = 500,
+                                                    FetchSampleCount = 5,
+                                                    TotalClassifyMs = 0,
+                                                    ClassifySampleCount = 0,
+                                                    TotalChunkMs = 0,
+                                                    ChunkSampleCount = 0,
+                                                    TotalEmbedMs = 0,
+                                                    EmbedBatchCount = 0
+                                                }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("Stage timings:", rendered);
+        Assert.Contains("Fetch: 500ms total over 5 samples (avg 100ms)", rendered);
+        Assert.Contains("Classify: 0ms total over 0 samples (avg 0ms)", rendered);
+        Assert.Contains("Chunk: 0ms total over 0 samples (avg 0ms)", rendered);
+        Assert.Contains("Embed: 0ms total over 0 batches (avg 0ms)", rendered);
+    }
 }
