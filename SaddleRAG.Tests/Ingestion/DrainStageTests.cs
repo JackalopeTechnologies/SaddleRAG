@@ -57,4 +57,19 @@ public sealed class DrainStageTests
         var stage = new DrainStage();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => stage.RunAsync(channel.Reader, cts.Token));
     }
+
+    [Fact]
+    public async Task RunAsyncPropagatesCancellationMidStreamWhenWriterStillOpen()
+    {
+        var channel = Channel.CreateBounded<DocChunk[]>(2);
+        using var cts = new CancellationTokenSource();
+        await channel.Writer.WriteAsync(new[] { NewChunk() }, TestContext.Current.CancellationToken);
+
+        var stage = new DrainStage();
+        var task = stage.RunAsync(channel.Reader, cts.Token);
+
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+    }
 }
