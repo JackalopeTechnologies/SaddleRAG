@@ -328,7 +328,26 @@ public class IngestionOrchestrator
         var drain = new DrainStage();
         var drainTask = drain.RunAsync(embedToDrain.Reader, cts.Token);
 
-        await Task.WhenAll(crawlTask, classifyTask, chunkTask, embedTask, drainTask);
+        mBroadcaster.RecordJobStarted(progress.Id, job.LibraryId, job.Version, job.RootUrl ?? string.Empty);
+
+        try
+        {
+            await Task.WhenAll(crawlTask, classifyTask, chunkTask, embedTask, drainTask);
+        }
+        catch(OperationCanceledException)
+        {
+            progress.PipelineState = nameof(ScrapeJobStatus.Cancelled);
+            mBroadcaster.RecordJobCancelled(progress.Id);
+            throw;
+        }
+        catch(Exception ex) when(ex is not OperationCanceledException)
+        {
+            mLogger.LogError(ex, "Dry-run pipeline failed for {LibraryId} v{Version}", libraryId, version);
+            progress.PipelineState = nameof(ScrapeJobStatus.Failed);
+            progress.ErrorMessage = ex.Message;
+            mBroadcaster.RecordJobFailed(progress.Id, ex.Message);
+            throw;
+        }
 
         var snapshot = acc.Snapshot();
         var elapsed = DateTime.UtcNow - startTime;
@@ -356,6 +375,9 @@ public class IngestionOrchestrator
                              CategoryHistogram = snapshot.CategoryHistogram,
                              StageTimings = snapshot.Timings
                          };
+
+        progress.PipelineState = nameof(ScrapeJobStatus.Completed);
+        mBroadcaster.RecordJobCompleted(progress.Id, snapshot.TotalPages);
 
         mLogger.LogInformation("Dry run complete for {LibraryId} v{Version}: {Total} pages in {Elapsed}s — " +
                                "fetch={FetchMs}ms ({FetchCount} samples) classify={ClassifyMs}ms ({ClassifyCount}) " +
