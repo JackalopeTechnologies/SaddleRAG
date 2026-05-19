@@ -120,7 +120,14 @@ public class LlmClassifier : ILlmClassifier
         return (category, confidence);
     }
 
-    private static (DocCategory Category, float Confidence) ParseClassificationResponse(string responseText)
+    /// <summary>
+    ///     Parse the LLM's raw text into a (Category, Confidence) tuple.
+    ///     Strips ```json fences, attempts a strict JSON parse first, then
+    ///     falls back to substring-matching a category name with a fixed
+    ///     0.5 confidence. Exposed as <c>internal static</c> so tests can
+    ///     lock in the parse contract without standing up an Ollama mock.
+    /// </summary>
+    internal static (DocCategory Category, float Confidence) ParseClassificationResponse(string responseText)
     {
         var cleaned = responseText
                       .Replace(JsonCodeFenceOpen, string.Empty)
@@ -138,7 +145,12 @@ public class LlmClassifier : ILlmClassifier
             if (root.TryGetProperty(CategoryKey, out var catProp))
             {
                 var catString = catProp.GetString() ?? string.Empty;
-                Enum.TryParse(catString, ignoreCase: true, out category);
+                // Preserve the initial Unclassified when the model returns
+                // a category name we don't recognize: Enum.TryParse writes
+                // default(DocCategory) to the out parameter on failure,
+                // which clobbers the initializer above.
+                if (Enum.TryParse<DocCategory>(catString, ignoreCase: true, out var parsedCategory))
+                    category = parsedCategory;
             }
 
             if (root.TryGetProperty(ConfidenceKey, out var confProp))

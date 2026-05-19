@@ -172,8 +172,32 @@ public sealed class McpWarmupService : BackgroundService
                                   );
 
 
-            try
+            stepSw.Restart();
 
+            // Classification model warm is load-bearing: if it fails, the
+            // first reextract_library / dryrun_scrape call will cold-load
+            // mid-pipeline and likely time out. Surface that as a Failed
+            // warmup state via the outer catch so callers (dashboard,
+            // monitor UI) see "Ollama isn't ready" rather than the MCP
+            // optimistically marking itself Completed.
+            try
+            {
+                await bootstrapper.WarmModelsAsync(stoppingToken);
+
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - generate models warm",
+                                       startupSw.Elapsed.TotalSeconds,
+                                       stepSw.ElapsedMilliseconds
+                                      );
+            }
+            catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            {
+                mWarmupState.MarkFailed(PhaseGenerateWarmFailed, ex.Message);
+                mLogger.LogError(ex, "[Warmup] T+{Sec:F1}s - Generate model warm failed", startupSw.Elapsed.TotalSeconds);
+                throw;
+            }
+
+
+            try
             {
                 stepSw.Restart();
 
@@ -184,16 +208,6 @@ public sealed class McpWarmupService : BackgroundService
                                        stepSw.ElapsedMilliseconds,
                                        embeddingProvider.ProviderId,
                                        embeddingProvider.ModelName
-                                      );
-
-
-                stepSw.Restart();
-
-                await bootstrapper.WarmModelsAsync(stoppingToken);
-
-                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - generate models warm",
-                                       startupSw.Elapsed.TotalSeconds,
-                                       stepSw.ElapsedMilliseconds
                                       );
 
 
@@ -500,6 +514,7 @@ public sealed class McpWarmupService : BackgroundService
     }
 
 
+    private const string PhaseGenerateWarmFailed = "Generate model warm failed";
     private const string PhaseStarting = "Starting";
 
     private const string PhaseMongoDbProfilesDiscovered = "MongoDB profiles discovered";

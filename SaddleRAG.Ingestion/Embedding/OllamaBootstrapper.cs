@@ -123,10 +123,16 @@ public class OllamaBootstrapper
     }
 
     /// <summary>
-    ///     Pre-load the configured generate-capable models (classification +
-    ///     reranking) into Ollama VRAM so the first user request doesn't
-    ///     pay a multi-second cold-load penalty. Uses keep_alive=-1 so the
-    ///     models stay resident across idle gaps.
+    ///     Pre-load the configured classification model into Ollama VRAM
+    ///     with <c>keep_alive=-1</c> so the first user request doesn't
+    ///     pay a multi-second cold-load penalty. Sends a classifier-priming
+    ///     prompt and verifies the model returns a "READY" acknowledgement
+    ///     so we have evidence the model actually loaded and can serve --
+    ///     a 200 response with empty body is a degenerate "warm" that
+    ///     would still leave the first real classify call cold-loading.
+    ///     Throws on timeout, HTTP error, or missing/unrecognised response
+    ///     so the warmup host can mark the bootstrap as failed instead of
+    ///     silently flipping the MCP healthy when nothing is actually ready.
     /// </summary>
     public async Task WarmModelsAsync(CancellationToken ct = default)
     {
@@ -145,48 +151,105 @@ public class OllamaBootstrapper
 
         if (distinct.Count > 0)
         {
-            using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
             var endpoint = new Uri(new Uri(mSettings.Endpoint), GenerateEndpointPath);
 
             foreach(string model in distinct)
-            {
-                var sw = Stopwatch.StartNew();
-                try
-                {
-                    var payload = new
-                                      {
-                                          model,
-                                          prompt = WarmupPrompt,
-                                          stream = false,
-                                          keep_alive = KeepAliveForever
-                                      };
-                    var response = await client.PostAsJsonAsync(endpoint, payload, ct);
-                    response.EnsureSuccessStatusCode();
-                    sw.Stop();
-                    mLogger.LogInformation("Warmed {Model} in {Ms}ms", model, sw.ElapsedMilliseconds);
-                }
-                catch(OperationCanceledException ex) when(!ct.IsCancellationRequested)
-                {
-                    sw.Stop();
-                    mLogger.LogWarning(ex,
-                                       "Timed out warming {Model} after {Ms}ms (timeout {TimeoutSeconds}s)",
-                                       model,
-                                       sw.ElapsedMilliseconds,
-                                       timeoutSeconds
-                                      );
-                }
-                catch(Exception ex) when(ex is not OperationCanceledException)
-                {
-                    sw.Stop();
-                    mLogger.LogWarning(ex, "Failed to warm {Model} after {Ms}ms", model, sw.ElapsedMilliseconds);
-                }
-            }
+                await WarmSingleModelAsync(client, endpoint, model, timeoutSeconds, ct);
         }
     }
 
+    /// <summary>
+    ///     Send the classifier-priming warm prompt for one model and verify
+    ///     the model replied with the expected READY acknowledgement.
+    ///     Exposed <c>internal</c> so tests can drive the HTTP path with a
+    ///     stubbed <see cref="HttpClient" /> without spinning up Ollama.
+    /// </summary>
+    internal async Task WarmSingleModelAsync(HttpClient client,
+                                             Uri endpoint,
+                                             string model,
+                                             int timeoutSeconds,
+                                             CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentException.ThrowIfNullOrEmpty(model);
+
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var payload = new
+                              {
+                                  model,
+                                  prompt = WarmupPrompt,
+                                  stream = false,
+                                  keep_alive = KeepAliveForever
+                              };
+            var response = await client.PostAsJsonAsync(endpoint, payload, ct);
+            response.EnsureSuccessStatusCode();
+            var body = await response.Content.ReadAsStringAsync(ct);
+            sw.Stop();
+
+            if (!ResponseContainsExpectedToken(body))
+            {
+                mLogger.LogError("Warm of {Model} returned HTTP 200 but response did not contain '{Token}'. Body: {Body}",
+                                 model,
+                                 ExpectedWarmupToken,
+                                 Truncate(body, maxLength: WarmupBodyLogCap));
+                throw new
+                    InvalidOperationException($"Ollama warm of '{model}' returned an unexpected body. Expected response containing '{ExpectedWarmupToken}'."
+                                             );
+            }
+
+            mLogger.LogInformation("Warmed {Model} in {Ms}ms (response acknowledged)", model, sw.ElapsedMilliseconds);
+        }
+        catch(OperationCanceledException) when(!ct.IsCancellationRequested)
+        {
+            sw.Stop();
+            mLogger.LogError("Timed out warming {Model} after {Ms}ms (timeout {TimeoutSeconds}s)",
+                             model,
+                             sw.ElapsedMilliseconds,
+                             timeoutSeconds
+                            );
+            throw new
+                TimeoutException($"Ollama warm of '{model}' did not complete within {timeoutSeconds}s. Verify only one ollama serve process is running and the model is fully downloaded."
+                                );
+        }
+    }
+
+    private static bool ResponseContainsExpectedToken(string body)
+    {
+        bool res = false;
+        if (!string.IsNullOrEmpty(body))
+            res = body.Contains(ExpectedWarmupToken, StringComparison.OrdinalIgnoreCase);
+        return res;
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        string res = value;
+        if (!string.IsNullOrEmpty(value) && value.Length > maxLength)
+            res = value[..maxLength] + WarmupBodyTruncatedSuffix;
+        return res;
+    }
+
     private const string GenerateEndpointPath = "/api/generate";
-    private const string WarmupPrompt = ".";
+    // Classifier-priming warm prompt. Two jobs:
+    //   1. Force Ollama to actually load + activate the model (a request
+    //      with prompt="." has occasionally been observed to skip token
+    //      generation entirely on some Ollama builds, returning HTTP 200
+    //      against a model that never finished loading -- the warm
+    //      contract is "model is ready to classify on first real call",
+    //      so we need observable token output).
+    //   2. Prime the model on its actual job so the warm pass doubles as
+    //      a sanity check that the model loaded into a usable state.
+    // The expected reply is a single "READY" token; the validator checks
+    // case-insensitively so minor capitalization drift doesn't fail warm.
+    private const string WarmupPrompt =
+        "You are about to be used as a documentation classifier. You will receive documentation pages and assign each to one of these categories: Overview, HowTo, Sample, Code, ApiReference, ChangeLog, Unclassified. To confirm you have loaded and understood, reply with exactly the single word: READY";
+    private const string ExpectedWarmupToken = "READY";
+    private const int WarmupBodyLogCap = 256;
+    private const string WarmupBodyTruncatedSuffix = "...";
     private const int KeepAliveForever = -1;
     private const int MinimumWarmModelTimeoutSeconds = 1;
 

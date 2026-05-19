@@ -146,11 +146,13 @@ public static class HealthTools
                  "before doing anything else."
                 )]
     public static async Task<string> GetDashboardIndex(RepositoryFactory repositoryFactory,
+                                                       McpWarmupState warmupState,
                                                        [Description("Optional database profile name")]
                                                        string? profile = null,
                                                        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(warmupState);
 
         var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
         var jobRepo = repositoryFactory.GetJobRepository(profile);
@@ -198,23 +200,38 @@ public static class HealthTools
 
         int staleRunning = mergedJobs.Count(j => ScrapeJobThresholds.IsStaleRunning(j, staleCutoff));
 
-        object suggested = (libraries.Count == 0, suspectList.Count > 0, staleRunning > 0) switch
+        bool warmupFailed = string.Equals(warmupState.Status, WarmupStatusFailed, StringComparison.OrdinalIgnoreCase);
+
+        object suggested = (warmupFailed, libraries.Count == 0, suspectList.Count > 0, staleRunning > 0) switch
             {
-                (true, var _, var _) => new { tool = (string?) SuggestToolScrape, message = EmptyDbSuggestion },
-                (var _, true, var _) => new
-                                            {
-                                                tool = (string?) SuggestToolCorrectUrl,
-                                                message =
-                                                    $"{suspectList.Count} suspect libraries — review and correct URLs."
-                                            },
-                (var _, var _, true) => new
-                                            {
-                                                tool = (string?) SuggestToolCancelScrape,
-                                                message =
-                                                    $"{staleRunning} jobs have not progressed in over {ScrapeJobThresholds.StaleRunning.TotalHours}h."
-                                            },
+                (true, var _, var _, var _) => new
+                                                   {
+                                                       tool = (string?) null,
+                                                       message =
+                                                           $"Warmup did not complete (phase: {warmupState.CurrentPhase}). Restart Ollama (kill duplicate ollama processes), then restart the MCP server. LastError: {warmupState.LastError ?? "(none)"}"
+                                                   },
+                (var _, true, var _, var _) => new { tool = (string?) SuggestToolScrape, message = EmptyDbSuggestion },
+                (var _, var _, true, var _) => new
+                                                   {
+                                                       tool = (string?) SuggestToolCorrectUrl,
+                                                       message =
+                                                           $"{suspectList.Count} suspect libraries — review and correct URLs."
+                                                   },
+                (var _, var _, var _, true) => new
+                                                   {
+                                                       tool = (string?) SuggestToolCancelScrape,
+                                                       message =
+                                                           $"{staleRunning} jobs have not progressed in over {ScrapeJobThresholds.StaleRunning.TotalHours}h."
+                                                   },
                 var _ => new { tool = (string?) null, message = SuggestMessageHealthy }
             };
+
+        var warmup = new
+                         {
+                             status = warmupState.Status,
+                             currentPhase = warmupState.CurrentPhase,
+                             lastError = warmupState.LastError
+                         };
 
         var response = new
                            {
@@ -223,6 +240,7 @@ public static class HealthTools
                                recentJobs = recentJobsProjection,
                                suspectCount = suspectList.Count,
                                suspectLibraries = suspectList,
+                               warmup,
                                suggestedNextAction = suggested
                            };
         return JsonSerializer.Serialize(response, smJsonOptions);
@@ -256,6 +274,7 @@ public static class HealthTools
     private const string SuggestToolCorrectUrl = "submit_url_correction";
     private const string SuggestToolCancelScrape = "cancel_scrape";
     private const string SuggestMessageHealthy = "All libraries look healthy.";
+    private const string WarmupStatusFailed = "Failed";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }
