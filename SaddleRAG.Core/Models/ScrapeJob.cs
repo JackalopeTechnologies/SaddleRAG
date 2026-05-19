@@ -118,6 +118,21 @@ public record ScrapeJob
     public bool SeedFromStoredPages { get; init; }
 
     /// <summary>
+    ///     Additional URLs to add to the crawl queue alongside
+    ///     <see cref="RootUrl" />. Used for sites whose home page does
+    ///     not link to all sections (e.g., DocFX-style sites where the
+    ///     <c>/api/</c> tree is reachable only through namespace index
+    ///     pages, not from the navigation bar). When non-null, the
+    ///     orchestrator unions these URLs with the seeds derived from
+    ///     <see cref="SeedFromStoredPages" /> and feeds the combined set
+    ///     to <see cref="Crawling.IPageCrawler.CrawlAsync" />. The
+    ///     <see cref="AllowedUrlPatterns" /> filter still applies, so
+    ///     extra seeds outside the allowed scope are dropped at the
+    ///     audit boundary.
+    /// </summary>
+    public IReadOnlyList<string>? SeedUrls { get; init; }
+
+    /// <summary>
     ///     Additional HTTP status codes to treat as rate-limit signals, on top of
     ///     the built-in defaults (429, 503). Use for site-specific soft-limit
     ///     responses: 502 for Infragistics and similar CDNs, 520–522 for

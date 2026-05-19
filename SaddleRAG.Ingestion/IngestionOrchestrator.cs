@@ -102,13 +102,26 @@ public class IngestionOrchestrator
         // extra crawl seeds and re-fetch every one of them."
         var existingPages = await mPageRepository.GetPagesAsync(job.LibraryId, job.Version, ct);
         IReadOnlySet<string>? resumeUrls = null;
-        IReadOnlyList<string>? seedUrls = null;
+        var seedUrls = new List<string>();
 
         if (existingPages.Count > 0 && job.SeedFromStoredPages)
         {
-            seedUrls = existingPages.Select(p => p.Url).ToList();
+            seedUrls.AddRange(existingPages.Select(p => p.Url));
             mLogger.LogInformation("Seed-from-stored-pages mode: {Count} stored URLs will be re-fetched",
                                    seedUrls.Count
+                                  );
+        }
+
+        if (job.SeedUrls is { Count: > 0 })
+        {
+            // Caller-supplied extra seed URLs (e.g., the /api/MathNet.X/index.htm
+            // hub on DocFX-generated sites whose home page does not link into
+            // the API tree). Union with any stored-page seeds so a single
+            // scrape can refresh prior content AND fan out from new hubs.
+            var configuredSeeds = job.SeedUrls.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+            seedUrls.AddRange(configuredSeeds);
+            mLogger.LogInformation("Caller-supplied seed URLs: {Count} added to crawl queue",
+                                   configuredSeeds.Count
                                   );
         }
 
@@ -117,6 +130,8 @@ public class IngestionOrchestrator
             resumeUrls = existingPages.Select(p => p.Url).ToHashSet(StringComparer.OrdinalIgnoreCase);
             mLogger.LogInformation("Resume mode: {Count} existing pages found", resumeUrls.Count);
         }
+
+        IReadOnlyList<string>? effectiveSeedUrls = seedUrls.Count == 0 ? null : seedUrls;
 
         // On force re-scrape, clear existing chunks before pipeline starts
         if (forceClean)
@@ -167,7 +182,7 @@ public class IngestionOrchestrator
         var crawlTask = mCrawlStage.RunAsync(job,
                                              crawlToClassify.Writer,
                                              resumeUrls,
-                                             seedUrls,
+                                             effectiveSeedUrls,
                                              progress,
                                              onProgress,
                                              cts
@@ -279,10 +294,18 @@ public class IngestionOrchestrator
 
         int maxPagesForCallback = job.MaxPages > 0 ? job.MaxPages : 0;
 
+        // Honor caller-supplied seed URLs in the dry-run path too, so a
+        // pre-scrape preview shows what a real scrape would discover with
+        // the same multi-seed config. resumeUrls stays null because
+        // dry-run never persists pages.
+        IReadOnlyList<string>? dryRunSeedUrls = null;
+        if (job.SeedUrls is { Count: > 0 })
+            dryRunSeedUrls = job.SeedUrls.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+
         var crawlTask = mCrawlStage.RunAsync(job,
                                              crawlToClassify.Writer,
                                              resumeUrls: null,
-                                             seedUrls: null,
+                                             seedUrls: dryRunSeedUrls,
                                              progress,
                                              updatedProgress =>
                                              {
