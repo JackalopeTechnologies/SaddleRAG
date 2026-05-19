@@ -18,7 +18,67 @@ permissions:
   packages: write
 
 jobs:
+  prepare-release:
+    # On release triggers (tag push or workflow_dispatch), make sure a draft
+    # release exists BEFORE build-windows / build-linux start uploading
+    # assets. softprops/action-gh-release@v3 will happily create a release
+    # implicitly during upload, but with an empty body — and once that
+    # happens, --generate-notes can't be retroactively applied without
+    # clobbering whatever notes have since been written. Creating the draft
+    # up-front with `gh release create --generate-notes` seeds the body with
+    # the PR / commit history since the previous tag, which the user can
+    # then edit before publishing.
+    #
+    # Idempotent: if the release already exists (e.g. the user manually
+    # curated a draft before pushing the tag), this step leaves the body
+    # alone. The job runs on every trigger but no-ops on PR / push-to-master
+    # so build-windows / build-linux can safely declare `needs: [prepare-release]`
+    # without skipping on non-release triggers.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0"
+          fi
+          if [[ "${VERSION}" == 0.* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          else
+            PRERELEASE_FLAG=""
+          fi
+          echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "PrereleaseFlag=${PRERELEASE_FLAG}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}"
+
+      - name: Create draft release with auto-generated notes
+        # Only acts on release triggers. On PR / master push the job spins
+        # up just long enough to no-op so downstream `needs:` resolves.
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.PackageVersion }}"
+          if gh release view "$TAG" --json id >/dev/null 2>&1; then
+            echo "Release $TAG already exists — leaving body alone."
+          else
+            gh release create "$TAG" \
+              --draft \
+              ${{ steps.version.outputs.PrereleaseFlag }} \
+              --generate-notes \
+              --title "$TAG"
+            echo "Created draft release $TAG with auto-generated notes."
+          fi
+
   build-windows:
+    needs: [prepare-release]
     runs-on: windows-2025-vs2026
 
     steps:
@@ -135,6 +195,7 @@ jobs:
             Stop-Process -Force -ErrorAction SilentlyContinue
 
   build-linux:
+    needs: [prepare-release]
     runs-on: ubuntu-latest
 
     steps:
