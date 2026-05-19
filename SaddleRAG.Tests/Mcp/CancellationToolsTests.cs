@@ -100,6 +100,7 @@ public sealed class CancellationToolsTests
 
     private static JobCancellationService MakeServiceSubstitute() =>
         Substitute.ForPartsOf<JobCancellationService>(Substitute.For<IJobCancellationRegistry>(),
-                                                       Substitute.For<RepositoryFactory>([null])
+                                                       Substitute.For<RepositoryFactory>([null]),
+                                                       Substitute.For<IMonitorBroadcaster>()
                                                       );
 }

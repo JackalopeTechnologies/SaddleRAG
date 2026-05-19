@@ -210,7 +210,8 @@ public sealed class UrlCorrectionToolsTests
 
         var cancellation = Substitute.ForPartsOf<JobCancellationService>(
             Substitute.For<IJobCancellationRegistry>(),
-            factory
+            factory,
+            Substitute.For<IMonitorBroadcaster>()
         );
         cancellation.CancelAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
                     .Returns(CancelScrapeOutcome.Signalled);

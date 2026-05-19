@@ -26,14 +26,19 @@ namespace SaddleRAG.Ingestion;
 /// </summary>
 public class JobCancellationService
 {
-    public JobCancellationService(IJobCancellationRegistry registry, RepositoryFactory repositoryFactory)
+    public JobCancellationService(IJobCancellationRegistry registry,
+                                  RepositoryFactory repositoryFactory,
+                                  IMonitorBroadcaster broadcaster)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(broadcaster);
         mRegistry = registry;
         mRepositoryFactory = repositoryFactory;
+        mBroadcaster = broadcaster;
     }
 
+    private readonly IMonitorBroadcaster mBroadcaster;
     private readonly IJobCancellationRegistry mRegistry;
     private readonly RepositoryFactory mRepositoryFactory;
 
@@ -85,6 +90,16 @@ public class JobCancellationService
         record.CancelledAt = DateTime.UtcNow;
         record.CompletedAt = DateTime.UtcNow;
         await jobRepo.UpsertAsync(record, ct);
+
+        // Notify the in-process broadcaster so the SignalR landing-page
+        // active-jobs list drops this job immediately, instead of waiting
+        // for the pipeline drain (which can run ~10-15s post-cancel) to
+        // hit its own RecordJobCancelled call. Without this, the UI shows
+        // the job as Running with stale stats while the DB row already
+        // says Cancelled -- the staleness the user reported. The runner's
+        // catch block still fires RecordJobCancelled later; that second
+        // call is a no-op because mJobs has already been cleared here.
+        mBroadcaster.RecordJobCancelled(jobId);
 
         var result = signalled ? CancelScrapeOutcome.Signalled : CancelScrapeOutcome.OrphanCleanedUp;
         return result;

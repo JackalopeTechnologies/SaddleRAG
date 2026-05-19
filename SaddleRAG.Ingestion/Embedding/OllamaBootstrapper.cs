@@ -474,6 +474,22 @@ public class OllamaBootstrapper
             await LaunchOllamaAsync(ct);
     }
 
+    /// <summary>
+    ///     Internal test seam: when set, <see cref="LaunchOllamaInternalAsync" />
+    ///     calls this delegate instead of <see cref="Process.Start(ProcessStartInfo)" />.
+    ///     The single-shot-guard test uses this to verify the guard prevents
+    ///     a second spawn without actually launching a real `ollama serve`.
+    ///     Tests reset to null in a finally block.
+    /// </summary>
+    internal static Func<ProcessStartInfo, Process?>? pmProcessStarterOverride;
+
+    /// <summary>
+    ///     Reset the process-wide single-shot launch flag. Tests call this
+    ///     between cases to exercise the guard repeatedly; never invoked in
+    ///     production code.
+    /// </summary>
+    internal static void ResetLaunchGuardForTesting() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
+
     private async Task LaunchOllamaAsync(CancellationToken ct)
     {
         // Atomic single-shot guard: prevents a second `ollama serve` spawn
@@ -499,16 +515,18 @@ public class OllamaBootstrapper
 
         try
         {
-            var started = Process.Start(new ProcessStartInfo
-                                            {
-                                                FileName = ollamaPath,
-                                                Arguments = "serve",
-                                                UseShellExecute = false,
-                                                CreateNoWindow = true,
-                                                RedirectStandardOutput = true,
-                                                RedirectStandardError = true
-                                            }
-                                       );
+            var startInfo = new ProcessStartInfo
+                                {
+                                    FileName = ollamaPath,
+                                    Arguments = "serve",
+                                    UseShellExecute = false,
+                                    CreateNoWindow = true,
+                                    RedirectStandardOutput = true,
+                                    RedirectStandardError = true
+                                };
+            var started = pmProcessStarterOverride != null
+                              ? pmProcessStarterOverride(startInfo)
+                              : Process.Start(startInfo);
 
             if (started != null)
                 mLogger.LogInformation("Spawned ollama serve (PID {Pid})", started.Id);
@@ -544,15 +562,41 @@ public class OllamaBootstrapper
     ///     in seconds. Used by the post-launch poll which wants tighter
     ///     per-attempt budgets than the 15s default on smClient.
     /// </summary>
-    private async Task<bool> IsReachableAsync(int timeoutSeconds, CancellationToken ct)
+    private async Task<bool> IsReachableAsync(int timeoutSeconds, CancellationToken ct) =>
+        await IsReachableAsync(smClient, new Uri(mSettings.Endpoint), timeoutSeconds, ct);
+
+    /// <summary>
+    ///     Pure-static probe helper: GET <paramref name="endpoint" /> through
+    ///     <paramref name="client" /> with a per-call timeout, returning true
+    ///     on HTTP success and false on timeout, transport error, or any
+    ///     other exception. Exposed <c>internal static</c> so tests can drive
+    ///     the probe with a stubbed <see cref="HttpClient" /> without
+    ///     hard-coding network access. External cancellation propagates
+    ///     untouched (the catch only suppresses transport/timeout errors).
+    /// </summary>
+    internal static async Task<bool> IsReachableAsync(HttpClient client,
+                                                      Uri endpoint,
+                                                      int timeoutSeconds,
+                                                      CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(endpoint);
+        if (timeoutSeconds < 1)
+            throw new ArgumentOutOfRangeException(nameof(timeoutSeconds),
+                                                  timeoutSeconds,
+                                                  "timeoutSeconds must be >= 1");
+
         using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         probeCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         bool result;
         try
         {
-            var response = await smClient.GetAsync(mSettings.Endpoint, probeCts.Token);
+            var response = await client.GetAsync(endpoint, probeCts.Token);
             result = response.IsSuccessStatusCode;
+        }
+        catch(OperationCanceledException) when(ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
