@@ -3,12 +3,13 @@ name: Build
 on:
   push:
     branches: [master]
+    tags: ['v*']
   pull_request:
     branches: [master]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build and upload (e.g. 0.1.7) — a draft release for v{version} must already exist'
+        description: 'Version to build and upload (e.g. 0.1.7). The workflow creates a draft release if one does not exist.'
         required: true
         type: string
 
@@ -97,8 +98,29 @@ jobs:
           name: SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}
           path: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
 
+      - name: Check release state
+        # softprops/action-gh-release@v3 always deletes existing same-named
+        # assets before uploading. A published GitHub release rejects asset
+        # deletion ("immutable release"), so re-running the workflow against
+        # an already-published tag fails the upload step. Gate the upload on
+        # the release being a draft (or missing entirely, in which case the
+        # action creates it). The image is still kept as a workflow artifact
+        # by the Upload MSI artifact step above, so nothing is lost when the
+        # upload skips.
+        id: release-state
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "v${{ steps.version.outputs.PackageVersion }}"
+          $state = gh release view $tag --json isDraft --jq .isDraft 2>$null
+          if (-not $state) { $state = "missing" }
+          echo "is_draft=$state" >> $env:GITHUB_OUTPUT
+          Write-Host "Release ${tag}: isDraft=${state}"
+
       - name: Upload MSI to draft release
-        if: github.event_name == 'workflow_dispatch'
+        if: (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && steps.release-state.outputs.is_draft != 'false'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.PackageVersion }}
@@ -195,10 +217,23 @@ jobs:
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
 
+      - name: Check release state
+        # Mirrors build-windows: gate the asset upload on the release being
+        # a draft (or missing). See the comment there for the full rationale.
+        id: release-state
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.PackageVersion }}"
+          STATE=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || echo "missing")
+          echo "is_draft=${STATE}" >> "$GITHUB_OUTPUT"
+          echo "Release ${TAG}: isDraft=${STATE}"
+
       - name: Upload tarball to draft release
         # Both jobs run in parallel; whichever arrives first finds the draft
         # and uploads its artifact; the other appends to it.
-        if: github.event_name == 'workflow_dispatch'
+        if: (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && steps.release-state.outputs.is_draft != 'false'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.PackageVersion }}
@@ -216,20 +251,31 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Determine version
+        # Mirrors the version-detection logic in build-windows / build-linux:
+        # workflow_dispatch supplies the version as an input; a tag push uses
+        # the tag name; anything else (PR / master push) is "0.0.0" and skips
+        # the push paths below.
         id: version
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="0.0.0"
           fi
           echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to ghcr.io
-        if: startsWith(github.ref, 'refs/tags/v')
+        # Push paths require ghcr credentials. Fire on workflow_dispatch
+        # (the release path that also populates the draft with MSI/tarball)
+        # or on a tag push, so a single dispatch run produces every release
+        # artifact — MSI, tarball, and CPU/CUDA images — in one shot.
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -237,7 +283,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build CPU image (PR/push — no push)
-        if: "!startsWith(github.ref, 'refs/tags/v')"
+        if: github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -245,7 +291,7 @@ jobs:
           tags: ghcr.io/jackalopetechnologies/saddlerag:dev
 
       - name: Build CUDA image (PR/push — no push)
-        if: "!startsWith(github.ref, 'refs/tags/v')"
+        if: github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -253,8 +299,8 @@ jobs:
           push: false
           tags: ghcr.io/jackalopetechnologies/saddlerag:dev-cuda
 
-      - name: Build and push CPU image (tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Build and push CPU image (release)
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -265,8 +311,8 @@ jobs:
             ghcr.io/jackalopetechnologies/saddlerag:latest
             ghcr.io/jackalopetechnologies/saddlerag:cpu
 
-      - name: Build and push CUDA image (tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Build and push CUDA image (release)
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v7
         with:
           context: .
