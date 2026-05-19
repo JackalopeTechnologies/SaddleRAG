@@ -41,21 +41,22 @@ public class ScrapeJobRunner : IScrapeJobQueue
                            ILibraryRepository libraryRepository,
                            ILogger<ScrapeJobRunner> logger,
                            RepositoryFactory repositoryFactory,
+                           IJobCancellationRegistry cancellationRegistry,
                            IHostApplicationLifetime lifetime)
     {
+        ArgumentNullException.ThrowIfNull(cancellationRegistry);
         mOrchestrator = orchestrator;
         mChunkRepository = chunkRepository;
         mVectorSearch = vectorSearch;
         mLibraryRepository = libraryRepository;
         mLogger = logger;
         mRepositoryFactory = repositoryFactory;
+        mCancellationRegistry = cancellationRegistry;
         mAppStoppingToken = lifetime.ApplicationStopping;
     }
 
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> mActiveJobCts =
-        new ConcurrentDictionary<string, CancellationTokenSource>();
-
     private readonly CancellationToken mAppStoppingToken;
+    private readonly IJobCancellationRegistry mCancellationRegistry;
     private readonly IChunkRepository mChunkRepository;
     private readonly ILibraryRepository mLibraryRepository;
     private readonly ILogger<ScrapeJobRunner> mLogger;
@@ -110,7 +111,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
                                   );
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
-            mActiveJobCts[jobRecord.Id] = cts;
+            mCancellationRegistry.Register(jobRecord.Id, cts);
 
             await mOrchestrator.IngestAsync(jobRecord.Job,
                                             jobRecord.Profile,
@@ -158,7 +159,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
         {
             if (cts != null)
             {
-                mActiveJobCts.TryRemove(jobRecord.Id, out var _);
+                mCancellationRegistry.Unregister(jobRecord.Id);
                 cts.Dispose();
             }
 
@@ -239,49 +240,6 @@ public class ScrapeJobRunner : IScrapeJobQueue
                                profile ?? "(default)",
                                libraries.Count
                               );
-    }
-
-    /// <summary>
-    ///     Cancel an in-flight or orphaned scrape job. Returns a
-    ///     <see cref="CancelScrapeOutcome" /> the caller can map to a
-    ///     user-facing message. If an active runner exists the CTS is
-    ///     signalled; if the process was restarted and the job is
-    ///     stranded in Running state the DB row is updated directly.
-    /// </summary>
-    public virtual async Task<CancelScrapeOutcome> CancelAsync(string jobId, CancellationToken ct = default)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(jobId);
-
-        var jobRepo = mRepositoryFactory.GetJobRepository(profile: null);
-        var record = await jobRepo.GetAsync(jobId, ct);
-
-        CancelScrapeOutcome result;
-        switch(record)
-        {
-            case null:
-                result = CancelScrapeOutcome.NotFound;
-                break;
-            case { Status: JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled }:
-                result = CancelScrapeOutcome.AlreadyTerminal;
-                break;
-            default:
-                if (mActiveJobCts.TryGetValue(jobId, out var cts))
-                {
-                    await cts.CancelAsync();
-                    result = CancelScrapeOutcome.Signalled;
-                }
-                else
-                    result = CancelScrapeOutcome.OrphanCleanedUp;
-
-                record.Status = JobStatus.Cancelled;
-                record.PipelineState = nameof(JobStatus.Cancelled);
-                record.CancelledAt = DateTime.UtcNow;
-                record.CompletedAt = DateTime.UtcNow;
-                await jobRepo.UpsertAsync(record, ct);
-                break;
-        }
-
-        return result;
     }
 
     private static JobRecord ProjectToUnified(ScrapeJobRecord source) => new()

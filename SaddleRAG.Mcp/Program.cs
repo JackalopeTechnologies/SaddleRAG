@@ -237,6 +237,12 @@ builder.Services.AddSingleton<SymbolExtractor>();
 builder.Services.AddSingleton<RescrubService>();
 builder.Services.AddSingleton<RescrubJobRunner>();
 
+// Shared cancellation registry — every cancellable job runner registers its
+// per-job CTS here so cancel_job (and the monitor API) can signal it without
+// knowing which runner owns the job.
+builder.Services.AddSingleton<IJobCancellationRegistry, JobCancellationRegistry>();
+builder.Services.AddSingleton<JobCancellationService>();
+
 // Reembed service and background job runner (consumed by reembed_library MCP tool)
 builder.Services.AddSingleton<ReembedService>();
 builder.Services.AddSingleton<ReembedJobRunner>();

@@ -17,28 +17,36 @@ using SaddleRAG.Ingestion;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tool for cancelling an in-flight scrape job.
+///     MCP tool for cancelling any in-flight cancellable job. Scrape,
+///     dry-run, rechunk, reembed, and reextract jobs cooperatively
+///     observe cancellation. Atomic mutations (renames, deletes,
+///     dependency indexing, URL corrections, cleanup jobs) cannot be
+///     cancelled — the tool returns <c>NotCancellable</c> for those.
 /// </summary>
 [McpServerToolType]
 public static class CancellationTools
 {
-    [McpServerTool(Name = "cancel_scrape")]
-    [Description("Cancel a running scrape job. Signals the pipeline cancellation token " +
-                 "for active jobs, or marks the DB row Cancelled directly for orphaned " +
-                 "jobs (process restarted while job was Running). No-op for jobs already " +
-                 "Completed/Failed/Cancelled. Partial results are kept — call delete_version " +
-                 "to clear them, or submit_url_correction if the cancel was triggered by a wrong " +
-                 "URL (that tool clears partial data and re-queues with a corrected URL in one step)."
+    [McpServerTool(Name = "cancel_job")]
+    [Description("Cancel a running job. Signals the pipeline cancellation token for active scrape, " +
+                 "dryrun_scrape, rechunk, reembed, or reextract jobs; marks the DB row Cancelled " +
+                 "directly for jobs orphaned by a process restart. Refuses (NotCancellable) for " +
+                 "atomic mutations (renames, deletes, dependency indexing, URL corrections, cleanup " +
+                 "jobs) — those must run to completion. No-op for jobs already Completed/Failed/Cancelled. " +
+                 "Partial results are kept on cancel — call delete_version to clear them, or " +
+                 "submit_url_correction if the cancel was triggered by a wrong URL (that tool clears " +
+                 "partial data and re-queues with a corrected URL in one step)."
                 )]
-    public static async Task<string> CancelScrape(ScrapeJobRunner runner,
-                                                  [Description("Job id from list_scrape_jobs or get_scrape_status")]
-                                                  string jobId,
-                                                  CancellationToken ct = default)
+    public static async Task<string> CancelJob(JobCancellationService cancellation,
+                                               [Description("Job id from list_scrape_jobs or get_*_status")]
+                                               string jobId,
+                                               [Description("Optional database profile name")]
+                                               string? profile = null,
+                                               CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(cancellation);
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
-        var outcome = await runner.CancelAsync(jobId, ct);
+        var outcome = await cancellation.CancelAsync(jobId, profile, ct);
 
         var response = new
                            {
@@ -50,6 +58,7 @@ public static class CancellationTools
                                        CancelScrapeOutcome.OrphanCleanedUp => OrphanCleanedUpMessage,
                                        CancelScrapeOutcome.AlreadyTerminal => AlreadyTerminalMessage,
                                        CancelScrapeOutcome.NotFound => NotFoundMessage,
+                                       CancelScrapeOutcome.NotCancellable => NotCancellableMessage,
                                        var _ => UnknownOutcomeMessage
                                    }
                            };
@@ -60,7 +69,8 @@ public static class CancellationTools
     private const string SignalledMessage = "Pipeline cancellation signalled. Job will transition to Cancelled.";
     private const string OrphanCleanedUpMessage = "Job had no active runner; DB row marked Cancelled directly.";
     private const string AlreadyTerminalMessage = "Job is already Completed, Failed, or Cancelled. No action taken.";
-    private const string NotFoundMessage = "No scrape job found with that id.";
+    private const string NotFoundMessage = "No job found with that id.";
+    private const string NotCancellableMessage = "Job type does not support cancellation. Atomic mutations (renames, deletes, dependency indexing, URL corrections, cleanup jobs) must run to completion to keep the database consistent.";
     private const string UnknownOutcomeMessage = "Unknown outcome.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };

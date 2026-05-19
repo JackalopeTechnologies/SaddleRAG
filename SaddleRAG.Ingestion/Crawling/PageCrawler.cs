@@ -485,7 +485,7 @@ public class PageCrawler : IPageCrawler
     private async Task RunCrawlWorkerAsync(CrawlContext ctx, IPage page)
     {
         var keepGoing = true;
-        while (keepGoing)
+        while (keepGoing && !ctx.Token.IsCancellationRequested)
             keepGoing = await TryProcessNextAsync(ctx, page);
     }
 
@@ -684,7 +684,7 @@ public class PageCrawler : IPageCrawler
                 mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.AlreadyVisited.ToString());
             }
 
-            if (firstVisit)
+            if (firstVisit && !ctx.Token.IsCancellationRequested)
                 await ProcessCrawlEntryAsync(entry, ctx, page);
         }
         catch(Exception ex) when(ex is not OperationCanceledException)

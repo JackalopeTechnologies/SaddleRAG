@@ -87,6 +87,7 @@ public static class BackgroundJobTools
                                    job.ErrorMessage,
                                    Result = parsedResult,
                                    BoundaryHint = boundaryHint,
+                                   IsCancellable = job.JobType.IsCancellable(),
                                    job.CreatedAt,
                                    job.StartedAt,
                                    job.CompletedAt,
@@ -162,6 +163,7 @@ public static class BackgroundJobTools
                                              j.ItemsProcessed,
                                              j.ItemsTotal,
                                              j.ItemsLabel,
+                                             IsCancellable = j.JobType.IsCancellable(),
                                              j.CreatedAt,
                                              j.CompletedAt
                                          }

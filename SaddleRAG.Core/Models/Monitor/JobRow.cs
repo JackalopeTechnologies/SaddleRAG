@@ -39,4 +39,11 @@ public sealed record JobRow
 
     public TimeSpan? Duration =>
         StartedAt is null ? null : (CompletedAt ?? DateTime.UtcNow) - StartedAt.Value;
+
+    /// <summary>
+    ///     Whether <see cref="Type" /> supports cooperative cancellation via
+    ///     <c>cancel_job</c>. Surfaced so the monitor UI can hide the cancel
+    ///     button for atomic mutations (deletes, renames, cleanups, etc).
+    /// </summary>
+    public bool IsCancellable => Type.IsCancellable();
 }

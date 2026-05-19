@@ -38,21 +38,25 @@ public class BackgroundJobRunner : IBackgroundJobRunner
 {
     public BackgroundJobRunner(RepositoryFactory repositoryFactory,
                                IMonitorBroadcaster broadcaster,
+                               IJobCancellationRegistry cancellationRegistry,
                                IHostApplicationLifetime lifetime,
                                ILogger<BackgroundJobRunner> logger)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(cancellationRegistry);
         ArgumentNullException.ThrowIfNull(lifetime);
         ArgumentNullException.ThrowIfNull(logger);
         mRepositoryFactory = repositoryFactory;
         mBroadcaster = broadcaster;
+        mCancellationRegistry = cancellationRegistry;
         mAppStoppingToken = lifetime.ApplicationStopping;
         mLogger = logger;
     }
 
     private readonly CancellationToken mAppStoppingToken;
     private readonly IMonitorBroadcaster mBroadcaster;
+    private readonly IJobCancellationRegistry mCancellationRegistry;
     private readonly ILogger<BackgroundJobRunner> mLogger;
     private readonly RepositoryFactory mRepositoryFactory;
 
@@ -102,9 +106,21 @@ public class BackgroundJobRunner : IBackgroundJobRunner
 
         Action<int, int> onProgress = (processed, total) => ProgressTick(jobRecord, jobRepo, processed, total);
 
+        var jobType = LegacyJobTypeToEnum(jobRecord.JobType);
+        CancellationTokenSource? cts = null;
+        CancellationToken executeToken;
+        if (jobType.IsCancellable())
+        {
+            cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
+            mCancellationRegistry.Register(jobRecord.Id, cts);
+            executeToken = cts.Token;
+        }
+        else
+            executeToken = mAppStoppingToken;
+
         try
         {
-            await execute(jobRecord, onProgress, mAppStoppingToken);
+            await execute(jobRecord, onProgress, executeToken);
             await MarkCompletedAsync(jobRecord, jobRepo);
         }
         catch(OperationCanceledException)
@@ -114,6 +130,14 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         catch(Exception ex)
         {
             await MarkFailedAsync(jobRecord, jobRepo, ex);
+        }
+        finally
+        {
+            if (cts != null)
+            {
+                mCancellationRegistry.Unregister(jobRecord.Id);
+                cts.Dispose();
+            }
         }
     }
 

@@ -35,23 +35,27 @@ public class ReembedJobRunner
     public ReembedJobRunner(ReembedService service,
                             RepositoryFactory repositoryFactory,
                             IMonitorBroadcaster broadcaster,
+                            IJobCancellationRegistry cancellationRegistry,
                             IHostApplicationLifetime lifetime,
                             ILogger<ReembedJobRunner> logger)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(cancellationRegistry);
         ArgumentNullException.ThrowIfNull(lifetime);
         ArgumentNullException.ThrowIfNull(logger);
         mService = service;
         mRepositoryFactory = repositoryFactory;
         mBroadcaster = broadcaster;
+        mCancellationRegistry = cancellationRegistry;
         mAppStoppingToken = lifetime.ApplicationStopping;
         mLogger = logger;
     }
 
     private readonly CancellationToken mAppStoppingToken;
     private readonly IMonitorBroadcaster mBroadcaster;
+    private readonly IJobCancellationRegistry mCancellationRegistry;
     private readonly ILogger<ReembedJobRunner> mLogger;
     private readonly RepositoryFactory mRepositoryFactory;
     private readonly ReembedService mService;
@@ -112,9 +116,12 @@ public class ReembedJobRunner
                                jobRecord.Version
                               );
 
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
+        mCancellationRegistry.Register(jobRecord.Id, cts);
+
         try
         {
-            await ExecuteReembedAsync(jobRecord, jobRepo);
+            await ExecuteReembedAsync(jobRecord, jobRepo, cts.Token);
         }
         catch(OperationCanceledException)
         {
@@ -124,9 +131,13 @@ public class ReembedJobRunner
         {
             await MarkFailedAsync(jobRecord, jobRepo, ex);
         }
+        finally
+        {
+            mCancellationRegistry.Unregister(jobRecord.Id);
+        }
     }
 
-    private async Task ExecuteReembedAsync(JobRecord jobRecord, IJobRepository jobRepo)
+    private async Task ExecuteReembedAsync(JobRecord jobRecord, IJobRepository jobRepo, CancellationToken ct)
     {
         var chunkRepo = mRepositoryFactory.GetChunkRepository(jobRecord.Profile);
         var libraryRepo = mRepositoryFactory.GetLibraryRepository(jobRecord.Profile);
@@ -139,7 +150,7 @@ public class ReembedJobRunner
                                                  jobRecord.Version ?? string.Empty,
                                                  options,
                                                  (processed, total) => ProgressTick(jobRecord, jobRepo, processed, total),
-                                                 mAppStoppingToken
+                                                 ct
                                                 );
 
         jobRecord.Status = JobStatus.Completed;
