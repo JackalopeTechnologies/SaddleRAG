@@ -89,11 +89,9 @@ internal sealed class ChunkStage
                                       DryRunAccumulator? dryRunAcc)
     {
         var sw = Stopwatch.StartNew();
-        var chunkCount = 0;
         try
         {
             var chunks = mChunker.Chunk(page);
-            chunkCount = chunks.Count;
             if (chunks.Count > 0)
             {
                 await output.WriteAsync(chunks.ToArray(), ct);
@@ -102,19 +100,23 @@ internal sealed class ChunkStage
                 for(var ci = 0; ci < chunks.Count; ci++)
                     mBroadcaster.RecordChunkGenerated(progress.Id);
             }
+
+            long chunkMs = sw.ElapsedMilliseconds;
+            dryRunAcc?.RecordChunked(chunkMs);
+            mLogger.LogInformation("Chunked {Url} in {ChunkMs}ms count={ChunkCount}",
+                                   page.Url,
+                                   chunkMs,
+                                   chunks.Count
+                                  );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogWarning(ex, "Chunking failed for {Url}, skipping page", page.Url);
+            long chunkMs = sw.ElapsedMilliseconds;
+            mLogger.LogWarning(ex,
+                               "Chunking failed for {Url} after {ChunkMs}ms, skipping page",
+                               page.Url,
+                               chunkMs);
             progress.IncrementErrorCount();
         }
-
-        long chunkMs = sw.ElapsedMilliseconds;
-        dryRunAcc?.RecordChunked(chunkMs);
-        mLogger.LogInformation("Chunked {Url} in {ChunkMs}ms count={ChunkCount}",
-                               page.Url,
-                               chunkMs,
-                               chunkCount
-                              );
     }
 }

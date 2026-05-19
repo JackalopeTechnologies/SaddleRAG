@@ -123,11 +123,9 @@ internal sealed class ClassifyStage
     {
         var sw = Stopwatch.StartNew();
         PageRecord result;
-        var category = DocCategory.Unclassified;
-        var confidence = 0f;
         try
         {
-            (category, confidence) = await mLlmClassifier.ClassifyAsync(page, libraryHint);
+            (var category, float confidence) = await mLlmClassifier.ClassifyAsync(page, libraryHint);
             if (category != DocCategory.Unclassified && confidence > 0)
             {
                 result = page with { Category = category };
@@ -136,22 +134,26 @@ internal sealed class ClassifyStage
             }
             else
                 result = page;
+
+            long classifyMs = sw.ElapsedMilliseconds;
+            dryRunAcc?.RecordClassified(result.Category, classifyMs);
+            mLogger.LogInformation("Classified {Url} in {ClassifyMs}ms category={Category} confidence={Confidence:F2}",
+                                   page.Url,
+                                   classifyMs,
+                                   category,
+                                   confidence
+                                  );
         }
         catch(Exception ex)
         {
-            mLogger.LogWarning(ex, "LLM classification failed for {Url}, passing as Unclassified", page.Url);
+            long classifyMs = sw.ElapsedMilliseconds;
+            mLogger.LogWarning(ex,
+                               "LLM classification failed for {Url} after {ClassifyMs}ms, passing as Unclassified",
+                               page.Url,
+                               classifyMs);
             onError?.Invoke();
             result = page;
         }
-
-        long classifyMs = sw.ElapsedMilliseconds;
-        dryRunAcc?.RecordClassified(result.Category, classifyMs);
-        mLogger.LogInformation("Classified {Url} in {ClassifyMs}ms category={Category} confidence={Confidence:F2}",
-                               page.Url,
-                               classifyMs,
-                               category,
-                               confidence
-                              );
 
         return result;
     }
