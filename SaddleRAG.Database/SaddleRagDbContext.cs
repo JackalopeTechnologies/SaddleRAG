@@ -108,6 +108,14 @@ public class SaddleRagDbContext
     public IGridFSBucket Bm25Bucket =>
         new GridFSBucket(mDatabase, new GridFSBucketOptions { BucketName = Bm25BucketName });
 
+    /// <summary>
+    ///     Underlying <see cref="IMongoDatabase" />. Exposed for maintenance
+    ///     operations (e.g. <c>compact_collections</c>) that need to issue
+    ///     admin commands or enumerate collections — repository getters
+    ///     remain the right entry point for typed CRUD.
+    /// </summary>
+    public IMongoDatabase Database => mDatabase;
+
     private readonly IMongoDatabase mDatabase;
 
     /// <summary>
