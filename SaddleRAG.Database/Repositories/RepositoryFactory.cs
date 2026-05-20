@@ -6,6 +6,7 @@
 
 #region Usings
 
+using MongoDB.Driver;
 using SaddleRAG.Core.Interfaces;
 
 #endregion
@@ -132,6 +133,19 @@ public class RepositoryFactory
     {
         var context = mContextFactory.GetForProfile(profile);
         var result = new JobRepository(context);
+        return result;
+    }
+
+    /// <summary>
+    ///     Get the raw <see cref="IMongoDatabase" /> for the specified
+    ///     profile. Used by maintenance tools that issue admin commands
+    ///     (e.g. <c>compact</c>) or enumerate collection stats. Typed CRUD
+    ///     callers should prefer the repository getters above.
+    /// </summary>
+    public virtual IMongoDatabase GetDatabase(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = context.Database;
         return result;
     }
 }
