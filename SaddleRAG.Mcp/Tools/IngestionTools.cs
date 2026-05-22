@@ -81,10 +81,11 @@ public static class IngestionTools
                                                               )]
                                                   string? waitForSelector = null,
                                                   [Description("Extra milliseconds to wait after NetworkIdle for slow-hydrating " +
-                                                               "SPAs. Added on top of the built-in 300ms settle. 0 = no extra " +
-                                                               "wait. Only effective once the SPA navigator is active."
+                                                               "SPAs. Added on top of the built-in 300ms settle. Omit (null) " +
+                                                               "for the default of no extra wait; pass 0 to explicitly disable. " +
+                                                               "Only effective once the SPA navigator is active."
                                                               )]
-                                                  int spaWaitMs = 0,
+                                                  int? spaWaitMs = null,
                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(orchestrator);
@@ -111,7 +112,7 @@ public static class IngestionTools
                           SameHostDepth = sameHostDepth,
                           OffSiteDepth = offSiteDepth,
                           WaitForSelector = waitForSelector,
-                          SpaWaitMs = spaWaitMs
+                          SpaWaitMs = spaWaitMs ?? 0
                       };
 
         var inputJson = JsonSerializer.Serialize(new

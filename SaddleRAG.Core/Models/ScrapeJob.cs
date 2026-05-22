@@ -142,12 +142,15 @@ public record ScrapeJob
 
     /// <summary>
     ///     CSS selector that must resolve in the rendered DOM before content
-    ///     extraction. When non-null, the crawler bypasses the 3-page SPA
-    ///     auto-detection window and forces SPA navigation (NetworkIdle +
-    ///     MutationObserver-quiet wait + selector wait) on every page from
-    ///     page 1. The selector is also tried first by the content extractor.
-    ///     Use for known SPA documentation sites (e.g. <c>.mud-main-content</c>
-    ///     for MudBlazor). Null means "auto-detect via shell sniffing".
+    ///     extraction. When non-null, page 1 is still fetched with the SSR
+    ///     navigator, escalation fires after that observation, and the URL
+    ///     is requeued for re-fetch under the SPA navigator. Subsequent
+    ///     fetches use the SPA navigator (NetworkIdle + 300 ms settle +
+    ///     optional <see cref="SpaWaitMs" /> + selector wait) and the
+    ///     selector is also tried first by the content extractor.
+    ///     Use for known SPA documentation sites (e.g.
+    ///     <c>.mud-main-content</c> for MudBlazor). Null means "auto-detect
+    ///     via shell sniffing on the first 3 pages".
     /// </summary>
     public string? WaitForSelector { get; init; }
 

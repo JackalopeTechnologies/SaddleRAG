@@ -64,8 +64,12 @@ public sealed class SpaPageNavigator : IPageNavigator
                                                 }
                                            );
 
+        int domCount = -1;
+
         if (response is { Ok: true })
         {
+            domCount = await PageMetrics.MeasureContentNodesAsync(page, mLogger);
+
             await WaitForNetworkIdleWithCapAsync(page, url, ct);
             await SafeTimeoutAsync(page, SpaSettleDelayMs, ct);
 
@@ -77,7 +81,12 @@ public sealed class SpaPageNavigator : IPageNavigator
         }
 
         string responseText = await SafeReadResponseTextAsync(response, url);
-        return new NavigationResult { Response = response, ResponseText = responseText };
+        return new NavigationResult
+                   {
+                       Response = response,
+                       ResponseText = responseText,
+                       DomCount = domCount
+                   };
     }
 
     private async Task WaitForNetworkIdleWithCapAsync(IPage page, string url, CancellationToken ct)
@@ -161,11 +170,17 @@ public sealed class SpaPageNavigator : IPageNavigator
             }
             catch(PlaywrightException ex)
             {
-                mLogger.LogDebug(ex, "Failed to read response body for {Url}", url);
+                mLogger.LogWarning(ex,
+                                   "Failed to read response body for {Url}; SPA shell sniffing for this page will return no signal",
+                                   url
+                                  );
             }
             catch(InvalidOperationException ex)
             {
-                mLogger.LogDebug(ex, "Response body unavailable for {Url}", url);
+                mLogger.LogWarning(ex,
+                                   "Response body unavailable for {Url}; SPA shell sniffing for this page will return no signal",
+                                   url
+                                  );
             }
         }
 
