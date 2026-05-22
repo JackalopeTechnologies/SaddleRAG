@@ -350,4 +350,35 @@ public sealed class DryrunReportRendererTests
         Assert.Contains("Chunk: 0ms total over 0 samples (avg 0ms)", rendered);
         Assert.Contains("Embed: 0ms total over 0 batches (avg 0ms)", rendered);
     }
+
+    [Fact]
+    public void RenderEmitsNavigatorEscalationBannerWhenEscalated()
+    {
+        var output = new StringWriter();
+        var report = NewReport() with
+                         {
+                             Escalation = new NavigatorEscalation
+                                              {
+                                                  Framework = SpaFramework.ReactCsr,
+                                                  Reason = "React CSR detected via data-reactroot attribute"
+                                              }
+                         };
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.Contains("** Navigator escalated to SPA mode: React CSR detected via data-reactroot attribute **", rendered);
+    }
+
+    [Fact]
+    public void RenderOmitsNavigatorEscalationBannerWhenNullEscalation()
+    {
+        var output = new StringWriter();
+        var report = NewReport();
+
+        DryrunReportRenderer.Render(report, maxPagesLimit: 1000, output);
+
+        var rendered = output.ToString();
+        Assert.DoesNotContain("Navigator escalated", rendered);
+    }
 }
