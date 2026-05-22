@@ -358,13 +358,14 @@ public sealed class DryRunAccumulatorTests
     public void RecordNavigatorSwapSetsEscalation()
     {
         var acc = new DryRunAccumulator();
-        acc.RecordNavigatorSwap("React CSR detected via data-reactroot attribute");
+        acc.RecordNavigatorSwap(SpaFramework.ReactCsr, "React CSR detected via data-reactroot attribute");
 
         var snap = acc.Snapshot();
 
         Assert.NotNull(snap.Escalation);
         var escalation = snap.Escalation;
         Assert.NotNull(escalation);
+        Assert.Equal(SpaFramework.ReactCsr, escalation.Framework);
         Assert.Equal("React CSR detected via data-reactroot attribute", escalation.Reason);
     }
 
@@ -373,7 +374,7 @@ public sealed class DryRunAccumulatorTests
     {
         var acc = new DryRunAccumulator();
 
-        Assert.Throws<ArgumentException>(() => acc.RecordNavigatorSwap(string.Empty));
+        Assert.Throws<ArgumentException>(() => acc.RecordNavigatorSwap(SpaFramework.BlazorWasm, string.Empty));
     }
 
     [Fact]

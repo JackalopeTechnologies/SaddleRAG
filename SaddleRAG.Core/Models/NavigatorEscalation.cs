@@ -4,6 +4,8 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+using SaddleRAG.Core.Enums;
+
 namespace SaddleRAG.Core.Models;
 
 /// <summary>
@@ -22,5 +24,17 @@ namespace SaddleRAG.Core.Models;
 /// </summary>
 public sealed record NavigatorEscalation
 {
+    /// <summary>
+    ///     Typed identifier for the SPA framework (or
+    ///     <see cref="SpaFramework.UserSupplied" />) that triggered the
+    ///     swap. Use this in tests and report consumers; the
+    ///     <see cref="Reason" /> string is for operator-readable logs and
+    ///     may change wording.
+    /// </summary>
+    public required SpaFramework Framework { get; init; }
+
+    /// <summary>
+    ///     Human-readable description of what triggered the swap.
+    /// </summary>
     public required string Reason { get; init; }
 }

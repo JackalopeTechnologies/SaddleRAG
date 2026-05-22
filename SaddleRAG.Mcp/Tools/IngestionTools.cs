@@ -95,6 +95,10 @@ public static class IngestionTools
         ArgumentException.ThrowIfNullOrEmpty(rootUrl);
         ArgumentException.ThrowIfNullOrEmpty(library);
         ArgumentException.ThrowIfNullOrEmpty(version);
+        if (spaWaitMs is < 0)
+            throw new ArgumentOutOfRangeException(nameof(spaWaitMs),
+                                                  spaWaitMs,
+                                                  "spaWaitMs must be non-negative");
 
         var allowed = allowedUrlPatterns ?? [new Uri(rootUrl).Host];
 
