@@ -92,6 +92,7 @@ public class PageCrawler : IPageCrawler
         public SiteExtensionState ExtensionState { get; } = new SiteExtensionState();
 
         public required RenderModeVoter Voter { get; init; }
+        public required EscalationController Navigator { get; init; }
 
         public int PageCount => Volatile.Read(ref mPageCount);
         public int InFlightCount => Volatile.Read(ref mInFlight);
@@ -184,19 +185,22 @@ public class PageCrawler : IPageCrawler
                        GitHubRepoScraper gitHubScraper,
                        IScrapeAuditWriter auditWriter,
                        IMonitorBroadcaster broadcaster,
-                       ILogger<PageCrawler> logger)
+                       ILogger<PageCrawler> logger,
+                       ILoggerFactory loggerFactory)
     {
         mPageRepository = pageRepository;
         mGitHubScraper = gitHubScraper;
         mAuditWriter = auditWriter;
         mBroadcaster = broadcaster;
         mLogger = logger;
+        mLoggerFactory = loggerFactory;
     }
 
     private readonly IScrapeAuditWriter mAuditWriter;
     private readonly IMonitorBroadcaster mBroadcaster;
     private readonly GitHubRepoScraper mGitHubScraper;
     private readonly ILogger<PageCrawler> mLogger;
+    private readonly ILoggerFactory mLoggerFactory;
 
     private readonly IPageRepository mPageRepository;
 
@@ -266,9 +270,13 @@ public class PageCrawler : IPageCrawler
         var page = await browser.NewPageAsync();
         try
         {
-            var (response, _, _) = await NavigateAndPreparePageAsync(page, url, voter: null, ct);
+            var navigator = new SsrPageNavigator(mLoggerFactory.CreateLogger<SsrPageNavigator>());
+            var (response, _) = await navigator.NavigateAsync(page, url, ct);
             if (response is { Ok: true })
+            {
+                await WaitForPageAndFramesAsync(page, url, ct);
                 result = await BuildAndPersistPageRecordAsync(page, libraryId, version, url, ct);
+            }
             else
             {
                 int status = response?.Status ?? 0;
@@ -295,7 +303,7 @@ public class PageCrawler : IPageCrawler
     {
         string title = await page.TitleAsync();
         await ExpandCollapsibleNavigationAsync(page);
-        string content = await ExtractMainContentAsync(page);
+        string content = await ExtractMainContentAsync(page, waitForSelector: null, ct);
 
         string contentHash = ComputeHash(content);
         string urlHash = ComputeCanonicalUrlHash(url);
@@ -359,6 +367,41 @@ public class PageCrawler : IPageCrawler
         var rootUri = new Uri(job.RootUrl);
         var rootScope = ComputeRootScope(rootUri);
 
+        var ssrNav = new SsrPageNavigator(mLoggerFactory.CreateLogger<SsrPageNavigator>());
+        var spaNav = new SpaPageNavigator(job.WaitForSelector,
+                                          job.SpaWaitMs,
+                                          mLoggerFactory.CreateLogger<SpaPageNavigator>()
+                                         );
+
+        CrawlContext? ctxRef = null;
+        Action<IReadOnlyList<string>> onEscalate = urls =>
+            {
+                var c = ctxRef;
+                if (c != null)
+                {
+                    foreach(string u in urls)
+                    {
+                        c.Visited.TryRemove(u, out _);
+                        var requeue = new CrawlEntry(u,
+                                                     InScopeDepth: 0,
+                                                     SameHostDepth: 0,
+                                                     OffSiteDepth: 0
+                                                    );
+                        c.IncrementInFlight();
+                        if (!c.InScopeEntries.Writer.TryWrite(requeue))
+                            c.DecrementInFlight();
+                    }
+                }
+            };
+
+        var escalation = new EscalationController(job,
+                                                  ssrNav,
+                                                  spaNav,
+                                                  onEscalate,
+                                                  dryRunAcc,
+                                                  mLoggerFactory.CreateLogger<EscalationController>()
+                                                 );
+
         var ctx = new CrawlContext
                       {
                           Job = job,
@@ -376,9 +419,11 @@ public class PageCrawler : IPageCrawler
                           Token = ct,
                           AuditCtx = auditCtx,
                           Voter = new RenderModeVoter(),
+                          Navigator = escalation,
                           PersistMode = persistMode,
                           DryRunAcc = dryRunAcc,
                       };
+        ctxRef = ctx;
 
         if (resumeUrls != null)
         {
@@ -814,7 +859,7 @@ public class PageCrawler : IPageCrawler
             (response, fetchUrl, domCount, loadCount) = await FetchWithExtensionRecoveryAsync(url,
                                                                                 page,
                                                                                 ctx.ExtensionState,
-                                                                                ctx.Voter,
+                                                                                ctx.Navigator,
                                                                                 ctx.Token
                                                                                );
 
@@ -1132,7 +1177,7 @@ public class PageCrawler : IPageCrawler
         var sw = Stopwatch.StartNew();
         string title = await page.TitleAsync();
         await ExpandCollapsibleNavigationAsync(page);
-        string content = await ExtractMainContentAsync(page);
+        string content = await ExtractMainContentAsync(page, ctx.Job.WaitForSelector, ctx.Token);
         var links = await ExtractLinksAsync(page);
 
         string contentHash = ComputeHash(content);
@@ -1226,39 +1271,25 @@ public class PageCrawler : IPageCrawler
     private async Task<(IResponse? Response, int DomCount, int LoadCount)> NavigateAndPreparePageAsync(
         IPage page,
         string url,
-        RenderModeVoter? voter,
+        EscalationController controller,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(url);
+        ArgumentNullException.ThrowIfNull(controller);
 
         ct.ThrowIfCancellationRequested();
 
-        var response = await page.GotoAsync(url,
-                                            new PageGotoOptions
-                                                {
-                                                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                                                    Timeout = PageTimeoutMs
-                                                }
-                                           );
+        var (response, responseText) = await controller.Active.NavigateAsync(page, url, ct);
 
         int domCount = -1;
         int loadCount = -1;
 
         if (response is { Ok: true })
         {
-            domCount = await MeasureContentNodesAsync(page);
-
-            bool skipLoad = voter is { IsVoteComplete: true, IsLoadWaitNeeded: false };
-            if (!skipLoad)
-            {
-                await WaitForPageAndFramesAsync(page, url, ct);
-                loadCount = await MeasureContentNodesAsync(page);
-            }
-            else
-                loadCount = -1;
-
-            voter?.RecordSample(domCount, loadCount);
+            await WaitForPageAndFramesAsync(page, url, ct);
+            loadCount = await MeasureContentNodesAsync(page);
+            controller.ObservePage(url, responseText);
         }
 
         return (response, domCount, loadCount);
@@ -1562,12 +1593,12 @@ public class PageCrawler : IPageCrawler
         return result;
     }
 
-    private static async Task<string> ExtractMainContentAsync(IPage page)
+    private static async Task<string> ExtractMainContentAsync(IPage page,
+                                                              string? waitForSelector,
+                                                              CancellationToken ct)
     {
-        // First try the main page with CSS selectors
-        string result = await ExtractContentFromFrameAsync(page);
+        string result = await SpaAwareContentExtractor.ExtractAsync(page, waitForSelector, ct);
 
-        // If the main page has little content, check iframes for a content frame
         if (result.Length < ContentFrameMinChars && page.Frames.Count > 1)
         {
             var bestFrame = await FindContentFrameAsync(page);
@@ -1894,15 +1925,15 @@ public class PageCrawler : IPageCrawler
         FetchWithExtensionRecoveryAsync(string url,
                                         IPage page,
                                         SiteExtensionState extensionState,
-                                        RenderModeVoter? voter,
+                                        EscalationController controller,
                                         CancellationToken ct)
     {
         string fetchUrl = MaybeApplyKnownExtension(url, extensionState.Value);
-        var (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, fetchUrl, voter, ct);
+        var (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, fetchUrl, controller, ct);
 
         if (response is { Status: HttpNotFound } && extensionState.Value == null)
             (response, fetchUrl, domCount, loadCount) =
-                await RetryWithExtensionsAsync(url, page, extensionState, voter, ct);
+                await RetryWithExtensionsAsync(url, page, extensionState, controller, ct);
 
         return (response, fetchUrl, domCount, loadCount);
     }
@@ -1950,7 +1981,7 @@ public class PageCrawler : IPageCrawler
         RetryWithExtensionsAsync(string url,
                                  IPage page,
                                  SiteExtensionState extensionState,
-                                 RenderModeVoter? voter,
+                                 EscalationController controller,
                                  CancellationToken ct)
     {
         string fetchUrl = url;
@@ -1964,7 +1995,7 @@ public class PageCrawler : IPageCrawler
         {
             string retryUrl = url + ext;
             mLogger.LogDebug("Got 404 for {Url}, retrying with {Ext}: {RetryUrl}", url, ext, retryUrl);
-            (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, retryUrl, voter, ct);
+            (response, domCount, loadCount) = await NavigateAndPreparePageAsync(page, retryUrl, controller, ct);
 
             if (response is { Ok: true })
             {
