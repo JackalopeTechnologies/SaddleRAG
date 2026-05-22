@@ -188,15 +188,14 @@ public sealed class DryRunAccumulator
 
     /// <summary>
     ///     Records that the crawler swapped to the SPA navigator with the
-    ///     given human-readable reason (framework signal or
-    ///     "user-supplied waitForSelector").
+    ///     given typed framework signal and human-readable reason.
     /// </summary>
-    internal void RecordNavigatorSwap(string reason)
+    internal void RecordNavigatorSwap(SpaFramework framework, string reason)
     {
         ArgumentException.ThrowIfNullOrEmpty(reason);
 
         lock(mLock)
-            mEscalation = new NavigatorEscalation { Reason = reason };
+            mEscalation = new NavigatorEscalation { Framework = framework, Reason = reason };
     }
 
     public DryRunSnapshot Snapshot()

@@ -102,10 +102,10 @@ public sealed class SpaPageNavigator : IPageNavigator
             else
             {
                 ct.ThrowIfCancellationRequested();
-                mLogger.LogDebug("NetworkIdle wait capped at {Timeout}ms for {Url}",
-                                 NetworkIdleTimeoutMs,
-                                 url
-                                );
+                mLogger.LogInformation("NetworkIdle wait capped at {Timeout}ms for {Url} — page may still be loading; extraction proceeds with available content",
+                                       NetworkIdleTimeoutMs,
+                                       url
+                                      );
             }
         }
         catch(PlaywrightException ex)

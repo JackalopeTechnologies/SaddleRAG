@@ -118,7 +118,7 @@ public static class SpaAwareContentExtractor
         string result = string.Empty;
         try
         {
-            string text = await page.EvaluateAsync<string>(smBiggestContainerScript);
+            string text = await page.EvaluateAsync<string>(BiggestContainerScript);
             if (!string.IsNullOrWhiteSpace(text))
                 result = text.Trim();
         }
@@ -168,7 +168,7 @@ public static class SpaAwareContentExtractor
             SelectorIdMainContent,
         ];
 
-    private const string smBiggestContainerScript =
+    private const string BiggestContainerScript =
         """
         (() => {
             const MIN_TEXT = 200;

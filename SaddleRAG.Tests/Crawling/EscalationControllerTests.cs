@@ -8,6 +8,7 @@
 
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Playwright;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Crawling;
@@ -138,7 +139,7 @@ public sealed class EscalationControllerTests
         Assert.NotNull(snap.Escalation);
         var escalation = snap.Escalation;
         Assert.NotNull(escalation);
-        Assert.Contains("React", escalation.Reason);
+        Assert.Equal(SpaFramework.ReactCsr, escalation.Framework);
     }
 
     [Fact]

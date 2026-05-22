@@ -103,6 +103,10 @@ public static class ScrapeDocsTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
+        if (spaWaitMs is < 0)
+            throw new ArgumentOutOfRangeException(nameof(spaWaitMs),
+                                                  spaWaitMs,
+                                                  "spaWaitMs must be non-negative");
 
         if (!resume && string.IsNullOrEmpty(url))
             throw new ArgumentException("url is required when resume=false");
