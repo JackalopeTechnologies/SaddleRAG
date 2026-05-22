@@ -188,7 +188,8 @@ public sealed class DryRunAuditTests
                                       gitHubScraper,
                                       auditWriter,
                                       broadcaster,
-                                      NullLogger<PageCrawler>.Instance
+                                      NullLogger<PageCrawler>.Instance,
+                                      NullLoggerFactory.Instance
                                      );
 
         var chunkRepo = Substitute.For<IChunkRepository>();

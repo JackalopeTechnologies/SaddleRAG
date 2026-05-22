@@ -84,6 +84,18 @@ public static class ScrapeDocsTools
                                                 bool resume = false,
                                                 [Description("Optional database profile name")]
                                                 string? profile = null,
+                                                [Description("CSS selector that must resolve in the rendered DOM before " +
+                                                             "content extraction. When set, bypasses the 3-page SPA " +
+                                                             "auto-detection and forces SPA navigation immediately. " +
+                                                             "Use for known SPA docs sites (e.g. '.mud-main-content' " +
+                                                             "for MudBlazor). Carried forward on resume."
+                                                            )]
+                                                string? waitForSelector = null,
+                                                [Description("Extra milliseconds to wait after NetworkIdle for slow-hydrating " +
+                                                             "SPAs. Added on top of the built-in 300ms settle. 0 = no extra " +
+                                                             "wait. Carried forward on resume."
+                                                            )]
+                                                int spaWaitMs = 0,
                                                 CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(runner);
@@ -150,7 +162,9 @@ public static class ScrapeDocsTools
                                          MaxPages = maxPages,
                                          FetchDelayMs = fetchDelayMs,
                                          ForceClean = force,
-                                         AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes ?? previousJob.AdditionalRateLimitStatusCodes
+                                         AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes ?? previousJob.AdditionalRateLimitStatusCodes,
+                                         WaitForSelector = waitForSelector ?? previousJob.WaitForSelector,
+                                         SpaWaitMs = spaWaitMs > 0 ? spaWaitMs : previousJob.SpaWaitMs
                                      };
                 }
             }
@@ -184,7 +198,9 @@ public static class ScrapeDocsTools
                                               allowedUrlPatterns,
                                               excludedUrlPatterns,
                                               additionalRateLimitStatusCodes,
-                                              seedUrls
+                                              seedUrls,
+                                              waitForSelector,
+                                              spaWaitMs
                                              );
                 var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
                 await scrapeAuditRepo.DeleteByLibraryVersionAsync(libraryId, version, ct);
@@ -233,7 +249,9 @@ public static class ScrapeDocsTools
                                             string[]? allowedUrlPatterns,
                                             string[]? excludedUrlPatterns,
                                             int[]? additionalRateLimitStatusCodes,
-                                            string[]? seedUrls)
+                                            string[]? seedUrls,
+                                            string? waitForSelector,
+                                            int spaWaitMs)
     {
         ScrapeJob job;
         if (allowedUrlPatterns != null || excludedUrlPatterns != null)
@@ -250,7 +268,9 @@ public static class ScrapeDocsTools
                           FetchDelayMs = fetchDelayMs,
                           ForceClean = force,
                           AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes,
-                          SeedUrls = seedUrls
+                          SeedUrls = seedUrls,
+                          WaitForSelector = waitForSelector,
+                          SpaWaitMs = spaWaitMs
                       };
         }
         else
@@ -266,6 +286,8 @@ public static class ScrapeDocsTools
                                                 );
             if (seedUrls is { Length: > 0 })
                 job = job with { SeedUrls = seedUrls };
+            if (!string.IsNullOrEmpty(waitForSelector) || spaWaitMs > 0)
+                job = job with { WaitForSelector = waitForSelector, SpaWaitMs = spaWaitMs };
         }
 
         return job;

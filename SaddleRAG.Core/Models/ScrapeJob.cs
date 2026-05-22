@@ -141,6 +141,27 @@ public record ScrapeJob
     public IReadOnlyList<int>? AdditionalRateLimitStatusCodes { get; init; }
 
     /// <summary>
+    ///     CSS selector that must resolve in the rendered DOM before content
+    ///     extraction. When non-null, the crawler bypasses the 3-page SPA
+    ///     auto-detection window and forces SPA navigation (NetworkIdle +
+    ///     MutationObserver-quiet wait + selector wait) on every page from
+    ///     page 1. The selector is also tried first by the content extractor.
+    ///     Use for known SPA documentation sites (e.g. <c>.mud-main-content</c>
+    ///     for MudBlazor). Null means "auto-detect via shell sniffing".
+    /// </summary>
+    public string? WaitForSelector { get; init; }
+
+    /// <summary>
+    ///     Additional milliseconds to wait after the SPA navigator's NetworkIdle
+    ///     and built-in 300ms settle, before attempting content extraction.
+    ///     Default 0 (no extra wait). Increase for heavy WASM sites or SPAs
+    ///     that defer data fetches beyond Load. Only effective once the SPA
+    ///     navigator is active (either explicitly via <see cref="WaitForSelector" />
+    ///     or after auto-escalation).
+    /// </summary>
+    public int SpaWaitMs { get; init; }
+
+    /// <summary>
     ///     Default per-page fetch delay. Zero means "no fixed delay" — pacing is
     ///     handled adaptively by <c>HostRateLimiter</c> based on per-host response
     ///     status (slows down on 429/503, speeds up on sustained success). A

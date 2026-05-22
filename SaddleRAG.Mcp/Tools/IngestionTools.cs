@@ -73,6 +73,18 @@ public static class IngestionTools
                                                   int offSiteDepth = 1,
                                                   [Description("Optional database profile name")]
                                                   string? profile = null,
+                                                  [Description("CSS selector that must resolve in the rendered DOM before " +
+                                                               "content extraction. When set, bypasses the 3-page SPA " +
+                                                               "auto-detection and forces SPA navigation immediately. " +
+                                                               "Use for known SPA docs sites (e.g. '.mud-main-content' " +
+                                                               "for MudBlazor)."
+                                                              )]
+                                                  string? waitForSelector = null,
+                                                  [Description("Extra milliseconds to wait after NetworkIdle for slow-hydrating " +
+                                                               "SPAs. Added on top of the built-in 300ms settle. 0 = no extra " +
+                                                               "wait. Only effective once the SPA navigator is active."
+                                                              )]
+                                                  int spaWaitMs = 0,
                                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(orchestrator);
@@ -97,7 +109,9 @@ public static class IngestionTools
                           MaxPages = maxPages,
                           FetchDelayMs = fetchDelayMs,
                           SameHostDepth = sameHostDepth,
-                          OffSiteDepth = offSiteDepth
+                          OffSiteDepth = offSiteDepth,
+                          WaitForSelector = waitForSelector,
+                          SpaWaitMs = spaWaitMs
                       };
 
         var inputJson = JsonSerializer.Serialize(new

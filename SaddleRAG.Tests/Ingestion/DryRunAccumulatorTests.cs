@@ -354,6 +354,36 @@ public sealed class DryRunAccumulatorTests
         Assert.True(snap.LoadWaitRecommended);
     }
 
+    [Fact]
+    public void RecordNavigatorSwapSetsEscalatedAndReason()
+    {
+        var acc = new DryRunAccumulator();
+        acc.RecordNavigatorSwap("React CSR detected via data-reactroot attribute");
+
+        var snap = acc.Snapshot();
+
+        Assert.True(snap.NavigatorEscalated);
+        Assert.Equal("React CSR detected via data-reactroot attribute", snap.NavigatorEscalationReason);
+    }
+
+    [Fact]
+    public void RecordNavigatorSwapEmptyReasonThrows()
+    {
+        var acc = new DryRunAccumulator();
+
+        Assert.Throws<ArgumentException>(() => acc.RecordNavigatorSwap(string.Empty));
+    }
+
+    [Fact]
+    public void NavigatorEscalatedDefaultsToFalseWhenNeverRecorded()
+    {
+        var acc = new DryRunAccumulator();
+        var snap = acc.Snapshot();
+
+        Assert.False(snap.NavigatorEscalated);
+        Assert.Equal(string.Empty, snap.NavigatorEscalationReason);
+    }
+
     #endregion
 
     #region Multi-mutator concurrent stress test

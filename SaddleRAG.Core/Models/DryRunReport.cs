@@ -168,4 +168,24 @@ public record DryRunReport
     /// </summary>
 
     public required StageTimings StageTimings { get; init; }
+
+
+    /// <summary>
+    ///     True when the SPA-aware crawler escalated from the SSR navigator
+    ///     to the SPA navigator during this run. Surfaced so operators can
+    ///     tell at a glance that the site was detected as a single-page
+    ///     application. False for purely static (SSR) sites.
+    /// </summary>
+
+    public bool NavigatorEscalated { get; init; }
+
+
+    /// <summary>
+    ///     Human-readable reason that triggered the navigator escalation
+    ///     (e.g. "React CSR detected via data-reactroot attribute" or
+    ///     "User-supplied waitForSelector forces SPA mode"). Empty when
+    ///     <see cref="NavigatorEscalated" /> is false.
+    /// </summary>
+
+    public string NavigatorEscalationReason { get; init; } = string.Empty;
 }
