@@ -38,4 +38,6 @@ public record DryRunSnapshot
     public required int MedianContentNodeDelta { get; init; }
     public required bool LoadWaitRecommended { get; init; }
     public required StageTimings Timings { get; init; }
+    public bool NavigatorEscalated { get; init; }
+    public string NavigatorEscalationReason { get; init; } = string.Empty;
 }
