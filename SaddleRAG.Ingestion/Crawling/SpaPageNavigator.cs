@@ -49,9 +49,7 @@ public sealed class SpaPageNavigator : IPageNavigator
     private readonly int mSpaWaitMs;
     private readonly ILogger<SpaPageNavigator> mLogger;
 
-    public async Task<(IResponse? Response, string ResponseText)> NavigateAsync(IPage page,
-                                                                                string url,
-                                                                                CancellationToken ct)
+    public async Task<NavigationResult> NavigateAsync(IPage page, string url, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(url);
@@ -79,7 +77,7 @@ public sealed class SpaPageNavigator : IPageNavigator
         }
 
         string responseText = await SafeReadResponseTextAsync(response, url);
-        return (response, responseText);
+        return new NavigationResult { Response = response, ResponseText = responseText };
     }
 
     private async Task WaitForNetworkIdleWithCapAsync(IPage page, string url, CancellationToken ct)

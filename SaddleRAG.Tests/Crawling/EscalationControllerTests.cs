@@ -20,9 +20,7 @@ public sealed class EscalationControllerTests
 {
     private sealed class StubNavigator : IPageNavigator
     {
-        public Task<(IResponse? Response, string ResponseText)> NavigateAsync(IPage page,
-                                                                              string url,
-                                                                              CancellationToken ct)
+        public Task<NavigationResult> NavigateAsync(IPage page, string url, CancellationToken ct)
             => throw new NotSupportedException("StubNavigator is for identity comparisons only");
     }
 
@@ -137,8 +135,10 @@ public sealed class EscalationControllerTests
                               );
 
         var snap = acc.Snapshot();
-        Assert.True(snap.NavigatorEscalated);
-        Assert.Contains("React", snap.NavigatorEscalationReason);
+        Assert.NotNull(snap.Escalation);
+        var escalation = snap.Escalation;
+        Assert.NotNull(escalation);
+        Assert.Contains("React", escalation.Reason);
     }
 
     [Fact]

@@ -35,9 +35,7 @@ public sealed class SsrPageNavigator : IPageNavigator
 
     private readonly ILogger<SsrPageNavigator> mLogger;
 
-    public async Task<(IResponse? Response, string ResponseText)> NavigateAsync(IPage page,
-                                                                                string url,
-                                                                                CancellationToken ct)
+    public async Task<NavigationResult> NavigateAsync(IPage page, string url, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(url);
@@ -53,7 +51,7 @@ public sealed class SsrPageNavigator : IPageNavigator
                                            );
 
         string responseText = await SafeReadResponseTextAsync(response, url);
-        return (response, responseText);
+        return new NavigationResult { Response = response, ResponseText = responseText };
     }
 
     private async Task<string> SafeReadResponseTextAsync(IResponse? response, string url)

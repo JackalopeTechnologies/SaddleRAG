@@ -271,7 +271,8 @@ public class PageCrawler : IPageCrawler
         try
         {
             var navigator = new SsrPageNavigator(mLoggerFactory.CreateLogger<SsrPageNavigator>());
-            var (response, _) = await navigator.NavigateAsync(page, url, ct);
+            var nav = await navigator.NavigateAsync(page, url, ct);
+            var response = nav.Response;
             if (response is { Ok: true })
             {
                 await WaitForPageAndFramesAsync(page, url, ct);
@@ -1280,7 +1281,8 @@ public class PageCrawler : IPageCrawler
 
         ct.ThrowIfCancellationRequested();
 
-        var (response, responseText) = await controller.Active.NavigateAsync(page, url, ct);
+        var nav = await controller.Active.NavigateAsync(page, url, ct);
+        var response = nav.Response;
 
         int domCount = -1;
         int loadCount = -1;
@@ -1289,7 +1291,7 @@ public class PageCrawler : IPageCrawler
         {
             await WaitForPageAndFramesAsync(page, url, ct);
             loadCount = await MeasureContentNodesAsync(page);
-            controller.ObservePage(url, responseText);
+            controller.ObservePage(url, nav.ResponseText);
         }
 
         return (response, domCount, loadCount);
