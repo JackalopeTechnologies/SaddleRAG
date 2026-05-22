@@ -7,6 +7,7 @@
 #region Usings
 
 using Microsoft.Extensions.Logging;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 
 #endregion
@@ -19,15 +20,12 @@ namespace SaddleRAG.Ingestion.Crawling;
 ///     single-page application framework in the response body, or when
 ///     the caller supplied an explicit <see cref="ScrapeJob.WaitForSelector" />.
 ///     <para>
-///         When escalation fires, three things happen atomically under
-///         the controller's lock: (1) <see cref="Active" /> swaps to the
-///         SPA navigator for all subsequent <c>NavigateAsync</c> calls,
-///         (2) the supplied <c>onEscalate</c> callback is invoked with
-///         the URLs already fetched under the SSR navigator so the
-///         crawler can re-queue them — those pages were captured with
-///         the wrong navigator and likely have empty content,
-///         (3) the optional <see cref="DryRunAccumulator" /> records the
-///         escalation reason for the dry-run report.
+///         The swap is committed atomically inside the controller's lock:
+///         <see cref="Active" /> flips to the SPA navigator, the URL list
+///         is snapshotted, and the controller is marked escalated. The
+///         logger / onEscalate callback / DryRunAccumulator notification
+///         all run AFTER the lock releases so a callback can synchronously
+///         touch the controller without risk of deadlock.
 ///     </para>
 /// </summary>
 public sealed class EscalationController
@@ -45,7 +43,6 @@ public sealed class EscalationController
         ArgumentNullException.ThrowIfNull(logger);
 
         mJob = job;
-        mInitial = initial;
         mSpa = spa;
         mActive = initial;
         mOnEscalate = onEscalate;
@@ -56,7 +53,6 @@ public sealed class EscalationController
     private readonly Lock mLock = new();
     private readonly List<string> mFetchedUrls = new();
     private readonly ScrapeJob mJob;
-    private readonly IPageNavigator mInitial;
     private readonly IPageNavigator mSpa;
     private readonly Action<IReadOnlyList<string>>? mOnEscalate;
     private readonly DryRunAccumulator? mDryRunAcc;
@@ -96,24 +92,31 @@ public sealed class EscalationController
     }
 
     /// <summary>
-    ///     Initial navigator the controller was constructed with.
-    ///     Exposed so the crawler can detect "still SSR" without
-    ///     querying <see cref="ShouldEscalate" />.
-    /// </summary>
-    public IPageNavigator InitialNavigator => mInitial;
-
-    /// <summary>
     ///     Observe a successfully fetched page. Adds the URL to the
     ///     internal requeue tracking list and, while the detection
     ///     window is open, runs shell sniffing on the response body.
     ///     A non-null signal — or a non-null
     ///     <see cref="ScrapeJob.WaitForSelector" /> on the first page —
     ///     triggers escalation.
+    ///     <para>
+    ///         Returns <c>true</c> when THIS call is the one that triggered
+    ///         escalation. The caller uses that to skip persisting the
+    ///         in-flight page record: the trigger page is in the requeue
+    ///         list and will be re-fetched under the SPA navigator, so the
+    ///         current SSR-rendered DOM would only race the re-fetch into
+    ///         the upsert. Returns <c>false</c> for every other
+    ///         observation, including ones made while
+    ///         <see cref="ShouldEscalate" /> is already true.
+    ///     </para>
     /// </summary>
-    public void ObservePage(string url, string responseText)
+    public bool ObservePage(string url, string responseText)
     {
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(responseText);
+
+        SpaFramework? framework = null;
+        string? reason = null;
+        IReadOnlyList<string>? urlsSnapshot = null;
 
         lock(mLock)
         {
@@ -121,78 +124,107 @@ public sealed class EscalationController
 
             bool windowOpen = !mEscalated && mFetchedUrls.Count <= EscalationWindowPages;
             if (windowOpen)
-                EvaluateForEscalation(responseText);
+            {
+                var detection = Detect(responseText);
+                if (detection.HasValue)
+                {
+                    framework = detection.Value.Framework;
+                    reason = detection.Value.Reason;
+                    mActive = mSpa;
+                    mEscalated = true;
+                    urlsSnapshot = mFetchedUrls.ToArray();
+                }
+            }
         }
+
+        if (framework.HasValue && reason != null && urlsSnapshot != null)
+            NotifyEscalation(framework.Value, reason, urlsSnapshot);
+
+        return framework.HasValue;
     }
 
-    private void EvaluateForEscalation(string responseText)
+    private (SpaFramework Framework, string Reason)? Detect(string responseText)
     {
         bool forceFromSelector = !string.IsNullOrEmpty(mJob.WaitForSelector) && mFetchedUrls.Count == 1;
-        string? reason = forceFromSelector
-                             ? UserSuppliedSelectorReason
-                             : DetectShellSignal(responseText);
 
-        if (reason != null)
-            Escalate(reason);
+        (SpaFramework Framework, string Reason)? result = null;
+        if (forceFromSelector)
+            result = (SpaFramework.UserSupplied, UserSuppliedSelectorReason);
+        else
+        {
+            var match = DetectShellSignal(responseText);
+            if (match.HasValue)
+                result = match.Value;
+        }
+
+        return result;
     }
 
-    private void Escalate(string reason)
+    private void NotifyEscalation(SpaFramework framework, string reason, IReadOnlyList<string> urls)
     {
-        mActive = mSpa;
-        mEscalated = true;
-
-        mLogger.LogWarning("SPA escalation triggered after {Pages} pages by signal [{Signal}]. " +
+        mLogger.LogWarning("SPA escalation triggered after {Pages} pages by signal [{Signal}] (framework={Framework}). " +
                            "Switching to SPA navigator. Re-queuing {Count} already-fetched pages.",
-                           mFetchedUrls.Count,
+                           urls.Count,
                            reason,
-                           mFetchedUrls.Count
+                           framework,
+                           urls.Count
                           );
 
-        SafeInvokeOnEscalate();
-        mDryRunAcc?.RecordNavigatorSwap(reason);
+        SafeInvokeOnEscalate(urls);
+        mDryRunAcc?.RecordNavigatorSwap(framework, reason);
     }
 
-    private void SafeInvokeOnEscalate()
+    private void SafeInvokeOnEscalate(IReadOnlyList<string> urls)
     {
         if (mOnEscalate != null)
         {
             try
             {
-                mOnEscalate.Invoke(mFetchedUrls.AsReadOnly());
+                mOnEscalate.Invoke(urls);
             }
-            catch(Exception ex)
+            catch(ObjectDisposedException ex)
             {
-                mLogger.LogError(ex, "EscalationController onEscalate callback threw; navigator swap is committed but requeue may be incomplete");
+                mLogger.LogError(ex,
+                                 "EscalationController onEscalate threw ObjectDisposedException; navigator swap committed but {Count} URLs may not have been requeued",
+                                 urls.Count
+                                );
+            }
+            catch(InvalidOperationException ex)
+            {
+                mLogger.LogError(ex,
+                                 "EscalationController onEscalate threw InvalidOperationException; navigator swap committed but {Count} URLs may not have been requeued",
+                                 urls.Count
+                                );
             }
         }
     }
 
     /// <summary>
-    ///     Pure function: returns a human-readable signal description if
-    ///     <paramref name="html" /> contains a known SPA framework marker,
-    ///     null otherwise. Substring containment only — no regex, no DOM
-    ///     parsing. The first matching marker in priority order wins.
+    ///     Pure function: returns the matching framework and the
+    ///     human-readable reason when <paramref name="html" /> contains a
+    ///     known SPA shell marker, null otherwise. Substring containment
+    ///     only — no regex, no DOM parsing.
     /// </summary>
-    private static string? DetectShellSignal(string html)
+    private static (SpaFramework Framework, string Reason)? DetectShellSignal(string html)
     {
-        string? result = smShellMarkers
-                         .Where(m => html.Contains(m.Marker, StringComparison.Ordinal))
-                         .Select(m => m.Description)
-                         .FirstOrDefault();
+        (SpaFramework Framework, string Reason)? result = smShellMarkers
+            .Where(m => html.Contains(m.Marker, StringComparison.Ordinal))
+            .Select(m => ((SpaFramework, string)?) (m.Framework, m.Reason))
+            .FirstOrDefault();
         return result;
     }
 
-    private static readonly (string Marker, string Description)[] smShellMarkers =
+    private static readonly (SpaFramework Framework, string Marker, string Reason)[] smShellMarkers =
         [
-            (BlazorWasmMarker, BlazorWasmReason),
-            (BlazorFrameworkMarker, BlazorFrameworkReason),
-            (BlazorBootMarker, BlazorBootReason),
-            (NextDataMarker, NextDataReason),
-            (NuxtMarker, NuxtReason),
-            (SvelteKitMarker, SvelteKitReason),
-            (ReactRootMarker, ReactRootReason),
-            (VueAppMarker, VueAppReason),
-            (AngularVersionMarker, AngularVersionReason),
+            (SpaFramework.BlazorWasm, BlazorWasmMarker, BlazorWasmReason),
+            (SpaFramework.BlazorWasm, BlazorFrameworkMarker, BlazorFrameworkReason),
+            (SpaFramework.BlazorWasm, BlazorBootMarker, BlazorBootReason),
+            (SpaFramework.NextJsCsr, NextDataMarker, NextDataReason),
+            (SpaFramework.NuxtCsr, NuxtMarker, NuxtReason),
+            (SpaFramework.SvelteCsr, SvelteKitMarker, SvelteKitReason),
+            (SpaFramework.ReactCsr, ReactRootMarker, ReactRootReason),
+            (SpaFramework.VueCsr, VueAppMarker, VueAppReason),
+            (SpaFramework.AngularCsr, AngularVersionMarker, AngularVersionReason),
         ];
 
     private const string BlazorWasmMarker = "blazor.webassembly.js";

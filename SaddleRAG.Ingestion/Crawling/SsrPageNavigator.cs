@@ -35,9 +35,7 @@ public sealed class SsrPageNavigator : IPageNavigator
 
     private readonly ILogger<SsrPageNavigator> mLogger;
 
-    public async Task<(IResponse? Response, string ResponseText)> NavigateAsync(IPage page,
-                                                                                string url,
-                                                                                CancellationToken ct)
+    public async Task<NavigationResult> NavigateAsync(IPage page, string url, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(url);
@@ -52,8 +50,17 @@ public sealed class SsrPageNavigator : IPageNavigator
                                                 }
                                            );
 
+        int domCount = -1;
+        if (response is { Ok: true })
+            domCount = await PageMetrics.MeasureContentNodesAsync(page, mLogger);
+
         string responseText = await SafeReadResponseTextAsync(response, url);
-        return (response, responseText);
+        return new NavigationResult
+                   {
+                       Response = response,
+                       ResponseText = responseText,
+                       DomCount = domCount
+                   };
     }
 
     private async Task<string> SafeReadResponseTextAsync(IResponse? response, string url)
@@ -67,11 +74,17 @@ public sealed class SsrPageNavigator : IPageNavigator
             }
             catch(PlaywrightException ex)
             {
-                mLogger.LogDebug(ex, "Failed to read response body for {Url}", url);
+                mLogger.LogWarning(ex,
+                                   "Failed to read response body for {Url}; SPA shell sniffing for this page will return no signal",
+                                   url
+                                  );
             }
             catch(InvalidOperationException ex)
             {
-                mLogger.LogDebug(ex, "Response body unavailable for {Url}", url);
+                mLogger.LogWarning(ex,
+                                   "Response body unavailable for {Url}; SPA shell sniffing for this page will return no signal",
+                                   url
+                                  );
             }
         }
 

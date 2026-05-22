@@ -92,16 +92,21 @@ public static class ScrapeDocsTools
                                                             )]
                                                 string? waitForSelector = null,
                                                 [Description("Extra milliseconds to wait after NetworkIdle for slow-hydrating " +
-                                                             "SPAs. Added on top of the built-in 300ms settle. 0 = no extra " +
-                                                             "wait. Carried forward on resume."
+                                                             "SPAs. Added on top of the built-in 300ms settle. Omit (null) " +
+                                                             "on resume to carry forward the previous job's value; pass 0 to " +
+                                                             "explicitly disable; pass a positive value to override."
                                                             )]
-                                                int spaWaitMs = 0,
+                                                int? spaWaitMs = null,
                                                 CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
+        if (spaWaitMs is < 0)
+            throw new ArgumentOutOfRangeException(nameof(spaWaitMs),
+                                                  spaWaitMs,
+                                                  "spaWaitMs must be non-negative");
 
         if (!resume && string.IsNullOrEmpty(url))
             throw new ArgumentException("url is required when resume=false");
@@ -164,7 +169,7 @@ public static class ScrapeDocsTools
                                          ForceClean = force,
                                          AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes ?? previousJob.AdditionalRateLimitStatusCodes,
                                          WaitForSelector = waitForSelector ?? previousJob.WaitForSelector,
-                                         SpaWaitMs = spaWaitMs > 0 ? spaWaitMs : previousJob.SpaWaitMs
+                                         SpaWaitMs = spaWaitMs ?? previousJob.SpaWaitMs
                                      };
                 }
             }
@@ -200,7 +205,7 @@ public static class ScrapeDocsTools
                                               additionalRateLimitStatusCodes,
                                               seedUrls,
                                               waitForSelector,
-                                              spaWaitMs
+                                              spaWaitMs ?? 0
                                              );
                 var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
                 await scrapeAuditRepo.DeleteByLibraryVersionAsync(libraryId, version, ct);

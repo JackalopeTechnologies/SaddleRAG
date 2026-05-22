@@ -355,15 +355,18 @@ public sealed class DryRunAccumulatorTests
     }
 
     [Fact]
-    public void RecordNavigatorSwapSetsEscalatedAndReason()
+    public void RecordNavigatorSwapSetsEscalation()
     {
         var acc = new DryRunAccumulator();
-        acc.RecordNavigatorSwap("React CSR detected via data-reactroot attribute");
+        acc.RecordNavigatorSwap(SpaFramework.ReactCsr, "React CSR detected via data-reactroot attribute");
 
         var snap = acc.Snapshot();
 
-        Assert.True(snap.NavigatorEscalated);
-        Assert.Equal("React CSR detected via data-reactroot attribute", snap.NavigatorEscalationReason);
+        Assert.NotNull(snap.Escalation);
+        var escalation = snap.Escalation;
+        Assert.NotNull(escalation);
+        Assert.Equal(SpaFramework.ReactCsr, escalation.Framework);
+        Assert.Equal("React CSR detected via data-reactroot attribute", escalation.Reason);
     }
 
     [Fact]
@@ -371,17 +374,16 @@ public sealed class DryRunAccumulatorTests
     {
         var acc = new DryRunAccumulator();
 
-        Assert.Throws<ArgumentException>(() => acc.RecordNavigatorSwap(string.Empty));
+        Assert.Throws<ArgumentException>(() => acc.RecordNavigatorSwap(SpaFramework.BlazorWasm, string.Empty));
     }
 
     [Fact]
-    public void NavigatorEscalatedDefaultsToFalseWhenNeverRecorded()
+    public void EscalationIsNullWhenNeverRecorded()
     {
         var acc = new DryRunAccumulator();
         var snap = acc.Snapshot();
 
-        Assert.False(snap.NavigatorEscalated);
-        Assert.Equal(string.Empty, snap.NavigatorEscalationReason);
+        Assert.Null(snap.Escalation);
     }
 
     #endregion

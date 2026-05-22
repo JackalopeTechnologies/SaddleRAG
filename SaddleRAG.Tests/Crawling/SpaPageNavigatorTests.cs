@@ -32,9 +32,9 @@ public sealed class SpaPageNavigatorTests
                                              NullLogger<SpaPageNavigator>.Instance
                                             );
 
-        var (responseOut, _) = await navigator.NavigateAsync(page, "http://example.com", CancellationToken.None);
+        var navResult = await navigator.NavigateAsync(page, "http://example.com", CancellationToken.None);
 
-        Assert.NotNull(responseOut);
+        Assert.NotNull(navResult.Response);
         await page.Received().WaitForTimeoutAsync(SpaSettleDelayMs);
         await page.Received().WaitForTimeoutAsync(SpaExtraWaitMs);
     }

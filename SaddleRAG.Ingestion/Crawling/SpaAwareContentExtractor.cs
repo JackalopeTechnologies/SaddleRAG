@@ -41,13 +41,14 @@ namespace SaddleRAG.Ingestion.Crawling;
 ///     <para>
 ///         Framework strategy summary (which path each framework uses
 ///         when no user selector is supplied):
-///         <br />Fast-path: Blazor WASM (MudBlazor variant), React CSR,
-///         Vue CSR
-///         <br />Heuristic only: Angular CSR, Svelte CSR, Next.js CSR,
-///         Nuxt CSR — their DOM patterns vary too much across apps for a
-///         reliable fast-path selector. Angular in particular has named
-///         outlets, nested lazy-loaded modules, and custom shell
-///         components that defeat any single selector.
+///         <br />Fast-path: Blazor WASM (MudBlazor variant), React CSR
+///         via <c>[data-reactroot]</c>, Vue CSR via <c>[data-v-app]</c>,
+///         Next.js CSR via <c>#__next</c>, and the generic <c>#app</c>
+///         shell.
+///         <br />Heuristic only: Angular CSR, SvelteKit CSR, Nuxt CSR —
+///         their DOM patterns vary too widely across apps for a reliable
+///         fast-path selector (named outlets, nested lazy-loaded modules,
+///         custom shell components).
 ///     </para>
 /// </summary>
 public static class SpaAwareContentExtractor
@@ -118,7 +119,7 @@ public static class SpaAwareContentExtractor
         string result = string.Empty;
         try
         {
-            string text = await page.EvaluateAsync<string>(smBiggestContainerScript);
+            string text = await page.EvaluateAsync<string>(BiggestContainerScript);
             if (!string.IsNullOrWhiteSpace(text))
                 result = text.Trim();
         }
@@ -168,7 +169,7 @@ public static class SpaAwareContentExtractor
             SelectorIdMainContent,
         ];
 
-    private const string smBiggestContainerScript =
+    private const string BiggestContainerScript =
         """
         (() => {
             const MIN_TEXT = 200;
