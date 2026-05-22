@@ -151,6 +151,12 @@ public static class DryrunReportRenderer
                             );
         }
 
+        if (report.NavigatorEscalated)
+        {
+            output.WriteLine();
+            output.WriteLine($"** {NavigatorEscalatedPrefix}: {report.NavigatorEscalationReason} **");
+        }
+
         return 0;
     }
 
@@ -160,4 +166,5 @@ public static class DryrunReportRenderer
     private const string RenderModeSPALabel = "  Render mode: SPA";
     private const string LoadWaitRequired = "required";
     private const string LoadWaitNotNeeded = "not needed";
+    private const string NavigatorEscalatedPrefix = "Navigator escalated to SPA mode";
 }
