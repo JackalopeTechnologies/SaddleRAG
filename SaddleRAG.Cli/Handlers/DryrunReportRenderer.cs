@@ -151,10 +151,10 @@ public static class DryrunReportRenderer
                             );
         }
 
-        if (report.NavigatorEscalated)
+        if (report.Escalation != null)
         {
             output.WriteLine();
-            output.WriteLine($"** {NavigatorEscalatedPrefix}: {report.NavigatorEscalationReason} **");
+            output.WriteLine($"** {NavigatorEscalatedPrefix}: {report.Escalation.Reason} **");
         }
 
         return 0;

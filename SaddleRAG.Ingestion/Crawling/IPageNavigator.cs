@@ -20,22 +20,22 @@ namespace SaddleRAG.Ingestion.Crawling;
 ///     selector wait, used after <c>EscalationController</c> detects an SPA
 ///     shell or when the caller supplied an explicit <c>WaitForSelector</c>).
 ///     <para>
-///         Returns the navigation <see cref="IResponse" /> so the caller
-///         can branch on HTTP status, plus the raw response body text so
-///         the escalation controller can sniff for SPA framework markers
-///         without an extra Playwright round-trip. Implementations leave
-///         <paramref name="page" /> in a state where
-///         <c>page.ContentAsync()</c> reflects the fully hydrated DOM.
+///         Implementations apply their strategy-specific waits before
+///         returning. The crawler still runs its own frame-waiting and
+///         content-node measurement after <c>NavigateAsync</c> returns —
+///         page readiness for extraction is the caller's responsibility,
+///         not the navigator's.
 ///     </para>
 /// </summary>
 public interface IPageNavigator
 {
     /// <summary>
     ///     Navigate <paramref name="page" /> to <paramref name="url" />,
-    ///     perform any strategy-specific waits, and return the response
-    ///     and the raw HTTP response body text.
+    ///     perform strategy-specific waits, and return the navigation
+    ///     response plus the raw HTTP response body text (the latter is
+    ///     the input for <see cref="EscalationController" /> shell sniffing
+    ///     and never null — implementations return
+    ///     <see cref="string.Empty" /> when the body cannot be read).
     /// </summary>
-    Task<(IResponse? Response, string ResponseText)> NavigateAsync(IPage page,
-                                                                   string url,
-                                                                   CancellationToken ct);
+    Task<NavigationResult> NavigateAsync(IPage page, string url, CancellationToken ct);
 }

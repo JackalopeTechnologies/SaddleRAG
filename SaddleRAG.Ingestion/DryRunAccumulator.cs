@@ -68,8 +68,7 @@ public sealed class DryRunAccumulator
     private int mMedianContentNodeDelta = -1;
     private bool mLoadWaitRecommended = true;
 
-    private bool mNavigatorEscalated;
-    private string mNavigatorEscalationReason = string.Empty;
+    private NavigatorEscalation? mEscalation;
 
     internal void RecordTotalPage(string hostKey, int depth, bool inScope)
     {
@@ -188,20 +187,16 @@ public sealed class DryRunAccumulator
     }
 
     /// <summary>
-    ///     Record that the crawler escalated from the SSR navigator to the
-    ///     SPA navigator. Called by <c>EscalationController</c> at the moment
-    ///     of the swap. <paramref name="reason" /> is a human-readable
-    ///     description (framework signal or "user-supplied waitForSelector").
+    ///     Records that the crawler swapped to the SPA navigator with the
+    ///     given human-readable reason (framework signal or
+    ///     "user-supplied waitForSelector").
     /// </summary>
-    public void RecordNavigatorSwap(string reason)
+    internal void RecordNavigatorSwap(string reason)
     {
         ArgumentException.ThrowIfNullOrEmpty(reason);
 
         lock(mLock)
-        {
-            mNavigatorEscalated = true;
-            mNavigatorEscalationReason = reason;
-        }
+            mEscalation = new NavigatorEscalation { Reason = reason };
     }
 
     public DryRunSnapshot Snapshot()
@@ -240,8 +235,7 @@ public sealed class DryRunAccumulator
                                                TotalEmbedMs = mTotalEmbedMs,
                                                EmbedBatchCount = mEmbedBatchCount
                                            },
-                             NavigatorEscalated = mNavigatorEscalated,
-                             NavigatorEscalationReason = mNavigatorEscalationReason
+                             Escalation = mEscalation
                          };
         }
 

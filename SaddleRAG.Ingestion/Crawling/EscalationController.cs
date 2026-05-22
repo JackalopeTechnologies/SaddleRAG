@@ -45,7 +45,6 @@ public sealed class EscalationController
         ArgumentNullException.ThrowIfNull(logger);
 
         mJob = job;
-        mInitial = initial;
         mSpa = spa;
         mActive = initial;
         mOnEscalate = onEscalate;
@@ -56,7 +55,6 @@ public sealed class EscalationController
     private readonly Lock mLock = new();
     private readonly List<string> mFetchedUrls = new();
     private readonly ScrapeJob mJob;
-    private readonly IPageNavigator mInitial;
     private readonly IPageNavigator mSpa;
     private readonly Action<IReadOnlyList<string>>? mOnEscalate;
     private readonly DryRunAccumulator? mDryRunAcc;
@@ -94,13 +92,6 @@ public sealed class EscalationController
             return result;
         }
     }
-
-    /// <summary>
-    ///     Initial navigator the controller was constructed with.
-    ///     Exposed so the crawler can detect "still SSR" without
-    ///     querying <see cref="ShouldEscalate" />.
-    /// </summary>
-    public IPageNavigator InitialNavigator => mInitial;
 
     /// <summary>
     ///     Observe a successfully fetched page. Adds the URL to the

@@ -395,7 +395,8 @@ public class IngestionOrchestrator
                              MedianContentNodeDelta = snapshot.MedianContentNodeDelta,
                              LoadWaitRecommended = snapshot.LoadWaitRecommended,
                              CategoryHistogram = snapshot.CategoryHistogram,
-                             StageTimings = snapshot.Timings
+                             StageTimings = snapshot.Timings,
+                             Escalation = snapshot.Escalation
                          };
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
