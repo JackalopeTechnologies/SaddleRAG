@@ -100,31 +100,50 @@ public sealed class EscalationController
     ///     A non-null signal — or a non-null
     ///     <see cref="ScrapeJob.WaitForSelector" /> on the first page —
     ///     triggers escalation.
+    ///     <para>
+    ///         Returns <c>true</c> when THIS call is the one that triggered
+    ///         escalation. The caller uses that to skip persisting the
+    ///         in-flight page record: the trigger page is in the requeue
+    ///         list and will be re-fetched under the SPA navigator, so the
+    ///         current SSR-rendered DOM would only race the re-fetch into
+    ///         the upsert. Returns <c>false</c> for every other
+    ///         observation, including ones made while
+    ///         <see cref="ShouldEscalate" /> is already true.
+    ///     </para>
     /// </summary>
-    public void ObservePage(string url, string responseText)
+    public bool ObservePage(string url, string responseText)
     {
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(responseText);
 
+        bool result = false;
         lock(mLock)
         {
             mFetchedUrls.Add(url);
 
             bool windowOpen = !mEscalated && mFetchedUrls.Count <= EscalationWindowPages;
             if (windowOpen)
-                EvaluateForEscalation(responseText);
+                result = EvaluateForEscalation(responseText);
         }
+
+        return result;
     }
 
-    private void EvaluateForEscalation(string responseText)
+    private bool EvaluateForEscalation(string responseText)
     {
         bool forceFromSelector = !string.IsNullOrEmpty(mJob.WaitForSelector) && mFetchedUrls.Count == 1;
         string? reason = forceFromSelector
                              ? UserSuppliedSelectorReason
                              : DetectShellSignal(responseText);
 
+        bool result = false;
         if (reason != null)
+        {
             Escalate(reason);
+            result = true;
+        }
+
+        return result;
     }
 
     private void Escalate(string reason)
@@ -151,9 +170,19 @@ public sealed class EscalationController
             {
                 mOnEscalate.Invoke(mFetchedUrls.AsReadOnly());
             }
-            catch(Exception ex)
+            catch(ObjectDisposedException ex)
             {
-                mLogger.LogError(ex, "EscalationController onEscalate callback threw; navigator swap is committed but requeue may be incomplete");
+                mLogger.LogError(ex,
+                                 "EscalationController onEscalate threw ObjectDisposedException; navigator swap committed but {Count} URLs may not have been requeued",
+                                 mFetchedUrls.Count
+                                );
+            }
+            catch(InvalidOperationException ex)
+            {
+                mLogger.LogError(ex,
+                                 "EscalationController onEscalate threw InvalidOperationException; navigator swap committed but {Count} URLs may not have been requeued",
+                                 mFetchedUrls.Count
+                                );
             }
         }
     }

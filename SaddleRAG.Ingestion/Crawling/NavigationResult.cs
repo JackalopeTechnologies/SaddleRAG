@@ -28,4 +28,13 @@ public sealed record NavigationResult
 {
     public required IResponse? Response { get; init; }
     public required string ResponseText { get; init; }
+
+    /// <summary>
+    ///     Substantial-content-node count measured immediately after
+    ///     <c>GotoAsync(DOMContentLoaded)</c>, before any strategy-specific
+    ///     post-nav waits. The crawler measures a second count after its
+    ///     own frame wait; the delta classifies SSR vs SPA. -1 when the
+    ///     measurement could not be taken (e.g. response not Ok).
+    /// </summary>
+    public required int DomCount { get; init; }
 }
