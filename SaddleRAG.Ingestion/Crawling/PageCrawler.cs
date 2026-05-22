@@ -374,6 +374,11 @@ public class PageCrawler : IPageCrawler
                                           mLoggerFactory.CreateLogger<SpaPageNavigator>()
                                          );
 
+        // Forward-declared so the onEscalate closure can capture the
+        // CrawlContext that hasn't been constructed yet. Set to the real
+        // ctx instance immediately after CrawlContext construction; the
+        // closure only fires after at least one ObservePage call, which
+        // only happens once workers have started using ctx.
         CrawlContext? ctxRef = null;
         Action<IReadOnlyList<string>> onEscalate = urls =>
             {
