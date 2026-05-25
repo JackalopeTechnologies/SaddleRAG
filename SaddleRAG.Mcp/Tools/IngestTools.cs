@@ -33,7 +33,7 @@ public static class IngestTools
     [McpServerTool(Name = "start_ingest")]
     [Description("Single ingestion entrypoint — call this first when you want to ingest or refresh a library. " +
                  "Inspects (library, version) state and returns one of six states: " +
-                 "IN_PROGRESS (scrape already running — poll get_scrape_status or call cancel_scrape), " +
+                 "IN_PROGRESS (scrape already running — poll get_scrape_status or call cancel_job), " +
                  "URL_SUSPECT (indexed content looks wrong — browse URL and call submit_url_correction), " +
                  "RECON_NEEDED (no profile — call recon_library then submit_library_profile), " +
                  "READY_TO_SCRAPE (profile cached, no chunks — call scrape_docs), " +
@@ -148,7 +148,7 @@ public static class IngestTools
                 Url = url,
                 NextTool = "get_scrape_status",
                 Message =
-                    $"Scrape job {jobId} is already running. Poll get_scrape_status, or call cancel_scrape to abort.",
+                    $"Scrape job {jobId} is already running. Poll get_scrape_status, or call cancel_job to abort.",
                 NextToolArgs = new Dictionary<string, string>
                                    {
                                        ["jobId"] = jobId

@@ -8,6 +8,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
@@ -15,6 +16,7 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
+using SaddleRAG.Ingestion.Reconciliation;
 
 #endregion
 
@@ -27,6 +29,15 @@ namespace SaddleRAG.Mcp.Tools;
 [McpServerToolType]
 public static class IngestionTools
 {
+    /// <summary>
+    ///     Logger category marker for <see cref="IngestionTools" />. Lets the static
+    ///     tool methods take <c>ILogger&lt;T&gt;</c> via DI — generic type parameters
+    ///     can't point at a static class directly.
+    /// </summary>
+    public sealed class IngestionToolsLog
+    {
+    }
+
     [McpServerTool(Name = "dryrun_scrape")]
     [Description("Dry-run a documentation scrape — fetches every page with Playwright " +
                  "but does NOT store anything to the database or clone any GitHub repos. " +
@@ -36,28 +47,35 @@ public static class IngestionTools
                  "the URL patterns are correct and the crawl scope is reasonable. " +
                  "Pass seedUrls when the home page does not link to all sections (e.g., DocFX " +
                  "sites whose /api/ tree is reachable only through namespace index pages) — " +
-                 "the seeds are added to the crawl queue alongside rootUrl, mirroring exactly " +
-                 "what a real scrape_docs call with the same seedUrls would discover."
+                 "the seeds are added to the crawl queue alongside url, mirroring exactly " +
+                 "what a real scrape_docs call with the same seedUrls would discover. " +
+                 "NOTE: the historical `rootUrl` parameter has been renamed to `url` to align " +
+                 "with scrape_docs/recon_library/add_page. `rootUrl` still works as a deprecated " +
+                 "alias for one release and will be removed in the next."
                 )]
     public static async Task<string> DryRunScrape(IngestionOrchestrator orchestrator,
                                                   [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                   IBackgroundJobRunner runner,
                                                   RepositoryFactory repositoryFactory,
                                                   IMonitorBroadcaster broadcaster,
-                                                  [Description("Root URL to begin crawling from")]
-                                                  string rootUrl,
+                                                  ILogger<IngestionToolsLog> logger,
                                                   [Description("Library identifier — used to key the audit log for this dry run"
                                                               )]
                                                   string library,
                                                   [Description("Library version — used to key the audit log for this dry run"
                                                               )]
                                                   string version,
-                                                  [Description("Allowed URL patterns (regex). Defaults to the rootUrl host."
+                                                  [Description("Root URL to begin crawling from")]
+                                                  string? url = null,
+                                                  [Description("DEPRECATED alias for `url`. Pass `url` instead. " +
+                                                               "Will be removed in the next release; both names accepted in this one."
                                                               )]
+                                                  string? rootUrl = null,
+                                                  [Description("Allowed URL patterns (regex). Defaults to the url host.")]
                                                   string[]? allowedUrlPatterns = null,
                                                   [Description("Excluded URL patterns (regex)")]
                                                   string[]? excludedUrlPatterns = null,
-                                                  [Description("Additional seed URLs added to the crawl queue alongside rootUrl. " +
+                                                  [Description("Additional seed URLs added to the crawl queue alongside url. " +
                                                                "Same semantics as scrape_docs.seedUrls — use for sites where the home " +
                                                                "page does not link to every section that needs indexing."
                                                               )]
@@ -92,7 +110,14 @@ public static class IngestionTools
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(broadcaster);
-        ArgumentException.ThrowIfNullOrEmpty(rootUrl);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        string? resolvedUrl = ParameterAliasReconciler.Resolve(url,
+                                                               rootUrl,
+                                                               ParamNameUrl,
+                                                               ParamNameRootUrl,
+                                                               logger);
+        ArgumentException.ThrowIfNullOrEmpty(resolvedUrl);
         ArgumentException.ThrowIfNullOrEmpty(library);
         ArgumentException.ThrowIfNullOrEmpty(version);
         if (spaWaitMs is < 0)
@@ -100,11 +125,11 @@ public static class IngestionTools
                                                   spaWaitMs,
                                                   "spaWaitMs must be non-negative");
 
-        var allowed = allowedUrlPatterns ?? [new Uri(rootUrl).Host];
+        var allowed = allowedUrlPatterns ?? [new Uri(resolvedUrl).Host];
 
         var job = new ScrapeJob
                       {
-                          RootUrl = rootUrl,
+                          RootUrl = resolvedUrl,
                           LibraryId = library,
                           Version = version,
                           LibraryHint = DryRunHint,
@@ -121,7 +146,7 @@ public static class IngestionTools
 
         var inputJson = JsonSerializer.Serialize(new
                                                      {
-                                                         rootUrl,
+                                                         url = resolvedUrl,
                                                          library,
                                                          version,
                                                          maxPages,
@@ -168,7 +193,7 @@ public static class IngestionTools
                  "Status values: Queued (waiting), Running (in progress), " +
                  "Completed (fully indexed — call search_docs or get_class_reference), " +
                  "Failed (ingestion error — call get_server_logs to diagnose, then delete_version and retry), " +
-                 "Cancelled (stopped by cancel_scrape — partial results kept; call delete_version to clear them). " +
+                 "Cancelled (stopped by cancel_job — partial results kept; call delete_version to clear them). " +
                  "Poll at reasonable intervals (10–30s); the job id comes from scrape_docs or submit_url_correction."
                 )]
     public static async Task<string> GetScrapeStatus(RepositoryFactory repositoryFactory,
@@ -219,9 +244,9 @@ public static class IngestionTools
 
     [McpServerTool(Name = "list_scrape_jobs")]
     [Description("List recent scrape jobs, most recent first. " +
-                 "Use job ids from this list with get_scrape_status (poll progress) or cancel_scrape (stop a job). " +
+                 "Use job ids from this list with get_scrape_status (poll progress) or cancel_job (stop a job). " +
                  "Running jobs with no recent progress (stale) appear in get_dashboard_index with a Stale flag — " +
-                 "call cancel_scrape for them. Failed jobs: call get_server_logs to diagnose."
+                 "call cancel_job for them. Failed jobs: call get_server_logs to diagnose."
                 )]
     public static async Task<string> ListScrapeJobs(RepositoryFactory repositoryFactory,
                                                     [Description("Maximum jobs to return (default 20)")]
@@ -482,6 +507,9 @@ public static class IngestionTools
     private const int DefaultDryRunMaxPages = 200;
     private const string DryRunHint = "Dry run";
     private const string ItemsLabelPages = "pages";
+
+    private const string ParamNameUrl = "url";
+    private const string ParamNameRootUrl = "rootUrl";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

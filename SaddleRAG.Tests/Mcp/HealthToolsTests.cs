@@ -321,7 +321,7 @@ public sealed class HealthToolsTests
                                                           TestContext.Current.CancellationToken
                                                          );
 
-        Assert.Contains("\"tool\": \"cancel_scrape\"", json);
+        Assert.Contains("\"tool\": \"cancel_job\"", json);
     }
 
     private static JobRecord MakeJobRecord(string id,
