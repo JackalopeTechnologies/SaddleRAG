@@ -13,5 +13,6 @@
   <Project Path="SaddleRAG.Installer.Logic/SaddleRAG.Installer.Logic.csproj" />
   <Project Path="SaddleRAG.Mcp/SaddleRAG.Mcp.csproj" />
   <Project Path="SaddleRAG.Monitor/SaddleRAG.Monitor.csproj" />
+  <Project Path="SaddleRAG.Packaging/SaddleRAG.Packaging.csproj" />
   <Project Path="SaddleRAG.Tests/SaddleRAG.Tests.csproj" />
 </Solution>
