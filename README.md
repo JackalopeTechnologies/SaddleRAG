@@ -568,6 +568,10 @@ SaddleRAG.Installer/              # WiX MSI installer definition
 SaddleRAG.Tests/                  # Integration and unit tests
 ```
 
+## Support
+
+SaddleRAG is free and MIT-licensed. If it's saving you time and you'd like to chip in, [GitHub Sponsors](https://github.com/sponsors/WyoDoug) is the easiest way to do that — any amount helps and there are no perks gated behind it. Totally optional; stars and bug reports are appreciated just as much.
+
 ## License
 
 SaddleRAG is released under the [MIT License](./LICENSE). You may use, copy, modify, merge, publish, distribute, sublicense, and sell the software, including for commercial purposes, subject only to the requirement that the copyright notice and the MIT permission notice be included in copies or substantial portions of the software.
