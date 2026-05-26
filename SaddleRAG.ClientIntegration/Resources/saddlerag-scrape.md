@@ -14,7 +14,7 @@ This skill covers how to run `scrape_docs` effectively. If you're uncertain abou
 | Parameter | What it actually does | Guidance |
 |---|---|---|
 | `url` | Crawl entry point | Must be the docs hub, not the product homepage |
-| `libraryId` | Storage key | Use a stable slug: `react`, `infragistics-wpf`, `mongodb-csharp` |
+| `library` | Storage key | Use a stable slug: `react`, `infragistics-wpf`, `mongodb-csharp`. (`libraryId` is accepted as a deprecated alias for one release.) |
 | `version` | Storage key | `current` unless you need version-pinned docs |
 | `hint` | Seeds the LLM classifier | Be specific: `"Infragistics WPF controls — how-to guides and API reference"` |
 | `fetchDelayMs` | Floor delay per worker | Not a global rate cap — see concurrency note below |
@@ -88,7 +88,7 @@ Fix: pass `seedUrls` listing each hub entry point. They go into the crawl queue 
 ```json
 {
   "url": "https://spatial.mathdotnet.com",
-  "libraryId": "mathnet-spatial",
+  "library": "mathnet-spatial",
   "version": "current",
   "hint": "Math.NET Spatial — .NET 2D/3D geometry library",
   "seedUrls": ["https://spatial.mathdotnet.com/api/MathNet.Spatial/index.htm"]
@@ -124,7 +124,7 @@ cancel_job(jobId="<id>")
 (`cancel_job` replaces the older `cancel_scrape` and now works for any cancellable job type — scrape, dryrun_scrape, rechunk, reembed, reextract. Atomic mutations like renames, deletes, dependency indexing, URL corrections, and cleanup jobs return `NotCancellable` and must run to completion.)
 
 Partial results are kept. Fix your patterns, then either:
-- `scrape_docs(libraryId=..., version=..., resume=true)` — restart from stored state, reusing the previous job's URL and patterns (you can override individual params)
+- `scrape_docs(library=..., version=..., resume=true)` — restart from stored state, reusing the previous job's URL and patterns (you can override individual params)
 - `scrape_docs(url=..., ..., force=true)` — start clean (clears partial data first)
 
 ---
@@ -135,7 +135,7 @@ Partial results are kept. Fix your patterns, then either:
 ```json
 {
   "url": "https://www.infragistics.com/help/wpf/controls-components-and-frameworks",
-  "libraryId": "infragistics-wpf",
+  "library": "infragistics-wpf",
   "version": "current",
   "hint": "Infragistics WPF controls documentation — how-to guides, overviews, and API class/member listings",
   "fetchDelayMs": 3000,
@@ -148,7 +148,7 @@ Partial results are kept. Fix your patterns, then either:
 ```json
 {
   "url": "https://docs.example.com/",
-  "libraryId": "example-lib",
+  "library": "example-lib",
   "version": "current",
   "hint": "...",
   "additionalRateLimitStatusCodes": [520, 521, 522]

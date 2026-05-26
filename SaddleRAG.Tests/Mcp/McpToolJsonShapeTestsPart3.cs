@@ -25,7 +25,7 @@ namespace SaddleRAG.Tests.Mcp;
 ///     get_job_status / list_jobs surface. Mutation tools (set_*,
 ///     delete_*, cleanup_*, rename_library) and orchestration tools
 ///     (start_ingest, scrape_docs, dryrun_scrape, inspect_scrape,
-///     cancel_scrape, add_page, list_pages, index_project_dependencies,
+///     cancel_job, add_page, list_pages, index_project_dependencies,
 ///     reextract_library, recon_library, rechunk_library) deliberately
 ///     stay out of shape-guard scope: they either return trivial
 ///     bool/string payloads or kick off background jobs whose state is

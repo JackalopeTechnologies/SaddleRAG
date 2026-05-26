@@ -211,7 +211,7 @@ Copy-paste starting points by generator. Always run a 200-page recon first to co
 ```json
 {
   "url": "<docs-hub-url>",
-  "libraryId": "<vendor-product>",
+  "library": "<vendor-product>",
   "version": "current",
   "fetchDelayMs": 3000,
   "additionalRateLimitStatusCodes": [502],
@@ -232,7 +232,7 @@ If you want API class listings, leave `_(members|methods|properties|events|field
 ```json
 {
   "url": "<docs-hub-url>",
-  "libraryId": "<library>",
+  "library": "<library>",
   "version": "current",
   "seedUrls": ["<docs-hub-url>/api/<MainNamespace>/index.htm"],
   "fetchDelayMs": 500,
@@ -250,7 +250,7 @@ The seed URL is the entire DocFX trick — without it, the home page often doesn
 ```json
 {
   "url": "<docs-hub-url>",
-  "libraryId": "<vendor-product>",
+  "library": "<vendor-product>",
   "version": "current",
   "seedUrls": ["<docs-hub-url>/api/index"],
   "fetchDelayMs": 500,
@@ -272,7 +272,7 @@ The `\?v=` exclude is mandatory if the site has a version dropdown that links th
 ```json
 {
   "url": "<docs-hub-url>",
-  "libraryId": "<library>",
+  "library": "<library>",
   "version": "current",
   "fetchDelayMs": 500,
   "allowedUrlPatterns": [

@@ -142,7 +142,7 @@ public static class HealthTools
                  "recentJobs[].Stale=true for Running jobs that haven't progressed in 4+ hours), and up to " +
                  "20 suspect libraries. The SuggestedNextAction field always contains the highest-priority " +
                  "tool to call next (scrape_docs for empty DB, submit_url_correction for suspect libraries, " +
-                 "cancel_scrape for stale-running jobs, null when healthy). If a recent job is marked Stale, call cancel_scrape with that job id. Act on SuggestedNextAction " +
+                 "cancel_job for stale-running jobs, null when healthy). If a recent job is marked Stale, call cancel_job with that job id. Act on SuggestedNextAction " +
                  "before doing anything else."
                 )]
     public static async Task<string> GetDashboardIndex(RepositoryFactory repositoryFactory,
@@ -272,7 +272,7 @@ public static class HealthTools
     private const string EmptyDbSuggestion = "Database is empty. Ingest a library to begin.";
     private const string SuggestToolScrape = "scrape_docs";
     private const string SuggestToolCorrectUrl = "submit_url_correction";
-    private const string SuggestToolCancelScrape = "cancel_scrape";
+    private const string SuggestToolCancelScrape = "cancel_job";
     private const string SuggestMessageHealthy = "All libraries look healthy.";
     private const string WarmupStatusFailed = "Failed";
 

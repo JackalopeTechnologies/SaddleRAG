@@ -305,7 +305,7 @@ SaddleRAG exposes 33 tools through the MCP protocol. Six load eagerly into every
 |---|---|
 | `get_scrape_status` | Poll a scrape job's progress by job ID |
 | `list_scrape_jobs` | List recent scrape jobs with status, most recent first |
-| `cancel_scrape` | Cancel a running scrape job |
+| `cancel_job` | Cancel a running scrape, dryrun, rechunk, reembed, or reextract job |
 
 ### Library & pages
 
