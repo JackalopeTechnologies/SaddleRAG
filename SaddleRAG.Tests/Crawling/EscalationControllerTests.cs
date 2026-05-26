@@ -143,6 +143,86 @@ public sealed class EscalationControllerTests
     }
 
     [Fact]
+    public void HtmlEscapedBlazorScriptInPreCodeDoesNotEscalate()
+    {
+        var ssr = new StubNavigator();
+        var spa = new StubNavigator();
+        var job = BuildJob();
+
+        var controller = new EscalationController(job,
+                                                  ssr,
+                                                  spa,
+                                                  onEscalate: null,
+                                                  dryRunAcc: null,
+                                                  NullLogger<EscalationController>.Instance
+                                                 );
+
+        const string tutorialHtml = "<!doctype html><html><body><h1>Setup</h1>" +
+                                    "<p>Add this script tag:</p>" +
+                                    "<pre><code class=\"lang-razor\">" +
+                                    "&lt;script src=&quot;_framework/blazor.server.js&quot;&gt;&lt;/script&gt;" +
+                                    "</code></pre>" +
+                                    "<p>And this one:</p>" +
+                                    "<pre><code>&lt;script src=&quot;blazor.webassembly.js&quot;&gt;&lt;/script&gt;</code></pre>" +
+                                    "</body></html>";
+
+        controller.ObservePage("https://example.com/docs/setup", tutorialHtml);
+
+        Assert.False(controller.ShouldEscalate);
+        Assert.Same(ssr, controller.Active);
+    }
+
+    [Fact]
+    public void InlineCodeFrameworkMarkerDoesNotEscalate()
+    {
+        var ssr = new StubNavigator();
+        var spa = new StubNavigator();
+        var job = BuildJob();
+
+        var controller = new EscalationController(job,
+                                                  ssr,
+                                                  spa,
+                                                  onEscalate: null,
+                                                  dryRunAcc: null,
+                                                  NullLogger<EscalationController>.Instance
+                                                 );
+
+        const string proseWithInlineCode = "<!doctype html><html><body>" +
+                                           "<p>Reference the <code>_framework/blazor.webassembly.js</code> file in your host page.</p>" +
+                                           "</body></html>";
+
+        controller.ObservePage("https://example.com/docs/intro", proseWithInlineCode);
+
+        Assert.False(controller.ShouldEscalate);
+        Assert.Same(ssr, controller.Active);
+    }
+
+    [Fact]
+    public void RealBlazorScriptSrcOutsideCodeBlockStillEscalates()
+    {
+        var ssr = new StubNavigator();
+        var spa = new StubNavigator();
+        var job = BuildJob();
+
+        var controller = new EscalationController(job,
+                                                  ssr,
+                                                  spa,
+                                                  onEscalate: null,
+                                                  dryRunAcc: null,
+                                                  NullLogger<EscalationController>.Instance
+                                                 );
+
+        const string realBlazorShell = "<!doctype html><html><head>" +
+                                       "<script src=\"_framework/blazor.webassembly.js\"></script>" +
+                                       "</head><body><div id=\"app\">Loading...</div></body></html>";
+
+        controller.ObservePage("https://example.com/app", realBlazorShell);
+
+        Assert.True(controller.ShouldEscalate);
+        Assert.Same(spa, controller.Active);
+    }
+
+    [Fact]
     public void AfterEscalateFurtherObserveIsNoOp()
     {
         var ssr = new StubNavigator();
