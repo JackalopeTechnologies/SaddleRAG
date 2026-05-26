@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
@@ -202,17 +203,28 @@ public sealed class EscalationController
     /// <summary>
     ///     Pure function: returns the matching framework and the
     ///     human-readable reason when <paramref name="html" /> contains a
-    ///     known SPA shell marker, null otherwise. Substring containment
-    ///     only — no regex, no DOM parsing.
+    ///     known SPA shell marker, null otherwise. Contents of
+    ///     <c>&lt;pre&gt;</c>, <c>&lt;code&gt;</c>, and <c>&lt;noscript&gt;</c>
+    ///     blocks are removed before matching so tutorial pages teaching
+    ///     framework setup (which print HTML-escaped script tags such as
+    ///     <c>&amp;lt;script src=&amp;quot;_framework/blazor.server.js&amp;quot;&amp;gt;</c>
+    ///     in code samples) do not trigger false-positive escalation.
     /// </summary>
     private static (SpaFramework Framework, string Reason)? DetectShellSignal(string html)
     {
+        string scanText = smCodeBlockPattern.Replace(html, string.Empty);
         (SpaFramework Framework, string Reason)? result = smShellMarkers
-            .Where(m => html.Contains(m.Marker, StringComparison.Ordinal))
+            .Where(m => scanText.Contains(m.Marker, StringComparison.Ordinal))
             .Select(m => ((SpaFramework, string)?) (m.Framework, m.Reason))
             .FirstOrDefault();
         return result;
     }
+
+    private static readonly Regex smCodeBlockPattern = new(@"<(pre|code|noscript)\b[^>]*>.*?</\1\s*>",
+                                                           RegexOptions.Compiled
+                                                           | RegexOptions.Singleline
+                                                           | RegexOptions.IgnoreCase
+                                                          );
 
     private static readonly (SpaFramework Framework, string Marker, string Reason)[] smShellMarkers =
         [
