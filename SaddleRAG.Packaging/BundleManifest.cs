@@ -4,6 +4,12 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
+using System.Text.Json.Serialization;
+
+#endregion
+
 namespace SaddleRAG.Packaging;
 
 /// <summary>
@@ -13,10 +19,22 @@ namespace SaddleRAG.Packaging;
 /// </summary>
 public sealed record BundleManifest
 {
+    [JsonPropertyName("manifestVersion")]
     public required int ManifestVersion { get; init; }
+
+    [JsonPropertyName("exporterVersion")]
     public required string ExporterVersion { get; init; }
+
+    /// <summary>
+    ///     Exporters must populate this from <c>DateTime.UtcNow</c>;
+    ///     importers treat unspecified Kind as UTC.
+    /// </summary>
+    [JsonPropertyName("createdUtc")]
     public required DateTime CreatedUtc { get; init; }
+
+    [JsonPropertyName("library")]
     public required BundleLibraryInfo Library { get; init; }
+
+    [JsonPropertyName("versions")]
     public required IReadOnlyList<BundleVersionEntry> Versions { get; init; }
 }
-

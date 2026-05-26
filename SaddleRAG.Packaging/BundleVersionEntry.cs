@@ -4,6 +4,12 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
+using System.Text.Json.Serialization;
+
+#endregion
+
 namespace SaddleRAG.Packaging;
 
 /// <summary>
@@ -13,12 +19,27 @@ namespace SaddleRAG.Packaging;
 /// </summary>
 public sealed record BundleVersionEntry
 {
+    [JsonPropertyName("version")]
     public required string Version { get; init; }
+
+    [JsonPropertyName("embeddingProviderId")]
     public required string EmbeddingProviderId { get; init; }
+
+    [JsonPropertyName("embeddingModelName")]
     public required string EmbeddingModelName { get; init; }
+
+    [JsonPropertyName("embeddingDimensions")]
     public required int EmbeddingDimensions { get; init; }
+
+    [JsonPropertyName("pageCount")]
     public required int PageCount { get; init; }
+
+    [JsonPropertyName("chunkCount")]
     public required int ChunkCount { get; init; }
+
+    [JsonPropertyName("bm25HasGridFs")]
     public required bool Bm25HasGridFs { get; init; }
+
+    [JsonPropertyName("blobs")]
     public required IReadOnlyDictionary<string, BlobInfo> Blobs { get; init; }
 }

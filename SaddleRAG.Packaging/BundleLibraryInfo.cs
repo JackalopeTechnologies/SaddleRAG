@@ -4,6 +4,12 @@
 // Available under AGPLv3 (see LICENSE) or a commercial license
 // (see COMMERCIAL-LICENSE.md). Contact douglas@jackalopetechnologies.com.
 
+#region Usings
+
+using System.Text.Json.Serialization;
+
+#endregion
+
 namespace SaddleRAG.Packaging;
 
 /// <summary>
@@ -11,7 +17,12 @@ namespace SaddleRAG.Packaging;
 /// </summary>
 public sealed record BundleLibraryInfo
 {
+    [JsonPropertyName("id")]
     public required string Id { get; init; }
+
+    [JsonPropertyName("name")]
     public required string Name { get; init; }
+
+    [JsonPropertyName("hint")]
     public required string Hint { get; init; }
 }
