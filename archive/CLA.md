@@ -1,4 +1,16 @@
-# SaddleRAG Individual Contributor License Agreement ("Agreement")
+> # DEPRECATED — NO LONGER REQUIRED FOR CONTRIBUTIONS
+>
+> SaddleRAG is now released under the **MIT License** only. See [`LICENSE`](../LICENSE) at the repository root.
+>
+> Under MIT, no Contributor License Agreement is required to contribute to SaddleRAG. The contribution flow is the standard "open a pull request" — your contribution is accepted under the MIT License terms by virtue of submitting it. See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for the current workflow.
+>
+> This CLA is retained in `archive/` solely for historical reference covering the brief 2026 window when the project required a CLA to support its dual AGPLv3 + commercial license model. CLA acknowledgments submitted by contributors during that window remain on file and continue to govern those past contributions; the relicense to MIT does not retroactively void any rights granted under those acknowledgments.
+>
+> The text below is preserved for historical record only.
+>
+> ---
+
+# SaddleRAG Individual Contributor License Agreement ("Agreement") (archived)
 
 **Based on the Apache Software Foundation Individual Contributor License Agreement V2.2.**
 

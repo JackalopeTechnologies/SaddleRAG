@@ -1,4 +1,16 @@
-# SaddleRAG Commercial License Agreement
+> # DEPRECATED — DO NOT RELY ON THIS DOCUMENT
+>
+> SaddleRAG is now released under the **MIT License** only. See [`LICENSE`](../LICENSE) at the repository root.
+>
+> This Commercial License Agreement is **no longer in effect** for the current or any future version of SaddleRAG. It is retained in `archive/` solely for historical reference covering the brief 2026 window when the project was distributed under a dual AGPLv3 + commercial license model. Customers who held an active commercial license under this Agreement during that period retain the perpetual usage rights granted by Section 5.5 for versions released during their paid term; those rights are unaffected by the relicense and remain governed by the terms of this Agreement as it stood at the time of their purchase.
+>
+> For all versions of SaddleRAG released after the MIT relicense, **no commercial license is required, offered, or available** — MIT permits unrestricted commercial use.
+>
+> The text below is preserved for historical record only.
+>
+> ---
+
+# SaddleRAG Commercial License Agreement (archived)
 
 **Effective for purchases made on or after the date of license issuance.**
 
