@@ -8,6 +8,7 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
@@ -15,6 +16,7 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
+using SaddleRAG.Ingestion.Reconciliation;
 using SaddleRAG.Ingestion.Scanning;
 
 #endregion
@@ -29,6 +31,15 @@ namespace SaddleRAG.Mcp.Tools;
 public static class ScrapeDocsTools
 {
     /// <summary>
+    ///     Logger category marker for <see cref="ScrapeDocsTools" />. Lets the static
+    ///     tool methods take <c>ILogger&lt;T&gt;</c> via DI — generic type parameters
+    ///     can't point at a static class directly.
+    /// </summary>
+    public sealed class ScrapeDocsToolsLog
+    {
+    }
+
+    /// <summary>
     ///     Fetch documentation from the source site and run the full ingest pipeline.
     ///     Supports cache-aware refresh and resuming prior scrapes by reusing stored job configuration.
     /// </summary>
@@ -42,17 +53,25 @@ public static class ScrapeDocsTools
                  "narrow or too broad. Pass seedUrls when the home page does not link to all sections that need indexing " +
                  "(e.g., DocFX-generated sites where the /api/ tree is reachable only through namespace index pages, not " +
                  "from the nav bar) — each seed URL is added to the crawl queue alongside the root, so a single scrape " +
-                 "fans out from multiple entry points. resume=true reuses the most recent ScrapeJob's rootUrl, patterns, " +
+                 "fans out from multiple entry points. resume=true reuses the most recent ScrapeJob's url, patterns, " +
                  "and seedUrls when url is omitted. If the library is flagged URL_SUSPECT, resume=true returns Status=Refused — " +
-                 "call submit_url_correction(library, version, newUrl) first to clear the flag and re-queue with a corrected URL."
+                 "call submit_url_correction(library, version, newUrl) first to clear the flag and re-queue with a corrected URL. " +
+                 "NOTE: the historical `libraryId` parameter has been renamed to `library` to align with " +
+                 "every other MCP tool. `libraryId` still works as a deprecated alias for one release and " +
+                 "will be removed in the next."
                 )]
     public static async Task<string> ScrapeDocs(ScrapeJobRunner runner,
                                                 RepositoryFactory repositoryFactory,
+                                                ILogger<ScrapeDocsToolsLog> logger,
                                                 [Description("Root URL of the documentation site (optional when resume=true)"
                                                             )]
                                                 string? url = null,
-                                                [Description("Unique library identifier for cache key")]
-                                                string libraryId = "",
+                                                [Description("Library identifier for cache key")]
+                                                string library = "",
+                                                [Description("DEPRECATED alias for `library`. Pass `library` instead. " +
+                                                             "Will be removed in the next release; both names accepted in this one."
+                                                            )]
+                                                string? libraryId = null,
                                                 [Description("Version string for cache key")]
                                                 string version = "",
                                                 [Description("Human-readable hint about what this library is")]
@@ -79,7 +98,7 @@ public static class ScrapeDocsTools
                                                              "out-of-scope seeds are dropped at the audit boundary."
                                                             )]
                                                 string[]? seedUrls = null,
-                                                [Description("Resume the most recent scrape for this (libraryId, version), reusing its RootUrl/patterns/seedUrls"
+                                                [Description("Resume the most recent scrape for this (library, version), reusing its url/patterns/seedUrls"
                                                             )]
                                                 bool resume = false,
                                                 [Description("Optional database profile name")]
@@ -101,7 +120,14 @@ public static class ScrapeDocsTools
     {
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(repositoryFactory);
-        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        string resolvedLibrary = ParameterAliasReconciler.Resolve(library,
+                                                                  libraryId,
+                                                                  ParamNameLibrary,
+                                                                  ParamNameLibraryId,
+                                                                  logger) ?? string.Empty;
+        ArgumentException.ThrowIfNullOrEmpty(resolvedLibrary);
         ArgumentException.ThrowIfNullOrEmpty(version);
         if (spaWaitMs is < 0)
             throw new ArgumentOutOfRangeException(nameof(spaWaitMs),
@@ -121,7 +147,7 @@ public static class ScrapeDocsTools
         {
             var jobRepo = repositoryFactory.GetJobRepository(profile);
             var recent = await jobRepo.ListRecentAsync(JobType.Scrape, limit: 100, ct);
-            var previous = recent.Where(j => j.LibraryId == libraryId && j.Version == version)
+            var previous = recent.Where(j => j.LibraryId == resolvedLibrary && j.Version == version)
                                  .OrderByDescending(j => j.CreatedAt)
                                  .FirstOrDefault();
             var previousJob = DeserializeScrapeJob(previous);
@@ -132,14 +158,14 @@ public static class ScrapeDocsTools
                                   {
                                       Status = StatusNoPriorJob,
                                       Message =
-                                          $"resume=true but no previous scrape job exists for {libraryId} v{version}. Pass url to start a fresh scrape."
+                                          $"resume=true but no previous scrape job exists for {resolvedLibrary} v{version}. Pass url to start a fresh scrape."
                                   };
                 json = JsonSerializer.Serialize(noPrior, new JsonSerializerOptions { WriteIndented = true });
                 earlyResponseEmitted = true;
             }
             else
             {
-                var versionRecord = await libraryRepo.GetVersionAsync(libraryId, version, ct);
+                var versionRecord = await libraryRepo.GetVersionAsync(resolvedLibrary, version, ct);
                 if (versionRecord is { Suspect: true })
                 {
                     var refused = new
@@ -158,7 +184,7 @@ public static class ScrapeDocsTools
                     jobToQueue = new ScrapeJob
                                      {
                                          RootUrl = url ?? previousJob.RootUrl,
-                                         LibraryId = libraryId,
+                                         LibraryId = resolvedLibrary,
                                          Version = version,
                                          LibraryHint = hint ?? previousJob.LibraryHint,
                                          AllowedUrlPatterns = allowedUrlPatterns ?? previousJob.AllowedUrlPatterns,
@@ -177,15 +203,15 @@ public static class ScrapeDocsTools
 
         if (!earlyResponseEmitted)
         {
-            var existingVersion = await libraryRepo.GetVersionAsync(libraryId, version, ct);
+            var existingVersion = await libraryRepo.GetVersionAsync(resolvedLibrary, version, ct);
             if (existingVersion != null && !force)
             {
                 var cached = new
                                  {
                                      Status = StatusAlreadyCached,
-                                     LibraryId = libraryId,
+                                     LibraryId = resolvedLibrary,
                                      Version = version,
-                                     Message = $"Documentation for {libraryId} v{version} is already indexed " +
+                                     Message = $"Documentation for {resolvedLibrary} v{version} is already indexed " +
                                                $"({existingVersion.ChunkCount} chunks). Use force=true to re-scrape."
                                  };
                 json = JsonSerializer.Serialize(cached, new JsonSerializerOptions { WriteIndented = true });
@@ -194,7 +220,7 @@ public static class ScrapeDocsTools
             {
                 string resolvedUrl = url ?? string.Empty;
                 jobToQueue ??= BuildJobForUrl(resolvedUrl,
-                                              libraryId,
+                                              resolvedLibrary,
                                               version,
                                               hint,
                                               maxPages,
@@ -208,13 +234,13 @@ public static class ScrapeDocsTools
                                               spaWaitMs ?? 0
                                              );
                 var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
-                await scrapeAuditRepo.DeleteByLibraryVersionAsync(libraryId, version, ct);
+                await scrapeAuditRepo.DeleteByLibraryVersionAsync(resolvedLibrary, version, ct);
                 var jobId = await runner.QueueAsync(jobToQueue, profile, ct);
                 var response = new
                                    {
                                        JobId = jobId,
                                        Status = nameof(ScrapeJobStatus.Queued),
-                                       LibraryId = libraryId,
+                                       LibraryId = resolvedLibrary,
                                        Version = version,
                                        Message =
                                            $"Scrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
@@ -354,6 +380,9 @@ public static class ScrapeDocsTools
     private const string ReasonUrlSuspect = "URL_SUSPECT";
     private const string ItemsLabelPackages = "packages";
     private const int DefaultMaxPages = 0;
+
+    private const string ParamNameLibrary = "library";
+    private const string ParamNameLibraryId = "libraryId";
 
     private static readonly JsonSerializerOptions smIndexOptions = new JsonSerializerOptions { WriteIndented = true };
 }

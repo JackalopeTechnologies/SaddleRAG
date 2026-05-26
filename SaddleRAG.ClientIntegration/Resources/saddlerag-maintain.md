@@ -27,7 +27,7 @@ cancel_job(jobId="<id>")
 
 A library is **suspect** when its URL has been flagged as wrong. Do not re-scrape — fix the URL first:
 ```
-submit_url_correction(libraryId=..., version=..., newUrl="<corrected url>")
+submit_url_correction(library=..., version=..., newUrl="<corrected url>")
 ```
 That clears the flag and re-queues with the corrected URL in one call.
 
@@ -55,7 +55,7 @@ crawl → classify → chunk → embed → index
 
 ## Diagnosing a bad index
 
-Call `get_library_health(libraryId=..., version=...)` first. It reports:
+Call `get_library_health(library=..., version=...)` first. It reports:
 - Chunk count and page count
 - Category distribution (how many pages are HowTo vs ApiReference vs Unclassified)
 - Embedding coverage (pages with vs without embeddings)

@@ -98,13 +98,13 @@ Try synonyms or the parent concept. `"column layout"` instead of `"FieldLayout c
 
 **3. Check what's actually indexed**  
 `list_symbols(library=...)` — are the expected types there?  
-`get_library_health(libraryId=..., version=...)` — how many pages/chunks? What's the Unclassified %?
+`get_library_health(library=..., version=...)` — how many pages/chunks? What's the Unclassified %?
 
 **4. Check if the right pages were scraped**  
 `inspect_scrape(jobId=...)` from the most recent scrape job — were the relevant URLs fetched, excluded, or errored?
 
 **5. If the index looks good but results are still wrong**  
-The scrape may have captured the right URLs but extracted the wrong content (navigation chrome, boilerplate, JS-rendered content the fetcher couldn't parse). Check `list_pages(libraryId=..., version=...)` and spot-check a few URLs to see what was actually stored.
+The scrape may have captured the right URLs but extracted the wrong content (navigation chrome, boilerplate, JS-rendered content the fetcher couldn't parse). Check `list_pages(library=..., version=...)` and spot-check a few URLs to see what was actually stored.
 
 **If none of the above resolves it:** the content genuinely may not be in the docs, or may require a re-scrape with a better root URL. See `saddlerag:recon`.
 

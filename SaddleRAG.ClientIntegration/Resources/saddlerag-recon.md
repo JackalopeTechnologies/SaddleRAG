@@ -67,15 +67,14 @@ This matches any URL whose last path component contains two `~`-delimited segmen
 ```
 dryrun_scrape(
   url="<root url>",
-  libraryId="<your-id>",
+  library="<your-id>",
   version="current",
-  hint="<what this library is>",
   excludedUrlPatterns=["<pattern>"],   // add patterns you're testing
   maxPages=200                          // cap it for recon — you don't need all 10k
 )
 ```
 
-Then call `get_scrape_status(jobId=...)` and watch it run. When complete, call `inspect_scrape(jobId=...)` to read the audit log.
+Then call `get_job_status(jobId=...)` to watch it run. When complete, call `inspect_scrape(jobId=...)` to read the audit log.
 
 ---
 
