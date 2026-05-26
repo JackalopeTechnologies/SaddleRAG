@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-26
+
+### SPA detector
+
+- **Fixed false-positive SPA escalation on tutorial pages.**
+  `EscalationController.DetectShellSignal` did naive substring matching against
+  the full HTML response, so any documentation page that printed an HTML-escaped
+  Blazor / React / Vue / Next / Nuxt / Svelte / Angular script tag inside
+  `<pre>` / `<code>` / `<noscript>` blocks tripped the shell sniffer. Affected
+  pages would swap to the SPA navigator on page 1, then stall (the SPA path
+  could not extract more links from an already-server-rendered DOM). Hit while
+  scraping the Ignite UI for Blazor docs, where the getting-started page prints
+  `&lt;script src=&quot;_framework/blazor.server.js&quot;&gt;` inside a code
+  block. Fix strips `<pre>`, `<code>`, and `<noscript>` content (case-insensitive,
+  non-greedy, multiline) before substring matching. Real framework shells keep
+  their bootstrap signals in `<script src=...>` attributes outside code blocks,
+  so legitimate SPA detection is unaffected. (#95)
+
 ### MCP API consistency
 
 - **Renamed `scrape_docs` parameter `libraryId` → `library`** to align with every
