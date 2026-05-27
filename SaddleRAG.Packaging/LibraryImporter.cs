@@ -8,8 +8,10 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Packaging.Internal;
 
 #endregion
@@ -47,6 +49,8 @@ public sealed class LibraryImporter
     private const string ConcurrentJobHint = "Wait for it to complete or cancel it before retrying.";
     private const int PageBatchSize = 256;
     private const int ChunkBatchSize = 256;
+    private const string ReembedItemsLabel = "chunks";
+    private const string FollowUpSeparator = "; ";
 
     #endregion
 
@@ -116,6 +120,7 @@ public sealed class LibraryImporter
 
         var versionsImported = new List<string>();
         var partialFailures = new List<ImportPartialFailure>();
+        bool encoderMatches = true;
 
         bool hasVersions = manifest.Versions.Count > 0;
         if (hasVersions)
@@ -149,7 +154,7 @@ public sealed class LibraryImporter
 
             // Gate 3 — encoder-match decision.
             var bundleEncoder = manifest.Versions[0];
-            bool encoderMatches =
+            encoderMatches =
                 string.Equals(bundleEncoder.EmbeddingProviderId, ActiveEncoderProviderId, StringComparison.Ordinal)
                 && string.Equals(bundleEncoder.EmbeddingModelName, ActiveEncoderModelName, StringComparison.Ordinal)
                 && bundleEncoder.EmbeddingDimensions == ActiveEncoderDimensions;
@@ -192,14 +197,27 @@ public sealed class LibraryImporter
 
         // Task 20 will add library upsert here.
 
+        var pendingReembedJobIds = new List<string>();
+
+        if (!encoderMatches && versionsImported.Count > 0)
+        {
+            foreach (var version in versionsImported)
+            {
+                var jobId = await EnqueueReembedAsync(manifest.Library.Id, version, ct);
+                pendingReembedJobIds.Add(jobId);
+            }
+        }
+
+        var recommendedFollowUp = BuildRecommendedFollowUp(pendingReembedJobIds, bytesFreed: 0, overwroteAny: false);
+
         return new ImportResult
                    {
                        VersionsImported = versionsImported,
                        OverwrittenVersions = [],
                        BytesFreed = 0,
-                       PendingReembedJobIds = [],
+                       PendingReembedJobIds = pendingReembedJobIds,
                        PartialFailures = partialFailures,
-                       RecommendedFollowUp = string.Empty
+                       RecommendedFollowUp = recommendedFollowUp
                    };
     }
 
@@ -585,6 +603,35 @@ public sealed class LibraryImporter
         if (bytes != info.Bytes)
             throw new InvalidOperationException(
                 $"Bundle integrity check failed for '{path}': expected {info.Bytes} bytes, got {bytes}");
+    }
+
+    private async Task<string> EnqueueReembedAsync(string libraryId, string version, CancellationToken ct)
+    {
+        var options = new ReembedOptions();
+        var jobRecord = new JobRecord
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                JobType = JobType.Reembed,
+                                LibraryId = libraryId,
+                                Version = version,
+                                InputJson = JsonSerializer.Serialize(options),
+                                Status = JobStatus.Queued,
+                                ItemsLabel = ReembedItemsLabel
+                            };
+        await mJobRepository.UpsertAsync(jobRecord, ct);
+        return jobRecord.Id;
+    }
+
+    private static string BuildRecommendedFollowUp(IReadOnlyList<string> reembedJobIds,
+                                                    long bytesFreed,
+                                                    bool overwroteAny)
+    {
+        var parts = new List<string>();
+        if (reembedJobIds.Count > 0)
+            parts.Add($"Re-embed in progress (jobs: {string.Join(", ", reembedJobIds)}); monitor with get_reembed_status.");
+        if (overwroteAny && bytesFreed > 0)
+            parts.Add($"Run compact_collections to reclaim {bytesFreed} bytes freed by overwrite.");
+        return string.Join(FollowUpSeparator, parts);
     }
 
     #region VersionWriteLog nested class

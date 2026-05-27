@@ -550,6 +550,135 @@ public sealed class LibraryImporterTests
                                 Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task EncoderMismatchInsertsChunksWithNullEmbeddingAndEnqueuesReembed()
+    {
+        const string LibraryId = "test-lib";
+        const string Version = "1.0";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+
+        // Build fixture data. MakeVersion defaults to modelName="test-embed", providerId="onnx-local".
+        var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
+
+        // Wire exporter mocks.
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var exportBm25Repo = Substitute.For<IBm25ShardRepository>();
+        exportBm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+
+        var bundlePath = await CreateValidSingleVersionBundleAsync(
+            exportLibraryRepo, exportProfileRepo, exportIndexRepo, exportExcludedRepo,
+            exportDiffRepo, exportPageRepo, exportChunkRepo, exportBm25Repo,
+            LibraryId, Version);
+
+        // Receiver: library doesn't exist yet.
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns((LibraryRecord?) null);
+
+        // Capture the reembed job record passed to UpsertAsync.
+        JobRecord? capturedJob = null;
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+        importJobRepo
+            .When(r => r.UpsertAsync(Arg.Any<JobRecord>(), Arg.Any<CancellationToken>()))
+            .Do(ci => capturedJob = ci.Arg<JobRecord>());
+
+        // Receiver encoder uses a DIFFERENT model name — triggers mismatch.
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: "different-model",
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        // Capture the chunks passed to InsertChunksAsync.
+        IReadOnlyList<DocChunk>? capturedChunks = null;
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        importChunkRepo
+            .When(r => r.InsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>()))
+            .Do(ci => capturedChunks = ci.Arg<IReadOnlyList<DocChunk>>());
+
+        var importPageRepo = Substitute.For<IPageRepository>();
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+        var importBm25Repo = MakeEmptyBm25Repo();
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           importProfileRepo, importIndexRepo, importExcludedRepo,
+                                           importDiffRepo, importPageRepo, importChunkRepo,
+                                           importBm25Repo);
+
+        var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
+                                                progress: null,
+                                                ct: TestContext.Current.CancellationToken);
+
+        // Version imported successfully.
+        Assert.Contains(Version, result.VersionsImported);
+        Assert.Empty(result.PartialFailures);
+
+        // All chunks were inserted with null embeddings.
+        Assert.NotNull(capturedChunks);
+        Assert.Equal(ChunkCount, capturedChunks.Count);
+        Assert.All(capturedChunks, c => Assert.Null(c.Embedding));
+
+        // A reembed job was enqueued with the correct type, library, and version.
+        await importJobRepo.Received(1)
+                           .UpsertAsync(
+                               Arg.Is<JobRecord>(r =>
+                                   r.JobType == JobType.Reembed
+                                   && r.LibraryId == LibraryId
+                                   && r.Version == Version
+                                   && r.Status == JobStatus.Queued),
+                               Arg.Any<CancellationToken>());
+
+        // PendingReembedJobIds is populated with the enqueued job id.
+        Assert.Single(result.PendingReembedJobIds);
+        Assert.NotNull(capturedJob);
+        Assert.Equal(capturedJob.Id, result.PendingReembedJobIds[0]);
+
+        // RecommendedFollowUp points the caller at get_reembed_status.
+        Assert.Contains("Re-embed in progress", result.RecommendedFollowUp);
+        Assert.Contains(capturedJob.Id, result.RecommendedFollowUp);
+        Assert.Contains("get_reembed_status", result.RecommendedFollowUp);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static LibraryImporter MakeImporter()
