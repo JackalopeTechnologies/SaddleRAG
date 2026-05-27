@@ -31,6 +31,7 @@ public sealed class JsonlWriter<T> : IAsyncDisposable, IDisposable
     private readonly Stream mStream;
     private readonly bool mLeaveOpen;
     private readonly JsonSerializerOptions mOptions;
+    private bool mDisposed;
 
     /// <summary>
     ///     Serializes <paramref name="item" /> as a single JSON line and appends a newline.
@@ -44,16 +45,24 @@ public sealed class JsonlWriter<T> : IAsyncDisposable, IDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        await mStream.FlushAsync();
-        if (!mLeaveOpen)
-            await mStream.DisposeAsync();
+        if (!mDisposed)
+        {
+            mDisposed = true;
+            await mStream.FlushAsync();
+            if (!mLeaveOpen)
+                await mStream.DisposeAsync();
+        }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        mStream.Flush();
-        if (!mLeaveOpen)
-            mStream.Dispose();
+        if (!mDisposed)
+        {
+            mDisposed = true;
+            mStream.Flush();
+            if (!mLeaveOpen)
+                mStream.Dispose();
+        }
     }
 }

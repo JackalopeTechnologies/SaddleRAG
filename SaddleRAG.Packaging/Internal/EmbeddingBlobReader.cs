@@ -19,6 +19,13 @@ namespace SaddleRAG.Packaging.Internal;
 /// </summary>
 public sealed class EmbeddingBlobReader
 {
+    static EmbeddingBlobReader()
+    {
+        if (!BitConverter.IsLittleEndian)
+            throw new PlatformNotSupportedException(
+                "Bundle format requires a little-endian host runtime.");
+    }
+
     public EmbeddingBlobReader(Stream stream, int dim)
     {
         ArgumentNullException.ThrowIfNull(stream);

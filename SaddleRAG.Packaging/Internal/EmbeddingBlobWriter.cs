@@ -20,6 +20,13 @@ namespace SaddleRAG.Packaging.Internal;
 /// </summary>
 public sealed class EmbeddingBlobWriter : IAsyncDisposable, IDisposable
 {
+    static EmbeddingBlobWriter()
+    {
+        if (!BitConverter.IsLittleEndian)
+            throw new PlatformNotSupportedException(
+                "Bundle format requires a little-endian host runtime.");
+    }
+
     public EmbeddingBlobWriter(Stream stream, int dim, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -35,6 +42,7 @@ public sealed class EmbeddingBlobWriter : IAsyncDisposable, IDisposable
     private readonly bool mLeaveOpen;
     private readonly int mDim;
     private readonly int mBytesPerVector;
+    private bool mDisposed;
 
     /// <summary>
     ///     Gets the number of dimensions each vector must have.
@@ -68,16 +76,24 @@ public sealed class EmbeddingBlobWriter : IAsyncDisposable, IDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        await mStream.FlushAsync();
-        if (!mLeaveOpen)
-            await mStream.DisposeAsync();
+        if (!mDisposed)
+        {
+            mDisposed = true;
+            await mStream.FlushAsync();
+            if (!mLeaveOpen)
+                await mStream.DisposeAsync();
+        }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        mStream.Flush();
-        if (!mLeaveOpen)
-            mStream.Dispose();
+        if (!mDisposed)
+        {
+            mDisposed = true;
+            mStream.Flush();
+            if (!mLeaveOpen)
+                mStream.Dispose();
+        }
     }
 }
