@@ -24,10 +24,8 @@ public sealed class JsonlReader<T>
     {
         ArgumentNullException.ThrowIfNull(stream);
         mStream = stream;
-        mOptions = options ?? smDefaultOptions;
+        mOptions = options ?? BundleJsonOptions.JsonlDefault;
     }
-
-    private static readonly JsonSerializerOptions smDefaultOptions = new();
 
     private readonly Stream mStream;
     private readonly JsonSerializerOptions mOptions;

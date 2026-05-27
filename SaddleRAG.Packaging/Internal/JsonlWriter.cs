@@ -7,7 +7,6 @@
 #region Usings
 
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 #endregion
 
@@ -24,14 +23,8 @@ public sealed class JsonlWriter<T> : IAsyncDisposable, IDisposable
         ArgumentNullException.ThrowIfNull(stream);
         mStream = stream;
         mLeaveOpen = leaveOpen;
-        mOptions = options ?? smDefaultOptions;
+        mOptions = options ?? BundleJsonOptions.JsonlDefault;
     }
-
-    private static readonly JsonSerializerOptions smDefaultOptions = new()
-    {
-        WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
 
     private static readonly byte[] smNewline = "\n"u8.ToArray();
 
