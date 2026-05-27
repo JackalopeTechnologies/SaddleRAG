@@ -37,6 +37,7 @@ public sealed class LibraryImporter
     private readonly IDiffRepository mDiffRepository;
     private readonly IPageRepository mPageRepository;
     private readonly IChunkRepository mChunkRepository;
+    private readonly IBm25ShardRepository mBm25Repository;
 
     #endregion
 
@@ -57,7 +58,8 @@ public sealed class LibraryImporter
                            IExcludedSymbolsRepository excludedSymbolsRepository,
                            IDiffRepository diffRepository,
                            IPageRepository pageRepository,
-                           IChunkRepository chunkRepository)
+                           IChunkRepository chunkRepository,
+                           IBm25ShardRepository bm25Repository)
     {
         ArgumentNullException.ThrowIfNull(libraryRepository);
         ArgumentNullException.ThrowIfNull(jobRepository);
@@ -68,6 +70,7 @@ public sealed class LibraryImporter
         ArgumentNullException.ThrowIfNull(diffRepository);
         ArgumentNullException.ThrowIfNull(pageRepository);
         ArgumentNullException.ThrowIfNull(chunkRepository);
+        ArgumentNullException.ThrowIfNull(bm25Repository);
         mLibraryRepository = libraryRepository;
         mJobRepository = jobRepository;
         mEmbeddingProvider = embeddingProvider;
@@ -77,6 +80,7 @@ public sealed class LibraryImporter
         mDiffRepository = diffRepository;
         mPageRepository = pageRepository;
         mChunkRepository = chunkRepository;
+        mBm25Repository = bm25Repository;
     }
 
     #region Active encoder properties
@@ -262,6 +266,9 @@ public sealed class LibraryImporter
             await WriteChunksAsync(reader, version, chunksPath, versionEntry.EmbeddingDimensions,
                                    encoderMatches, log, ct);
         }
+
+        // 9. BM25 shards — re-upload GridFS blobs then insert shards with rewritten refs.
+        await ImportBm25Async(reader, libraryId, version, versionEntry, log, ct);
     }
 
     private async Task WriteExcludedSymbolsAsync(IBundleReader reader,
@@ -389,6 +396,63 @@ public sealed class LibraryImporter
             await mChunkRepository.InsertChunksAsync(batch, ct);
     }
 
+    private async Task ImportBm25Async(IBundleReader reader,
+                                        string libraryId,
+                                        string version,
+                                        BundleVersionEntry versionEntry,
+                                        VersionWriteLog log,
+                                        CancellationToken ct)
+    {
+        var shardsPath = BundlePaths.VersionFilePath(version, BundlePaths.Bm25ShardsFile);
+        if (versionEntry.Blobs.ContainsKey(shardsPath))
+        {
+            var versionDirPrefix = BundlePaths.VersionDir(version) + "/" + BundlePaths.Bm25GridFsDir + "/";
+            var idMap = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var entryPath in versionEntry.Blobs.Keys.Where(p =>
+                         p.StartsWith(versionDirPrefix, StringComparison.Ordinal)))
+            {
+                var originalId = Path.GetFileNameWithoutExtension(entryPath);
+                await using var src = reader.OpenEntry(entryPath);
+                var newId = await mBm25Repository.UploadGridFsBlobAsync(src, ct);
+                idMap[originalId] = newId;
+                log.GridFsIds.Add(newId);
+            }
+
+            await using var shardsStream = reader.OpenEntry(shardsPath);
+            var jsonlReader = new JsonlReader<Bm25Shard>(shardsStream);
+            await foreach (var shard in jsonlReader.ReadAllAsync(ct))
+            {
+                var rewritten = RewriteShardRefs(shard, idMap);
+                await mBm25Repository.UpsertShardAsync(rewritten, ct);
+                log.ShardIds.Add(rewritten.Id);
+            }
+        }
+    }
+
+    private static Bm25Shard RewriteShardRefs(Bm25Shard shard, IReadOnlyDictionary<string, string> idMap)
+    {
+        string? rewrittenWhole = null;
+        if (shard.ShardGridFsRef is not null)
+        {
+            if (!idMap.TryGetValue(shard.ShardGridFsRef, out var newWhole))
+                throw new InvalidOperationException(
+                    $"Shard references GridFS id {shard.ShardGridFsRef} not present in bundle");
+            rewrittenWhole = newWhole;
+        }
+
+        var rewrittenExternal = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kv in shard.ExternalTerms)
+        {
+            if (!idMap.TryGetValue(kv.Value, out var newRef))
+                throw new InvalidOperationException(
+                    $"Term '{kv.Key}' references GridFS id {kv.Value} not present in bundle");
+            rewrittenExternal[kv.Key] = newRef;
+        }
+
+        return shard with { ShardGridFsRef = rewrittenWhole, ExternalTerms = rewrittenExternal };
+    }
+
     private async Task RollbackVersionAsync(VersionWriteLog log,
                                              string libraryId,
                                              string version,
@@ -396,6 +460,13 @@ public sealed class LibraryImporter
     {
         // Best-effort rollback in reverse insertion order.
         // Each step is wrapped so rollback does not mask the original failure.
+
+        // BM25 shards and their GridFS blobs.
+        if (log.ShardIds.Count > 0)
+            await TryDeleteAsync(() => mBm25Repository.DeleteAsync(libraryId, version, ct));
+        foreach (var gridFsId in log.GridFsIds)
+            await TryDeleteBm25BlobAsync(gridFsId, ct);
+
         await TryDeleteAsync(() => mChunkRepository.DeleteChunksAsync(libraryId, version, ct));
         await TryDeleteAsync(() => mPageRepository.DeleteAsync(libraryId, version, ct));
         await TryDeleteAsync(() => mExcludedSymbolsRepository.DeleteAsync(libraryId, version, ct));
@@ -412,6 +483,18 @@ public sealed class LibraryImporter
 
         if (log.VersionId is not null)
             await TryDeleteVersionAsync(() => mLibraryRepository.DeleteVersionAsync(libraryId, version, ct));
+    }
+
+    private async Task TryDeleteBm25BlobAsync(string gridFsId, CancellationToken ct)
+    {
+        try
+        {
+            await mBm25Repository.DeleteGridFsBlobAsync(gridFsId, ct);
+        }
+        catch
+        {
+            // Best-effort; swallow so rollback completes as far as possible.
+        }
     }
 
     private static async Task TryDeleteAsync(Func<Task<long>> delete)
@@ -515,6 +598,8 @@ public sealed class LibraryImporter
         public string? IndexId { get; set; }
         public bool DiffWritten { get; set; }
         public List<string> ExcludedIds { get; } = new();
+        public List<string> ShardIds { get; } = new();
+        public List<string> GridFsIds { get; } = new();
     }
 
     #endregion

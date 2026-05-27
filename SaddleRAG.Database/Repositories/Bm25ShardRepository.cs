@@ -160,6 +160,33 @@ public class Bm25ShardRepository : IBm25ShardRepository
         return result;
     }
 
+    /// <inheritdoc />
+    public async Task<string> UploadGridFsBlobAsync(Stream content, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var id = await mContext.Bm25Bucket.UploadFromStreamAsync(
+            filename: $"bm25-{Guid.NewGuid():N}.bin",
+            source: content,
+            cancellationToken: ct);
+        return id.ToString();
+    }
+
+    /// <inheritdoc />
+    public async Task UpsertShardAsync(Bm25Shard shard, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(shard);
+        var filter = Builders<Bm25Shard>.Filter.Eq(s => s.Id, shard.Id);
+        var options = new MongoDB.Driver.ReplaceOptions { IsUpsert = true };
+        await mContext.Bm25Shards.ReplaceOneAsync(filter, shard, options, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteGridFsBlobAsync(string gridFsId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(gridFsId);
+        await TryDeleteByIdAsync(mContext.Bm25Bucket, gridFsId, ct);
+    }
+
     private async Task<IReadOnlyList<Bm25Posting>> ResolveFromShardSpillAsync(string shardFileId,
                                                                               string term,
                                                                               CancellationToken ct)

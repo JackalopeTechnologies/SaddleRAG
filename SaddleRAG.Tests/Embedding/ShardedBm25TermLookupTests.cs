@@ -66,6 +66,15 @@ public sealed class ShardedBm25TermLookupTests
 
         public Task<Stream> OpenGridFsBlobAsync(string gridFsId, CancellationToken ct = default) =>
             Task.FromResult<Stream>(Stream.Null);
+
+        public Task<string> UploadGridFsBlobAsync(Stream content, CancellationToken ct = default) =>
+            Task.FromResult(string.Empty);
+
+        public Task UpsertShardAsync(Bm25Shard shard, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task DeleteGridFsBlobAsync(string gridFsId, CancellationToken ct = default) =>
+            Task.CompletedTask;
     }
 
     [Fact]

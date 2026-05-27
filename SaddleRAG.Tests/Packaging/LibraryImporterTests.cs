@@ -278,9 +278,11 @@ public sealed class LibraryImporterTests
         var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var importDiffRepo = Substitute.For<IDiffRepository>();
 
+        var importBm25Repo = MakeEmptyBm25Repo();
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
-                                           importDiffRepo, importPageRepo, importChunkRepo);
+                                           importDiffRepo, importPageRepo, importChunkRepo,
+                                           importBm25Repo);
 
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
                                                 progress: null,
@@ -396,10 +398,12 @@ public sealed class LibraryImporterTests
                           .Returns(0L);
 
         var importDiffRepo = Substitute.For<IDiffRepository>();
+        var importBm25Repo = MakeEmptyBm25Repo();
 
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
-                                           importDiffRepo, importPageRepo, importChunkRepo);
+                                           importDiffRepo, importPageRepo, importChunkRepo,
+                                           importBm25Repo);
 
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
                                                 progress: null,
@@ -419,6 +423,131 @@ public sealed class LibraryImporterTests
         // Rollback: version record deleted.
         await importLibraryRepo.Received(1)
                                .DeleteVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Bm25GridFsBlobIsReuploadedAndRefsRewritten()
+    {
+        const string LibraryId = "test-lib";
+        const string Version = "1.0";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+        const string OriginalGridFsId = "aaa111bbb222ccc333ddd444e";
+        const string NewGridFsId = "newId-1";
+        var blobBytes = new byte[] { 1, 2, 3, 4, 5 };
+
+        // Build fixture data.
+        var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
+        var shard = PackagingFixtures.MakeBm25Shard(LibraryId, Version, shardIndex: 0,
+                                                     shardGridFsRef: OriginalGridFsId);
+
+        // Wire exporter mocks.
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var exportBm25Repo = Substitute.For<IBm25ShardRepository>();
+        exportBm25Repo.GetAllShardsAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(new[] { shard } as IReadOnlyList<Bm25Shard>);
+        exportBm25Repo.OpenGridFsBlobAsync(OriginalGridFsId, Arg.Any<CancellationToken>())
+                      .Returns(new MemoryStream(blobBytes));
+
+        var bundlePath = await CreateValidSingleVersionBundleAsync(
+            exportLibraryRepo, exportProfileRepo, exportIndexRepo, exportExcludedRepo,
+            exportDiffRepo, exportPageRepo, exportChunkRepo, exportBm25Repo,
+            LibraryId, Version);
+
+        // Wire receiver-side mocks — library does not yet exist.
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns((LibraryRecord?) null);
+
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+
+        // Encoder matches the bundle so chunks land with real embeddings.
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: versionRecord.EmbeddingModelName,
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        var importPageRepo = Substitute.For<IPageRepository>();
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+
+        // Capture the stream bytes passed to UploadGridFsBlobAsync.
+        byte[]? capturedBytes = null;
+        var importBm25Repo = Substitute.For<IBm25ShardRepository>();
+        importBm25Repo
+            .UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var stream = ci.Arg<Stream>();
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                capturedBytes = ms.ToArray();
+                return Task.FromResult(NewGridFsId);
+            });
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           importProfileRepo, importIndexRepo, importExcludedRepo,
+                                           importDiffRepo, importPageRepo, importChunkRepo,
+                                           importBm25Repo);
+
+        var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
+                                                progress: null,
+                                                ct: TestContext.Current.CancellationToken);
+
+        // Import succeeds.
+        Assert.Contains(Version, result.VersionsImported);
+        Assert.Empty(result.PartialFailures);
+
+        // GridFS blob was re-uploaded with the original bytes.
+        await importBm25Repo.Received(1)
+                            .UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        Assert.NotNull(capturedBytes);
+        Assert.Equal(blobBytes, capturedBytes);
+
+        // Shard was upserted with the rewritten GridFS ref.
+        await importBm25Repo.Received(1)
+                            .UpsertShardAsync(
+                                Arg.Is<Bm25Shard>(s => s.ShardGridFsRef == NewGridFsId),
+                                Arg.Any<CancellationToken>());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -441,8 +570,10 @@ public sealed class LibraryImporterTests
 
     private static LibraryImporter MakeImporter(ILibraryRepository libraryRepo,
                                                  IJobRepository jobRepo,
-                                                 IEmbeddingProvider embeddingProvider)
+                                                 IEmbeddingProvider embeddingProvider,
+                                                 IBm25ShardRepository? bm25Repo = null)
     {
+        var bm25 = bm25Repo ?? MakeEmptyBm25Repo();
         return new LibraryImporter(
             libraryRepo,
             jobRepo,
@@ -452,7 +583,18 @@ public sealed class LibraryImporterTests
             Substitute.For<IExcludedSymbolsRepository>(),
             Substitute.For<IDiffRepository>(),
             Substitute.For<IPageRepository>(),
-            Substitute.For<IChunkRepository>());
+            Substitute.For<IChunkRepository>(),
+            bm25);
+    }
+
+    private static IBm25ShardRepository MakeEmptyBm25Repo()
+    {
+        var repo = Substitute.For<IBm25ShardRepository>();
+        repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+        repo.UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(string.Empty);
+        return repo;
     }
 
     private static IEmbeddingProvider MakeEmbeddingProvider(string providerId = "onnx-local",
