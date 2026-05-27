@@ -35,7 +35,8 @@ public sealed class LibraryExporterTests
                     IPageRepository pageRepo,
                     string outDir) BuildExporter(LibraryRecord library,
                                                  LibraryVersionRecord? versionRecord = null,
-                                                 IReadOnlyList<PageRecord>? pages = null)
+                                                 IReadOnlyList<PageRecord>? pages = null,
+                                                 IReadOnlyList<DocChunk>? chunks = null)
     {
         var libRepo = Substitute.For<ILibraryRepository>();
         libRepo.GetLibraryAsync(library.Id, Arg.Any<CancellationToken>())
@@ -65,7 +66,11 @@ public sealed class LibraryExporterTests
         pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<IReadOnlyList<PageRecord>>(pages ?? []));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<IReadOnlyList<DocChunk>>(chunks ?? []));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         return (exporter, libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, outDir);
@@ -157,8 +162,9 @@ public sealed class LibraryExporterTests
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var diffRepo = Substitute.For<IDiffRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
+        var chunkRepo = Substitute.For<IChunkRepository>();
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-1.0.srlib.zip");
@@ -255,7 +261,11 @@ public sealed class LibraryExporterTests
         pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<IReadOnlyList<PageRecord>>([]));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-all.srlib.zip");
@@ -323,7 +333,11 @@ public sealed class LibraryExporterTests
         pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<IReadOnlyList<PageRecord>>([]));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-1.0-full.srlib.zip");
@@ -407,5 +421,75 @@ public sealed class LibraryExporterTests
         Assert.Single(manifest.Versions);
         Assert.True(manifest.Versions[0].Blobs.ContainsKey("versions/1.0/pages.jsonl"),
                     "Blobs must contain versions/1.0/pages.jsonl");
+    }
+
+    [Fact]
+    public async Task EmitsChunksAndEmbeddingsInLockstep()
+    {
+        const int Dim = 8;
+        const int Count = 4;
+
+        var library = PackagingFixtures.MakeLibrary("foo", "1.0");
+        var versionRecord = PackagingFixtures.MakeVersion("foo", "1.0", chunkCount: Count, dim: Dim);
+        var chunks = PackagingFixtures.MakeChunks("foo", "1.0", count: Count, dim: Dim);
+        var (exporter, _, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord, chunks: chunks);
+        var outPath = Path.Combine(outDir, "foo-1.0-chunks.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.Current,
+                              OutputPath = outPath
+                          };
+
+        await exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken);
+
+        using var archive = ZipFile.OpenRead(outPath);
+
+        var chunksEntry = archive.GetEntry("versions/1.0/chunks.jsonl");
+        Assert.NotNull(chunksEntry);
+
+        using var chunksStream = chunksEntry.Open();
+        var reader = new SaddleRAG.Packaging.Internal.JsonlReader<DocChunk>(chunksStream);
+        var roundTripped = new List<DocChunk>();
+        await foreach (var chunk in reader.ReadAllAsync(TestContext.Current.CancellationToken))
+            roundTripped.Add(chunk);
+
+        Assert.Equal(Count, roundTripped.Count);
+        Assert.All(roundTripped, c => Assert.Null(c.Embedding));
+
+        var embedEntry = archive.GetEntry("versions/1.0/chunks.embeddings.f32");
+        Assert.NotNull(embedEntry);
+
+        using var embedStream = embedEntry.Open();
+        using var embedMs = new MemoryStream();
+        embedStream.CopyTo(embedMs);
+        var embedBytes = embedMs.ToArray();
+        Assert.Equal(Count * Dim * sizeof(float), embedBytes.Length);
+
+        using var readBack = new MemoryStream(embedBytes);
+        var embedReader = new SaddleRAG.Packaging.Internal.EmbeddingBlobReader(readBack, Dim);
+        for (int i = 0; i < Count; i++)
+        {
+            var vector = await embedReader.ReadAsync(TestContext.Current.CancellationToken);
+            var expected = chunks[i].Embedding ?? throw new InvalidOperationException("Fixture chunk has null embedding");
+            Assert.Equal(Dim, vector.Length);
+            for (int j = 0; j < Dim; j++)
+                Assert.Equal(BitConverter.SingleToInt32Bits(expected[j]),
+                             BitConverter.SingleToInt32Bits(vector[j]));
+        }
+
+        var manifestEntry = archive.GetEntry("manifest.json");
+        Assert.NotNull(manifestEntry);
+        using var manifestStream = manifestEntry.Open();
+        var manifest = JsonSerializer.Deserialize<BundleManifest>(manifestStream);
+        Assert.NotNull(manifest);
+
+        Assert.Single(manifest.Versions);
+        var v = manifest.Versions[0];
+        Assert.True(v.Blobs.ContainsKey("versions/1.0/chunks.jsonl"),
+                    "Blobs must contain versions/1.0/chunks.jsonl");
+        Assert.True(v.Blobs.ContainsKey("versions/1.0/chunks.embeddings.f32"),
+                    "Blobs must contain versions/1.0/chunks.embeddings.f32");
     }
 }

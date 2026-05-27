@@ -28,7 +28,8 @@ public sealed class LibraryExporter
                            ILibraryIndexRepository indexRepository,
                            IExcludedSymbolsRepository excludedSymbolsRepository,
                            IDiffRepository diffRepository,
-                           IPageRepository pageRepository)
+                           IPageRepository pageRepository,
+                           IChunkRepository chunkRepository)
     {
         ArgumentNullException.ThrowIfNull(libraryRepository);
         ArgumentNullException.ThrowIfNull(profileRepository);
@@ -36,12 +37,14 @@ public sealed class LibraryExporter
         ArgumentNullException.ThrowIfNull(excludedSymbolsRepository);
         ArgumentNullException.ThrowIfNull(diffRepository);
         ArgumentNullException.ThrowIfNull(pageRepository);
+        ArgumentNullException.ThrowIfNull(chunkRepository);
         mLibraryRepository = libraryRepository;
         mProfileRepository = profileRepository;
         mIndexRepository = indexRepository;
         mExcludedSymbolsRepository = excludedSymbolsRepository;
         mDiffRepository = diffRepository;
         mPageRepository = pageRepository;
+        mChunkRepository = chunkRepository;
     }
 
     private const string TempSuffix = ".tmp";
@@ -54,6 +57,7 @@ public sealed class LibraryExporter
     private readonly IExcludedSymbolsRepository mExcludedSymbolsRepository;
     private readonly IDiffRepository mDiffRepository;
     private readonly IPageRepository mPageRepository;
+    private readonly IChunkRepository mChunkRepository;
 
     public async Task<ExportResult> ExportAsync(ExportRequest request,
                                                 IProgress<ExportProgress>? progress,
@@ -181,6 +185,8 @@ public sealed class LibraryExporter
         var pagesPath = BundlePaths.VersionFilePath(version, BundlePaths.PagesFile);
         await WriteJsonlAsync(writer, manifestBuilder, pagesPath, pages, ct);
 
+        await StreamChunksAsync(writer, manifestBuilder, library.Id, version, versionRecord.EmbeddingDimensions, ct);
+
         var versionDir = BundlePaths.VersionDir(version) + "/";
         var versionBlobs = manifestBuilder
                           .ToDictionary()
@@ -254,5 +260,58 @@ public sealed class LibraryExporter
         await using var jsonl = new JsonlWriter<T>(tee, leaveOpen: true);
         foreach (var row in rows)
             await jsonl.WriteAsync(row, ct);
+    }
+
+    private async Task StreamChunksAsync(IBundleWriter writer,
+                                          ManifestBuilder manifestBuilder,
+                                          string libraryId,
+                                          string version,
+                                          int dim,
+                                          CancellationToken ct)
+    {
+        var chunks = await mChunkRepository.GetChunksAsync(libraryId, version, ct);
+
+        // ZipArchive allows only one open entry at a time. Buffer the embedding
+        // vectors in memory while writing chunks.jsonl, then write
+        // chunks.embeddings.f32 in a second pass. Both passes iterate the same
+        // ordered list so the row indices are aligned by construction.
+        var chunksPath = BundlePaths.VersionFilePath(version, BundlePaths.ChunksFile);
+        var embedPath = BundlePaths.VersionFilePath(version, BundlePaths.EmbeddingsBlobFile);
+        using var embedBuffer = new MemoryStream(chunks.Count * dim * sizeof(float));
+
+        await using (var chunksEntry = writer.OpenEntry(chunksPath))
+        await using (var chunksHash = manifestBuilder.OpenBlob(chunksPath))
+        {
+            using var chunksTee = new TeeStream(chunksEntry, chunksHash, leaveOpen: true);
+            await using var chunksJsonl = new JsonlWriter<DocChunk>(chunksTee, leaveOpen: true);
+            await using var embedBuf = new EmbeddingBlobWriter(embedBuffer, dim, leaveOpen: true);
+            await WriteChunkRowsAsync(chunks, dim, chunksJsonl, embedBuf, ct);
+        }
+
+        embedBuffer.Position = 0;
+
+        await using (var embedEntry = writer.OpenEntry(embedPath))
+        await using (var embedHash = manifestBuilder.OpenBlob(embedPath))
+        {
+            using var embedTee = new TeeStream(embedEntry, embedHash, leaveOpen: true);
+            await embedBuffer.CopyToAsync(embedTee, ct);
+        }
+    }
+
+    private static async Task WriteChunkRowsAsync(IReadOnlyList<DocChunk> chunks,
+                                                   int dim,
+                                                   JsonlWriter<DocChunk> chunksJsonl,
+                                                   EmbeddingBlobWriter embedBuf,
+                                                   CancellationToken ct)
+    {
+        foreach (var chunk in chunks)
+        {
+            if (chunk.Embedding is null || chunk.Embedding.Length != dim)
+                throw new InvalidOperationException(
+                    $"Chunk {chunk.Id} has embedding length {chunk.Embedding?.Length ?? 0}; expected {dim}");
+
+            await chunksJsonl.WriteAsync(chunk with { Embedding = null }, ct);
+            await embedBuf.WriteAsync(chunk.Embedding, ct);
+        }
     }
 }
