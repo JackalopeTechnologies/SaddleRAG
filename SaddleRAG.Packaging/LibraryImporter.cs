@@ -8,6 +8,7 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
+using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Packaging.Internal;
 
@@ -17,17 +18,51 @@ namespace SaddleRAG.Packaging;
 
 /// <summary>
 ///     Reads a .srlib.zip bundle and writes it into the receiver's
-///     MongoDB. v1: manifest read, sha256 validation, pathological-id
-///     guard. Subsequent tasks add conflict check, encoder match,
-///     per-version write with rollback, BM25 GridFS re-upload,
+///     MongoDB. Tasks 1–15: manifest read, sha256 validation,
+///     pathological-id guard. Task 16: conflict check, concurrent-job
+///     guard, encoder-match decision. Subsequent tasks add per-version
+///     write with rollback, BM25 GridFS re-upload,
 ///     encoder-mismatch reembed enqueue, overwrite path.
 /// </summary>
 public sealed class LibraryImporter
 {
-    public LibraryImporter()
+    #region Dependency fields
+
+    private readonly ILibraryRepository mLibraryRepository;
+    private readonly IJobRepository mJobRepository;
+    private readonly IEmbeddingProvider mEmbeddingProvider;
+
+    #endregion
+
+    #region Messages constants
+
+    private const string OverwriteHint = "Pass overwrite=true to replace.";
+    private const string ConcurrentJobHint = "Wait for it to complete or cancel it before retrying.";
+
+    #endregion
+
+    public LibraryImporter(ILibraryRepository libraryRepository,
+                           IJobRepository jobRepository,
+                           IEmbeddingProvider embeddingProvider)
     {
-        // Repository dependencies are added in subsequent tasks (Task 16+).
+        ArgumentNullException.ThrowIfNull(libraryRepository);
+        ArgumentNullException.ThrowIfNull(jobRepository);
+        ArgumentNullException.ThrowIfNull(embeddingProvider);
+        mLibraryRepository = libraryRepository;
+        mJobRepository = jobRepository;
+        mEmbeddingProvider = embeddingProvider;
     }
+
+    #region Active encoder properties
+
+    // ProviderId is surfaced directly from IEmbeddingProvider.
+    private string ActiveEncoderProviderId => mEmbeddingProvider.ProviderId;
+
+    private string ActiveEncoderModelName => mEmbeddingProvider.ModelName;
+
+    private int ActiveEncoderDimensions => mEmbeddingProvider.Dimensions;
+
+    #endregion
 
     public async Task<ImportResult> ImportAsync(ImportRequest request,
                                                 IProgress<ImportProgress>? progress,
@@ -49,7 +84,53 @@ public sealed class LibraryImporter
 
         ValidateAllBlobs(reader, manifest, ct);
 
-        // Subsequent tasks: conflict check, encoder match, per-version import.
+        bool hasVersions = manifest.Versions.Count > 0;
+        if (hasVersions)
+        {
+            // Gate 1 — conflict scan.
+            var existingLibrary = await mLibraryRepository.GetLibraryAsync(manifest.Library.Id, ct);
+            var existingVersions = existingLibrary?.AllVersions ?? (IReadOnlyList<string>) Array.Empty<string>();
+
+            var conflicting = manifest.Versions
+                                      .Select(v => v.Version)
+                                      .Where(v => existingVersions.Contains(v))
+                                      .ToList();
+            if (conflicting.Count > 0 && !request.Overwrite)
+                throw new InvalidOperationException(
+                    $"Versions already present on receiver: {string.Join(", ", conflicting)}. {OverwriteHint}");
+
+            // Gate 2 — concurrent-job guard: refuse if any non-terminal job already
+            // targets any of our (library, version) tuples.
+            foreach (var manifestVersion in manifest.Versions)
+            {
+                var running = await mJobRepository.ListActiveAsync(manifest.Library.Id,
+                                                                   manifestVersion.Version,
+                                                                   ct: ct);
+                if (running.Count > 0)
+                {
+                    var first = running[0];
+                    throw new InvalidOperationException(
+                        $"Cannot import: job {first.Id} (type={first.JobType}, status={first.Status}) is already " +
+                        $"running for {manifest.Library.Id}/{manifestVersion.Version}. {ConcurrentJobHint}");
+                }
+            }
+
+            // Gate 3 — encoder-match decision.
+            // The exporter guarantees all versions in a single bundle share one encoder,
+            // so comparing against the first version entry is sufficient.
+            var bundleEncoder = manifest.Versions[0];
+            bool encoderMatches =
+                string.Equals(bundleEncoder.EmbeddingProviderId, ActiveEncoderProviderId, StringComparison.Ordinal)
+                && string.Equals(bundleEncoder.EmbeddingModelName, ActiveEncoderModelName, StringComparison.Ordinal)
+                && bundleEncoder.EmbeddingDimensions == ActiveEncoderDimensions;
+
+            // encoderMatches is computed here; Task 17+ will branch on it to decide whether
+            // to import vectors as-is or enqueue a reembed job.
+            _ = encoderMatches;
+        }
+
+        // Subsequent tasks: per-version write with rollback, BM25 GridFS re-upload,
+        // encoder-mismatch reembed enqueue, overwrite path.
 
         return new ImportResult
                    {
