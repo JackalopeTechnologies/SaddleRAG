@@ -51,6 +51,8 @@ public sealed class LibraryImporter
     private const int ChunkBatchSize = 256;
     private const string ReembedItemsLabel = "chunks";
     private const string FollowUpSeparator = "; ";
+    private const int BytesPerFloat = 4;
+    private const int EstimatedBytesPerPage = 50_000;
 
     #endregion
 
@@ -120,6 +122,8 @@ public sealed class LibraryImporter
 
         var versionsImported = new List<string>();
         var partialFailures = new List<ImportPartialFailure>();
+        var overwroteVersions = new List<string>();
+        long bytesFreed = 0;
         bool encoderMatches = true;
 
         bool hasVersions = manifest.Versions.Count > 0;
@@ -159,6 +163,23 @@ public sealed class LibraryImporter
                 && string.Equals(bundleEncoder.EmbeddingModelName, ActiveEncoderModelName, StringComparison.Ordinal)
                 && bundleEncoder.EmbeddingDimensions == ActiveEncoderDimensions;
 
+            // Overwrite: purge pre-existing versions before writing new data.
+            // This ordering is intentional: purge runs before the per-version write loop
+            // so that rollback on a subsequent write failure can safely use
+            // DeleteAsync(libraryId, version) without risk of removing pre-existing rows
+            // — there are none at that point.
+            if (request.Overwrite && conflicting.Count > 0)
+            {
+                foreach (var conflictingVersion in conflicting)
+                {
+                    var freed = await PurgeVersionAsync(manifest.Library.Id,
+                                                        manifest.Versions.First(v => v.Version == conflictingVersion),
+                                                        ct);
+                    bytesFreed += freed;
+                    overwroteVersions.Add(conflictingVersion);
+                }
+            }
+
             // Per-version write loop with rollback.
             for (int i = 0; i < manifest.Versions.Count; i++)
             {
@@ -195,7 +216,9 @@ public sealed class LibraryImporter
             }
         }
 
-        // Task 20 will add library upsert here.
+        // Library record upsert — merge existing AllVersions with newly imported versions.
+        if (versionsImported.Count > 0)
+            await UpsertLibraryRecordAsync(reader, manifest, versionsImported, ct);
 
         var pendingReembedJobIds = new List<string>();
 
@@ -208,17 +231,87 @@ public sealed class LibraryImporter
             }
         }
 
-        var recommendedFollowUp = BuildRecommendedFollowUp(pendingReembedJobIds, bytesFreed: 0, overwroteAny: false);
+        var recommendedFollowUp = BuildRecommendedFollowUp(pendingReembedJobIds,
+                                                             bytesFreed: bytesFreed,
+                                                             overwroteAny: overwroteVersions.Count > 0);
 
         return new ImportResult
                    {
                        VersionsImported = versionsImported,
-                       OverwrittenVersions = [],
-                       BytesFreed = 0,
+                       OverwrittenVersions = overwroteVersions,
+                       BytesFreed = bytesFreed,
                        PendingReembedJobIds = pendingReembedJobIds,
                        PartialFailures = partialFailures,
                        RecommendedFollowUp = recommendedFollowUp
                    };
+    }
+
+    private async Task<long> PurgeVersionAsync(string libraryId,
+                                               BundleVersionEntry versionEntry,
+                                               CancellationToken ct)
+    {
+        // Estimate bytes freed: embedding vectors + page content.
+        long estimated = (long) versionEntry.ChunkCount * versionEntry.EmbeddingDimensions * BytesPerFloat
+                         + (long) versionEntry.PageCount * EstimatedBytesPerPage;
+
+        // Collect GridFS blob ids from existing shards before deleting shards.
+        var existingShards = await mBm25Repository.GetAllShardsAsync(libraryId, versionEntry.Version, ct);
+        var gridFsIdsToDelete = new List<string>();
+        foreach (var shard in existingShards)
+        {
+            if (shard.ShardGridFsRef is not null)
+                gridFsIdsToDelete.Add(shard.ShardGridFsRef);
+            foreach (var externalRef in shard.ExternalTerms.Values)
+                gridFsIdsToDelete.Add(externalRef);
+        }
+
+        // Delete each referenced GridFS blob before deleting the shard rows.
+        foreach (var blobId in gridFsIdsToDelete)
+            await TryDeleteBm25BlobAsync(blobId, ct);
+
+        // Delete all data collections for this version.
+        await TryDeleteAsync(() => mBm25Repository.DeleteAsync(libraryId, versionEntry.Version, ct));
+        await TryDeleteAsync(() => mChunkRepository.DeleteChunksAsync(libraryId, versionEntry.Version, ct));
+        await TryDeleteAsync(() => mPageRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
+        await TryDeleteAsync(() => mExcludedSymbolsRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
+        await TryDeleteAsync(() => mIndexRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
+        await TryDeleteAsync(() => mProfileRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
+        await TryDeleteVersionAsync(() => mLibraryRepository.DeleteVersionAsync(libraryId, versionEntry.Version, ct));
+
+        return estimated;
+    }
+
+    private async Task UpsertLibraryRecordAsync(IBundleReader reader,
+                                                 BundleManifest manifest,
+                                                 IReadOnlyList<string> versionsImported,
+                                                 CancellationToken ct)
+    {
+        // Read the full LibraryRecord from library.json to get CurrentVersion.
+        var bundleLibrary = await ReadJsonAsync<LibraryRecord>(reader, BundlePaths.LibraryFile, ct);
+
+        var existingLib = await mLibraryRepository.GetLibraryAsync(manifest.Library.Id, ct);
+        var allVersions = new HashSet<string>(StringComparer.Ordinal);
+        if (existingLib is not null)
+            foreach (var v in existingLib.AllVersions)
+                allVersions.Add(v);
+        foreach (var v in versionsImported)
+            allVersions.Add(v);
+
+        // Bundle's claimed CurrentVersion wins when it is among the imported versions.
+        var newCurrent = existingLib?.CurrentVersion ?? versionsImported[versionsImported.Count - 1];
+        if (versionsImported.Contains(bundleLibrary.CurrentVersion))
+            newCurrent = bundleLibrary.CurrentVersion;
+
+        var updated = new LibraryRecord
+                          {
+                              Id = manifest.Library.Id,
+                              Name = manifest.Library.Name,
+                              Hint = manifest.Library.Hint,
+                              CurrentVersion = newCurrent,
+                              AllVersions = allVersions.OrderBy(v => v, StringComparer.Ordinal).ToList()
+                          };
+
+        await mLibraryRepository.UpsertLibraryAsync(updated, ct);
     }
 
     private async Task WriteVersionAsync(IBundleReader reader,

@@ -679,6 +679,293 @@ public sealed class LibraryImporterTests
         Assert.Contains("get_reembed_status", result.RecommendedFollowUp);
     }
 
+    [Fact]
+    public async Task OverwriteTrueReplacesExistingVersion()
+    {
+        const string LibraryId = "foo";
+        const string Version = "1.0";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+        const string ExistingGridFsId = "existing-blob-001";
+
+        // Build fixture data for the new version (same version string, different content).
+        var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
+
+        // Wire exporter mocks — no BM25 on the new content being imported.
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var exportBm25Repo = Substitute.For<IBm25ShardRepository>();
+        exportBm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+
+        var bundlePath = await CreateValidSingleVersionBundleAsync(
+            exportLibraryRepo, exportProfileRepo, exportIndexRepo, exportExcludedRepo,
+            exportDiffRepo, exportPageRepo, exportChunkRepo, exportBm25Repo,
+            LibraryId, Version);
+
+        // Existing shard on the receiver — has a GridFS blob that must be deleted.
+        var existingShard = PackagingFixtures.MakeBm25Shard(LibraryId, Version,
+                                                             shardIndex: 0,
+                                                             shardGridFsRef: ExistingGridFsId);
+
+        // Receiver-side mocks — library already has Version "1.0".
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(new LibraryRecord
+                                      {
+                                          Id = LibraryId,
+                                          Name = LibraryId,
+                                          Hint = "fixture",
+                                          CurrentVersion = Version,
+                                          AllVersions = [Version]
+                                      });
+        importLibraryRepo.DeleteVersionAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns(new DeleteVersionResult(1, false, null));
+
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: versionRecord.EmbeddingModelName,
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        var importPageRepo = Substitute.For<IPageRepository>();
+        importPageRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(0L);
+
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        importChunkRepo.DeleteChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns(0L);
+
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        importProfileRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns(0L);
+
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        importIndexRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns(0L);
+
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        importExcludedRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                          .Returns(0L);
+
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+
+        var importBm25Repo = Substitute.For<IBm25ShardRepository>();
+        importBm25Repo.GetAllShardsAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(new[] { existingShard } as IReadOnlyList<Bm25Shard>);
+        importBm25Repo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(1L);
+        importBm25Repo.UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+                      .Returns(string.Empty);
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           importProfileRepo, importIndexRepo, importExcludedRepo,
+                                           importDiffRepo, importPageRepo, importChunkRepo,
+                                           importBm25Repo);
+
+        var result = await importer.ImportAsync(
+            new ImportRequest { BundlePath = bundlePath, Overwrite = true },
+            progress: null,
+            ct: TestContext.Current.CancellationToken);
+
+        // Version imported successfully.
+        Assert.Contains(Version, result.VersionsImported);
+
+        // Overwritten versions list is populated.
+        Assert.Contains(Version, result.OverwrittenVersions);
+
+        // BytesFreed is non-zero (ChunkCount * Dim * 4 + PageCount * 50_000).
+        Assert.True(result.BytesFreed > 0);
+
+        // Purge step: BM25 shards deleted.
+        await importBm25Repo.Received(1).DeleteAsync(LibraryId, Version, Arg.Any<CancellationToken>());
+
+        // Purge step: existing GridFS blob deleted.
+        await importBm25Repo.Received(1).DeleteGridFsBlobAsync(ExistingGridFsId, Arg.Any<CancellationToken>());
+
+        // Purge step: chunks and pages deleted.
+        await importChunkRepo.Received(1).DeleteChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>());
+        await importPageRepo.Received(1).DeleteAsync(LibraryId, Version, Arg.Any<CancellationToken>());
+
+        // Purge step: version record deleted.
+        await importLibraryRepo.Received(1).DeleteVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>());
+
+        // New version data was inserted after purge.
+        await importPageRepo.Received(PageCount).UpsertPageAsync(
+            Arg.Is<PageRecord>(p => p.LibraryId == LibraryId && p.Version == Version),
+            Arg.Any<CancellationToken>());
+        await importChunkRepo.Received().InsertChunksAsync(
+            Arg.Is<IReadOnlyList<DocChunk>>(cs => cs.Count == ChunkCount),
+            Arg.Any<CancellationToken>());
+
+        // RecommendedFollowUp mentions compact_collections.
+        Assert.Contains("compact_collections", result.RecommendedFollowUp);
+    }
+
+    [Fact]
+    public async Task LibraryRecordIsUpsertedWithMergedVersions()
+    {
+        const string LibraryId = "merge-lib";
+        const string ExistingVersion = "1.0";
+        const string NewVersion = "1.1";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+
+        // Build fixture data for the new version "1.1".
+        var library = PackagingFixtures.MakeLibrary(LibraryId, NewVersion, ExistingVersion, NewVersion);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, NewVersion, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, NewVersion, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, NewVersion, ChunkCount, Dim);
+
+        // Wire exporter mocks — exporting "1.1" only.
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, NewVersion, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, NewVersion, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, NewVersion, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var exportBm25Repo = Substitute.For<IBm25ShardRepository>();
+        exportBm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+
+        // Export only "1.1".
+        var exporter = new LibraryExporter(exportLibraryRepo, exportProfileRepo, exportIndexRepo,
+                                           exportExcludedRepo, exportDiffRepo, exportPageRepo,
+                                           exportChunkRepo, exportBm25Repo);
+        var outputPath = Path.Combine(Path.GetTempPath(), $"saddlerag-test-{Guid.NewGuid():N}.srlib.zip");
+        await exporter.ExportAsync(
+            new ExportRequest
+            {
+                LibraryId = LibraryId,
+                OutputPath = outputPath,
+                Versions = VersionFilter.Parse(new[] { NewVersion })
+            },
+            progress: null,
+            ct: TestContext.Current.CancellationToken);
+
+        // Receiver — library already has "1.0", no conflicts with "1.1".
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(new LibraryRecord
+                                      {
+                                          Id = LibraryId,
+                                          Name = LibraryId,
+                                          Hint = "fixture",
+                                          CurrentVersion = ExistingVersion,
+                                          AllVersions = [ExistingVersion]
+                                      });
+
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: versionRecord.EmbeddingModelName,
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        // Capture the library record passed to UpsertLibraryAsync.
+        LibraryRecord? capturedLibrary = null;
+        importLibraryRepo
+            .When(r => r.UpsertLibraryAsync(Arg.Any<LibraryRecord>(), Arg.Any<CancellationToken>()))
+            .Do(ci => capturedLibrary = ci.Arg<LibraryRecord>());
+
+        var importPageRepo = Substitute.For<IPageRepository>();
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+        var importBm25Repo = MakeEmptyBm25Repo();
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           importProfileRepo, importIndexRepo, importExcludedRepo,
+                                           importDiffRepo, importPageRepo, importChunkRepo,
+                                           importBm25Repo);
+
+        var result = await importer.ImportAsync(new ImportRequest { BundlePath = outputPath },
+                                                progress: null,
+                                                ct: TestContext.Current.CancellationToken);
+
+        // Version 1.1 was imported.
+        Assert.Contains(NewVersion, result.VersionsImported);
+        Assert.Empty(result.PartialFailures);
+
+        // Library record was upserted.
+        await importLibraryRepo.Received(1).UpsertLibraryAsync(
+            Arg.Any<LibraryRecord>(), Arg.Any<CancellationToken>());
+
+        // Upserted record contains both versions.
+        Assert.NotNull(capturedLibrary);
+        Assert.Contains(ExistingVersion, capturedLibrary.AllVersions);
+        Assert.Contains(NewVersion, capturedLibrary.AllVersions);
+
+        // CurrentVersion is "1.1" because the bundle's library.json claims "1.1" as current.
+        Assert.Equal(NewVersion, capturedLibrary.CurrentVersion);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static LibraryImporter MakeImporter()
