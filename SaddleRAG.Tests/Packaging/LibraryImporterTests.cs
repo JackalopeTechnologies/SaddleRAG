@@ -17,6 +17,7 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Packaging;
+using SaddleRAG.Tests.Packaging.Fixtures;
 
 #endregion
 
@@ -108,7 +109,7 @@ public sealed class LibraryImporterTests
                .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
 
         var embeddingProvider = MakeEmbeddingProvider();
-        var importer = new LibraryImporter(libraryRepo, jobRepo, embeddingProvider);
+        var importer = MakeImporter(libraryRepo, jobRepo, embeddingProvider);
 
         var path = await CreateBundleWithVersionEntryAsync(LibraryId, Version);
 
@@ -145,12 +146,13 @@ public sealed class LibraryImporterTests
                .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
 
         var embeddingProvider = MakeEmbeddingProvider();
-        var importer = new LibraryImporter(libraryRepo, jobRepo, embeddingProvider);
+        var importer = MakeImporter(libraryRepo, jobRepo, embeddingProvider);
 
         var path = await CreateBundleWithVersionEntryAsync(LibraryId, Version);
 
-        // Overwrite=true must clear the conflict gate; the import returns an empty
-        // ImportResult because per-version writes aren't implemented until Task 17.
+        // Overwrite=true clears the conflict gate. The bundle lacks version.json
+        // so the write attempt fails; the version lands in PartialFailures, not
+        // VersionsImported.
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = path, Overwrite = true },
                                                 progress: null,
                                                 ct: TestContext.Current.CancellationToken);
@@ -186,7 +188,7 @@ public sealed class LibraryImporterTests
                .Returns(new[] { runningJob } as IReadOnlyList<JobRecord>);
 
         var embeddingProvider = MakeEmbeddingProvider();
-        var importer = new LibraryImporter(libraryRepo, jobRepo, embeddingProvider);
+        var importer = MakeImporter(libraryRepo, jobRepo, embeddingProvider);
 
         var path = await CreateBundleWithVersionEntryAsync(LibraryId, Version);
 
@@ -196,6 +198,227 @@ public sealed class LibraryImporterTests
                                        ct: TestContext.Current.CancellationToken));
         Assert.Contains(JobId, ex.Message);
         Assert.Contains("already", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RoundTripsSingleVersionWhenEncoderMatches()
+    {
+        const string LibraryId = "test-lib";
+        const string Version = "1.0";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+
+        // Build fixture data.
+        var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
+
+        // Wire exporter mocks.
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var bm25Repo = Substitute.For<IBm25ShardRepository>();
+        bm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+
+        var bundlePath = await CreateValidSingleVersionBundleAsync(
+            exportLibraryRepo, exportProfileRepo, exportIndexRepo, exportExcludedRepo,
+            exportDiffRepo, exportPageRepo, exportChunkRepo, bm25Repo,
+            LibraryId, Version);
+
+        // Wire receiver-side importer mocks — library doesn't exist yet.
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns((LibraryRecord?) null);
+
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+
+        // Encoder matches the bundle.
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: versionRecord.EmbeddingModelName,
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        var importPageRepo = Substitute.For<IPageRepository>();
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           importProfileRepo, importIndexRepo, importExcludedRepo,
+                                           importDiffRepo, importPageRepo, importChunkRepo);
+
+        var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
+                                                progress: null,
+                                                ct: TestContext.Current.CancellationToken);
+
+        // Version must be in VersionsImported, no partial failures.
+        Assert.Contains(Version, result.VersionsImported);
+        Assert.Empty(result.PartialFailures);
+
+        // Version record was upserted.
+        await importLibraryRepo.Received(1).UpsertVersionAsync(
+            Arg.Is<LibraryVersionRecord>(r => r.LibraryId == LibraryId && r.Version == Version),
+            Arg.Any<CancellationToken>());
+
+        // Pages were inserted.
+        await importPageRepo.Received(PageCount).UpsertPageAsync(
+            Arg.Is<PageRecord>(p => p.LibraryId == LibraryId && p.Version == Version),
+            Arg.Any<CancellationToken>());
+
+        // Chunks were inserted with non-null embeddings matching dimensions.
+        await importChunkRepo.Received().InsertChunksAsync(
+            Arg.Is<IReadOnlyList<DocChunk>>(cs =>
+                cs.Count == ChunkCount
+                && cs.All(c => c.Embedding != null && c.Embedding.Length == Dim)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RollsBackVersionOnMidImportFailure()
+    {
+        const string LibraryId = "test-lib";
+        const string Version = "1.0";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+
+        // Build fixture data and a real bundle.
+        var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
+
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var bm25Repo = Substitute.For<IBm25ShardRepository>();
+        bm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+
+        var bundlePath = await CreateValidSingleVersionBundleAsync(
+            exportLibraryRepo, exportProfileRepo, exportIndexRepo, exportExcludedRepo,
+            exportDiffRepo, exportPageRepo, exportChunkRepo, bm25Repo,
+            LibraryId, Version);
+
+        // Receiver importer — chunk insert throws.
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns((LibraryRecord?) null);
+        importLibraryRepo.DeleteVersionAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns(new DeleteVersionResult(1, false, null));
+
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: versionRecord.EmbeddingModelName,
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        var importPageRepo = Substitute.For<IPageRepository>();
+        importPageRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(0L);
+
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        importChunkRepo.InsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<CancellationToken>())
+                       .Returns<Task>(_ => Task.FromException(new InvalidOperationException("simulated chunk write failure")));
+        importChunkRepo.DeleteChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns(0L);
+
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        importExcludedRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                          .Returns(0L);
+
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           importProfileRepo, importIndexRepo, importExcludedRepo,
+                                           importDiffRepo, importPageRepo, importChunkRepo);
+
+        var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
+                                                progress: null,
+                                                ct: TestContext.Current.CancellationToken);
+
+        // The version is NOT in VersionsImported.
+        Assert.DoesNotContain(Version, result.VersionsImported);
+
+        // The failure is recorded.
+        Assert.Single(result.PartialFailures);
+        Assert.Equal(Version, result.PartialFailures[0].Version);
+
+        // Rollback: pages and chunks deleted by version.
+        await importPageRepo.Received(1).DeleteAsync(LibraryId, Version, Arg.Any<CancellationToken>());
+        await importChunkRepo.Received(1).DeleteChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>());
+
+        // Rollback: version record deleted.
+        await importLibraryRepo.Received(1)
+                               .DeleteVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -213,7 +436,23 @@ public sealed class LibraryImporterTests
                                 Arg.Any<CancellationToken>())
                .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
 
-        return new LibraryImporter(libraryRepo, jobRepo, MakeEmbeddingProvider());
+        return MakeImporter(libraryRepo, jobRepo, MakeEmbeddingProvider());
+    }
+
+    private static LibraryImporter MakeImporter(ILibraryRepository libraryRepo,
+                                                 IJobRepository jobRepo,
+                                                 IEmbeddingProvider embeddingProvider)
+    {
+        return new LibraryImporter(
+            libraryRepo,
+            jobRepo,
+            embeddingProvider,
+            Substitute.For<ILibraryProfileRepository>(),
+            Substitute.For<ILibraryIndexRepository>(),
+            Substitute.For<IExcludedSymbolsRepository>(),
+            Substitute.For<IDiffRepository>(),
+            Substitute.For<IPageRepository>(),
+            Substitute.For<IChunkRepository>());
     }
 
     private static IEmbeddingProvider MakeEmbeddingProvider(string providerId = "onnx-local",
@@ -225,6 +464,39 @@ public sealed class LibraryImporterTests
         provider.ModelName.Returns(modelName);
         provider.Dimensions.Returns(dimensions);
         return provider;
+    }
+
+    /// <summary>
+    ///     Exports a real bundle using <see cref="LibraryExporter" /> wired
+    ///     with the supplied mocked repos. Returns the path to the bundle file.
+    /// </summary>
+    private static async Task<string> CreateValidSingleVersionBundleAsync(
+        ILibraryRepository libraryRepo,
+        ILibraryProfileRepository profileRepo,
+        ILibraryIndexRepository indexRepo,
+        IExcludedSymbolsRepository excludedRepo,
+        IDiffRepository diffRepo,
+        IPageRepository pageRepo,
+        IChunkRepository chunkRepo,
+        IBm25ShardRepository bm25Repo,
+        string libraryId,
+        string version)
+    {
+        var exporter = new LibraryExporter(libraryRepo, profileRepo, indexRepo, excludedRepo,
+                                           diffRepo, pageRepo, chunkRepo, bm25Repo);
+
+        var outputPath = Path.Combine(Path.GetTempPath(), $"saddlerag-test-{Guid.NewGuid():N}.srlib.zip");
+        await exporter.ExportAsync(
+            new ExportRequest
+            {
+                LibraryId = libraryId,
+                OutputPath = outputPath,
+                Versions = VersionFilter.All
+            },
+            progress: null,
+            ct: TestContext.Current.CancellationToken);
+
+        return outputPath;
     }
 
     private static async Task<string> CreateSyntheticBundleAsync(int manifestVersion, string libraryId = "valid-id")
@@ -253,7 +525,8 @@ public sealed class LibraryImporterTests
     /// <summary>
     ///     Builds a valid bundle that contains a single version entry.
     ///     Both the per-version blob and manifest blob hashes are correct
-    ///     so the importer proceeds past the sha256 gate.
+    ///     so the importer proceeds past the sha256 gate. The bundle lacks
+    ///     version.json intentionally — used only for gate-check tests.
     /// </summary>
     private static async Task<string> CreateBundleWithVersionEntryAsync(string libraryId,
                                                                          string version,

@@ -20,9 +20,9 @@ namespace SaddleRAG.Packaging;
 ///     Reads a .srlib.zip bundle and writes it into the receiver's
 ///     MongoDB. Tasks 1–15: manifest read, sha256 validation,
 ///     pathological-id guard. Task 16: conflict check, concurrent-job
-///     guard, encoder-match decision. Subsequent tasks add per-version
-///     write with rollback, BM25 GridFS re-upload,
-///     encoder-mismatch reembed enqueue, overwrite path.
+///     guard, encoder-match decision. Task 17: per-version write with
+///     rollback (encoder-match path). Task 18 adds BM25 GridFS re-upload,
+///     Task 19 encoder-mismatch reembed enqueue, Task 20 overwrite path.
 /// </summary>
 public sealed class LibraryImporter
 {
@@ -31,26 +31,52 @@ public sealed class LibraryImporter
     private readonly ILibraryRepository mLibraryRepository;
     private readonly IJobRepository mJobRepository;
     private readonly IEmbeddingProvider mEmbeddingProvider;
+    private readonly ILibraryProfileRepository mProfileRepository;
+    private readonly ILibraryIndexRepository mIndexRepository;
+    private readonly IExcludedSymbolsRepository mExcludedSymbolsRepository;
+    private readonly IDiffRepository mDiffRepository;
+    private readonly IPageRepository mPageRepository;
+    private readonly IChunkRepository mChunkRepository;
 
     #endregion
 
-    #region Messages constants
+    #region Constants
 
     private const string OverwriteHint = "Pass overwrite=true to replace.";
     private const string ConcurrentJobHint = "Wait for it to complete or cancel it before retrying.";
+    private const int PageBatchSize = 256;
+    private const int ChunkBatchSize = 256;
 
     #endregion
 
     public LibraryImporter(ILibraryRepository libraryRepository,
                            IJobRepository jobRepository,
-                           IEmbeddingProvider embeddingProvider)
+                           IEmbeddingProvider embeddingProvider,
+                           ILibraryProfileRepository profileRepository,
+                           ILibraryIndexRepository indexRepository,
+                           IExcludedSymbolsRepository excludedSymbolsRepository,
+                           IDiffRepository diffRepository,
+                           IPageRepository pageRepository,
+                           IChunkRepository chunkRepository)
     {
         ArgumentNullException.ThrowIfNull(libraryRepository);
         ArgumentNullException.ThrowIfNull(jobRepository);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
+        ArgumentNullException.ThrowIfNull(profileRepository);
+        ArgumentNullException.ThrowIfNull(indexRepository);
+        ArgumentNullException.ThrowIfNull(excludedSymbolsRepository);
+        ArgumentNullException.ThrowIfNull(diffRepository);
+        ArgumentNullException.ThrowIfNull(pageRepository);
+        ArgumentNullException.ThrowIfNull(chunkRepository);
         mLibraryRepository = libraryRepository;
         mJobRepository = jobRepository;
         mEmbeddingProvider = embeddingProvider;
+        mProfileRepository = profileRepository;
+        mIndexRepository = indexRepository;
+        mExcludedSymbolsRepository = excludedSymbolsRepository;
+        mDiffRepository = diffRepository;
+        mPageRepository = pageRepository;
+        mChunkRepository = chunkRepository;
     }
 
     #region Active encoder properties
@@ -84,6 +110,9 @@ public sealed class LibraryImporter
 
         ValidateAllBlobs(reader, manifest, ct);
 
+        var versionsImported = new List<string>();
+        var partialFailures = new List<ImportPartialFailure>();
+
         bool hasVersions = manifest.Versions.Count > 0;
         if (hasVersions)
         {
@@ -99,8 +128,7 @@ public sealed class LibraryImporter
                 throw new InvalidOperationException(
                     $"Versions already present on receiver: {string.Join(", ", conflicting)}. {OverwriteHint}");
 
-            // Gate 2 — concurrent-job guard: refuse if any non-terminal job already
-            // targets any of our (library, version) tuples.
+            // Gate 2 — concurrent-job guard.
             foreach (var manifestVersion in manifest.Versions)
             {
                 var running = await mJobRepository.ListActiveAsync(manifest.Library.Id,
@@ -116,31 +144,306 @@ public sealed class LibraryImporter
             }
 
             // Gate 3 — encoder-match decision.
-            // The exporter guarantees all versions in a single bundle share one encoder,
-            // so comparing against the first version entry is sufficient.
             var bundleEncoder = manifest.Versions[0];
             bool encoderMatches =
                 string.Equals(bundleEncoder.EmbeddingProviderId, ActiveEncoderProviderId, StringComparison.Ordinal)
                 && string.Equals(bundleEncoder.EmbeddingModelName, ActiveEncoderModelName, StringComparison.Ordinal)
                 && bundleEncoder.EmbeddingDimensions == ActiveEncoderDimensions;
 
-            // encoderMatches is computed here; Task 17+ will branch on it to decide whether
-            // to import vectors as-is or enqueue a reembed job.
-            _ = encoderMatches;
+            // Per-version write loop with rollback.
+            for (int i = 0; i < manifest.Versions.Count; i++)
+            {
+                var versionEntry = manifest.Versions[i];
+                progress?.Report(new ImportProgress
+                                     {
+                                         CurrentVersion = versionEntry.Version,
+                                         CurrentStep = "writing",
+                                         VersionIndex = i,
+                                         TotalVersions = manifest.Versions.Count
+                                     });
+
+                var log = new VersionWriteLog();
+                try
+                {
+                    await WriteVersionAsync(reader, manifest.Library.Id, versionEntry, encoderMatches, log, ct);
+                    versionsImported.Add(versionEntry.Version);
+                }
+                catch (OperationCanceledException)
+                {
+                    await RollbackVersionAsync(log, manifest.Library.Id, versionEntry.Version, ct);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    await RollbackVersionAsync(log, manifest.Library.Id, versionEntry.Version, ct);
+                    partialFailures.Add(new ImportPartialFailure
+                                            {
+                                                Version = versionEntry.Version,
+                                                Reason = ex.Message
+                                            });
+                    break;
+                }
+            }
         }
 
-        // Subsequent tasks: per-version write with rollback, BM25 GridFS re-upload,
-        // encoder-mismatch reembed enqueue, overwrite path.
+        // Task 20 will add library upsert here.
 
         return new ImportResult
                    {
-                       VersionsImported = [],
+                       VersionsImported = versionsImported,
                        OverwrittenVersions = [],
                        BytesFreed = 0,
                        PendingReembedJobIds = [],
-                       PartialFailures = [],
+                       PartialFailures = partialFailures,
                        RecommendedFollowUp = string.Empty
                    };
+    }
+
+    private async Task WriteVersionAsync(IBundleReader reader,
+                                         string libraryId,
+                                         BundleVersionEntry versionEntry,
+                                         bool encoderMatches,
+                                         VersionWriteLog log,
+                                         CancellationToken ct)
+    {
+        string version = versionEntry.Version;
+
+        // 1. Version record.
+        var versionRecord = await ReadJsonAsync<LibraryVersionRecord>(
+            reader, BundlePaths.VersionFilePath(version, BundlePaths.VersionFile), ct);
+        await mLibraryRepository.UpsertVersionAsync(versionRecord, ct);
+        log.VersionId = versionRecord.Id;
+
+        // 2. Profile (optional).
+        var profilePath = BundlePaths.VersionFilePath(version, BundlePaths.ProfileFile);
+        if (versionEntry.Blobs.ContainsKey(profilePath))
+        {
+            var profile = await ReadJsonAsync<LibraryProfile>(reader, profilePath, ct);
+            await mProfileRepository.UpsertAsync(profile, ct);
+            log.ProfileId = profile.Id;
+        }
+
+        // 3. Index (optional).
+        var indexPath = BundlePaths.VersionFilePath(version, BundlePaths.IndexFile);
+        if (versionEntry.Blobs.ContainsKey(indexPath))
+        {
+            var index = await ReadJsonAsync<LibraryIndex>(reader, indexPath, ct);
+            await mIndexRepository.UpsertAsync(index, ct);
+            log.IndexId = index.Id;
+        }
+
+        // 4. VersionDiff (optional).
+        var diffPath = BundlePaths.VersionFilePath(version, BundlePaths.VersionDiffFile);
+        if (versionEntry.Blobs.ContainsKey(diffPath))
+        {
+            var diff = await ReadJsonAsync<VersionDiffRecord>(reader, diffPath, ct);
+            await mDiffRepository.UpsertDiffAsync(diff, ct);
+            log.DiffWritten = true;
+        }
+
+        // 5. ExcludedSymbols.jsonl.
+        var excludedPath = BundlePaths.VersionFilePath(version, BundlePaths.ExcludedSymbolsFile);
+        if (versionEntry.Blobs.ContainsKey(excludedPath))
+        {
+            await WriteExcludedSymbolsAsync(reader, excludedPath, log, ct);
+        }
+
+        // 6. Pages.jsonl.
+        var pagesPath = BundlePaths.VersionFilePath(version, BundlePaths.PagesFile);
+        if (versionEntry.Blobs.ContainsKey(pagesPath))
+        {
+            await WritePagesAsync(reader, pagesPath, log, ct);
+        }
+
+        // 7/8. Chunks — encoder-match attaches embeddings; mismatch leaves Embedding null.
+        var chunksPath = BundlePaths.VersionFilePath(version, BundlePaths.ChunksFile);
+        if (versionEntry.Blobs.ContainsKey(chunksPath))
+        {
+            await WriteChunksAsync(reader, version, chunksPath, versionEntry.EmbeddingDimensions,
+                                   encoderMatches, log, ct);
+        }
+    }
+
+    private async Task WriteExcludedSymbolsAsync(IBundleReader reader,
+                                                  string excludedPath,
+                                                  VersionWriteLog log,
+                                                  CancellationToken ct)
+    {
+        await using var stream = reader.OpenEntry(excludedPath);
+        var jsonlReader = new JsonlReader<ExcludedSymbol>(stream);
+        var batch = new List<ExcludedSymbol>();
+        await foreach (var symbol in jsonlReader.ReadAllAsync(ct))
+        {
+            batch.Add(symbol);
+            log.ExcludedIds.Add(symbol.Id);
+        }
+        if (batch.Count > 0)
+            await mExcludedSymbolsRepository.UpsertManyAsync(batch, ct);
+    }
+
+    private async Task WritePagesAsync(IBundleReader reader,
+                                       string pagesPath,
+                                       VersionWriteLog log,
+                                       CancellationToken ct)
+    {
+        await using var stream = reader.OpenEntry(pagesPath);
+        var jsonlReader = new JsonlReader<PageRecord>(stream);
+        var batch = new List<PageRecord>(PageBatchSize);
+        await foreach (var page in jsonlReader.ReadAllAsync(ct))
+        {
+            batch.Add(page);
+            log.PageIds.Add(page.Id);
+            if (batch.Count >= PageBatchSize)
+            {
+                await FlushPageBatchAsync(batch, ct);
+            }
+        }
+        if (batch.Count > 0)
+            await FlushPageBatchAsync(batch, ct);
+    }
+
+    private async Task FlushPageBatchAsync(List<PageRecord> batch, CancellationToken ct)
+    {
+        foreach (var page in batch)
+            await mPageRepository.UpsertPageAsync(page, ct);
+        batch.Clear();
+    }
+
+    private async Task WriteChunksAsync(IBundleReader reader,
+                                         string version,
+                                         string chunksPath,
+                                         int dim,
+                                         bool encoderMatches,
+                                         VersionWriteLog log,
+                                         CancellationToken ct)
+    {
+        // Materialize chunks from jsonl first, then attach embeddings from the blob
+        // in a second pass. ZipArchive allows only one open entry at a time.
+        var chunks = await MaterializeChunksAsync(reader, chunksPath, ct);
+
+        if (encoderMatches)
+            await AttachAndInsertChunksAsync(reader, version, chunks, dim, log, ct);
+        else
+            await InsertChunksWithNullEmbeddingsAsync(chunks, log, ct);
+    }
+
+    private static async Task<List<DocChunk>> MaterializeChunksAsync(IBundleReader reader,
+                                                                       string chunksPath,
+                                                                       CancellationToken ct)
+    {
+        await using var stream = reader.OpenEntry(chunksPath);
+        var jsonlReader = new JsonlReader<DocChunk>(stream);
+        var chunks = new List<DocChunk>();
+        await foreach (var chunk in jsonlReader.ReadAllAsync(ct))
+            chunks.Add(chunk);
+        return chunks;
+    }
+
+    private async Task AttachAndInsertChunksAsync(IBundleReader reader,
+                                                   string version,
+                                                   List<DocChunk> chunks,
+                                                   int dim,
+                                                   VersionWriteLog log,
+                                                   CancellationToken ct)
+    {
+        var embedPath = BundlePaths.VersionFilePath(version, BundlePaths.EmbeddingsBlobFile);
+        await using var embedStream = reader.OpenEntry(embedPath);
+        var embedReader = new EmbeddingBlobReader(embedStream, dim);
+
+        var batch = new List<DocChunk>(ChunkBatchSize);
+        foreach (var chunk in chunks)
+        {
+            var embedding = await embedReader.ReadAsync(ct);
+            var withEmbed = chunk with { Embedding = embedding };
+            batch.Add(withEmbed);
+            log.ChunkIds.Add(withEmbed.Id);
+            if (batch.Count >= ChunkBatchSize)
+            {
+                await mChunkRepository.InsertChunksAsync(batch, ct);
+                batch.Clear();
+            }
+        }
+        if (batch.Count > 0)
+            await mChunkRepository.InsertChunksAsync(batch, ct);
+    }
+
+    private async Task InsertChunksWithNullEmbeddingsAsync(List<DocChunk> chunks,
+                                                            VersionWriteLog log,
+                                                            CancellationToken ct)
+    {
+        var batch = new List<DocChunk>(ChunkBatchSize);
+        foreach (var chunk in chunks)
+        {
+            // Encoder mismatch: store chunk with Embedding = null.
+            // Task 19 will enqueue a reembed job.
+            var withNull = chunk with { Embedding = null };
+            batch.Add(withNull);
+            log.ChunkIds.Add(withNull.Id);
+            if (batch.Count >= ChunkBatchSize)
+            {
+                await mChunkRepository.InsertChunksAsync(batch, ct);
+                batch.Clear();
+            }
+        }
+        if (batch.Count > 0)
+            await mChunkRepository.InsertChunksAsync(batch, ct);
+    }
+
+    private async Task RollbackVersionAsync(VersionWriteLog log,
+                                             string libraryId,
+                                             string version,
+                                             CancellationToken ct)
+    {
+        // Best-effort rollback in reverse insertion order.
+        // Each step is wrapped so rollback does not mask the original failure.
+        await TryDeleteAsync(() => mChunkRepository.DeleteChunksAsync(libraryId, version, ct));
+        await TryDeleteAsync(() => mPageRepository.DeleteAsync(libraryId, version, ct));
+        await TryDeleteAsync(() => mExcludedSymbolsRepository.DeleteAsync(libraryId, version, ct));
+
+        // IDiffRepository has no delete method — diff is left as an orphan;
+        // it has no foreign-key constraint and doesn't affect query behavior.
+        _ = log.DiffWritten;
+
+        if (log.IndexId is not null)
+            await TryDeleteAsync(() => mIndexRepository.DeleteAsync(libraryId, version, ct));
+
+        if (log.ProfileId is not null)
+            await TryDeleteAsync(() => mProfileRepository.DeleteAsync(libraryId, version, ct));
+
+        if (log.VersionId is not null)
+            await TryDeleteVersionAsync(() => mLibraryRepository.DeleteVersionAsync(libraryId, version, ct));
+    }
+
+    private static async Task TryDeleteAsync(Func<Task<long>> delete)
+    {
+        try
+        {
+            await delete();
+        }
+        catch
+        {
+            // Best-effort; swallow so rollback completes as far as possible.
+        }
+    }
+
+    private static async Task TryDeleteVersionAsync(Func<Task<DeleteVersionResult>> delete)
+    {
+        try
+        {
+            await delete();
+        }
+        catch
+        {
+            // Best-effort; swallow so rollback completes as far as possible.
+        }
+    }
+
+    private static async Task<T> ReadJsonAsync<T>(IBundleReader reader, string path, CancellationToken ct)
+    {
+        await using var stream = reader.OpenEntry(path);
+        var result = await JsonSerializer.DeserializeAsync<T>(stream, BundleJsonOptions.Default, ct)
+                     ?? throw new InvalidOperationException($"'{path}' deserialized to null");
+        return result;
     }
 
     private static async Task<BundleManifest> ReadManifestAsync(IBundleReader reader, CancellationToken ct)
@@ -200,4 +503,19 @@ public sealed class LibraryImporter
             throw new InvalidOperationException(
                 $"Bundle integrity check failed for '{path}': expected {info.Bytes} bytes, got {bytes}");
     }
+
+    #region VersionWriteLog nested class
+
+    private sealed class VersionWriteLog
+    {
+        public List<string> PageIds { get; } = new();
+        public List<string> ChunkIds { get; } = new();
+        public string? VersionId { get; set; }
+        public string? ProfileId { get; set; }
+        public string? IndexId { get; set; }
+        public bool DiffWritten { get; set; }
+        public List<string> ExcludedIds { get; } = new();
+    }
+
+    #endregion
 }
