@@ -601,4 +601,117 @@ public sealed class LibraryExporterTests
         Assert.True(manifest.Versions[0].Bm25HasGridFs,
                     "Bm25HasGridFs must be true when a spill blob was bundled");
     }
+
+    [Fact]
+    public async Task RefusesExportWhenVersionsHaveDifferentEncoders()
+    {
+        var library = PackagingFixtures.MakeLibrary("foo", "1.0", "1.0", "2.0");
+
+        var libRepo = Substitute.For<ILibraryRepository>();
+        libRepo.GetLibraryAsync(library.Id, Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryRecord?>(library));
+        libRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryVersionRecord?>(PackagingFixtures.MakeVersion("foo", "1.0", modelName: "model-A")));
+        libRepo.GetVersionAsync("foo", "2.0", Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryVersionRecord?>(PackagingFixtures.MakeVersion("foo", "2.0", modelName: "model-B")));
+
+        var profileRepo = Substitute.For<ILibraryProfileRepository>();
+        profileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                   .Returns(Task.FromResult<LibraryProfile?>(null));
+
+        var indexRepo = Substitute.For<ILibraryIndexRepository>();
+        indexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<LibraryIndex?>(null));
+
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        excludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<IReadOnlyList<ExcludedSymbol>>([]));
+
+        var diffRepo = Substitute.For<IDiffRepository>();
+        diffRepo.GetDiffAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<VersionDiffRecord?>(null));
+
+        var pageRepo = Substitute.For<IPageRepository>();
+        pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<PageRecord>>([]));
+
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, BuildEmptyBm25Repo());
+        var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outDir);
+        var outPath = Path.Combine(outDir, "foo-all.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.All,
+                              OutputPath = outPath
+                          };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken));
+
+        Assert.Contains("multiple embedding encoders", ex.Message);
+        Assert.False(File.Exists(outPath));
+    }
+
+    [Fact]
+    public async Task ReturnsTotalPagesAndChunksAcrossVersions()
+    {
+        var library = PackagingFixtures.MakeLibrary("foo", "1.1", "1.0", "1.1");
+        var versionRecord10 = PackagingFixtures.MakeVersion("foo", "1.0", pageCount: 3, chunkCount: 10);
+        var versionRecord11 = PackagingFixtures.MakeVersion("foo", "1.1", pageCount: 5, chunkCount: 20);
+
+        var libRepo = Substitute.For<ILibraryRepository>();
+        libRepo.GetLibraryAsync(library.Id, Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryRecord?>(library));
+        libRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryVersionRecord?>(versionRecord10));
+        libRepo.GetVersionAsync("foo", "1.1", Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryVersionRecord?>(versionRecord11));
+
+        var profileRepo = Substitute.For<ILibraryProfileRepository>();
+        profileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                   .Returns(Task.FromResult<LibraryProfile?>(null));
+
+        var indexRepo = Substitute.For<ILibraryIndexRepository>();
+        indexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<LibraryIndex?>(null));
+
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        excludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<IReadOnlyList<ExcludedSymbol>>([]));
+
+        var diffRepo = Substitute.For<IDiffRepository>();
+        diffRepo.GetDiffAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<VersionDiffRecord?>(null));
+
+        var pageRepo = Substitute.For<IPageRepository>();
+        pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<PageRecord>>([]));
+
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, BuildEmptyBm25Repo());
+        var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outDir);
+        var outPath = Path.Combine(outDir, "foo-all.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.All,
+                              OutputPath = outPath
+                          };
+
+        var result = await exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(8, result.TotalPages);
+        Assert.Equal(30, result.TotalChunks);
+    }
 }

@@ -55,6 +55,13 @@ public sealed class LibraryExporter
 
     private const int ExcludedSymbolsLimit = int.MaxValue;
 
+    private const int EstimatedBytesPerPage = 50_000;
+
+    private const string EncoderSummarySeparator = ", ";
+
+    private const string CrossEncoderErrorPrefix =
+        "Target versions span multiple embedding encoders; align them via reembed_library or export one version at a time. ";
+
     private readonly ILibraryRepository mLibraryRepository;
     private readonly ILibraryProfileRepository mProfileRepository;
     private readonly ILibraryIndexRepository mIndexRepository;
@@ -78,6 +85,42 @@ public sealed class LibraryExporter
         var targetVersions = request.Versions.Resolve(library.CurrentVersion, library.AllVersions);
         if (targetVersions.Count == 0)
             throw new ArgumentException("No versions resolved for export", nameof(request));
+
+        var versionRecords = new List<LibraryVersionRecord>();
+        foreach (var v in targetVersions)
+        {
+            var rec = await mLibraryRepository.GetVersionAsync(library.Id, v, ct)
+                      ?? throw new InvalidOperationException($"Missing version row for {library.Id}/{v}");
+            versionRecords.Add(rec);
+        }
+
+        var distinctEncoders = versionRecords
+            .Select(r => (r.EmbeddingProviderId, r.EmbeddingModelName, r.EmbeddingDimensions))
+            .Distinct()
+            .Count();
+        if (distinctEncoders > 1)
+        {
+            var encoderSummary = string.Join(EncoderSummarySeparator,
+                versionRecords.Select(r => $"{r.Version}:{r.EmbeddingModelName}").Distinct());
+            throw new InvalidOperationException(
+                CrossEncoderErrorPrefix +
+                $"Encoders present: {encoderSummary}");
+        }
+
+        long estimatedBytes = versionRecords.Sum(r =>
+            checked((long)r.ChunkCount * r.EmbeddingDimensions * sizeof(float))
+            + (long)r.PageCount * EstimatedBytesPerPage);
+
+        var outputRoot = Path.GetPathRoot(Path.GetFullPath(request.OutputPath));
+        if (outputRoot is null)
+            throw new InvalidOperationException($"Cannot determine drive root for output path: {request.OutputPath}");
+        var driveInfo = new DriveInfo(outputRoot);
+        long freeBytes = driveInfo.AvailableFreeSpace;
+
+        if (freeBytes < estimatedBytes / 10)
+            throw new InvalidOperationException(
+                $"Insufficient disk space: have {freeBytes} bytes free, estimated {estimatedBytes} bytes needed. " +
+                $"Free space must be at least 10% of the estimate. Free up disk space and retry.");
 
         var tempPath = request.OutputPath + TempSuffix;
         var manifestBuilder = new ManifestBuilder();
@@ -106,8 +149,8 @@ public sealed class LibraryExporter
                        OutputPath = request.OutputPath,
                        BytesWritten = bytesWritten,
                        VersionsExported = targetVersions,
-                       TotalPages = 0,
-                       TotalChunks = 0
+                       TotalPages = versionRecords.Sum(r => r.PageCount),
+                       TotalChunks = versionRecords.Sum(r => r.ChunkCount)
                    };
     }
 
