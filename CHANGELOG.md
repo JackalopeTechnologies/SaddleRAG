@@ -6,6 +6,64 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-27
+
+### License
+
+- **Relicensed from dual AGPLv3 + commercial to MIT.** Single `LICENSE` file with
+  the standard MIT text. The deprecated `COMMERCIAL-LICENSE.md` and `CLA.md` are
+  preserved under `archive/` for historical reference but are no longer in effect
+  for the current or any future version. Contributions no longer require a CLA;
+  see `CONTRIBUTING.md`. Source-file license headers (510 files) updated to a
+  two-line `SPDX-License-Identifier: MIT` form. The Windows installer's
+  `License.rtf` regenerated in MIT form. (#99)
+
+### Library packaging (import / export)
+
+- **New MCP tools `export_library` and `import_library`** for sharing indexed
+  libraries between SaddleRAG instances as a single `.srlib.zip` file. Closes
+  the recurring "I scraped this for myself; can I hand it to a teammate without
+  making them repeat the scrape?" gap. (#100)
+- **Export** streams a Mongo-backed library into a temp-then-rename zip:
+  `library.json`, per-version `version.json` / `profile.json` / `index.json` /
+  `versionDiff.json` / `excludedSymbols.jsonl` / `pages.jsonl`, plus
+  `chunks.jsonl` with embeddings stripped to a parallel `chunks.embeddings.f32`
+  packed-float32 sidecar (row-aligned by construction). BM25 shards are bundled
+  with their referenced GridFS spill blobs under `bm25/gridfs/{originalId}.bin`.
+  `manifest.json` carries a sha256 + byte count for every blob plus per-version
+  encoder metadata. Refuses to export when target versions span multiple
+  embedding encoders.
+- **Import** validates everything before any DB write: manifest schema version,
+  library-id shape (no path traversal, no Mongo-illegal chars), per-blob sha256,
+  per-blob byte count. Three pre-write gates: conflict (refuses on existing
+  `(library, version)` unless `overwrite=true`), concurrent-job (refuses while
+  any non-terminal job targets the same `(library, version)`), and encoder-match
+  decision. On encoder match, chunks land with embeddings reconstructed from the
+  f32 sidecar. On encoder mismatch, chunks land with `Embedding = null` and one
+  `reembed_library` job is enqueued per imported version. BM25 GridFS blobs are
+  re-uploaded under fresh ids on the receiver; shard `ShardGridFsRef` /
+  `ExternalTerms` maps are rewritten in flight. Per-version rollback log
+  unwinds every insert on mid-version failure; earlier successful versions in
+  the same bundle stay imported. `overwrite=true` purges existing data before
+  the write; `compact=true` runs `compact_collections` after a successful
+  overwrite-import.
+- **New `SaddleRAG.Packaging` project** sits between Core/Database and Mcp.
+  Public surface: `LibraryExporter`, `LibraryImporter`, `BundleManifest`,
+  `BundleVersionEntry`, `BlobInfo`, `BundleJsonOptions`, `VersionFilter`,
+  request/result records. Internal: streaming `JsonlWriter<T>`/`JsonlReader<T>`,
+  `EmbeddingBlobWriter`/`EmbeddingBlobReader`, `ManifestBuilder` with streaming
+  sha256, `TeeStream`, zip bundle reader/writer.
+- **`ICollectionCompactor` extracted from `compact_collections`** so the MCP
+  tool and the import_library `compact=true` opt-in share one Mongo-side path.
+  The MCP tool retains its JSON shaping; only the compact + stats logic moved.
+- **`IBm25ShardRepository` gains four methods** for the export/import round-trip:
+  `OpenGridFsBlobAsync`, `UploadGridFsBlobAsync`, `UpsertShardAsync`,
+  `DeleteGridFsBlobAsync`. Implementations route through the existing
+  `SaddleRagDbContext.Bm25Bucket`.
+- **`LibraryIdValidator`** added to `SaddleRAG.Core` so the import path and any
+  future writer share one regex (rejects empty, path traversal, Mongo-illegal
+  characters, `system.` prefix).
+
 ## [1.1.0] - 2026-05-26
 
 ### SPA detector
