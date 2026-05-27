@@ -23,15 +23,33 @@ namespace SaddleRAG.Packaging;
 /// </summary>
 public sealed class LibraryExporter
 {
-    public LibraryExporter(ILibraryRepository libraryRepository)
+    public LibraryExporter(ILibraryRepository libraryRepository,
+                           ILibraryProfileRepository profileRepository,
+                           ILibraryIndexRepository indexRepository,
+                           IExcludedSymbolsRepository excludedSymbolsRepository,
+                           IDiffRepository diffRepository)
     {
         ArgumentNullException.ThrowIfNull(libraryRepository);
+        ArgumentNullException.ThrowIfNull(profileRepository);
+        ArgumentNullException.ThrowIfNull(indexRepository);
+        ArgumentNullException.ThrowIfNull(excludedSymbolsRepository);
+        ArgumentNullException.ThrowIfNull(diffRepository);
         mLibraryRepository = libraryRepository;
+        mProfileRepository = profileRepository;
+        mIndexRepository = indexRepository;
+        mExcludedSymbolsRepository = excludedSymbolsRepository;
+        mDiffRepository = diffRepository;
     }
 
     private const string TempSuffix = ".tmp";
 
+    private const int ExcludedSymbolsLimit = int.MaxValue;
+
     private readonly ILibraryRepository mLibraryRepository;
+    private readonly ILibraryProfileRepository mProfileRepository;
+    private readonly ILibraryIndexRepository mIndexRepository;
+    private readonly IExcludedSymbolsRepository mExcludedSymbolsRepository;
+    private readonly IDiffRepository mDiffRepository;
 
     public async Task<ExportResult> ExportAsync(ExportRequest request,
                                                 IProgress<ExportProgress>? progress,
@@ -89,6 +107,7 @@ public sealed class LibraryExporter
     {
         await WriteLibraryJsonAsync(writer, library, manifestBuilder, ct);
 
+        var versionEntries = new List<BundleVersionEntry>();
         for (int i = 0; i < targetVersions.Count; i++)
         {
             progress?.Report(new ExportProgress
@@ -98,10 +117,11 @@ public sealed class LibraryExporter
                                      VersionIndex = i,
                                      TotalVersions = targetVersions.Count
                                  });
-            // Per-version content writes land in subsequent tasks (10-14).
+            var entry = await WriteVersionAsync(writer, library, targetVersions[i], manifestBuilder, ct);
+            versionEntries.Add(entry);
         }
 
-        await WriteManifestAsync(writer, library, manifestBuilder, ct);
+        await WriteManifestAsync(writer, library, versionEntries, manifestBuilder, ct);
     }
 
     private async Task WriteLibraryJsonAsync(IBundleWriter writer,
@@ -109,14 +129,72 @@ public sealed class LibraryExporter
                                              ManifestBuilder manifestBuilder,
                                              CancellationToken ct)
     {
-        await using var entry = writer.OpenEntry(BundlePaths.LibraryFile);
-        await using var hash = manifestBuilder.OpenBlob(BundlePaths.LibraryFile);
-        using var tee = new TeeStream(entry, hash, leaveOpen: true);
-        await JsonSerializer.SerializeAsync(tee, library, BundleJsonOptions.Default, ct);
+        await WriteJsonAsync(writer, manifestBuilder, BundlePaths.LibraryFile, library, ct);
+    }
+
+    private async Task<BundleVersionEntry> WriteVersionAsync(IBundleWriter writer,
+                                                             LibraryRecord library,
+                                                             string version,
+                                                             ManifestBuilder manifestBuilder,
+                                                             CancellationToken ct)
+    {
+        var versionRecord = await mLibraryRepository.GetVersionAsync(library.Id, version, ct)
+                            ?? throw new InvalidOperationException(
+                                $"Version record for '{library.Id}/{version}' not found");
+
+        var versionPath = BundlePaths.VersionFilePath(version, BundlePaths.VersionFile);
+        await WriteJsonAsync(writer, manifestBuilder, versionPath, versionRecord, ct);
+
+        var profile = await mProfileRepository.GetAsync(library.Id, version, ct);
+        if (profile is not null)
+        {
+            var profilePath = BundlePaths.VersionFilePath(version, BundlePaths.ProfileFile);
+            await WriteJsonAsync(writer, manifestBuilder, profilePath, profile, ct);
+        }
+
+        var index = await mIndexRepository.GetAsync(library.Id, version, ct);
+        if (index is not null)
+        {
+            var indexPath = BundlePaths.VersionFilePath(version, BundlePaths.IndexFile);
+            await WriteJsonAsync(writer, manifestBuilder, indexPath, index, ct);
+        }
+
+        if (versionRecord.PreviousVersion is not null)
+        {
+            var diff = await mDiffRepository.GetDiffAsync(library.Id, versionRecord.PreviousVersion, version, ct);
+            if (diff is not null)
+            {
+                var diffPath = BundlePaths.VersionFilePath(version, BundlePaths.VersionDiffFile);
+                await WriteJsonAsync(writer, manifestBuilder, diffPath, diff, ct);
+            }
+        }
+
+        var excludedSymbols = await mExcludedSymbolsRepository.ListAsync(library.Id, version, reason: null, ExcludedSymbolsLimit, ct);
+        var excludedPath = BundlePaths.VersionFilePath(version, BundlePaths.ExcludedSymbolsFile);
+        await WriteJsonlAsync(writer, manifestBuilder, excludedPath, excludedSymbols, ct);
+
+        var versionDir = BundlePaths.VersionDir(version) + "/";
+        var versionBlobs = manifestBuilder
+                          .ToDictionary()
+                          .Where(kv => kv.Key.StartsWith(versionDir, StringComparison.Ordinal))
+                          .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+        return new BundleVersionEntry
+                   {
+                       Version = version,
+                       EmbeddingProviderId = versionRecord.EmbeddingProviderId,
+                       EmbeddingModelName = versionRecord.EmbeddingModelName,
+                       EmbeddingDimensions = versionRecord.EmbeddingDimensions,
+                       PageCount = versionRecord.PageCount,
+                       ChunkCount = versionRecord.ChunkCount,
+                       Bm25HasGridFs = false,
+                       Blobs = versionBlobs
+                   };
     }
 
     private async Task WriteManifestAsync(IBundleWriter writer,
                                           LibraryRecord library,
+                                          IReadOnlyList<BundleVersionEntry> versions,
                                           ManifestBuilder manifestBuilder,
                                           CancellationToken ct)
     {
@@ -137,9 +215,35 @@ public sealed class LibraryExporter
                                                  Hint = library.Hint
                                              },
                                Blobs = topLevelBlobs,
-                               Versions = []
+                               Versions = versions
                            };
         await using var entry = writer.OpenEntry(BundlePaths.ManifestFile);
         await JsonSerializer.SerializeAsync(entry, manifest, BundleJsonOptions.Default, ct);
+    }
+
+    private async Task WriteJsonAsync<T>(IBundleWriter writer,
+                                         ManifestBuilder manifestBuilder,
+                                         string entryPath,
+                                         T payload,
+                                         CancellationToken ct)
+    {
+        await using var entry = writer.OpenEntry(entryPath);
+        await using var hash = manifestBuilder.OpenBlob(entryPath);
+        using var tee = new TeeStream(entry, hash, leaveOpen: true);
+        await JsonSerializer.SerializeAsync(tee, payload, BundleJsonOptions.Default, ct);
+    }
+
+    private async Task WriteJsonlAsync<T>(IBundleWriter writer,
+                                           ManifestBuilder manifestBuilder,
+                                           string entryPath,
+                                           IEnumerable<T> rows,
+                                           CancellationToken ct)
+    {
+        await using var entry = writer.OpenEntry(entryPath);
+        await using var hash = manifestBuilder.OpenBlob(entryPath);
+        using var tee = new TeeStream(entry, hash, leaveOpen: true);
+        await using var jsonl = new JsonlWriter<T>(tee, leaveOpen: true);
+        foreach (var row in rows)
+            await jsonl.WriteAsync(row, ct);
     }
 }
