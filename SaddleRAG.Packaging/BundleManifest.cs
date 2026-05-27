@@ -35,6 +35,14 @@ public sealed record BundleManifest
     [JsonPropertyName("library")]
     public required BundleLibraryInfo Library { get; init; }
 
+    /// <summary>
+    ///     Integrity descriptors for blobs that live at the root of the bundle
+    ///     (library.json plus any future top-level blobs). Per-version blobs are
+    ///     in <see cref="BundleVersionEntry.Blobs" /> instead.
+    /// </summary>
+    [JsonPropertyName("blobs")]
+    public required IReadOnlyDictionary<string, BlobInfo> Blobs { get; init; }
+
     [JsonPropertyName("versions")]
     public required IReadOnlyList<BundleVersionEntry> Versions { get; init; }
 }

@@ -101,7 +101,7 @@ public sealed class LibraryExporter
             // Per-version content writes land in subsequent tasks (10-14).
         }
 
-        await WriteManifestAsync(writer, library, ct);
+        await WriteManifestAsync(writer, library, manifestBuilder, ct);
     }
 
     private async Task WriteLibraryJsonAsync(IBundleWriter writer,
@@ -117,8 +117,14 @@ public sealed class LibraryExporter
 
     private async Task WriteManifestAsync(IBundleWriter writer,
                                           LibraryRecord library,
+                                          ManifestBuilder manifestBuilder,
                                           CancellationToken ct)
     {
+        var topLevelBlobs = manifestBuilder
+                           .ToDictionary()
+                           .Where(kv => !kv.Key.StartsWith(BundlePaths.VersionsDir + "/", StringComparison.Ordinal))
+                           .ToDictionary(kv => kv.Key, kv => kv.Value);
+
         var manifest = new BundleManifest
                            {
                                ManifestVersion = BundlePaths.CurrentManifestVersion,
@@ -130,6 +136,7 @@ public sealed class LibraryExporter
                                                  Name = library.Name,
                                                  Hint = library.Hint
                                              },
+                               Blobs = topLevelBlobs,
                                Versions = []
                            };
         await using var entry = writer.OpenEntry(BundlePaths.ManifestFile);
