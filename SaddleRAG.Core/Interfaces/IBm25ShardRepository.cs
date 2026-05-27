@@ -81,4 +81,33 @@ public interface IBm25ShardRepository
     ///     child pairs against the parent <see cref="LibraryRecord" /> set.
     /// </summary>
     Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    ///     Open a readable stream for a GridFS blob by its ObjectId string.
+    ///     Used by the exporter to bundle spilled shard or term payloads.
+    ///     Caller is responsible for disposing the returned stream.
+    /// </summary>
+    Task<Stream> OpenGridFsBlobAsync(string gridFsId, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Upload a binary stream to the BM25 GridFS bucket and return the
+    ///     new file id as a string. Used by the importer to re-upload spilled
+    ///     shard or term payloads onto the receiver, producing receiver-local
+    ///     ObjectIds that replace the sender-side ids in the shard rows.
+    /// </summary>
+    Task<string> UploadGridFsBlobAsync(Stream content, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Insert or replace a single shard document by its <see cref="Bm25Shard.Id" />.
+    ///     Used by the importer to write pre-prepared shards (GridFS refs
+    ///     already rewritten to receiver-local ids) one at a time.
+    /// </summary>
+    Task UpsertShardAsync(Bm25Shard shard, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Delete a single GridFS blob by its ObjectId string. Used by the
+    ///     importer rollback to remove blobs that were uploaded before a
+    ///     failure occurred.
+    /// </summary>
+    Task DeleteGridFsBlobAsync(string gridFsId, CancellationToken ct = default);
 }
