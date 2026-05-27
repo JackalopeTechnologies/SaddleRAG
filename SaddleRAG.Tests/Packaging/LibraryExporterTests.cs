@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -36,7 +37,8 @@ public sealed class LibraryExporterTests
                     string outDir) BuildExporter(LibraryRecord library,
                                                  LibraryVersionRecord? versionRecord = null,
                                                  IReadOnlyList<PageRecord>? pages = null,
-                                                 IReadOnlyList<DocChunk>? chunks = null)
+                                                 IReadOnlyList<DocChunk>? chunks = null,
+                                                 IBm25ShardRepository? bm25Repo = null)
     {
         var libRepo = Substitute.For<ILibraryRepository>();
         libRepo.GetLibraryAsync(library.Id, Arg.Any<CancellationToken>())
@@ -70,10 +72,19 @@ public sealed class LibraryExporterTests
         chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                  .Returns(Task.FromResult<IReadOnlyList<DocChunk>>(chunks ?? []));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
+        var resolvedBm25Repo = bm25Repo ?? BuildEmptyBm25Repo();
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, resolvedBm25Repo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         return (exporter, libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, outDir);
+    }
+
+    private static IBm25ShardRepository BuildEmptyBm25Repo()
+    {
+        var repo = Substitute.For<IBm25ShardRepository>();
+        repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Bm25Shard>>([]));
+        return repo;
     }
 
     [Fact]
@@ -163,8 +174,9 @@ public sealed class LibraryExporterTests
         var diffRepo = Substitute.For<IDiffRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
+        var bm25Repo = BuildEmptyBm25Repo();
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, bm25Repo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-1.0.srlib.zip");
@@ -265,7 +277,8 @@ public sealed class LibraryExporterTests
         chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                  .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
+        var bm25RepoMulti = BuildEmptyBm25Repo();
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, bm25RepoMulti);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-all.srlib.zip");
@@ -337,7 +350,8 @@ public sealed class LibraryExporterTests
         chunkRepo.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                  .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo);
+        var bm25RepoFull = BuildEmptyBm25Repo();
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, bm25RepoFull);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-1.0-full.srlib.zip");
@@ -491,5 +505,100 @@ public sealed class LibraryExporterTests
                     "Blobs must contain versions/1.0/chunks.jsonl");
         Assert.True(v.Blobs.ContainsKey("versions/1.0/chunks.embeddings.f32"),
                     "Blobs must contain versions/1.0/chunks.embeddings.f32");
+    }
+
+    [Fact]
+    public async Task EmitsBm25ShardsWithoutGridFsWhenNoSpillover()
+    {
+        var library = PackagingFixtures.MakeLibrary("foo", "1.0");
+        var versionRecord = PackagingFixtures.MakeVersion("foo", "1.0");
+        var shard = PackagingFixtures.MakeBm25Shard("foo", "1.0");
+
+        var bm25Repo = Substitute.For<IBm25ShardRepository>();
+        bm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<Bm25Shard>>([shard]));
+
+        var (exporter, _, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord, bm25Repo: bm25Repo);
+        var outPath = Path.Combine(outDir, "foo-1.0-bm25-inline.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.Current,
+                              OutputPath = outPath
+                          };
+
+        await exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken);
+
+        using var archive = ZipFile.OpenRead(outPath);
+
+        var shardsEntry = archive.GetEntry("versions/1.0/bm25/shards.jsonl");
+        Assert.NotNull(shardsEntry);
+
+        var gridFsEntries = archive.Entries
+                                   .Where(e => e.FullName.StartsWith("versions/1.0/bm25/gridfs/", StringComparison.Ordinal))
+                                   .ToList();
+        Assert.Empty(gridFsEntries);
+
+        var manifestEntry = archive.GetEntry("manifest.json");
+        Assert.NotNull(manifestEntry);
+        using var manifestStream = manifestEntry.Open();
+        var manifest = JsonSerializer.Deserialize<BundleManifest>(manifestStream);
+        Assert.NotNull(manifest);
+
+        Assert.Single(manifest.Versions);
+        Assert.False(manifest.Versions[0].Bm25HasGridFs,
+                     "Bm25HasGridFs must be false when no spill occurred");
+    }
+
+    [Fact]
+    public async Task EmitsBm25GridFsBlobWhenShardSpilled()
+    {
+        var library = PackagingFixtures.MakeLibrary("foo", "1.0");
+        var versionRecord = PackagingFixtures.MakeVersion("foo", "1.0");
+        var shard = PackagingFixtures.MakeBm25Shard("foo", "1.0",
+                                                     inlineTerms: new Dictionary<string, IReadOnlyList<Bm25Posting>>(),
+                                                     externalTerms: new Dictionary<string, string>(),
+                                                     shardGridFsRef: "abc123");
+
+        var blobBytes = new byte[] { 1, 2, 3, 4, 5 };
+
+        var bm25Repo = Substitute.For<IBm25ShardRepository>();
+        bm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<Bm25Shard>>([shard]));
+        bm25Repo.OpenGridFsBlobAsync("abc123", Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<Stream>(new MemoryStream(blobBytes)));
+
+        var (exporter, _, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord, bm25Repo: bm25Repo);
+        var outPath = Path.Combine(outDir, "foo-1.0-bm25-gridfs.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.Current,
+                              OutputPath = outPath
+                          };
+
+        await exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken);
+
+        using var archive = ZipFile.OpenRead(outPath);
+
+        var blobEntry = archive.GetEntry("versions/1.0/bm25/gridfs/abc123.bin");
+        Assert.NotNull(blobEntry);
+
+        using var blobStream = blobEntry.Open();
+        using var blobMs = new MemoryStream();
+        blobStream.CopyTo(blobMs);
+        Assert.Equal(blobBytes, blobMs.ToArray());
+
+        var manifestEntry = archive.GetEntry("manifest.json");
+        Assert.NotNull(manifestEntry);
+        using var manifestStream = manifestEntry.Open();
+        var manifest = JsonSerializer.Deserialize<BundleManifest>(manifestStream);
+        Assert.NotNull(manifest);
+
+        Assert.Single(manifest.Versions);
+        Assert.True(manifest.Versions[0].Bm25HasGridFs,
+                    "Bm25HasGridFs must be true when a spill blob was bundled");
     }
 }

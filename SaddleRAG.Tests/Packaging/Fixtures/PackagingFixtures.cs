@@ -136,4 +136,26 @@ internal static class PackagingFixtures
                        UnchangedPageCount = 0
                    };
     }
+
+    public static Bm25Shard MakeBm25Shard(string libraryId = "test-lib",
+                                           string version = "1.0",
+                                           int shardIndex = 0,
+                                           IReadOnlyDictionary<string, IReadOnlyList<Bm25Posting>>? inlineTerms = null,
+                                           IReadOnlyDictionary<string, string>? externalTerms = null,
+                                           string? shardGridFsRef = null)
+    {
+        return new Bm25Shard
+                   {
+                       Id = $"{libraryId}/{version}/{shardIndex}",
+                       LibraryId = libraryId,
+                       Version = version,
+                       ShardIndex = shardIndex,
+                       InlineTerms = inlineTerms ?? new Dictionary<string, IReadOnlyList<Bm25Posting>>
+                                                        {
+                                                            ["term1"] = [new Bm25Posting { ChunkId = "c1", TermFrequency = 1 }]
+                                                        },
+                       ExternalTerms = externalTerms ?? new Dictionary<string, string>(),
+                       ShardGridFsRef = shardGridFsRef
+                   };
+    }
 }

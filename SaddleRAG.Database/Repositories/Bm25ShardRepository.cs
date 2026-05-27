@@ -151,6 +151,15 @@ public class Bm25ShardRepository : IBm25ShardRepository
         return result;
     }
 
+    /// <inheritdoc />
+    public async Task<Stream> OpenGridFsBlobAsync(string gridFsId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(gridFsId);
+        var fileId = ObjectId.Parse(gridFsId);
+        var result = await mContext.Bm25Bucket.OpenDownloadStreamAsync(fileId, cancellationToken: ct);
+        return result;
+    }
+
     private async Task<IReadOnlyList<Bm25Posting>> ResolveFromShardSpillAsync(string shardFileId,
                                                                               string term,
                                                                               CancellationToken ct)

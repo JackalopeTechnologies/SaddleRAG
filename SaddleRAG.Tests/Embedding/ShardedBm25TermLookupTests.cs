@@ -63,6 +63,9 @@ public sealed class ShardedBm25TermLookupTests
         public Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LibraryVersionKey>>([]);
+
+        public Task<Stream> OpenGridFsBlobAsync(string gridFsId, CancellationToken ct = default) =>
+            Task.FromResult<Stream>(Stream.Null);
     }
 
     [Fact]

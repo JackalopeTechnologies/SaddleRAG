@@ -6,6 +6,7 @@
 
 #region Usings
 
+using System.Linq;
 using System.Text.Json;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -29,7 +30,8 @@ public sealed class LibraryExporter
                            IExcludedSymbolsRepository excludedSymbolsRepository,
                            IDiffRepository diffRepository,
                            IPageRepository pageRepository,
-                           IChunkRepository chunkRepository)
+                           IChunkRepository chunkRepository,
+                           IBm25ShardRepository bm25Repository)
     {
         ArgumentNullException.ThrowIfNull(libraryRepository);
         ArgumentNullException.ThrowIfNull(profileRepository);
@@ -38,6 +40,7 @@ public sealed class LibraryExporter
         ArgumentNullException.ThrowIfNull(diffRepository);
         ArgumentNullException.ThrowIfNull(pageRepository);
         ArgumentNullException.ThrowIfNull(chunkRepository);
+        ArgumentNullException.ThrowIfNull(bm25Repository);
         mLibraryRepository = libraryRepository;
         mProfileRepository = profileRepository;
         mIndexRepository = indexRepository;
@@ -45,6 +48,7 @@ public sealed class LibraryExporter
         mDiffRepository = diffRepository;
         mPageRepository = pageRepository;
         mChunkRepository = chunkRepository;
+        mBm25Repository = bm25Repository;
     }
 
     private const string TempSuffix = ".tmp";
@@ -58,6 +62,7 @@ public sealed class LibraryExporter
     private readonly IDiffRepository mDiffRepository;
     private readonly IPageRepository mPageRepository;
     private readonly IChunkRepository mChunkRepository;
+    private readonly IBm25ShardRepository mBm25Repository;
 
     public async Task<ExportResult> ExportAsync(ExportRequest request,
                                                 IProgress<ExportProgress>? progress,
@@ -187,6 +192,8 @@ public sealed class LibraryExporter
 
         await StreamChunksAsync(writer, manifestBuilder, library.Id, version, versionRecord.EmbeddingDimensions, ct);
 
+        var bm25HasGridFs = await StreamBm25Async(writer, manifestBuilder, library.Id, version, ct);
+
         var versionDir = BundlePaths.VersionDir(version) + "/";
         var versionBlobs = manifestBuilder
                           .ToDictionary()
@@ -201,8 +208,7 @@ public sealed class LibraryExporter
                        EmbeddingDimensions = versionRecord.EmbeddingDimensions,
                        PageCount = versionRecord.PageCount,
                        ChunkCount = versionRecord.ChunkCount,
-                       // TODO(task-13): set true when BM25 GridFS spillover lands.
-                       Bm25HasGridFs = false,
+                       Bm25HasGridFs = bm25HasGridFs,
                        Blobs = versionBlobs
                    };
     }
@@ -296,6 +302,44 @@ public sealed class LibraryExporter
             using var embedTee = new TeeStream(embedEntry, embedHash, leaveOpen: true);
             await embedBuffer.CopyToAsync(embedTee, ct);
         }
+    }
+
+    private async Task<bool> StreamBm25Async(IBundleWriter writer,
+                                              ManifestBuilder manifestBuilder,
+                                              string libraryId,
+                                              string version,
+                                              CancellationToken ct)
+    {
+        var shards = await mBm25Repository.GetAllShardsAsync(libraryId, version, ct);
+        var hasGridFs = false;
+
+        if (shards.Count > 0)
+        {
+            var shardsPath = BundlePaths.VersionFilePath(version, BundlePaths.Bm25ShardsFile);
+            await WriteJsonlAsync(writer, manifestBuilder, shardsPath, shards, ct);
+
+            var gridFsIds = shards.SelectMany(CollectGridFsIds).Distinct().ToList();
+            foreach (var id in gridFsIds)
+            {
+                hasGridFs = true;
+                var blobPath = BundlePaths.Bm25GridFsBlob(version, id);
+                await using var entry = writer.OpenEntry(blobPath);
+                await using var hash = manifestBuilder.OpenBlob(blobPath);
+                using var tee = new TeeStream(entry, hash, leaveOpen: true);
+                await using var src = await mBm25Repository.OpenGridFsBlobAsync(id, ct);
+                await src.CopyToAsync(tee, ct);
+            }
+        }
+
+        return hasGridFs;
+    }
+
+    private static IEnumerable<string> CollectGridFsIds(Bm25Shard shard)
+    {
+        var shardRef = string.IsNullOrEmpty(shard.ShardGridFsRef)
+                           ? Enumerable.Empty<string>()
+                           : new[] { shard.ShardGridFsRef };
+        return shardRef.Concat(shard.ExternalTerms.Values);
     }
 
     private static async Task WriteChunkRowsAsync(IReadOnlyList<DocChunk> chunks,

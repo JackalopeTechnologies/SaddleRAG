@@ -83,4 +83,11 @@ public interface IBm25ShardRepository
     ///     child pairs against the parent <see cref="LibraryRecord" /> set.
     /// </summary>
     Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    ///     Open a readable stream for a GridFS blob by its ObjectId string.
+    ///     Used by the exporter to bundle spilled shard or term payloads.
+    ///     Caller is responsible for disposing the returned stream.
+    /// </summary>
+    Task<Stream> OpenGridFsBlobAsync(string gridFsId, CancellationToken ct = default);
 }
