@@ -966,6 +966,251 @@ public sealed class LibraryImporterTests
         Assert.Equal(NewVersion, capturedLibrary.CurrentVersion);
     }
 
+    [Fact]
+    public async Task CompactRunsWhenOptInTrueAndOverwriteHappened()
+    {
+        const string LibraryId = "foo";
+        const string Version = "1.0";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+
+        var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
+
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var exportBm25Repo = Substitute.For<IBm25ShardRepository>();
+        exportBm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+
+        var bundlePath = await CreateValidSingleVersionBundleAsync(
+            exportLibraryRepo, exportProfileRepo, exportIndexRepo, exportExcludedRepo,
+            exportDiffRepo, exportPageRepo, exportChunkRepo, exportBm25Repo,
+            LibraryId, Version);
+
+        // Receiver — library already has the same version (triggers overwrite path).
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(new LibraryRecord
+                                      {
+                                          Id = LibraryId,
+                                          Name = LibraryId,
+                                          Hint = "fixture",
+                                          CurrentVersion = Version,
+                                          AllVersions = [Version]
+                                      });
+        importLibraryRepo.DeleteVersionAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns(new DeleteVersionResult(1, false, null));
+
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: versionRecord.EmbeddingModelName,
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        var importPageRepo = Substitute.For<IPageRepository>();
+        importPageRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(0L);
+
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        importChunkRepo.DeleteChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns(0L);
+
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        importProfileRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns(0L);
+
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        importIndexRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns(0L);
+
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        importExcludedRepo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                          .Returns(0L);
+
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+        var importBm25Repo = Substitute.For<IBm25ShardRepository>();
+        importBm25Repo.GetAllShardsAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+        importBm25Repo.DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(0L);
+        importBm25Repo.UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+                      .Returns(string.Empty);
+
+        // Mock ICollectionCompactor — tracks which collections were compacted.
+        var compactedCollections = new List<string>();
+        var compactor = Substitute.For<ICollectionCompactor>();
+        compactor.DefaultHotCollections.Returns(new[] { "pages", "chunks", "scrape_audit_log", "bm25Shards" });
+        compactor
+            .When(c => c.CompactAsync(Arg.Any<MongoDB.Driver.IMongoDatabase>(),
+                                      Arg.Any<string>(),
+                                      Arg.Any<CancellationToken>()))
+            .Do(ci => compactedCollections.Add(ci.ArgAt<string>(1)));
+        compactor.CompactAsync(Arg.Any<MongoDB.Driver.IMongoDatabase>(),
+                               Arg.Any<string>(),
+                               Arg.Any<CancellationToken>())
+                 .Returns(new CompactResult("collection", true, 0, 0, 0, 0, 0, 0, null));
+
+        // Resolver delegate — returns a stub IMongoDatabase without needing RepositoryFactory.
+        var fakeDatabase = Substitute.For<MongoDB.Driver.IMongoDatabase>();
+        Func<string?, MongoDB.Driver.IMongoDatabase> databaseResolver = _ => fakeDatabase;
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           importProfileRepo, importIndexRepo, importExcludedRepo,
+                                           importDiffRepo, importPageRepo, importChunkRepo, importBm25Repo,
+                                           compactor, databaseResolver);
+
+        var result = await importer.ImportAsync(
+            new ImportRequest { BundlePath = bundlePath, Overwrite = true, Compact = true },
+            progress: null,
+            ct: TestContext.Current.CancellationToken);
+
+        // Import must succeed.
+        Assert.Contains(Version, result.VersionsImported);
+        Assert.Contains(Version, result.OverwrittenVersions);
+
+        // CompactAsync was called once per default hot collection.
+        await compactor.Received(4).CompactAsync(Arg.Any<MongoDB.Driver.IMongoDatabase>(),
+                                                  Arg.Any<string>(),
+                                                  Arg.Any<CancellationToken>());
+        Assert.Equal(["pages", "chunks", "scrape_audit_log", "bm25Shards"], compactedCollections);
+    }
+
+    [Fact]
+    public async Task CompactDoesNotRunWhenNoOverwriteHappened()
+    {
+        const string LibraryId = "new-lib";
+        const string Version = "1.0";
+        const int Dim = PackagingFixtures.DefaultDim;
+        const int PageCount = 2;
+        const int ChunkCount = 3;
+
+        // Build a bundle for a library that does NOT already exist on the receiver.
+        var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
+        var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
+        var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
+        var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
+
+        var exportLibraryRepo = Substitute.For<ILibraryRepository>();
+        exportLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns(library);
+        exportLibraryRepo.GetVersionAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                         .Returns(versionRecord);
+
+        var exportPageRepo = Substitute.For<IPageRepository>();
+        exportPageRepo.GetPagesAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                      .Returns(pages);
+
+        var exportChunkRepo = Substitute.For<IChunkRepository>();
+        exportChunkRepo.GetChunksAsync(LibraryId, Version, Arg.Any<CancellationToken>())
+                       .Returns(chunks);
+
+        var exportProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        exportProfileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns((LibraryProfile?) null);
+
+        var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                       .Returns((LibraryIndex?) null);
+
+        var exportDiffRepo = Substitute.For<IDiffRepository>();
+        var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        exportExcludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(),
+                                     Arg.Any<int>(), Arg.Any<CancellationToken>())
+                          .Returns(Array.Empty<ExcludedSymbol>() as IReadOnlyList<ExcludedSymbol>);
+
+        var exportBm25Repo = Substitute.For<IBm25ShardRepository>();
+        exportBm25Repo.GetAllShardsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(Array.Empty<Bm25Shard>() as IReadOnlyList<Bm25Shard>);
+
+        var bundlePath = await CreateValidSingleVersionBundleAsync(
+            exportLibraryRepo, exportProfileRepo, exportIndexRepo, exportExcludedRepo,
+            exportDiffRepo, exportPageRepo, exportChunkRepo, exportBm25Repo,
+            LibraryId, Version);
+
+        // Receiver — library does NOT exist, so no overwrite occurs.
+        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                         .Returns((LibraryRecord?) null);
+
+        var importJobRepo = Substitute.For<IJobRepository>();
+        importJobRepo.ListActiveAsync(Arg.Any<string>(),
+                                      Arg.Any<string?>(),
+                                      Arg.Any<JobType?>(),
+                                      Arg.Any<CancellationToken>())
+                     .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+
+        var importEmbeddingProvider = MakeEmbeddingProvider(
+            providerId: versionRecord.EmbeddingProviderId,
+            modelName: versionRecord.EmbeddingModelName,
+            dimensions: versionRecord.EmbeddingDimensions);
+
+        var compactor = Substitute.For<ICollectionCompactor>();
+        compactor.DefaultHotCollections.Returns(new[] { "pages", "chunks", "scrape_audit_log", "bm25Shards" });
+
+        var fakeDatabase = Substitute.For<MongoDB.Driver.IMongoDatabase>();
+        Func<string?, MongoDB.Driver.IMongoDatabase> databaseResolver = _ => fakeDatabase;
+
+        var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
+                                           Substitute.For<ILibraryProfileRepository>(),
+                                           Substitute.For<ILibraryIndexRepository>(),
+                                           Substitute.For<IExcludedSymbolsRepository>(),
+                                           Substitute.For<IDiffRepository>(),
+                                           Substitute.For<IPageRepository>(),
+                                           Substitute.For<IChunkRepository>(),
+                                           MakeEmptyBm25Repo(),
+                                           compactor, databaseResolver);
+
+        var result = await importer.ImportAsync(
+            new ImportRequest { BundlePath = bundlePath, Compact = true },
+            progress: null,
+            ct: TestContext.Current.CancellationToken);
+
+        // Import succeeds (no overwrite).
+        Assert.Contains(Version, result.VersionsImported);
+        Assert.Empty(result.OverwrittenVersions);
+
+        // CompactAsync must NOT have been called because no overwrite occurred.
+        await compactor.DidNotReceive().CompactAsync(Arg.Any<MongoDB.Driver.IMongoDatabase>(),
+                                                      Arg.Any<string>(),
+                                                      Arg.Any<CancellationToken>());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static LibraryImporter MakeImporter()

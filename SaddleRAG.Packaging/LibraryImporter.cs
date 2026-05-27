@@ -8,6 +8,7 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
+using MongoDB.Driver;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -40,6 +41,8 @@ public sealed class LibraryImporter
     private readonly IPageRepository mPageRepository;
     private readonly IChunkRepository mChunkRepository;
     private readonly IBm25ShardRepository mBm25Repository;
+    private readonly ICollectionCompactor? mCompactor;
+    private readonly Func<string?, IMongoDatabase>? mDatabaseResolver;
 
     #endregion
 
@@ -65,7 +68,9 @@ public sealed class LibraryImporter
                            IDiffRepository diffRepository,
                            IPageRepository pageRepository,
                            IChunkRepository chunkRepository,
-                           IBm25ShardRepository bm25Repository)
+                           IBm25ShardRepository bm25Repository,
+                           ICollectionCompactor? compactor = null,
+                           Func<string?, IMongoDatabase>? databaseResolver = null)
     {
         ArgumentNullException.ThrowIfNull(libraryRepository);
         ArgumentNullException.ThrowIfNull(jobRepository);
@@ -87,6 +92,8 @@ public sealed class LibraryImporter
         mPageRepository = pageRepository;
         mChunkRepository = chunkRepository;
         mBm25Repository = bm25Repository;
+        mCompactor = compactor;
+        mDatabaseResolver = databaseResolver;
     }
 
     #region Active encoder properties
@@ -229,6 +236,13 @@ public sealed class LibraryImporter
                 var jobId = await EnqueueReembedAsync(manifest.Library.Id, version, ct);
                 pendingReembedJobIds.Add(jobId);
             }
+        }
+
+        if (request.Compact && overwroteVersions.Count > 0 && mCompactor != null && mDatabaseResolver != null)
+        {
+            var database = mDatabaseResolver(request.Profile);
+            foreach (var name in mCompactor.DefaultHotCollections)
+                await mCompactor.CompactAsync(database, name, ct);
         }
 
         var recommendedFollowUp = BuildRecommendedFollowUp(pendingReembedJobIds,

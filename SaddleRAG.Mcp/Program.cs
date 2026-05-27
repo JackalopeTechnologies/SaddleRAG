@@ -43,6 +43,8 @@ using SaddleRAG.Mcp.Monitor;
 using SaddleRAG.Mcp.Tools;
 using SaddleRAG.Monitor.Pages;
 using SaddleRAG.Monitor.Services;
+using SaddleRAG.Database.Repositories;
+using SaddleRAG.Packaging;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
@@ -155,6 +157,28 @@ builder.Services.AddHostedService<McpWarmupService>();
 
 builder.Services.AddSaddleRagDatabase(builder.Configuration);
 
+// Packaging services — CollectionCompactor is shared between compact_collections MCP tool
+// and the import_library compact opt-in. LibraryExporter and LibraryImporter are registered
+// here in anticipation of the export_library / import_library MCP tools (Task 22).
+builder.Services.AddSingleton<ICollectionCompactor, CollectionCompactor>();
+builder.Services.AddSingleton<LibraryExporter>();
+builder.Services.AddSingleton<LibraryImporter>(sp =>
+{
+    var factory = sp.GetRequiredService<RepositoryFactory>();
+    return new LibraryImporter(
+        sp.GetRequiredService<ILibraryRepository>(),
+        sp.GetRequiredService<IJobRepository>(),
+        sp.GetRequiredService<IEmbeddingProvider>(),
+        sp.GetRequiredService<ILibraryProfileRepository>(),
+        sp.GetRequiredService<ILibraryIndexRepository>(),
+        sp.GetRequiredService<IExcludedSymbolsRepository>(),
+        sp.GetRequiredService<IDiffRepository>(),
+        sp.GetRequiredService<IPageRepository>(),
+        sp.GetRequiredService<IChunkRepository>(),
+        sp.GetRequiredService<IBm25ShardRepository>(),
+        sp.GetRequiredService<ICollectionCompactor>(),
+        profile => factory.GetDatabase(profile));
+});
 
 // Ollama configuration
 
