@@ -32,8 +32,10 @@ public sealed class LibraryExporterTests
                     ILibraryIndexRepository indexRepo,
                     IExcludedSymbolsRepository excludedRepo,
                     IDiffRepository diffRepo,
+                    IPageRepository pageRepo,
                     string outDir) BuildExporter(LibraryRecord library,
-                                                 LibraryVersionRecord? versionRecord = null)
+                                                 LibraryVersionRecord? versionRecord = null,
+                                                 IReadOnlyList<PageRecord>? pages = null)
     {
         var libRepo = Substitute.For<ILibraryRepository>();
         libRepo.GetLibraryAsync(library.Id, Arg.Any<CancellationToken>())
@@ -59,10 +61,14 @@ public sealed class LibraryExporterTests
         diffRepo.GetDiffAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<VersionDiffRecord?>(null));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo);
+        var pageRepo = Substitute.For<IPageRepository>();
+        pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<PageRecord>>(pages ?? []));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
-        return (exporter, libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, outDir);
+        return (exporter, libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, outDir);
     }
 
     [Fact]
@@ -70,7 +76,7 @@ public sealed class LibraryExporterTests
     {
         var library = PackagingFixtures.MakeLibrary("foo", "1.0");
         var versionRecord = PackagingFixtures.MakeVersion("foo", "1.0");
-        var (exporter, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord);
+        var (exporter, _, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord);
         var outPath = Path.Combine(outDir, "foo-1.0.srlib.zip");
 
         var request = new ExportRequest
@@ -119,7 +125,7 @@ public sealed class LibraryExporterTests
     public async Task NoOutputFileIfRequestedVersionMissing()
     {
         var library = PackagingFixtures.MakeLibrary("foo", "1.0");
-        var (exporter, _, _, _, _, _, outDir) = BuildExporter(library);
+        var (exporter, _, _, _, _, _, _, outDir) = BuildExporter(library);
         var outPath = Path.Combine(outDir, "foo-9.9.srlib.zip");
 
         var request = new ExportRequest
@@ -150,8 +156,9 @@ public sealed class LibraryExporterTests
         var indexRepo = Substitute.For<ILibraryIndexRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var diffRepo = Substitute.For<IDiffRepository>();
+        var pageRepo = Substitute.For<IPageRepository>();
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo);
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-1.0.srlib.zip");
@@ -179,7 +186,7 @@ public sealed class LibraryExporterTests
     {
         var library = PackagingFixtures.MakeLibrary("foo", "1.0");
         var versionRecord = PackagingFixtures.MakeVersion("foo", "1.0");
-        var (exporter, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord);
+        var (exporter, _, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord);
         var outPath = Path.Combine(outDir, "foo-1.0-meta.srlib.zip");
 
         var request = new ExportRequest
@@ -244,7 +251,11 @@ public sealed class LibraryExporterTests
         diffRepo.GetDiffAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<VersionDiffRecord?>(null));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo);
+        var pageRepo = Substitute.For<IPageRepository>();
+        pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<PageRecord>>([]));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-all.srlib.zip");
@@ -308,7 +319,11 @@ public sealed class LibraryExporterTests
         diffRepo.GetDiffAsync("foo", "0.9", "1.0", Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult<VersionDiffRecord?>(diff));
 
-        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo);
+        var pageRepo = Substitute.For<IPageRepository>();
+        pageRepo.GetPagesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<PageRecord>>([]));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo);
         var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var outPath = Path.Combine(outDir, "foo-1.0-full.srlib.zip");
@@ -349,5 +364,48 @@ public sealed class LibraryExporterTests
                     "Blobs must contain versions/1.0/versionDiff.json");
         Assert.True(v.Blobs.ContainsKey("versions/1.0/excludedSymbols.jsonl"),
                     "Blobs must contain versions/1.0/excludedSymbols.jsonl");
+    }
+
+    [Fact]
+    public async Task EmitsPagesJsonl()
+    {
+        var library = PackagingFixtures.MakeLibrary("foo", "1.0");
+        var versionRecord = PackagingFixtures.MakeVersion("foo", "1.0", pageCount: 3);
+        var pages = PackagingFixtures.MakePages("foo", "1.0", count: 3);
+        var (exporter, _, _, _, _, _, _, outDir) = BuildExporter(library, versionRecord, pages);
+        var outPath = Path.Combine(outDir, "foo-1.0-pages.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.Current,
+                              OutputPath = outPath
+                          };
+
+        await exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken);
+
+        using var archive = ZipFile.OpenRead(outPath);
+
+        var pagesEntry = archive.GetEntry("versions/1.0/pages.jsonl");
+        Assert.NotNull(pagesEntry);
+
+        using var pagesStream = pagesEntry.Open();
+        var reader = new SaddleRAG.Packaging.Internal.JsonlReader<PageRecord>(pagesStream);
+        var roundTripped = new List<PageRecord>();
+        await foreach (var page in reader.ReadAllAsync(TestContext.Current.CancellationToken))
+            roundTripped.Add(page);
+
+        Assert.Equal(3, roundTripped.Count);
+        Assert.All(roundTripped, p => Assert.StartsWith("https://example.test/p", p.Url));
+
+        var manifestEntry = archive.GetEntry("manifest.json");
+        Assert.NotNull(manifestEntry);
+        using var manifestStream = manifestEntry.Open();
+        var manifest = JsonSerializer.Deserialize<BundleManifest>(manifestStream);
+        Assert.NotNull(manifest);
+
+        Assert.Single(manifest.Versions);
+        Assert.True(manifest.Versions[0].Blobs.ContainsKey("versions/1.0/pages.jsonl"),
+                    "Blobs must contain versions/1.0/pages.jsonl");
     }
 }

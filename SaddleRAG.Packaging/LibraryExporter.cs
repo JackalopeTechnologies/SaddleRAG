@@ -27,18 +27,21 @@ public sealed class LibraryExporter
                            ILibraryProfileRepository profileRepository,
                            ILibraryIndexRepository indexRepository,
                            IExcludedSymbolsRepository excludedSymbolsRepository,
-                           IDiffRepository diffRepository)
+                           IDiffRepository diffRepository,
+                           IPageRepository pageRepository)
     {
         ArgumentNullException.ThrowIfNull(libraryRepository);
         ArgumentNullException.ThrowIfNull(profileRepository);
         ArgumentNullException.ThrowIfNull(indexRepository);
         ArgumentNullException.ThrowIfNull(excludedSymbolsRepository);
         ArgumentNullException.ThrowIfNull(diffRepository);
+        ArgumentNullException.ThrowIfNull(pageRepository);
         mLibraryRepository = libraryRepository;
         mProfileRepository = profileRepository;
         mIndexRepository = indexRepository;
         mExcludedSymbolsRepository = excludedSymbolsRepository;
         mDiffRepository = diffRepository;
+        mPageRepository = pageRepository;
     }
 
     private const string TempSuffix = ".tmp";
@@ -50,6 +53,7 @@ public sealed class LibraryExporter
     private readonly ILibraryIndexRepository mIndexRepository;
     private readonly IExcludedSymbolsRepository mExcludedSymbolsRepository;
     private readonly IDiffRepository mDiffRepository;
+    private readonly IPageRepository mPageRepository;
 
     public async Task<ExportResult> ExportAsync(ExportRequest request,
                                                 IProgress<ExportProgress>? progress,
@@ -172,6 +176,10 @@ public sealed class LibraryExporter
         var excludedSymbols = await mExcludedSymbolsRepository.ListAsync(library.Id, version, reason: null, ExcludedSymbolsLimit, ct);
         var excludedPath = BundlePaths.VersionFilePath(version, BundlePaths.ExcludedSymbolsFile);
         await WriteJsonlAsync(writer, manifestBuilder, excludedPath, excludedSymbols, ct);
+
+        var pages = await mPageRepository.GetPagesAsync(library.Id, version, ct);
+        var pagesPath = BundlePaths.VersionFilePath(version, BundlePaths.PagesFile);
+        await WriteJsonlAsync(writer, manifestBuilder, pagesPath, pages, ct);
 
         var versionDir = BundlePaths.VersionDir(version) + "/";
         var versionBlobs = manifestBuilder
