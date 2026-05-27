@@ -40,15 +40,67 @@ public sealed class ManifestBuilderTests
     [Fact]
     public async Task TracksMultipleBlobsIndependently()
     {
+        var aData = new byte[] { 1, 2, 3 };
+        var bData = new byte[] { 4, 5, 6, 7 };
+        var expectedASha = Convert.ToHexString(SHA256.HashData(aData)).ToLowerInvariant();
+        var expectedBSha = Convert.ToHexString(SHA256.HashData(bData)).ToLowerInvariant();
+
         var builder = new ManifestBuilder();
 
         using (var a = builder.OpenBlob("a.bin"))
-            await a.WriteAsync(new byte[] { 1, 2, 3 }, TestContext.Current.CancellationToken);
+            await a.WriteAsync(aData, TestContext.Current.CancellationToken);
         using (var b = builder.OpenBlob("b.bin"))
-            await b.WriteAsync(new byte[] { 4, 5, 6, 7 }, TestContext.Current.CancellationToken);
+            await b.WriteAsync(bData, TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, builder.GetBlob("a.bin").Bytes);
-        Assert.Equal(4, builder.GetBlob("b.bin").Bytes);
-        Assert.NotEqual(builder.GetBlob("a.bin").Sha256, builder.GetBlob("b.bin").Sha256);
+        Assert.Equal(expectedASha, builder.GetBlob("a.bin").Sha256);
+        Assert.Equal(aData.LongLength, builder.GetBlob("a.bin").Bytes);
+        Assert.Equal(expectedBSha, builder.GetBlob("b.bin").Sha256);
+        Assert.Equal(bData.LongLength, builder.GetBlob("b.bin").Bytes);
+    }
+
+    [Fact]
+    public void GetBlobThrowsForUnknownPath()
+    {
+        var builder = new ManifestBuilder();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.GetBlob("never-opened.bin"));
+        Assert.Contains("No blob recorded", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetBlobThrowsWhileSinkIsStillOpen()
+    {
+        var builder = new ManifestBuilder();
+
+        var sink = builder.OpenBlob("in-progress.bin");
+        try
+        {
+            await sink.WriteAsync(new byte[] { 1, 2, 3 }, TestContext.Current.CancellationToken);
+
+            var ex = Assert.Throws<InvalidOperationException>(() => builder.GetBlob("in-progress.bin"));
+            Assert.Contains("still open", ex.Message);
+        }
+        finally
+        {
+            sink.Dispose();
+        }
+
+        // After dispose, GetBlob succeeds.
+        Assert.Equal(3, builder.GetBlob("in-progress.bin").Bytes);
+    }
+
+    [Fact]
+    public async Task SinkDisposeIsIdempotent()
+    {
+        var builder = new ManifestBuilder();
+
+        var sink = builder.OpenBlob("once.bin");
+        await sink.WriteAsync(new byte[] { 1, 2 }, TestContext.Current.CancellationToken);
+        sink.Dispose();
+        // Second dispose must not throw or double-record.
+        sink.Dispose();
+
+        var info = builder.GetBlob("once.bin");
+        Assert.Equal(2, info.Bytes);
     }
 }

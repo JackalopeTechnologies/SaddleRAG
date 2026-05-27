@@ -22,6 +22,7 @@ namespace SaddleRAG.Packaging.Internal;
 public sealed class ManifestBuilder
 {
     private readonly Dictionary<string, BlobInfo> mBlobs = new(StringComparer.Ordinal);
+    private readonly HashSet<string> mOpenPaths = new(StringComparer.Ordinal);
 
     /// <summary>
     ///     Opens a write-only hashing sink for <paramref name="path" />.
@@ -30,6 +31,7 @@ public sealed class ManifestBuilder
     public Stream OpenBlob(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
+        mOpenPaths.Add(path);
         return new HashingSink(this, path);
     }
 
@@ -40,9 +42,20 @@ public sealed class ManifestBuilder
     public BlobInfo GetBlob(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        if (!mBlobs.TryGetValue(path, out var info))
-            throw new InvalidOperationException($"No blob recorded at '{path}'");
-        return info;
+
+        BlobInfo result;
+        if (mBlobs.TryGetValue(path, out var info))
+        {
+            result = info;
+        }
+        else
+        {
+            var reason = mOpenPaths.Contains(path)
+                             ? $"Blob '{path}' is still open; dispose the sink before calling GetBlob"
+                             : $"No blob recorded at '{path}'";
+            throw new InvalidOperationException(reason);
+        }
+        return result;
     }
 
     /// <summary>
@@ -57,6 +70,7 @@ public sealed class ManifestBuilder
                            Sha256 = Convert.ToHexString(hash).ToLowerInvariant(),
                            Bytes = bytes
                        };
+        mOpenPaths.Remove(path);
         mBlobs[path] = info;
     }
 
