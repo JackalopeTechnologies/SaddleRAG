@@ -8,6 +8,7 @@
 
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
@@ -210,5 +211,143 @@ public sealed class LibraryExporterTests
         Assert.NotEmpty(v.Blobs);
         Assert.True(v.Blobs.ContainsKey("versions/1.0/version.json"),
                     "BundleVersionEntry.Blobs must contain versions/1.0/version.json");
+    }
+
+    [Fact]
+    public async Task EmitsTwoVersionsWithIsolatedBlobDictionaries()
+    {
+        var library = PackagingFixtures.MakeLibrary("foo", "1.1", "1.0", "1.1");
+        var versionRecord10 = PackagingFixtures.MakeVersion("foo", "1.0");
+        var versionRecord11 = PackagingFixtures.MakeVersion("foo", "1.1");
+
+        var libRepo = Substitute.For<ILibraryRepository>();
+        libRepo.GetLibraryAsync(library.Id, Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryRecord?>(library));
+        libRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryVersionRecord?>(versionRecord10));
+        libRepo.GetVersionAsync("foo", "1.1", Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryVersionRecord?>(versionRecord11));
+
+        var profileRepo = Substitute.For<ILibraryProfileRepository>();
+        profileRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                   .Returns(Task.FromResult<LibraryProfile?>(null));
+
+        var indexRepo = Substitute.For<ILibraryIndexRepository>();
+        indexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<LibraryIndex?>(null));
+
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        excludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<IReadOnlyList<ExcludedSymbol>>([]));
+
+        var diffRepo = Substitute.For<IDiffRepository>();
+        diffRepo.GetDiffAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<VersionDiffRecord?>(null));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo);
+        var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outDir);
+        var outPath = Path.Combine(outDir, "foo-all.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.All,
+                              OutputPath = outPath
+                          };
+
+        await exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken);
+
+        using var archive = ZipFile.OpenRead(outPath);
+        var manifestEntry = archive.GetEntry("manifest.json");
+        Assert.NotNull(manifestEntry);
+        using var manifestStream = manifestEntry.Open();
+        var manifest = JsonSerializer.Deserialize<BundleManifest>(manifestStream);
+        Assert.NotNull(manifest);
+
+        Assert.Equal(2, manifest.Versions.Count);
+
+        var entry10 = manifest.Versions.Single(v => v.Version == "1.0");
+        var entry11 = manifest.Versions.Single(v => v.Version == "1.1");
+
+        Assert.All(entry10.Blobs.Keys, key => Assert.StartsWith("versions/1.0/", key));
+        Assert.All(entry11.Blobs.Keys, key => Assert.StartsWith("versions/1.1/", key));
+
+        var overlap = entry10.Blobs.Keys.Intersect(entry11.Blobs.Keys).ToList();
+        Assert.Empty(overlap);
+    }
+
+    [Fact]
+    public async Task EmitsAllOptionalMetadataFilesWhenRepositoriesReturnContent()
+    {
+        var library = PackagingFixtures.MakeLibrary("foo", "1.0");
+        var versionRecord = PackagingFixtures.MakeVersion("foo", "1.0") with { PreviousVersion = "0.9" };
+        var profile = PackagingFixtures.MakeProfile("foo", "1.0");
+        var index = PackagingFixtures.MakeIndex("foo", "1.0");
+        var diff = PackagingFixtures.MakeVersionDiff("foo", "0.9", "1.0");
+
+        var libRepo = Substitute.For<ILibraryRepository>();
+        libRepo.GetLibraryAsync(library.Id, Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryRecord?>(library));
+        libRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+               .Returns(Task.FromResult<LibraryVersionRecord?>(versionRecord));
+
+        var profileRepo = Substitute.For<ILibraryProfileRepository>();
+        profileRepo.GetAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                   .Returns(Task.FromResult<LibraryProfile?>(profile));
+
+        var indexRepo = Substitute.For<ILibraryIndexRepository>();
+        indexRepo.GetAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<LibraryIndex?>(index));
+
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        excludedRepo.ListAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SymbolRejectionReason?>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<IReadOnlyList<ExcludedSymbol>>([]));
+
+        var diffRepo = Substitute.For<IDiffRepository>();
+        diffRepo.GetDiffAsync("foo", "0.9", "1.0", Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<VersionDiffRecord?>(diff));
+
+        var exporter = new LibraryExporter(libRepo, profileRepo, indexRepo, excludedRepo, diffRepo);
+        var outDir = Path.Combine(Path.GetTempPath(), "saddlerag-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outDir);
+        var outPath = Path.Combine(outDir, "foo-1.0-full.srlib.zip");
+
+        var request = new ExportRequest
+                          {
+                              LibraryId = "foo",
+                              Versions = VersionFilter.Current,
+                              OutputPath = outPath
+                          };
+
+        await exporter.ExportAsync(request, progress: null, ct: TestContext.Current.CancellationToken);
+
+        using var archive = ZipFile.OpenRead(outPath);
+
+        Assert.NotNull(archive.GetEntry("versions/1.0/version.json"));
+        Assert.NotNull(archive.GetEntry("versions/1.0/profile.json"));
+        Assert.NotNull(archive.GetEntry("versions/1.0/index.json"));
+        Assert.NotNull(archive.GetEntry("versions/1.0/versionDiff.json"));
+        Assert.NotNull(archive.GetEntry("versions/1.0/excludedSymbols.jsonl"));
+
+        var manifestEntry = archive.GetEntry("manifest.json");
+        Assert.NotNull(manifestEntry);
+        using var manifestStream = manifestEntry.Open();
+        var manifest = JsonSerializer.Deserialize<BundleManifest>(manifestStream);
+        Assert.NotNull(manifest);
+
+        Assert.Single(manifest.Versions);
+        var v = manifest.Versions[0];
+
+        Assert.True(v.Blobs.ContainsKey("versions/1.0/version.json"),
+                    "Blobs must contain versions/1.0/version.json");
+        Assert.True(v.Blobs.ContainsKey("versions/1.0/profile.json"),
+                    "Blobs must contain versions/1.0/profile.json");
+        Assert.True(v.Blobs.ContainsKey("versions/1.0/index.json"),
+                    "Blobs must contain versions/1.0/index.json");
+        Assert.True(v.Blobs.ContainsKey("versions/1.0/versionDiff.json"),
+                    "Blobs must contain versions/1.0/versionDiff.json");
+        Assert.True(v.Blobs.ContainsKey("versions/1.0/excludedSymbols.jsonl"),
+                    "Blobs must contain versions/1.0/excludedSymbols.jsonl");
     }
 }

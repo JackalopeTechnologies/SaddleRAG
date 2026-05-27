@@ -187,6 +187,7 @@ public sealed class LibraryExporter
                        EmbeddingDimensions = versionRecord.EmbeddingDimensions,
                        PageCount = versionRecord.PageCount,
                        ChunkCount = versionRecord.ChunkCount,
+                       // TODO(task-13): set true when BM25 GridFS spillover lands.
                        Bm25HasGridFs = false,
                        Blobs = versionBlobs
                    };

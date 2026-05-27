@@ -98,4 +98,42 @@ internal static class PackagingFixtures
                            });
         return result;
     }
+
+    public static LibraryProfile MakeProfile(string libraryId = "test-lib", string version = "1.0")
+    {
+        return new LibraryProfile
+                   {
+                       Id = $"{libraryId}/{version}",
+                       LibraryId = libraryId,
+                       Version = version
+                   };
+    }
+
+    public static LibraryIndex MakeIndex(string libraryId = "test-lib", string version = "1.0")
+    {
+        return new LibraryIndex
+                   {
+                       Id = $"{libraryId}/{version}",
+                       LibraryId = libraryId,
+                       Version = version
+                   };
+    }
+
+    public static VersionDiffRecord MakeVersionDiff(string libraryId = "test-lib",
+                                                    string fromVersion = "0.9",
+                                                    string toVersion = "1.0")
+    {
+        return new VersionDiffRecord
+                   {
+                       Id = $"{libraryId}/{fromVersion}-to-{toVersion}",
+                       LibraryId = libraryId,
+                       FromVersion = fromVersion,
+                       ToVersion = toVersion,
+                       GeneratedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                       AddedPages = [],
+                       RemovedPages = [],
+                       ChangedPages = [],
+                       UnchangedPageCount = 0
+                   };
+    }
 }
