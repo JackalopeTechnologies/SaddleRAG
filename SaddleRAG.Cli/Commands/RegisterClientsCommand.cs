@@ -15,15 +15,15 @@ namespace SaddleRAG.Cli.Commands;
 public static class RegisterClientsCommand
 {
     private const string CommandName = "register-clients";
-    private const string CommandDescription = "Register the SaddleRAG MCP server (and skill where applicable) in supported AI tools' per-user config";
+    private const string CommandDescription = "Register SaddleRAG in supported AI tools' per-user config, including the local VS Code Copilot plugin and skill discovery where applicable";
     private const string ClaudeCodeOptionName = "--claude-code";
-    private const string ClaudeCodeOptionDescription = "Register with Claude Code (~/.claude.json + skill)";
+    private const string ClaudeCodeOptionDescription = "Register with Claude Code (~/.claude.json + refresh ~/.claude/skills)";
     private const string ClaudeDesktopOptionName = "--claude-desktop";
     private const string ClaudeDesktopOptionDescription = "Register with Claude Desktop";
     private const string VscodeMcpOptionName = "--vscode-mcp";
-    private const string VscodeMcpOptionDescription = "Register with VSCode native MCP";
+    private const string VscodeMcpOptionDescription = "Register with VS Code by installing the local SaddleRAG Copilot plugin and updating user settings for plugin + skill discovery";
     private const string CopilotCliOptionName = "--copilot-cli";
-    private const string CopilotCliOptionDescription = "Register with GitHub Copilot CLI";
+    private const string CopilotCliOptionDescription = "Register with GitHub Copilot CLI (~/.copilot/mcp-config.json + refresh ~/.copilot/skills)";
     private const string QuietOptionName = "--quiet";
     private const string QuietOptionDescription = "Suppress per-writer stdout lines";
     private const string LogFileOptionName = "--log-file";

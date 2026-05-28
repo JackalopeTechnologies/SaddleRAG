@@ -4,6 +4,7 @@
 
 #region Usings
 
+using System.Text.Json.Nodes;
 using SaddleRAG.ClientIntegration;
 using SaddleRAG.ClientIntegration.Models;
 using SaddleRAG.ClientIntegration.Writers;
@@ -20,6 +21,9 @@ public sealed class EndToEndTests : IDisposable
     private readonly string mClaudeCodeFirstSkill;
     private readonly string mClaudeDesktopConfig;
     private readonly string mVsCodeMcp;
+    private readonly string mVsCodeSettings;
+    private readonly string mVsCodePluginRoot;
+    private readonly string mVsCodePluginManifest;
     private readonly string mCopilotCliConfig;
     private readonly string mCopilotCliSkillsBaseDir;
     private readonly string mCopilotCliFirstSkill;
@@ -37,6 +41,9 @@ public sealed class EndToEndTests : IDisposable
         mClaudeCodeFirstSkill    = Path.Combine(mClaudeCodeSkillsBaseDir, "saddlerag-first", "SKILL.md");
         mClaudeDesktopConfig     = Path.Combine(fakeAppData, "Claude", "claude_desktop_config.json");
         mVsCodeMcp               = Path.Combine(fakeAppData, "Code", "User", "mcp.json");
+        mVsCodeSettings          = Path.Combine(fakeAppData, "Code", "User", "settings.json");
+        mVsCodePluginRoot        = Path.Combine(fakeAppData, "Code", "User", "saddlerag-plugin");
+        mVsCodePluginManifest    = Path.Combine(mVsCodePluginRoot, "plugin.json");
         mCopilotCliConfig        = Path.Combine(mFakeProfile, ".copilot", "mcp-config.json");
         mCopilotCliSkillsBaseDir = Path.Combine(mFakeProfile, ".copilot", "skills");
         mCopilotCliFirstSkill    = Path.Combine(mCopilotCliSkillsBaseDir, "saddlerag-first", "SKILL.md");
@@ -67,7 +74,10 @@ public sealed class EndToEndTests : IDisposable
 
         Assert.Contains("saddlerag", await File.ReadAllTextAsync(mClaudeCodeConfig, TestContext.Current.CancellationToken));
         Assert.Contains("saddlerag", await File.ReadAllTextAsync(mClaudeDesktopConfig, TestContext.Current.CancellationToken));
-        Assert.Contains("saddlerag", await File.ReadAllTextAsync(mVsCodeMcp, TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(mVsCodePluginManifest));
+        JsonObject vsCodeSettings = Assert.IsType<JsonObject>(JsonNode.Parse(await File.ReadAllTextAsync(mVsCodeSettings, TestContext.Current.CancellationToken)));
+        JsonObject pluginLocations = Assert.IsType<JsonObject>(vsCodeSettings["chat.pluginLocations"]);
+        Assert.True(pluginLocations[mVsCodePluginRoot]?.GetValue<bool>());
         Assert.Contains("saddlerag", await File.ReadAllTextAsync(mCopilotCliConfig, TestContext.Current.CancellationToken));
         Assert.True(File.Exists(mClaudeCodeFirstSkill));
         Assert.True(File.Exists(mCopilotCliFirstSkill));
@@ -81,6 +91,7 @@ public sealed class EndToEndTests : IDisposable
             Assert.DoesNotContain("saddlerag", await File.ReadAllTextAsync(mClaudeDesktopConfig, TestContext.Current.CancellationToken));
         if (File.Exists(mVsCodeMcp))
             Assert.DoesNotContain("saddlerag", await File.ReadAllTextAsync(mVsCodeMcp, TestContext.Current.CancellationToken));
+        Assert.False(Directory.Exists(mVsCodePluginRoot));
         if (File.Exists(mCopilotCliConfig))
             Assert.DoesNotContain("saddlerag", await File.ReadAllTextAsync(mCopilotCliConfig, TestContext.Current.CancellationToken));
         Assert.False(File.Exists(mClaudeCodeFirstSkill));

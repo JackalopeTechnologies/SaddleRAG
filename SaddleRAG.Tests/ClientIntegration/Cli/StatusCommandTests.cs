@@ -26,4 +26,11 @@ public sealed class StatusCommandTests
         Command cmd = StatusCommand.Build();
         Assert.Contains(cmd.Options, o => o.Name == "--json");
     }
+
+    [Fact]
+    public void HasLogFileOption()
+    {
+        Command cmd = StatusCommand.Build();
+        Assert.Contains(cmd.Options, o => o.Name == "--log-file");
+    }
 }
