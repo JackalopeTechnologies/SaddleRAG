@@ -92,12 +92,12 @@ SaddleRAG automatically pulls the required models on first use:
 
 The MSI installer wires SaddleRAG into all your installed AI tools automatically:
 
-- **Claude Code** — adds a user-level MCP server entry
+- **Claude Code** — adds a user-level MCP server entry and refreshes the SaddleRAG skills in `~/.claude/skills`
 - **Claude Desktop** — adds a server entry to `claude_desktop_config.json`
-- **VSCode (GitHub Copilot Chat MCP)** — adds a server entry to VS Code user settings
-- **GitHub Copilot CLI** — adds a server entry to the Copilot CLI MCP config
+- **VSCode (GitHub Copilot Chat MCP)** — installs a local SaddleRAG agent plugin under your VS Code user profile and updates `%APPDATA%\Code\User\settings.json` so Copilot can load the plugin and your per-user skill folders in all workspaces
+- **GitHub Copilot CLI** — updates `~/.copilot/mcp-config.json` and refreshes the SaddleRAG skills in `~/.copilot/skills`
 
-No manual `.mcp.json` editing required. If a tool is not installed, its registration is skipped silently.
+No manual `.mcp.json` editing required. If a tool is not installed, its registration is skipped silently. Re-running the installer or `SaddleRAG.Cli register-clients` updates existing entries in place, refreshes the local VS Code SaddleRAG plugin, and replaces same-name SaddleRAG skill files with the current packaged content.
 
 ### Step 5: Verify
 
@@ -167,7 +167,17 @@ CI collects coverage from two jobs — `build-linux` (unit) and `integration-tes
 
 ### Connect Your AI Assistant
 
-Add to `.mcp.json` in your project root:
+For the recommended per-user setup across all projects, run:
+
+```bash
+SaddleRAG.Cli register-clients
+```
+
+This writes the per-user client config for the supported tools, refreshes the SaddleRAG skill folders, and for VS Code also installs or updates the local SaddleRAG Copilot plugin plus the user settings that enable plugin and skill discovery.
+
+On Linux, run `SaddleRAG.Cli register-clients` as the desktop user who runs VS Code or Copilot, not as `root`. The `install.sh` server install is system-wide, but the VS Code/Copilot integration is per-user.
+
+If you only want a workspace-local MCP entry for the current repo, add this to `.mcp.json` in your project root:
 
 ```json
 {
@@ -180,6 +190,8 @@ Add to `.mcp.json` in your project root:
   }
 }
 ```
+
+The workspace-local `.mcp.json` path is useful for repo-specific setup, but it does not install the per-user VS Code plugin, does not refresh per-user skills, and does not configure Copilot to discover the SaddleRAG integration automatically.
 
 ## Linux / Docker
 
@@ -264,7 +276,9 @@ Reports whether SaddleRAG is registered in each supported tool, with config file
 SaddleRAG.Cli register-clients
 ```
 
-Registers SaddleRAG in all installed AI tools. Safe to run multiple times — existing entries are updated in place.
+Registers SaddleRAG in all installed AI tools' per-user config. Safe to run multiple times — existing entries are updated in place, same-name SaddleRAG skills are replaced with the current packaged versions, and the VS Code registration refreshes Copilot autostart plus skill-discovery settings.
+
+For VS Code specifically, `register-clients` installs or updates a local SaddleRAG agent plugin and updates `%APPDATA%\Code\User\settings.json` so the plugin is enabled across workspaces without per-project setup.
 
 ### Disable SaddleRAG for specific tools
 
@@ -511,7 +525,9 @@ Then re-register:
 SaddleRAG.Cli register-clients
 ```
 
-If registration succeeds but the tool still doesn't appear, restart the AI tool so it picks up the new config.
+If registration succeeds but the tool still doesn't appear, restart the AI tool so it picks up the new config. In VS Code, trust and enabled-state are stored separately from `mcp.json`; you may need to trust or enable the server once the first time, but after that the user-level autostart setting should start it automatically in future Copilot sessions.
+
+When using the local SaddleRAG plugin path in VS Code, there should not be a separate MCP trust prompt for SaddleRAG because plugin-provided MCP servers are trusted as part of the plugin install. If it still does not appear, check that agent plugins are enabled and that the local plugin is enabled in the Agent Plugins view.
 
 ### I want to disable SaddleRAG for one specific tool
 

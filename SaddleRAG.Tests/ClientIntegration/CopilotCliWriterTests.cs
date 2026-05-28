@@ -73,6 +73,21 @@ public sealed class CopilotCliWriterTests : IDisposable
     }
 
     [Fact]
+    public async Task RegisterReplacesExistingSkillFileContent()
+    {
+        string skillDir = Path.GetDirectoryName(mFirstSkillPath) ?? mSkillsBaseDir;
+        Directory.CreateDirectory(skillDir);
+        await File.WriteAllTextAsync(mFirstSkillPath, "stale-skill", TestContext.Current.CancellationToken);
+
+        var writer = new CopilotCliWriter(mConfigPath, mSkillsBaseDir);
+        await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
+
+        string content = await File.ReadAllTextAsync(mFirstSkillPath, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain("stale-skill", content);
+        Assert.Contains("saddlerag-first", content);
+    }
+
+    [Fact]
     public async Task RegisterMalformedJsonReturnsFailureAndLeavesFileUntouched()
     {
         string configDir = Path.GetDirectoryName(mConfigPath) ?? mTempDir;
