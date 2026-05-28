@@ -6,6 +6,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-28
+
+### VS Code Copilot integration
+
+- **Fixed `register-clients` for VS Code so the SaddleRAG MCP server actually
+  autoloads in Copilot sessions without a per-session trust prompt.** The
+  previous flow wrote a `saddlerag` entry into `%APPDATA%\Code\User\mcp.json`
+  but Copilot would not start the server without a manual trust + start
+  click each session, and `chat.mcp.autoStart` was never being set. The fix
+  pivots the integration to a local Copilot agent plugin at
+  `%APPDATA%\Code\User\saddlerag-plugin\` (with `plugin.json` and
+  `.mcp.json`), and updates `%APPDATA%\Code\User\settings.json` to enable
+  plugins, MCP autostart, agent skills, and the per-user skill folders
+  (`~/.copilot/skills`, `~/.claude/skills`). Legacy `saddlerag` entries in
+  user `mcp.json` are removed (case-insensitive) on register so the plugin
+  path is the single source of truth. Unregister cleans up the plugin
+  folder, the `chat.pluginLocations` entry, and the legacy `mcp.json`
+  entry. (#103)
+- **MSI installer now respects per-tool checkboxes.** Previously the dialog's
+  "register with X" checkboxes were captured but `RegisterAiClients` always
+  passed all four `--<tool>` flags. Now each checkbox flips a
+  `--<tool>=true|false` argument via per-tool `SetProperty` conditions, so
+  unchecking a tool actually skips its registration. (#103)
+- **`clients-status` gains `--log-file`** (appends the rendered status report
+  to the given file, mirroring `register-clients`). Status output now
+  reports `plugin path`, `plugin enabled`, and `agent plugins enabled` for
+  the VS Code writer; `StatusResult` gained three optional nullable fields
+  (`PluginPath`, `PluginEnabled`, `AgentPluginsEnabled`) — existing
+  consumers are unaffected because every new field is defaulted. (#103)
+- **In passing**: `ClaudeCodeWriter` and `CopilotCliWriter` now overwrite a
+  same-name SaddleRAG skill file with the current packaged content on
+  re-register, instead of leaving stale skill content in place. Caught
+  while expanding VS Code coverage. (#103)
+
 ## [1.2.0] - 2026-05-27
 
 ### License
