@@ -42,6 +42,10 @@
         <Property Id="REGISTER_CLAUDE_DESKTOP" Value="1" Secure="yes" />
         <Property Id="REGISTER_VSCODE_MCP"     Value="1" Secure="yes" />
         <Property Id="REGISTER_COPILOT_CLI"    Value="1" Secure="yes" />
+        <Property Id="REGISTER_CLAUDE_CODE_ARG" Value="--claude-code=false" Secure="yes" />
+        <Property Id="REGISTER_CLAUDE_DESKTOP_ARG" Value="--claude-desktop=false" Secure="yes" />
+        <Property Id="REGISTER_VSCODE_MCP_ARG" Value="--vscode-mcp=false" Secure="yes" />
+        <Property Id="REGISTER_COPILOT_CLI_ARG" Value="--copilot-cli=false" Secure="yes" />
 
         <!-- Ollama keep-alive detection: CheckOllamaKeepAlive CA populates these -->
         <!-- in the UI sequence so the Ollama dialog can show or hide a notice. -->
@@ -217,10 +221,34 @@
 
         <!-- Register SaddleRAG with selected AI tools via the SaddleRAG.Cli subcommand. -->
         <!-- Impersonate="yes" so $USERPROFILE / $APPDATA resolve to the installing user. -->
+        <SetProperty Id="REGISTER_CLAUDE_CODE_ARG"
+                 Before="RegisterAiClients"
+                 Sequence="execute"
+                 Value="--claude-code=true"
+                 Condition="REGISTER_CLAUDE_CODE = &quot;1&quot;" />
+
+        <SetProperty Id="REGISTER_CLAUDE_DESKTOP_ARG"
+                 Before="RegisterAiClients"
+                 Sequence="execute"
+                 Value="--claude-desktop=true"
+                 Condition="REGISTER_CLAUDE_DESKTOP = &quot;1&quot;" />
+
+        <SetProperty Id="REGISTER_VSCODE_MCP_ARG"
+                 Before="RegisterAiClients"
+                 Sequence="execute"
+                 Value="--vscode-mcp=true"
+                 Condition="REGISTER_VSCODE_MCP = &quot;1&quot;" />
+
+        <SetProperty Id="REGISTER_COPILOT_CLI_ARG"
+                 Before="RegisterAiClients"
+                 Sequence="execute"
+                 Value="--copilot-cli=true"
+                 Condition="REGISTER_COPILOT_CLI = &quot;1&quot;" />
+
         <SetProperty Id="RegisterAiClients"
                      Before="RegisterAiClients"
                      Sequence="execute"
-                     Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients --claude-code --claude-desktop --vscode-mcp --copilot-cli --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
+                 Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients [REGISTER_CLAUDE_CODE_ARG] [REGISTER_CLAUDE_DESKTOP_ARG] [REGISTER_VSCODE_MCP_ARG] [REGISTER_COPILOT_CLI_ARG] --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
 
         <CustomAction Id="RegisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
@@ -547,7 +575,7 @@
 
                 <Control Id="Description" Type="Text" X="25" Y="55" Width="320" Height="40"
                          Transparent="yes" NoPrefix="yes"
-                         Text="SaddleRAG can register itself with these AI tools so its tools and skill are available automatically in every session. All recommended." />
+                         Text="SaddleRAG can register itself with these AI tools so its tools and skills are available automatically in every session. VS Code uses a local Copilot plugin; the others use per-user config files. All recommended." />
 
                 <Control Id="ChkClaudeCode" Type="CheckBox" X="25" Y="100" Width="320" Height="17"
                          Property="REGISTER_CLAUDE_CODE" CheckBoxValue="1"
@@ -564,7 +592,7 @@
 
                 <Control Id="InfoText" Type="Text" X="25" Y="185" Width="320" Height="35"
                          Transparent="yes" NoPrefix="yes"
-                         Text="Touches per-user config files only: %USERPROFILE%\.claude.json, %APPDATA%\Claude\claude_desktop_config.json, %APPDATA%\Code\User\mcp.json, and the Copilot CLI per-user config." />
+                         Text="Touches per-user integration only: %USERPROFILE%\.claude.json, %APPDATA%\Claude\claude_desktop_config.json, %APPDATA%\Code\User\settings.json plus the local VS Code SaddleRAG plugin folder, and the Copilot CLI per-user config." />
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">

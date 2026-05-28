@@ -11,4 +11,7 @@ public sealed record StatusResult(
     bool SaddleRagEntryPresent,
     bool EndpointMatchesCanonical,
     bool? SkillFilePresent,
-    string Notes);
+    string Notes,
+    string? PluginPath = null,
+    bool? PluginEnabled = null,
+    bool? AgentPluginsEnabled = null);
