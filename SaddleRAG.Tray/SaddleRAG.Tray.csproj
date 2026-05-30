@@ -22,4 +22,8 @@
     <ProjectReference Include="..\SaddleRAG.ClientIntegration\SaddleRAG.ClientIntegration.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="..\assets\branding\saddlerag-icon.ico" Link="Resources\saddlerag-icon.ico" />
+  </ItemGroup>
+
 </Project>
