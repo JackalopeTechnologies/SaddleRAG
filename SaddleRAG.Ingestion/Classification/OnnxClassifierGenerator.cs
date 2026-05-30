@@ -28,29 +28,84 @@ namespace SaddleRAG.Ingestion.Classification;
 public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
 {
     /// <summary>
-    ///     Loads the GenAI model from <paramref name="modelFolder" /> and binds
-    ///     the generation parameters from <paramref name="entry" />. The folder
-    ///     must contain a complete GenAI model (genai_config.json, the ONNX
-    ///     weights, and the tokenizer files) as laid down by
-    ///     <c>OnnxModelDownloader.DownloadModelFolderAsync</c>.
+    ///     Binds <paramref name="modelFolder" /> and the generation parameters
+    ///     from <paramref name="entry" /> without touching disk. The native
+    ///     GenAI <see cref="Model" /> and <see cref="Tokenizer" /> load lazily
+    ///     on the first <see cref="GenerateAsync" /> (or explicit
+    ///     <see cref="EnsureLoaded" />) call, so the generator can be
+    ///     constructed at DI time before warmup has downloaded the model
+    ///     folder. The folder must contain a complete GenAI model
+    ///     (genai_config.json, the ONNX weights, and the tokenizer files) as
+    ///     laid down by <c>OnnxModelDownloader.DownloadModelFolderAsync</c>
+    ///     by the time the first generate runs.
     /// </summary>
     public OnnxClassifierGenerator(string modelFolder, ClassifierModelEntry entry)
     {
         ArgumentException.ThrowIfNullOrEmpty(modelFolder);
         ArgumentNullException.ThrowIfNull(entry);
 
-        if (!Directory.Exists(modelFolder))
-            throw new DirectoryNotFoundException(string.Format(MissingModelFolderFormat, modelFolder));
-
+        mModelFolder = modelFolder;
         mEntry = entry;
-        mModel = new Model(modelFolder);
-        mTokenizer = new Tokenizer(mModel);
     }
 
+    private readonly string mModelFolder;
     private readonly ClassifierModelEntry mEntry;
-    private readonly Model mModel;
-    private readonly Tokenizer mTokenizer;
+    private readonly Lock mLoadLock = new();
+    private Model? mModel;
+    private Tokenizer? mTokenizer;
     private bool mDisposed;
+
+    /// <summary>
+    ///     Loads the native GenAI <see cref="Model" /> and
+    ///     <see cref="Tokenizer" /> from the configured folder if they are not
+    ///     already loaded, returning the (model, tokenizer) pair. Thread-safe:
+    ///     concurrent first-callers block on <see cref="mLoadLock" /> so the
+    ///     native model is constructed exactly once. Warmup may call this
+    ///     explicitly after the download step so the first real classification
+    ///     isn't cold; <see cref="GenerateAsync" /> calls it implicitly.
+    /// </summary>
+    public void EnsureLoaded()
+    {
+        ObjectDisposedException.ThrowIf(mDisposed, this);
+        LoadOrGet();
+    }
+
+    private (Model Model, Tokenizer Tokenizer) LoadOrGet()
+    {
+        Model? model = mModel;
+        Tokenizer? tokenizer = mTokenizer;
+
+        if (model == null || tokenizer == null)
+            (model, tokenizer) = LoadUnderLock();
+
+        return (model, tokenizer);
+    }
+
+    private (Model Model, Tokenizer Tokenizer) LoadUnderLock()
+    {
+        lock (mLoadLock)
+        {
+            Model? model = mModel;
+            Tokenizer? tokenizer = mTokenizer;
+
+            if (model == null || tokenizer == null)
+                (model, tokenizer) = LoadModelAndTokenizer();
+
+            return (model, tokenizer);
+        }
+    }
+
+    private (Model Model, Tokenizer Tokenizer) LoadModelAndTokenizer()
+    {
+        if (!Directory.Exists(mModelFolder))
+            throw new DirectoryNotFoundException(string.Format(MissingModelFolderFormat, mModelFolder));
+
+        var model = new Model(mModelFolder);
+        var tokenizer = new Tokenizer(model);
+        mModel = model;
+        mTokenizer = tokenizer;
+        return (model, tokenizer);
+    }
 
     /// <summary>
     ///     Wraps <paramref name="prompt" /> in the Phi-3-mini-4k chat template,
@@ -68,21 +123,23 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
 
     private string Generate(string prompt, CancellationToken ct)
     {
+        (Model model, Tokenizer tokenizer) = LoadOrGet();
+
         string templated = BuildChatPrompt(prompt);
 
-        using var sequences = mTokenizer.Encode(templated);
+        using var sequences = tokenizer.Encode(templated);
         int promptTokens = sequences[FirstSequence].Length;
         int maxLength = Math.Min(promptTokens + mEntry.MaxOutputTokens, mEntry.MaxContextLength);
 
-        using var generatorParams = new GeneratorParams(mModel);
+        using var generatorParams = new GeneratorParams(model);
         generatorParams.SetSearchOption(MaxLengthOption, maxLength);
         generatorParams.SetSearchOption(TemperatureOption, mEntry.Temperature);
         generatorParams.SetSearchOption(DoSampleOption, mEntry.Temperature > 0f);
 
-        using var generator = new Generator(mModel, generatorParams);
+        using var generator = new Generator(model, generatorParams);
         generator.AppendTokenSequences(sequences);
 
-        using var tokenizerStream = mTokenizer.CreateStream();
+        using var tokenizerStream = tokenizer.CreateStream();
         var builder = new StringBuilder();
         int generated = 0;
 
@@ -115,8 +172,8 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
         if (!mDisposed)
         {
             mDisposed = true;
-            mTokenizer.Dispose();
-            mModel.Dispose();
+            mTokenizer?.Dispose();
+            mModel?.Dispose();
         }
     }
 

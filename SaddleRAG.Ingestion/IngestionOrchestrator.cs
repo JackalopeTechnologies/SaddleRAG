@@ -27,7 +27,7 @@ namespace SaddleRAG.Ingestion;
 public class IngestionOrchestrator
 {
     public IngestionOrchestrator(IPageCrawler crawler,
-                                 OllamaLlmClassifier llmClassifier,
+                                 ILlmClassifier llmClassifier,
                                  CategoryAwareChunker chunker,
                                  IEmbeddingProvider embeddingProvider,
                                  IVectorSearchProvider vectorSearch,

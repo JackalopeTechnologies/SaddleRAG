@@ -110,7 +110,12 @@ services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
 services.AddSingleton<IScrapeAuditWriter>(sp =>
                                               new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>())
                                          );
+// The CLI has no ONNX wiring (no model downloader / warmup), so its classify
+// path stays on Ollama. Bind ILlmClassifier to the concrete OllamaLlmClassifier
+// so the reclassify command resolves the seam — analogous to the Mcp swap,
+// which composes the ClassifierBackendSwitch there.
 services.AddSingleton<OllamaLlmClassifier>();
+services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<OllamaLlmClassifier>());
 services.AddSingleton<SymbolExtractor>();
 services.AddSingleton<LibraryProfileService>();
 services.AddSingleton<CliReconFallback>();
@@ -355,7 +360,7 @@ reclassifyCommand.SetAction(async (parseResult, ct) =>
                                                                         provider
                                                                             .GetRequiredService<IChunkRepository>(),
                                                                         provider
-                                                                            .GetRequiredService<OllamaLlmClassifier>(),
+                                                                            .GetRequiredService<ILlmClassifier>(),
                                                                         Console.Out,
                                                                         ct
                                                                        );
