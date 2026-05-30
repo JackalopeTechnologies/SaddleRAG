@@ -17,7 +17,8 @@ internal static class ClientFlagParser
         bool claudeCode,
         bool claudeDesktop,
         bool vscodeMcp,
-        bool copilotCli)
+        bool copilotCli,
+        bool codex)
     {
         if (claudeCode)
             yield return ClaudeCodeWriter.ForCurrentUser();
@@ -30,5 +31,8 @@ internal static class ClientFlagParser
 
         if (copilotCli)
             yield return CopilotCliWriter.ForCurrentUser();
+
+        if (codex)
+            yield return CodexWriter.ForCurrentUser();
     }
 }

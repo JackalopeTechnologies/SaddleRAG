@@ -24,6 +24,8 @@ public static class RegisterClientsCommand
     private const string VscodeMcpOptionDescription = "Register with VS Code by installing the local SaddleRAG Copilot plugin and updating user settings for plugin + skill discovery";
     private const string CopilotCliOptionName = "--copilot-cli";
     private const string CopilotCliOptionDescription = "Register with GitHub Copilot CLI (~/.copilot/mcp-config.json + refresh ~/.copilot/skills)";
+    private const string CodexOptionName = "--codex";
+    private const string CodexOptionDescription = "Register with OpenAI Codex CLI (~/.codex/config.toml)";
     private const string QuietOptionName = "--quiet";
     private const string QuietOptionDescription = "Suppress per-writer stdout lines";
     private const string LogFileOptionName = "--log-file";
@@ -38,6 +40,7 @@ public static class RegisterClientsCommand
     private static readonly Option<bool> smClaudeDesktop = new(ClaudeDesktopOptionName) { Description = ClaudeDesktopOptionDescription, DefaultValueFactory = _ => true };
     private static readonly Option<bool> smVscodeMcp     = new(VscodeMcpOptionName)     { Description = VscodeMcpOptionDescription,     DefaultValueFactory = _ => true };
     private static readonly Option<bool> smCopilotCli    = new(CopilotCliOptionName)    { Description = CopilotCliOptionDescription,    DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smCodex         = new(CodexOptionName)         { Description = CodexOptionDescription,         DefaultValueFactory = _ => true };
     private static readonly Option<bool> smQuiet         = new(QuietOptionName)         { Description = QuietOptionDescription,         DefaultValueFactory = _ => false };
     private static readonly Option<string?> smLogFile    = new(LogFileOptionName)       { Description = LogFileOptionDescription };
 
@@ -48,6 +51,7 @@ public static class RegisterClientsCommand
         cmd.Options.Add(smClaudeDesktop);
         cmd.Options.Add(smVscodeMcp);
         cmd.Options.Add(smCopilotCli);
+        cmd.Options.Add(smCodex);
         cmd.Options.Add(smQuiet);
         cmd.Options.Add(smLogFile);
         cmd.SetAction(ExecuteAsync);
@@ -60,10 +64,11 @@ public static class RegisterClientsCommand
         bool cd     = parseResult.GetValue(smClaudeDesktop);
         bool vs     = parseResult.GetValue(smVscodeMcp);
         bool co     = parseResult.GetValue(smCopilotCli);
+        bool cx     = parseResult.GetValue(smCodex);
         bool q      = parseResult.GetValue(smQuiet);
         string? log = parseResult.GetValue(smLogFile);
 
-        var writers   = ClientFlagParser.SelectWritersForCurrentUser(cc, cd, vs, co);
+        var writers   = ClientFlagParser.SelectWritersForCurrentUser(cc, cd, vs, co, cx);
         var registrar = new ClientRegistrar(writers);
         var result    = await registrar.RegisterAsync(SaddleRagEndpoint.Default, ct);
 

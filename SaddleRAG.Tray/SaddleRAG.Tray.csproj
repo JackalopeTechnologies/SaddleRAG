@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <Platforms>AnyCPU;x64</Platforms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>SaddleRAG.Tray</AssemblyName>
+    <RootNamespace>SaddleRAG.Tray</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.*" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SaddleRAG.Tray.Core\SaddleRAG.Tray.Core.csproj" />
+    <ProjectReference Include="..\SaddleRAG.ClientIntegration\SaddleRAG.ClientIntegration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\assets\branding\saddlerag-icon.ico" Link="Resources\saddlerag-icon.ico" />
+  </ItemGroup>
+
+</Project>

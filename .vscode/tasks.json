@@ -88,6 +88,27 @@
       }
     },
     {
+      "label": "SaddleRAG: Build Tray (Debug)",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/SaddleRAG.Tray/SaddleRAG.Tray.csproj",
+        "--configuration",
+        "Debug",
+        "-p:TreatWarningsAsErrors=true"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": "$msCompile",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      }
+    },
+    {
       "label": "SaddleRAG: Stop Service",
       "type": "process",
       "command": "powershell.exe",

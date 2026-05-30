@@ -59,7 +59,7 @@ public static class StatusCommand
         bool emitJson = parseResult.GetValue(smJson);
         string? logFile = parseResult.GetValue(smLogFile);
 
-        var writers   = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: true, claudeDesktop: true, vscodeMcp: true, copilotCli: true);
+        var writers   = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: true, claudeDesktop: true, vscodeMcp: true, copilotCli: true, codex: true);
         var registrar = new ClientRegistrar(writers);
         IReadOnlyList<StatusResult> results = await registrar.GetStatusAsync(ct);
         string output = emitJson ? BuildJsonOutput(results) : BuildTextOutput(results);

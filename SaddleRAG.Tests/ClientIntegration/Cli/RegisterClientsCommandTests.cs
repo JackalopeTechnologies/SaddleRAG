@@ -24,6 +24,7 @@ public sealed class RegisterClientsCommandTests
             "--claude-desktop",
             "--vscode-mcp",
             "--copilot-cli",
+            "--codex",
             "--quiet",
             "--log-file"
             ];

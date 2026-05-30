@@ -1,0 +1,32 @@
+<Application x:Class="SaddleRAG.Tray.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tb="clr-namespace:H.NotifyIcon;assembly=H.NotifyIcon.Wpf"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <tb:TaskbarIcon x:Key="TrayIcon"
+                        ToolTipText="SaddleRAG MCP"
+                        IconSource="/Resources/saddlerag-icon.ico">
+            <tb:TaskbarIcon.ContextMenu>
+                <ContextMenu>
+                    <MenuItem x:Name="StartItem" Header="Start MCP" Click="OnStart"/>
+                    <MenuItem x:Name="StopItem"  Header="Stop MCP"  Click="OnStop"/>
+                    <Separator/>
+                    <MenuItem Header="Open dashboard" Click="OnOpenDashboard"/>
+                    <Separator/>
+                    <MenuItem Header="Install helpers">
+                        <MenuItem Header="Claude Code"    Click="OnInstallClaudeCode"/>
+                        <MenuItem Header="Claude Desktop" Click="OnInstallClaudeDesktop"/>
+                        <MenuItem Header="VSCode"         Click="OnInstallVsCode"/>
+                        <MenuItem Header="Copilot CLI"    Click="OnInstallCopilot"/>
+                        <MenuItem Header="Codex"          Click="OnInstallCodex"/>
+                        <Separator/>
+                        <MenuItem Header="All"            Click="OnInstallAll"/>
+                    </MenuItem>
+                    <Separator/>
+                    <MenuItem Header="Exit" Click="OnExitClicked"/>
+                </ContextMenu>
+            </tb:TaskbarIcon.ContextMenu>
+        </tb:TaskbarIcon>
+    </Application.Resources>
+</Application>

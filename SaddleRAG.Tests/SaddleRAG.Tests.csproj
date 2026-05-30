@@ -44,6 +44,7 @@
     <ProjectReference Include="..\SaddleRAG.Mcp\SaddleRAG.Mcp.csproj" />
     <ProjectReference Include="..\SaddleRAG.Monitor\SaddleRAG.Monitor.csproj" />
     <ProjectReference Include="..\SaddleRAG.Packaging\SaddleRAG.Packaging.csproj" />
+    <ProjectReference Include="..\SaddleRAG.Tray.Core\SaddleRAG.Tray.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
