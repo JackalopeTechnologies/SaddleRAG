@@ -1,0 +1,28 @@
+@* SaddleRAG.Monitor/Components/ClassifierBadge.razor *@
+@using SaddleRAG.Monitor.Services
+@inject IMonitorConfigSource ConfigSource
+
+@if (mClassifier is not null)
+{
+    <MudText Typo="Typo.caption">
+        Classifier: @mClassifier.ActiveBackend / @ActiveModelLabel
+    </MudText>
+}
+
+@code {
+
+    private MonitorConfigClassifier? mClassifier;
+
+    private const string OnnxBackendName = "onnx";
+
+    private string ActiveModelLabel =>
+        string.Equals(mClassifier?.ActiveBackend, OnnxBackendName, StringComparison.OrdinalIgnoreCase)
+            ? mClassifier!.ActiveOnnxModel
+            : mClassifier!.OllamaClassificationModel;
+
+    protected override void OnInitialized()
+    {
+        mClassifier = ConfigSource?.GetSnapshot().Classifier;
+    }
+
+}
