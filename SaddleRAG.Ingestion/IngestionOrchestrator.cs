@@ -53,7 +53,7 @@ public class IngestionOrchestrator
         mClassifyStage = new ClassifyStage(llmClassifier, pageRepository, broadcaster, logger);
         mChunkStage = new ChunkStage(chunker, broadcaster, logger);
         mEmbedStage = new EmbedStage(embeddingProvider, chunkRepository, broadcaster, logger);
-        mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
+        mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger, llmClassifier);
         mFinalizer = new IngestionFinalizer(chunkRepository,
                                             bm25ShardRepository,
                                             libraryIndexRepository,
