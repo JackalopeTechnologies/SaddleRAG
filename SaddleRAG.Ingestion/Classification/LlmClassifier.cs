@@ -53,33 +53,7 @@ public class LlmClassifier : ILlmClassifier
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(libraryHint);
 
-        var contentPreview = page.RawContent.Length > MaxPreviewChars
-                                 ? page.RawContent[..MaxPreviewChars]
-                                 : page.RawContent;
-
-        var jsonExample = """{"category": "...", "confidence": 0.0-1.0}""";
-
-        var prompt = $"""
-                      You are a documentation classifier. Given a page's metadata and content preview,
-                      classify it into exactly one category. Respond with ONLY a JSON object:
-                      {jsonExample}
-
-                      Categories:
-                      - Overview: Conceptual explanation, architecture, "about" pages
-                      - HowTo: Step-by-step guide, tutorial, walkthrough
-                      - Sample: Code samples, demos, example projects showing how to use the library
-                      - Code: Library source code, implementation files (not usage examples)
-                      - ApiReference: API docs â€” class, method, property, event reference
-                      - ChangeLog: Release notes, migration guides, what's new
-                      - Unclassified: Does not fit other categories
-
-                      Library: {libraryHint}
-                      URL: {page.Url}
-                      Title: {page.Title}
-
-                      Content preview:
-                      {contentPreview}
-                      """;
+        var prompt = ClassificationPrompt.Build(page, libraryHint);
 
         var category = DocCategory.Unclassified;
         var confidence = 0f;
@@ -185,7 +159,6 @@ public class LlmClassifier : ILlmClassifier
     /// </summary>
     public const string PromptVersion = "v1";
 
-    private const int MaxPreviewChars = 500;
     private const int MaxResponseChars = 4096;
     private const string JsonCodeFenceOpen = "```json";
     private const string CodeFence = "```";
