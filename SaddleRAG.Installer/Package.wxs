@@ -12,6 +12,10 @@
                       AllowSameVersionUpgrades="yes" />
         <MediaTemplate EmbedCab="yes" />
 
+        <!-- Branding: Add/Remove Programs icon + reusable icon id for the shortcut. -->
+        <Icon Id="SaddleRagIcon.ico" SourceFile="..\assets\branding\saddlerag-icon.ico" />
+        <Property Id="ARPPRODUCTICON" Value="SaddleRagIcon.ico" />
+
         <!-- DirectML requires Windows 10 version 1903 (build 18362) or later.    -->
         <!-- CheckGpuCapability CA sets WINDOWSBUILDNUMBER as a numeric property  -->
         <!-- from HKLM\...\CurrentVersion\CurrentBuildNumber before this check    -->
@@ -46,6 +50,8 @@
         <Property Id="REGISTER_CLAUDE_DESKTOP_ARG" Value="--claude-desktop=false" Secure="yes" />
         <Property Id="REGISTER_VSCODE_MCP_ARG" Value="--vscode-mcp=false" Secure="yes" />
         <Property Id="REGISTER_COPILOT_CLI_ARG" Value="--copilot-cli=false" Secure="yes" />
+        <Property Id="REGISTER_CODEX"           Value="1" Secure="yes" />
+        <Property Id="REGISTER_CODEX_ARG"       Value="--codex=false" Secure="yes" />
 
         <!-- Ollama keep-alive detection: CheckOllamaKeepAlive CA populates these -->
         <!-- in the UI sequence so the Ollama dialog can show or hide a notice. -->
@@ -105,7 +111,15 @@
                             Description="Documentation RAG system - MCP server for AI-assisted code documentation lookup."
                             Start="auto"
                             ErrorControl="normal"
-                            Account="LocalSystem" />
+                            Account="LocalSystem">
+                <!-- Let non-admin users start/stop the service from the tray without UAC.
+                     Mirrors scripts/grant-service-control.ps1 (ACE A;;RPWPLORC;;;<Users>). -->
+                <util:PermissionEx User="Users"
+                                   ServiceStart="yes"
+                                   ServiceStop="yes"
+                                   ServiceQueryStatus="yes"
+                                   ServicePauseContinue="no" />
+            </ServiceInstall>
 
             <!-- Start="install" stays so InstallServices actually registers the service in SCM. -->
             <!-- Our StartAndMonitorService CA runs BEFORE MSI's standard StartServices, drives the -->
@@ -118,6 +132,47 @@
                             Stop="both"
                             Remove="uninstall"
                             Wait="yes" />
+        </Component>
+
+        <!-- Tray autostart (per-machine Run key) + Start Menu shortcut. The tray is
+             independent of the service: login launches it; it talks to SCM + /health.
+             SaddleRAG.Tray.exe is already harvested by PublishOutput, so no <File> here. -->
+        <Component Id="TrayAutostartComponent" Directory="MCPFOLDER" Guid="2C9F1E54-9C0B-4E2E-9E2E-7B7A1A6F0C31">
+            <RegistryValue Root="HKLM"
+                           Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                           Name="SaddleRAGTray"
+                           Type="string"
+                           Value="&quot;[MCPFOLDER]SaddleRAG.Tray.exe&quot;"
+                           KeyPath="yes" />
+        </Component>
+
+        <!-- Close a running tray on uninstall/upgrade so its exe isn't locked and
+             no orphan icon remains after the service + files go away. Top-level
+             element: schedules the WixCloseApplications CA. -->
+        <util:CloseApplication Id="CloseSaddleRagTray"
+                               Target="SaddleRAG.Tray.exe"
+                               CloseMessage="yes"
+                               RebootPrompt="no"
+                               EndSessionMessage="yes" />
+
+        <!-- Start Menu shortcut so users can relaunch the tray if they exit it. -->
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="SaddleRagMenuDir" Name="SaddleRAG" />
+        </StandardDirectory>
+
+        <Component Id="TrayShortcutComponent" Directory="SaddleRagMenuDir" Guid="7E3D2B19-44F1-4B0C-8C2A-9D6F5E2B1A77">
+            <Shortcut Id="TrayStartMenuShortcut"
+                      Name="SaddleRAG Tray"
+                      Description="Start/stop the SaddleRAG MCP service and install AI helpers"
+                      Target="[MCPFOLDER]SaddleRAG.Tray.exe"
+                      Icon="SaddleRagIcon.ico"
+                      WorkingDirectory="MCPFOLDER" />
+            <RemoveFolder Id="RemoveSaddleRagMenuDir" Directory="SaddleRagMenuDir" On="uninstall" />
+            <!-- KeyPath in HKLM (not HKCU): this is a perMachine package whose install runs
+                 as LocalSystem. An HKCU keypath would land in HKU\.DEFAULT and make the
+                 component look absent at uninstall, orphaning the Start Menu folder. -->
+            <RegistryValue Root="HKLM" Key="Software\Jackalope Technologies\SaddleRAG\Tray"
+                           Name="ShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
         </Component>
 
         <!-- Helper scripts installed to MCPFOLDER so SetProperty can reference them  -->
@@ -133,6 +188,8 @@
             <ComponentGroupRef Id="PublishOutput" />
             <ComponentRef Id="ServiceComponent" />
             <ComponentRef Id="HelperScripts" />
+            <ComponentRef Id="TrayAutostartComponent" />
+            <ComponentRef Id="TrayShortcutComponent" />
         </Feature>
 
         <!-- Test MongoDB connection (JScript CA, runs during UI).                      -->
@@ -245,10 +302,16 @@
                  Value="--copilot-cli=true"
                  Condition="REGISTER_COPILOT_CLI = &quot;1&quot;" />
 
+        <SetProperty Id="REGISTER_CODEX_ARG"
+                 Before="RegisterAiClients"
+                 Sequence="execute"
+                 Value="--codex=true"
+                 Condition="REGISTER_CODEX = &quot;1&quot;" />
+
         <SetProperty Id="RegisterAiClients"
                      Before="RegisterAiClients"
                      Sequence="execute"
-                 Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients [REGISTER_CLAUDE_CODE_ARG] [REGISTER_CLAUDE_DESKTOP_ARG] [REGISTER_VSCODE_MCP_ARG] [REGISTER_COPILOT_CLI_ARG] --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
+                 Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients [REGISTER_CLAUDE_CODE_ARG] [REGISTER_CLAUDE_DESKTOP_ARG] [REGISTER_VSCODE_MCP_ARG] [REGISTER_COPILOT_CLI_ARG] [REGISTER_CODEX_ARG] --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
 
         <CustomAction Id="RegisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
@@ -577,22 +640,25 @@
                          Transparent="yes" NoPrefix="yes"
                          Text="SaddleRAG can register itself with these AI tools so its tools and skills are available automatically in every session. VS Code uses a local Copilot plugin; the others use per-user config files. All recommended." />
 
-                <Control Id="ChkClaudeCode" Type="CheckBox" X="25" Y="100" Width="320" Height="17"
+                <Control Id="ChkClaudeCode" Type="CheckBox" X="25" Y="96" Width="320" Height="17"
                          Property="REGISTER_CLAUDE_CODE" CheckBoxValue="1"
                          Text="Claude Code (terminal + VSCode extension)" />
-                <Control Id="ChkClaudeDesktop" Type="CheckBox" X="25" Y="120" Width="320" Height="17"
+                <Control Id="ChkClaudeDesktop" Type="CheckBox" X="25" Y="114" Width="320" Height="17"
                          Property="REGISTER_CLAUDE_DESKTOP" CheckBoxValue="1"
                          Text="Claude Desktop" />
-                <Control Id="ChkVsCodeMcp" Type="CheckBox" X="25" Y="140" Width="320" Height="17"
+                <Control Id="ChkVsCodeMcp" Type="CheckBox" X="25" Y="132" Width="320" Height="17"
                          Property="REGISTER_VSCODE_MCP" CheckBoxValue="1"
                          Text="VSCode (Copilot Chat MCP)" />
-                <Control Id="ChkCopilotCli" Type="CheckBox" X="25" Y="160" Width="320" Height="17"
+                <Control Id="ChkCopilotCli" Type="CheckBox" X="25" Y="150" Width="320" Height="17"
                          Property="REGISTER_COPILOT_CLI" CheckBoxValue="1"
                          Text="GitHub Copilot CLI" />
+                <Control Id="ChkCodex" Type="CheckBox" X="25" Y="168" Width="320" Height="17"
+                         Property="REGISTER_CODEX" CheckBoxValue="1"
+                         Text="OpenAI Codex CLI" />
 
-                <Control Id="InfoText" Type="Text" X="25" Y="185" Width="320" Height="35"
+                <Control Id="InfoText" Type="Text" X="25" Y="190" Width="320" Height="32"
                          Transparent="yes" NoPrefix="yes"
-                         Text="Touches per-user integration only: %USERPROFILE%\.claude.json, %APPDATA%\Claude\claude_desktop_config.json, %APPDATA%\Code\User\settings.json plus the local VS Code SaddleRAG plugin folder, and the Copilot CLI per-user config." />
+                         Text="Touches per-user integration only: %USERPROFILE%\.claude.json, %APPDATA%\Claude\claude_desktop_config.json, %APPDATA%\Code\User\settings.json plus the local VS Code SaddleRAG plugin folder, the Copilot CLI per-user config, and %USERPROFILE%\.codex\config.toml." />
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="224" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">

@@ -167,31 +167,6 @@ public sealed class McpWarmupService : BackgroundService
                                   );
 
 
-            stepSw.Restart();
-
-            // Classification model warm is load-bearing: if it fails, the
-            // first reextract_library / dryrun_scrape call will cold-load
-            // mid-pipeline and likely time out. Surface that as a Failed
-            // warmup state via the outer catch so callers (dashboard,
-            // monitor UI) see "Ollama isn't ready" rather than the MCP
-            // optimistically marking itself Completed.
-            try
-            {
-                await bootstrapper.WarmModelsAsync(stoppingToken);
-
-                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - generate models warm",
-                                       startupSw.Elapsed.TotalSeconds,
-                                       stepSw.ElapsedMilliseconds
-                                      );
-            }
-            catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
-            {
-                mWarmupState.MarkFailed(PhaseGenerateWarmFailed, ex.Message);
-                mLogger.LogError(ex, "[Warmup] T+{Sec:F1}s - Generate model warm failed", startupSw.Elapsed.TotalSeconds);
-                throw;
-            }
-
-
             try
             {
                 stepSw.Restart();
@@ -245,7 +220,37 @@ public sealed class McpWarmupService : BackgroundService
             }
 
 
-            mWarmupState.MarkCompleted(nameof(ScrapeJobStatus.Completed));
+            // Classifier (Ollama generate) warm runs LAST and is best-effort: it must
+            // never abort the ONNX embed/rerank warm above, so the search path stays
+            // warm regardless. A failed/slow classifier warm only means the first
+            // reextract_library / dryrun_scrape call cold-loads the model; interactive
+            // search is unaffected. Surfaced via a WARNING + the completed phase note,
+            // not a Failed warmup state.
+            bool classifierWarm = false;
+
+            stepSw.Restart();
+
+            try
+
+            {
+                await bootstrapper.WarmModelsAsync(stoppingToken);
+
+                classifierWarm = true;
+
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - generate (classifier) models warm",
+                                       startupSw.Elapsed.TotalSeconds,
+                                       stepSw.ElapsedMilliseconds
+                                      );
+            }
+
+            catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+
+            {
+                mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Generate (classifier) model warm failed; search path is warm, classification will cold-load on first use", startupSw.Elapsed.TotalSeconds);
+            }
+
+
+            mWarmupState.MarkCompleted(classifierWarm ? nameof(ScrapeJobStatus.Completed) : PhaseClassifierDegraded);
 
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s - Completed", startupSw.Elapsed.TotalSeconds);
         }
@@ -509,7 +514,8 @@ public sealed class McpWarmupService : BackgroundService
     }
 
 
-    private const string PhaseGenerateWarmFailed = "Generate model warm failed";
+    private const string PhaseClassifierDegraded = "Completed (classifier warm failed; search ready)";
+
     private const string PhaseStarting = "Starting";
 
     private const string PhaseMongoDbProfilesDiscovered = "MongoDB profiles discovered";

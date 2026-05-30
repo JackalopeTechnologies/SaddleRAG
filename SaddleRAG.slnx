@@ -15,4 +15,5 @@
   <Project Path="SaddleRAG.Monitor/SaddleRAG.Monitor.csproj" />
   <Project Path="SaddleRAG.Packaging/SaddleRAG.Packaging.csproj" />
   <Project Path="SaddleRAG.Tests/SaddleRAG.Tests.csproj" />
+  <Project Path="SaddleRAG.Tray.Core/SaddleRAG.Tray.Core.csproj" />
 </Solution>

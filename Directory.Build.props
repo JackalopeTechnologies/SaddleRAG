@@ -17,4 +17,14 @@
     <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
   </PropertyGroup>
 
+  <!--
+    Brand all runnable outputs (console exes + the Web SDK service host) with the
+    canonical SaddleRAG icon. Guarded so class-library projects don't pick up an
+    ApplicationIcon (which they'd warn on / ignore). The icon is referenced from
+    its single canonical location under assets/branding — never copied per project.
+  -->
+  <PropertyGroup Condition="'$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe' or '$(UsingMicrosoftNETSdkWeb)' == 'true'">
+    <ApplicationIcon>$(MSBuildThisFileDirectory)assets\branding\saddlerag-icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
 </Project>
