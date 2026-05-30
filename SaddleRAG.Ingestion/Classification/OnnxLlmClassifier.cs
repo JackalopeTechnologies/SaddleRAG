@@ -13,7 +13,7 @@ using SaddleRAG.Core.Models;
 namespace SaddleRAG.Ingestion.Classification;
 
 /// <summary>
-///     LLM-based page classifier backed by a local phi-4-mini-instruct ONNX
+///     LLM-based page classifier backed by a local phi-3-mini-4k-instruct ONNX
 ///     GenAI model. Behaviorally equivalent to the Ollama
 ///     <see cref="LlmClassifier" />: it builds the same prompt via
 ///     <see cref="ClassificationPrompt" />, parses the model output with the

@@ -30,18 +30,18 @@ public sealed class OnnxSettingsClassifierRegistryTests
 
         var active = settings.GetActiveClassifierModel();
 
-        Assert.Equal(OnnxSettings.Phi4MiniCpuName, active.Name);
+        Assert.Equal(OnnxSettings.Phi3MiniDirectMlName, active.Name);
     }
 
     [Fact]
     public void GetActiveClassifierModelReturnsNamedEntry()
     {
         var settings = BuildSettingsWithClassifierRegistry();
-        settings.ActiveClassifierModel = OnnxSettings.Phi4MiniCudaName;
+        settings.ActiveClassifierModel = OnnxSettings.Phi3MiniCudaName;
 
         var active = settings.GetActiveClassifierModel();
 
-        Assert.Equal(OnnxSettings.Phi4MiniCudaName, active.Name);
+        Assert.Equal(OnnxSettings.Phi3MiniCudaName, active.Name);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class OnnxSettingsClassifierRegistryTests
                                ActiveClassifierModel = "typo-classifier",
                                ClassifierModels = []
                            };
-        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi4MiniCpuName));
+        settings.ClassifierModels.Add(MakeDirectMlEntry(OnnxSettings.Phi3MiniDirectMlName));
 
         var result = validator.Validate(name: null, settings);
 
@@ -90,7 +90,7 @@ public sealed class OnnxSettingsClassifierRegistryTests
     {
         var validator = new OnnxSettingsValidator();
         var settings = new OnnxSettings { Enabled = true, ClassifierModels = [] };
-        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi4MiniCpuName));
+        settings.ClassifierModels.Add(MakeDirectMlEntry(OnnxSettings.Phi3MiniDirectMlName));
         settings.EmbeddingModels.Add(MinimalEmbeddingEntry());
 
         var result = validator.Validate(name: null, settings);
@@ -106,8 +106,8 @@ public sealed class OnnxSettingsClassifierRegistryTests
         settings.ClassifierModels.Add(new ClassifierModelEntry
                                           {
                                               Name = string.Empty,
-                                              RepoId = "microsoft/Phi-4-mini-instruct-onnx",
-                                              ModelFolder = "cpu"
+                                              RepoId = OnnxSettings.Phi3MiniRepoId,
+                                              ModelFolder = OnnxSettings.Phi3MiniCpuFolder
                                           });
 
         var result = validator.Validate(name: null, settings);
@@ -123,16 +123,16 @@ public sealed class OnnxSettingsClassifierRegistryTests
         var settings = new OnnxSettings { Enabled = true, ClassifierModels = [] };
         settings.ClassifierModels.Add(new ClassifierModelEntry
                                           {
-                                              Name = OnnxSettings.Phi4MiniCpuName,
+                                              Name = OnnxSettings.Phi3MiniCpuName,
                                               RepoId = string.Empty,
-                                              ModelFolder = OnnxSettings.Phi4MiniCpuFolder
+                                              ModelFolder = OnnxSettings.Phi3MiniCpuFolder
                                           });
 
         var result = validator.Validate(name: null, settings);
 
         Assert.True(result.Failed);
         Assert.Contains("RepoId", result.FailureMessage);
-        Assert.Contains(OnnxSettings.Phi4MiniCpuName, result.FailureMessage);
+        Assert.Contains(OnnxSettings.Phi3MiniCpuName, result.FailureMessage);
     }
 
     [Fact]
@@ -142,8 +142,8 @@ public sealed class OnnxSettingsClassifierRegistryTests
         var settings = new OnnxSettings { Enabled = true, ClassifierModels = [] };
         settings.ClassifierModels.Add(new ClassifierModelEntry
                                           {
-                                              Name = OnnxSettings.Phi4MiniCpuName,
-                                              RepoId = OnnxSettings.Phi4MiniRepoId,
+                                              Name = OnnxSettings.Phi3MiniCpuName,
+                                              RepoId = OnnxSettings.Phi3MiniRepoId,
                                               ModelFolder = string.Empty
                                           });
 
@@ -151,7 +151,7 @@ public sealed class OnnxSettingsClassifierRegistryTests
 
         Assert.True(result.Failed);
         Assert.Contains("ModelFolder", result.FailureMessage);
-        Assert.Contains(OnnxSettings.Phi4MiniCpuName, result.FailureMessage);
+        Assert.Contains(OnnxSettings.Phi3MiniCpuName, result.FailureMessage);
     }
 
     [Fact]
@@ -159,8 +159,8 @@ public sealed class OnnxSettingsClassifierRegistryTests
     {
         var validator = new OnnxSettingsValidator();
         var settings = new OnnxSettings { Enabled = true, ClassifierModels = [] };
-        settings.ClassifierModels.Add(MakeCpuEntry("duplicate-classifier"));
-        settings.ClassifierModels.Add(MakeCpuEntry("duplicate-classifier"));
+        settings.ClassifierModels.Add(MakeDirectMlEntry("duplicate-classifier"));
+        settings.ClassifierModels.Add(MakeDirectMlEntry("duplicate-classifier"));
 
         var result = validator.Validate(name: null, settings);
 
@@ -174,8 +174,9 @@ public sealed class OnnxSettingsClassifierRegistryTests
     {
         var validator = new OnnxSettingsValidator();
         var settings = new OnnxSettings { Enabled = true, ClassifierModels = [] };
-        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi4MiniCpuName));
-        settings.ClassifierModels.Add(MakeGpuEntry(OnnxSettings.Phi4MiniCudaName));
+        settings.ClassifierModels.Add(MakeDirectMlEntry(OnnxSettings.Phi3MiniDirectMlName));
+        settings.ClassifierModels.Add(MakeGpuEntry(OnnxSettings.Phi3MiniCudaName));
+        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi3MiniCpuName));
         settings.EmbeddingModels.Add(MinimalEmbeddingEntry());
 
         var result = validator.Validate(name: null, settings);
@@ -190,11 +191,12 @@ public sealed class OnnxSettingsClassifierRegistryTests
         var settings = new OnnxSettings
                            {
                                Enabled = true,
-                               ActiveClassifierModel = OnnxSettings.Phi4MiniCudaName,
+                               ActiveClassifierModel = OnnxSettings.Phi3MiniCudaName,
                                ClassifierModels = []
                            };
-        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi4MiniCpuName));
-        settings.ClassifierModels.Add(MakeGpuEntry(OnnxSettings.Phi4MiniCudaName));
+        settings.ClassifierModels.Add(MakeDirectMlEntry(OnnxSettings.Phi3MiniDirectMlName));
+        settings.ClassifierModels.Add(MakeGpuEntry(OnnxSettings.Phi3MiniCudaName));
+        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi3MiniCpuName));
         settings.EmbeddingModels.Add(MinimalEmbeddingEntry());
 
         var result = validator.Validate(name: null, settings);
@@ -231,9 +233,10 @@ public sealed class OnnxSettingsClassifierRegistryTests
         var settings = new OnnxSettings();
 
         Assert.Equal(string.Empty, settings.ActiveClassifierModel);
-        Assert.Equal(expected: 2, settings.ClassifierModels.Count);
-        Assert.Equal(OnnxSettings.Phi4MiniCpuName, settings.ClassifierModels[index: 0].Name);
-        Assert.Equal(OnnxSettings.Phi4MiniCudaName, settings.ClassifierModels[index: 1].Name);
+        Assert.Equal(expected: 3, settings.ClassifierModels.Count);
+        Assert.Equal(OnnxSettings.Phi3MiniDirectMlName, settings.ClassifierModels[index: 0].Name);
+        Assert.Equal(OnnxSettings.Phi3MiniCudaName, settings.ClassifierModels[index: 1].Name);
+        Assert.Equal(OnnxSettings.Phi3MiniCpuName, settings.ClassifierModels[index: 2].Name);
     }
 
     #endregion
@@ -243,25 +246,34 @@ public sealed class OnnxSettingsClassifierRegistryTests
     private static OnnxSettings BuildSettingsWithClassifierRegistry()
     {
         var settings = new OnnxSettings { ClassifierModels = [] };
-        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi4MiniCpuName));
-        settings.ClassifierModels.Add(MakeGpuEntry(OnnxSettings.Phi4MiniCudaName));
+        settings.ClassifierModels.Add(MakeDirectMlEntry(OnnxSettings.Phi3MiniDirectMlName));
+        settings.ClassifierModels.Add(MakeGpuEntry(OnnxSettings.Phi3MiniCudaName));
+        settings.ClassifierModels.Add(MakeCpuEntry(OnnxSettings.Phi3MiniCpuName));
         return settings;
     }
+
+    private static ClassifierModelEntry MakeDirectMlEntry(string name) =>
+        new()
+        {
+            Name = name,
+            RepoId = OnnxSettings.Phi3MiniRepoId,
+            ModelFolder = OnnxSettings.Phi3MiniDirectMlFolder
+        };
 
     private static ClassifierModelEntry MakeCpuEntry(string name) =>
         new()
         {
             Name = name,
-            RepoId = OnnxSettings.Phi4MiniRepoId,
-            ModelFolder = OnnxSettings.Phi4MiniCpuFolder
+            RepoId = OnnxSettings.Phi3MiniRepoId,
+            ModelFolder = OnnxSettings.Phi3MiniCpuFolder
         };
 
     private static ClassifierModelEntry MakeGpuEntry(string name) =>
         new()
         {
             Name = name,
-            RepoId = OnnxSettings.Phi4MiniRepoId,
-            ModelFolder = OnnxSettings.Phi4MiniCudaFolder
+            RepoId = OnnxSettings.Phi3MiniRepoId,
+            ModelFolder = OnnxSettings.Phi3MiniCudaFolder
         };
 
     private static EmbeddingModelEntry MinimalEmbeddingEntry() =>

@@ -15,7 +15,7 @@ namespace SaddleRAG.Ingestion.Classification;
 /// <summary>
 ///     Real <see cref="IClassifierGenerator" /> over
 ///     <c>Microsoft.ML.OnnxRuntimeGenAI</c> 0.14.0. Loads a GenAI model folder
-///     (e.g. a phi-4-mini-instruct ONNX variant) and runs the greedy generate
+///     (e.g. a phi-3-mini-4k-instruct ONNX variant) and runs the greedy generate
 ///     loop, applying the generation parameters from the supplied
 ///     <see cref="ClassifierModelEntry" /> (max output tokens, temperature, stop
 ///     token). Owns the native <see cref="Model" /> and <see cref="Tokenizer" />
@@ -53,7 +53,7 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
     private bool mDisposed;
 
     /// <summary>
-    ///     Wraps <paramref name="prompt" /> in the phi-4-mini chat template,
+    ///     Wraps <paramref name="prompt" /> in the Phi-3-mini-4k chat template,
     ///     runs the generate loop, and returns the decoded completion text up to
     ///     the configured stop token. Runs on a background thread because the
     ///     GenAI loop is synchronous and CPU-bound.
