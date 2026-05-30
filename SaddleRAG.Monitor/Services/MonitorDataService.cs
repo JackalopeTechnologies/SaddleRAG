@@ -119,6 +119,8 @@ public sealed class MonitorDataService
                              BoundaryIssuePct = verRecord?.BoundaryIssuePct,
                              EmbeddingProviderId = verRecord?.EmbeddingProviderId,
                              EmbeddingModelName = verRecord?.EmbeddingModelName,
+                             ClassifierBackend = verRecord?.ClassifierBackend,
+                             ClassifierModel = verRecord?.ClassifierModel,
                              HostnameDistribution = hosts,
                              LanguageMix = langs
                          };

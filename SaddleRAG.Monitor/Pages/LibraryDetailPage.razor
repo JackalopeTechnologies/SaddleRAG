@@ -43,6 +43,10 @@ else
                         {
                             <MudText>Embedding: @Detail.EmbeddingProviderId / @Detail.EmbeddingModelName</MudText>
                         }
+                        @if (!string.IsNullOrEmpty(Detail.ClassifierBackend))
+                        {
+                            <MudText>Classifier: @Detail.ClassifierBackend / @(string.IsNullOrEmpty(Detail.ClassifierModel) ? "(unknown model)" : Detail.ClassifierModel)</MudText>
+                        }
                         @if (Detail.LastScrapedAt is not null)
                         {
                             <MudText>Last scraped: <TimeDisplay Utc="@Detail.LastScrapedAt"/></MudText>
