@@ -19,7 +19,8 @@ public sealed class ClientFlagParserTests
         var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: false,
                                                                     claudeDesktop: false,
                                                                     vscodeMcp: false,
-                                                                    copilotCli: false
+                                                                    copilotCli: false,
+                                                                    codex: false
                                                                    )
                                        .ToList();
         Assert.Empty(writers);
@@ -31,7 +32,8 @@ public sealed class ClientFlagParserTests
         var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: true,
                                                                     claudeDesktop: false,
                                                                     vscodeMcp: false,
-                                                                    copilotCli: false
+                                                                    copilotCli: false,
+                                                                    codex: false
                                                                    )
                                        .ToList();
         Assert.Single(writers);
@@ -44,7 +46,8 @@ public sealed class ClientFlagParserTests
         var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: false,
                                                                     claudeDesktop: true,
                                                                     vscodeMcp: false,
-                                                                    copilotCli: false
+                                                                    copilotCli: false,
+                                                                    codex: false
                                                                    )
                                        .ToList();
         Assert.Single(writers);
@@ -57,7 +60,8 @@ public sealed class ClientFlagParserTests
         var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: false,
                                                                     claudeDesktop: false,
                                                                     vscodeMcp: true,
-                                                                    copilotCli: false
+                                                                    copilotCli: false,
+                                                                    codex: false
                                                                    )
                                        .ToList();
         Assert.Single(writers);
@@ -70,7 +74,8 @@ public sealed class ClientFlagParserTests
         var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: false,
                                                                     claudeDesktop: false,
                                                                     vscodeMcp: false,
-                                                                    copilotCli: true
+                                                                    copilotCli: true,
+                                                                    codex: false
                                                                    )
                                        .ToList();
         Assert.Single(writers);
@@ -78,19 +83,49 @@ public sealed class ClientFlagParserTests
     }
 
     [Fact]
-    public void AllFlagsReturnFourWritersInRegistrationOrder()
+    public void CodexOnlyReturnsSingleCodexWriter()
+    {
+        var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: false,
+                                                                    claudeDesktop: false,
+                                                                    vscodeMcp: false,
+                                                                    copilotCli: false,
+                                                                    codex: true
+                                                                   )
+                                       .ToList();
+        Assert.Single(writers);
+        Assert.IsType<CodexWriter>(writers[0]);
+    }
+
+    [Fact]
+    public void CodexFalseExcludesCodexWriter()
     {
         var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: true,
                                                                     claudeDesktop: true,
                                                                     vscodeMcp: true,
-                                                                    copilotCli: true
+                                                                    copilotCli: true,
+                                                                    codex: false
+                                                                   )
+                                       .ToList();
+        Assert.Equal(4, writers.Count);
+        Assert.DoesNotContain(writers, w => w is CodexWriter);
+    }
+
+    [Fact]
+    public void AllFlagsReturnFiveWritersInRegistrationOrder()
+    {
+        var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: true,
+                                                                    claudeDesktop: true,
+                                                                    vscodeMcp: true,
+                                                                    copilotCli: true,
+                                                                    codex: true
                                                                    )
                                        .ToList();
         Assert.Collection(writers,
                           w => Assert.IsType<ClaudeCodeWriter>(w),
                           w => Assert.IsType<ClaudeDesktopWriter>(w),
                           w => Assert.IsType<VsCodeMcpWriter>(w),
-                          w => Assert.IsType<CopilotCliWriter>(w)
+                          w => Assert.IsType<CopilotCliWriter>(w),
+                          w => Assert.IsType<CodexWriter>(w)
                          );
     }
 
@@ -104,7 +139,8 @@ public sealed class ClientFlagParserTests
         var writers = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: true,
                                                                     claudeDesktop: false,
                                                                     vscodeMcp: true,
-                                                                    copilotCli: false
+                                                                    copilotCli: false,
+                                                                    codex: false
                                                                    )
                                        .ToList();
         Assert.Collection(writers,
