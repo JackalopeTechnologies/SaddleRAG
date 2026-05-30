@@ -61,6 +61,7 @@ public class IngestionOrchestrator
                                             embeddingProvider,
                                             libraryProfileRepository,
                                             suspectDetector,
+                                            llmClassifier,
                                             logger
                                            );
     }

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Suspect;
 
@@ -35,6 +36,7 @@ internal sealed class IngestionFinalizer
                               IEmbeddingProvider embeddingProvider,
                               ILibraryProfileRepository libraryProfileRepository,
                               SuspectDetector suspectDetector,
+                              ILlmClassifier classifier,
                               ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(chunkRepository);
@@ -44,6 +46,7 @@ internal sealed class IngestionFinalizer
         ArgumentNullException.ThrowIfNull(embeddingProvider);
         ArgumentNullException.ThrowIfNull(libraryProfileRepository);
         ArgumentNullException.ThrowIfNull(suspectDetector);
+        ArgumentNullException.ThrowIfNull(classifier);
         ArgumentNullException.ThrowIfNull(logger);
         mChunkRepository = chunkRepository;
         mBm25ShardRepository = bm25ShardRepository;
@@ -52,6 +55,7 @@ internal sealed class IngestionFinalizer
         mEmbeddingProvider = embeddingProvider;
         mLibraryProfileRepository = libraryProfileRepository;
         mSuspectDetector = suspectDetector;
+        mLlmClassifier = classifier;
         mLogger = logger;
     }
 
@@ -61,6 +65,7 @@ internal sealed class IngestionFinalizer
     private readonly ILibraryIndexRepository mLibraryIndexRepository;
     private readonly ILibraryProfileRepository mLibraryProfileRepository;
     private readonly ILibraryRepository mLibraryRepository;
+    private readonly ILlmClassifier mLlmClassifier;
     private readonly ILogger mLogger;
     private readonly SuspectDetector mSuspectDetector;
 
@@ -161,7 +166,9 @@ internal sealed class IngestionFinalizer
                                     ChunkCount = progress.ChunksCompleted,
                                     EmbeddingProviderId = mEmbeddingProvider.ProviderId,
                                     EmbeddingModelName = mEmbeddingProvider.ModelName,
-                                    EmbeddingDimensions = mEmbeddingProvider.Dimensions
+                                    EmbeddingDimensions = mEmbeddingProvider.Dimensions,
+                                    ClassifierBackend = mLlmClassifier.BackendName,
+                                    ClassifierModel = mLlmClassifier.ModelId
                                 };
         await mLibraryRepository.UpsertVersionAsync(versionRecord, ct);
         await EvaluateSuspectAsync(job, progress, ct);

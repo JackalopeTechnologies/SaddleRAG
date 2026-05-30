@@ -58,6 +58,19 @@ public record LibraryVersionRecord
     public required int EmbeddingDimensions { get; init; }
 
     /// <summary>
+    ///     Classifier backend that categorized this version's pages
+    ///     ("onnx" or "ollama"). Null on documents written before classifier
+    ///     provenance was recorded.
+    /// </summary>
+    public string? ClassifierBackend { get; init; }
+
+    /// <summary>
+    ///     Classifier model id used for this version (e.g.
+    ///     "phi-3-mini-4k-instruct-directml"). Null on older documents.
+    /// </summary>
+    public string? ClassifierModel { get; init; }
+
+    /// <summary>
     ///     Previous version this was compared against, if any.
     /// </summary>
     public string? PreviousVersion { get; init; }
