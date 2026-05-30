@@ -43,6 +43,7 @@ const string NuGetClientName = "NuGet";
 const string NpmClientName = "npm";
 const string PyPiClientName = "PyPI";
 const string DocUrlProbeClientName = "DocUrlProbe";
+const string OllamaProbeHttpClientName = "OllamaProbe";
 const string RootCommandDescription = "SaddleRAG — Documentation Ingestion CLI";
 const string IngestCommandName = "ingest";
 const string IngestCommandDescription = "Ingest a documentation library";
@@ -103,6 +104,7 @@ var services = new ServiceCollection();
 services.AddLogging(b => b.AddConsole());
 services.AddSaddleRagDatabase(configuration);
 services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.SectionName));
+services.Configure<OnnxSettings>(configuration.GetSection(OnnxSettings.SectionName));
 services.AddSingleton<OllamaBootstrapper>();
 services.AddSingleton<GitHubRepoScraper>();
 services.AddSingleton<PageCrawler>();
@@ -110,12 +112,38 @@ services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
 services.AddSingleton<IScrapeAuditWriter>(sp =>
                                               new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>())
                                          );
-// The CLI has no ONNX wiring (no model downloader / warmup), so its classify
-// path stays on Ollama. Bind ILlmClassifier to the concrete OllamaLlmClassifier
-// so the reclassify command resolves the seam — analogous to the Mcp swap,
-// which composes the ClassifierBackendSwitch there.
+// Classifier: same backend switch the MCP host uses (ONNX default, Ollama
+// selectable). The CLI has no model downloader/warmup, so the ONNX model
+// must already be present under <Onnx.ModelsDir>/<entry> (downloaded by the
+// MCP host). The GenAI generator loads lazily, so DI construction here does
+// not require the files; a CLI-only run before any download fails at first
+// classify with DirectoryNotFoundException (the generator's documented contract).
 services.AddSingleton<OllamaLlmClassifier>();
-services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<OllamaLlmClassifier>());
+services.AddSingleton<OnnxClassifierGenerator>(sp =>
+{
+    var onnxSettings = sp.GetRequiredService<IOptions<OnnxSettings>>().Value;
+    var entry = ClassifierEntryResolver.Resolve(onnxSettings, onnxSettings.ExecutionProvider);
+    string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
+    return new OnnxClassifierGenerator(modelFolder, entry);
+});
+services.AddSingleton<OnnxLlmClassifier>(sp =>
+    new OnnxLlmClassifier(sp.GetRequiredService<OnnxClassifierGenerator>(),
+                          sp.GetRequiredService<ILogger<OnnxLlmClassifier>>()
+                         ));
+services.AddHttpClient(OllamaProbeHttpClientName);
+services.AddSingleton<IOllamaProbe>(sp =>
+{
+    var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var ollamaSettings = sp.GetRequiredService<IOptions<OllamaSettings>>().Value;
+    return new OllamaProbe(httpFactory.CreateClient(OllamaProbeHttpClientName), ollamaSettings);
+});
+services.AddSingleton<ClassifierBackendSwitch>(sp =>
+    new ClassifierBackendSwitch(sp.GetRequiredService<OnnxLlmClassifier>(),
+                                sp.GetRequiredService<OllamaLlmClassifier>(),
+                                sp.GetRequiredService<IOllamaProbe>(),
+                                sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>()
+                               ));
+services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
 services.AddSingleton<SymbolExtractor>();
 services.AddSingleton<LibraryProfileService>();
 services.AddSingleton<CliReconFallback>();
