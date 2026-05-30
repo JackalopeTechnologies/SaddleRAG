@@ -357,7 +357,7 @@ public sealed class RescrubServiceTests
         return service;
     }
 
-    private static OllamaLlmClassifier MakeClassifier()
+    private static ILlmClassifier MakeClassifier()
     {
         var ollamaSettings = new OllamaSettings();
         ollamaSettings.ClassificationModels.Add(new OllamaModelEntry { Name = "test-classifier:latest" });
