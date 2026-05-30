@@ -23,9 +23,9 @@ public partial class App : Application
     private const string StartItemName = "StartItem";
     private const string StopItemName = "StopItem";
 
-    private const string StartingMessage = "Starting MCP service…";
-    private const string StoppingMessage = "Stopping MCP service…";
-    private const string OpeningDashboardMessage = "Opening dashboard…";
+    private const string StartingMessage = "Starting MCP service";
+    private const string StoppingMessage = "Stopping MCP service";
+    private const string OpeningDashboardMessage = "Opening dashboard";
     private const string HelperInstallFailedPrefix = "Helper install failed: ";
     private const string ActionFailedSuffix = " failed: ";
 

@@ -69,11 +69,9 @@ public sealed class McpServiceController : IMcpServiceController
 
     private static ServiceController? FindService()
     {
-        ServiceController? res = null;
         ServiceController[] all = ServiceController.GetServices();
-        foreach (ServiceController sc in all.Where(s => string.Equals(s.ServiceName, ServiceName, StringComparison.OrdinalIgnoreCase)))
-            res = sc;
-        foreach (ServiceController sc in all.Where(s => !string.Equals(s.ServiceName, ServiceName, StringComparison.OrdinalIgnoreCase)))
+        ServiceController? res = all.FirstOrDefault(s => string.Equals(s.ServiceName, ServiceName, StringComparison.OrdinalIgnoreCase));
+        foreach (ServiceController sc in all.Where(s => !ReferenceEquals(s, res)))
             sc.Dispose();
         return res;
     }
