@@ -29,6 +29,16 @@
         "SADDLERAG_MONGODB_PROFILE": "local",
         "Onnx__ExecutionProvider": "DirectMl"
       }
+    },
+    {
+      "name": "Debug SaddleRAG.Tray",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "SaddleRAG: Build Tray (Debug)",
+      "program": "${workspaceFolder}/SaddleRAG.Tray/bin/Debug/net10.0-windows/SaddleRAG.Tray.dll",
+      "cwd": "${workspaceFolder}/SaddleRAG.Tray",
+      "stopAtEntry": false,
+      "console": "internalConsole"
     }
   ]
 }
