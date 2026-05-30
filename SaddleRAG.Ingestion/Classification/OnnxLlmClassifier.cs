@@ -40,13 +40,13 @@ public class OnnxLlmClassifier : ILlmClassifier
     private readonly ILogger<OnnxLlmClassifier> mLogger;
 
     /// <inheritdoc />
-    public string BackendName => OnnxBackendName;
+    public string BackendName => ClassifierBackendNames.Onnx;
 
     /// <inheritdoc />
     public string ModelId => mGenerator.ModelId;
 
     /// <inheritdoc />
-    public string GetCurrentVersion() => $"{mGenerator.ModelId}-{PromptVersion}";
+    public string GetCurrentVersion() => $"{mGenerator.ModelId}-{ClassificationPrompt.PromptVersion}";
 
     /// <summary>
     ///     Classify a page with the local ONNX GenAI model. Returns category
@@ -89,6 +89,4 @@ public class OnnxLlmClassifier : ILlmClassifier
         return (category, confidence);
     }
 
-    private const string OnnxBackendName = "onnx";
-    private const string PromptVersion = "v1";
 }

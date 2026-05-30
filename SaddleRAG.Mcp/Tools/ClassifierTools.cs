@@ -159,8 +159,8 @@ public static class ClassifierTools
         bool backendSwitchedLive = true;
         bool requiresRestartForOnnxModelReload;
 
-        bool isOllama = string.Equals(name, OllamaBackendName, StringComparison.OrdinalIgnoreCase);
-        bool isOnnx = string.Equals(name, OnnxBackendName, StringComparison.OrdinalIgnoreCase);
+        bool isOllama = string.Equals(name, ClassifierBackendNames.Ollama, StringComparison.OrdinalIgnoreCase);
+        bool isOnnx = string.Equals(name, ClassifierBackendNames.Onnx, StringComparison.OrdinalIgnoreCase);
 
         switch (isOllama, isOnnx)
         {
@@ -206,9 +206,6 @@ public static class ClassifierTools
                        entry.ModelFolder
                    };
     }
-
-    private const string OllamaBackendName = "ollama";
-    private const string OnnxBackendName = "onnx";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions
                                                                   {

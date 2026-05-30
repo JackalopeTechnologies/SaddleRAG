@@ -91,7 +91,7 @@ public sealed class McpWarmupService : BackgroundService
             bool ollamaEmbeddingActive = !onnxSettings.Enabled || !onnxSettings.EmbeddingEnabled;
             bool ollamaClassifierActive = classifier is ClassifierBackendSwitch backendSwitch
                                           && string.Equals(backendSwitch.ActiveBackendName,
-                                                           OllamaBackendName,
+                                                           ClassifierBackendNames.Ollama,
                                                            StringComparison.OrdinalIgnoreCase
                                                           );
             bool ollamaBackendActive = ollamaEmbeddingActive || ollamaClassifierActive;
@@ -665,8 +665,6 @@ public sealed class McpWarmupService : BackgroundService
     private const string WarmupProbeText = "warmup";
 
     private const string WarmupSearchProbeText = "warmup search";
-
-    private const string OllamaBackendName = "ollama";
 
     private const string ClassifierWarmupLibraryHint = "warmup";
 

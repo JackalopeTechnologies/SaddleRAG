@@ -57,7 +57,7 @@ public class OllamaLlmClassifier : ILlmClassifier
     private readonly OllamaSettings mSettings;
 
     /// <inheritdoc />
-    public string BackendName => OllamaBackendName;
+    public string BackendName => ClassifierBackendNames.Ollama;
 
     /// <inheritdoc />
     public string ModelId => mSettings.GetActiveClassificationModel().Name;
@@ -67,7 +67,7 @@ public class OllamaLlmClassifier : ILlmClassifier
     ///     by RescrubService to populate the manifest and decide whether
     ///     reclassification is needed on a future rescrub.
     /// </summary>
-    public string GetCurrentVersion() => $"{mSettings.GetActiveClassificationModel().Name}-{PromptVersion}";
+    public string GetCurrentVersion() => $"{mSettings.GetActiveClassificationModel().Name}-{ClassificationPrompt.PromptVersion}";
 
     /// <summary>
     ///     Classify a page using the LLM. Returns category and confidence.
@@ -175,17 +175,6 @@ public class OllamaLlmClassifier : ILlmClassifier
 
         return (category, confidence);
     }
-
-    /// <summary>
-    ///     Version string used by LibraryManifest.LastClassifierVersion to
-    ///     detect when reclassification is needed during rescrub. Combines
-    ///     the configured classification model with a manually-bumped prompt
-    ///     version. Bump <see cref="PromptVersion" /> whenever the prompt
-    ///     template changes meaningfully.
-    /// </summary>
-    public const string PromptVersion = "v1";
-
-    private const string OllamaBackendName = "ollama";
 
     private const int MaxResponseChars = 4096;
     private const string JsonCodeFenceOpen = "```json";

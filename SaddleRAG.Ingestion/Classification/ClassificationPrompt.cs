@@ -66,6 +66,13 @@ internal static class ClassificationPrompt
     }
 
     /// <summary>
+    ///     Version of the classification prompt template. Bump when the prompt
+    ///     text changes so GetCurrentVersion() shifts and a rescrub
+    ///     re-classifies. Shared by every classifier backend.
+    /// </summary>
+    public const string PromptVersion = "v1";
+
+    /// <summary>
     ///     Maximum number of <see cref="PageRecord.RawContent" /> characters
     ///     included in the prompt's content preview. Longer content is
     ///     truncated to keep the prompt small and bounded.

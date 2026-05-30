@@ -81,7 +81,7 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier
     public void UseOnnx()
     {
         mActive = mOnnx;
-        mLogger.LogInformation("Classifier backend switched to {Backend}", OnnxName);
+        mLogger.LogInformation("Classifier backend switched to {Backend}", ClassifierBackendNames.Onnx);
     }
 
     /// <summary>
@@ -102,7 +102,7 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier
             throw new InvalidOperationException(OllamaNotReachableMessage);
 
         mActive = mOllama;
-        mLogger.LogInformation("Classifier backend switched to {Backend}", OllamaName);
+        mLogger.LogInformation("Classifier backend switched to {Backend}", ClassifierBackendNames.Ollama);
     }
 
     /// <inheritdoc />
@@ -116,7 +116,5 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier
         return mActive.ClassifyAsync(page, libraryHint, ct);
     }
 
-    private const string OnnxName = "onnx";
-    private const string OllamaName = "ollama";
     private const string OllamaNotReachableMessage = "Cannot switch to Ollama classifier: Ollama is not reachable. Install and run Ollama from https://ollama.com, then retry.";
 }
