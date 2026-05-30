@@ -401,6 +401,10 @@ builder.Services
                     )
        .WithHttpTransport(t => t.Stateless = true)
        .UseToolExceptionFilter()
+       .WithListResourcesHandler(static (request, cancellationToken) =>
+                                     ValueTask.FromResult(new ListResourcesResult { Resources = [] }))
+       .WithListResourceTemplatesHandler(static (request, cancellationToken) =>
+                                             ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
        .WithToolsFromAssembly();
 
 // Blazor Server + SignalR for /monitor
