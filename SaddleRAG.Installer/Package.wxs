@@ -168,7 +168,10 @@
                       Icon="SaddleRagIcon.ico"
                       WorkingDirectory="MCPFOLDER" />
             <RemoveFolder Id="RemoveSaddleRagMenuDir" Directory="SaddleRagMenuDir" On="uninstall" />
-            <RegistryValue Root="HKCU" Key="Software\Jackalope Technologies\SaddleRAG\Tray"
+            <!-- KeyPath in HKLM (not HKCU): this is a perMachine package whose install runs
+                 as LocalSystem. An HKCU keypath would land in HKU\.DEFAULT and make the
+                 component look absent at uninstall, orphaning the Start Menu folder. -->
+            <RegistryValue Root="HKLM" Key="Software\Jackalope Technologies\SaddleRAG\Tray"
                            Name="ShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
         </Component>
 
