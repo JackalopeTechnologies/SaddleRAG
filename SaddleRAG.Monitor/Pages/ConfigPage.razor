@@ -19,6 +19,19 @@ else
     <MudGrid>
         <MudItem xs="12" md="6">
             <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Classifier</MudText>
+                <MudList T="string" Dense="true">
+                    <MudListItem Text="@($"Backend: {Snapshot.Classifier.ActiveBackend}")"/>
+                    <MudListItem Text="@($"ONNX model: {Snapshot.Classifier.ActiveOnnxModel}")"/>
+                    <MudListItem Text="@($"Model folder: {Snapshot.Classifier.ModelFolder}")"/>
+                    <MudListItem Text="@($"Model files present: {Snapshot.Classifier.ModelFilesPresent}")"/>
+                    <MudListItem Text="@($"Ollama classification model: {Snapshot.Classifier.OllamaClassificationModel}")"/>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
                 <MudText Typo="Typo.h6" Class="mb-2">Embedding</MudText>
                 <MudList T="string" Dense="true">
                     <MudListItem Text="@($"Provider: {Snapshot.Embedding.ProviderId}")"/>
@@ -72,7 +85,7 @@ else
 
         <MudItem xs="12" md="6">
             <MudPaper Class="pa-4" Outlined="true">
-                <MudText Typo="Typo.h6" Class="mb-2">Ollama</MudText>
+                <MudText Typo="Typo.h6" Class="mb-2">Ollama (optional classifier backend + embedding fallback)</MudText>
                 <MudList T="string" Dense="true">
                     <MudListItem Text="@($"Endpoint: {Snapshot.Ollama.Endpoint}")"/>
                     <MudListItem Text="@($"Classification model: {Snapshot.Ollama.ClassificationModel}")"/>

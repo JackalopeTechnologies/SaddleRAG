@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Monitor.Services;
 
@@ -29,7 +30,8 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
                                   IOptions<SaddleRagDbSettings> mongo,
                                   IOptions<RankingSettings> ranking,
                                   OnnxRuntimeCapabilities capabilities,
-                                  IEmbeddingProvider embeddingProvider)
+                                  IEmbeddingProvider embeddingProvider,
+                                  ClassifierBackendSwitch classifierSwitch)
     {
         ArgumentNullException.ThrowIfNull(onnx);
         ArgumentNullException.ThrowIfNull(ollama);
@@ -37,15 +39,18 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
         ArgumentNullException.ThrowIfNull(ranking);
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
+        ArgumentNullException.ThrowIfNull(classifierSwitch);
         mOnnx = onnx;
         mOllama = ollama;
         mMongo = mongo;
         mRanking = ranking;
         mCapabilities = capabilities;
         mEmbeddingProvider = embeddingProvider;
+        mClassifierSwitch = classifierSwitch;
     }
 
     private readonly OnnxRuntimeCapabilities mCapabilities;
+    private readonly ClassifierBackendSwitch mClassifierSwitch;
     private readonly IEmbeddingProvider mEmbeddingProvider;
     private readonly IOptions<SaddleRagDbSettings> mMongo;
     private readonly IOptions<OllamaSettings> mOllama;
@@ -59,6 +64,17 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
         var ollama = mOllama.Value;
         var mongo = mMongo.Value;
         var ranking = mRanking.Value;
+
+        ClassifierModelEntry classifierEntry = ClassifierEntryResolver.Resolve(onnx, onnx.ExecutionProvider);
+        string classifierModelDir = Path.Combine(onnx.ModelsDir, classifierEntry.Name);
+        bool classifierFilesPresent = Directory.Exists(classifierModelDir);
+        var classifier = new MonitorConfigClassifier(ActiveBackend: mClassifierSwitch.ActiveBackendName,
+                                                     ActiveOnnxModel: classifierEntry.Name,
+                                                     RepoId: classifierEntry.RepoId,
+                                                     ModelFolder: classifierEntry.ModelFolder,
+                                                     ModelFilesPresent: classifierFilesPresent,
+                                                     OllamaClassificationModel: ollama.ActiveClassificationModel
+                                                    );
 
         var embedding = new MonitorConfigEmbedding(ProviderId: mEmbeddingProvider.ProviderId,
                                                    ModelName: mEmbeddingProvider.ModelName,
@@ -106,7 +122,8 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
 
         var profile = new MonitorConfigProfile(EffectiveProfile: ResolveActiveProfileName(mongo));
 
-        return new MonitorConfigSnapshot(Embedding: embedding,
+        return new MonitorConfigSnapshot(Classifier: classifier,
+                                         Embedding: embedding,
                                          Reranker: reranker,
                                          ExecutionProvider: executionProvider,
                                          Mongo: mongoCard,

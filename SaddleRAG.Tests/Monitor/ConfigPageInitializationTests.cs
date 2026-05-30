@@ -48,7 +48,13 @@ public sealed class ConfigPageInitializationTests
     }
 
     private static MonitorConfigSnapshot NewSnapshot() =>
-        new(Embedding: new MonitorConfigEmbedding("stub", "stub-model", 4, OnnxBacked: false, OnnxEmbeddingEnabled: false),
+        new(Classifier: new MonitorConfigClassifier("onnx", "phi-3-mini-4k-instruct-cpu",
+                                                    "microsoft/Phi-3-mini-4k-instruct-onnx",
+                                                    "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4",
+                                                    ModelFilesPresent: false,
+                                                    OllamaClassificationModel: "phi4-mini:3.8b"
+                                                   ),
+            Embedding: new MonitorConfigEmbedding("stub", "stub-model", 4, OnnxBacked: false, OnnxEmbeddingEnabled: false),
             Reranker: new MonitorConfigReranker("Off", ActiveModel: null, OnnxEnabled: false),
             ExecutionProvider: new MonitorConfigExecutionProvider("Cpu", "Cpu", MatchesRequested: true,
                                                                   CompiledInProviders: ["Cpu"],

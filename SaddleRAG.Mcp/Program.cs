@@ -282,13 +282,14 @@ builder.Services.AddSingleton<IOllamaProbe>(sp =>
     return new OllamaProbe(httpFactory.CreateClient(OllamaProbeHttpClientName), ollamaSettings);
 });
 
-builder.Services.AddSingleton<ILlmClassifier>(sp =>
+builder.Services.AddSingleton<ClassifierBackendSwitch>(sp =>
     new ClassifierBackendSwitch(sp.GetRequiredService<OnnxLlmClassifier>(),
                                 sp.GetRequiredService<OllamaLlmClassifier>(),
                                 sp.GetRequiredService<IOllamaProbe>(),
                                 sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>()
                                )
 );
+builder.Services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
 
 // Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
 builder.Services.AddSingleton<LibraryProfileService>();
