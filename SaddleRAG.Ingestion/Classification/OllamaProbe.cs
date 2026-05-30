@@ -21,7 +21,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     concerns remain in <see cref="OllamaBootstrapper" /> until the DI
 ///     swap in the next task.
 /// </summary>
-public sealed class OllamaProbe
+public sealed class OllamaProbe : IOllamaProbe
 {
     /// <summary>
     ///     Initializes a new <see cref="OllamaProbe" />.
