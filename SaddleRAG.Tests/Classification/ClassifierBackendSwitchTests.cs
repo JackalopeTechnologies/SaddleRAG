@@ -28,6 +28,8 @@ public sealed class ClassifierBackendSwitchTests
         public int CallCount { get; private set; }
         public DocCategory ReturnCategory { get; init; } = DocCategory.Overview;
         public float ReturnConfidence { get; init; } = 0.9f;
+        public string BackendName { get; init; } = "fake";
+        public string ModelId { get; init; } = string.Empty;
 
         public void IncrementCallCount() => CallCount++;
 
@@ -38,6 +40,8 @@ public sealed class ClassifierBackendSwitchTests
             CallCount++;
             return Task.FromResult((ReturnCategory, ReturnConfidence));
         }
+
+        public string GetCurrentVersion() => $"{ModelId}-v1";
     }
 
     private sealed class FakeOllamaProbe : IOllamaProbe
@@ -76,6 +80,8 @@ public sealed class ClassifierBackendSwitchTests
         {
             mFake = fake;
         }
+
+        public string ModelId => mFake.ModelId;
 
         public Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
         {
@@ -128,7 +134,7 @@ public sealed class ClassifierBackendSwitchTests
     public async Task UseOllamaSwitchesDelegationWhenReachable()
     {
         var onnxFake = new FakeClassifier { ReturnCategory = DocCategory.Overview };
-        var ollamaFake = new FakeClassifier { ReturnCategory = DocCategory.HowTo };
+        var ollamaFake = new FakeClassifier { ReturnCategory = DocCategory.HowTo, BackendName = "ollama" };
         var subject = NewSwitch(onnxFake, ollamaFake, ollamaReachable: true);
 
         await subject.UseOllamaAsync(TestContext.Current.CancellationToken);
@@ -165,7 +171,7 @@ public sealed class ClassifierBackendSwitchTests
     public async Task UseOnnxSwitchesBack()
     {
         var onnxFake = new FakeClassifier { ReturnCategory = DocCategory.Overview };
-        var ollamaFake = new FakeClassifier { ReturnCategory = DocCategory.HowTo };
+        var ollamaFake = new FakeClassifier { ReturnCategory = DocCategory.HowTo, BackendName = "ollama" };
         var subject = NewSwitch(onnxFake, ollamaFake, ollamaReachable: true);
 
         await subject.UseOllamaAsync(TestContext.Current.CancellationToken);
@@ -179,5 +185,23 @@ public sealed class ClassifierBackendSwitchTests
         Assert.Equal(DocCategory.Overview, result.Category);
         Assert.Equal(expected: 1, onnxFake.CallCount);
         Assert.Equal(expected: 0, ollamaFake.CallCount);
+    }
+
+    [Fact]
+    public void BackendIdentityReflectsActiveBackend()
+    {
+        var onnxFakeClassifier = new FakeClassifier
+            {
+                ReturnCategory = DocCategory.Overview,
+                ModelId = "phi-3-mini-4k-instruct-directml"
+            };
+        var onnx = NewOnnxClassifier(onnxFakeClassifier);
+        var ollamaFake = new FakeClassifier { ReturnCategory = DocCategory.HowTo };
+        var probe = new FakeOllamaProbe { Reachable = true };
+        var sut = new ClassifierBackendSwitch(onnx, ollamaFake, probe, NullLogger<ClassifierBackendSwitch>.Instance);
+
+        Assert.Equal("onnx", sut.BackendName);
+        Assert.Equal("phi-3-mini-4k-instruct-directml", sut.ModelId);
+        Assert.Contains("phi-3-mini-4k-instruct-directml", sut.GetCurrentVersion());
     }
 }

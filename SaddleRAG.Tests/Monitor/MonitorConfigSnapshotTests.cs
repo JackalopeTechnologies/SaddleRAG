@@ -83,6 +83,8 @@ public sealed class MonitorConfigSnapshotTests
 
     private sealed class StubClassifierGenerator : IClassifierGenerator
     {
+        public string ModelId => string.Empty;
+
         public Task<string> GenerateAsync(string prompt, CancellationToken ct = default) =>
             Task.FromResult("{\"category\":\"HowTo\",\"confidence\":0.9}");
     }

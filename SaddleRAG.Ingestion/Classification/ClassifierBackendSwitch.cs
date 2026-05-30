@@ -60,11 +60,20 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier
     // prevents CPU/compiler reordering so every thread sees the latest value.
     private volatile ILlmClassifier mActive;
 
+    /// <inheritdoc />
+    public string BackendName => mActive.BackendName;
+
+    /// <inheritdoc />
+    public string ModelId => mActive.ModelId;
+
+    /// <inheritdoc />
+    public string GetCurrentVersion() => mActive.GetCurrentVersion();
+
     /// <summary>
     ///     Name of the currently active backend: <c>"onnx"</c> or <c>"ollama"</c>.
-    ///     Exposed for health/status endpoints.
+    ///     Retained for existing health/status callers; equals <see cref="BackendName" />.
     /// </summary>
-    public string ActiveBackendName => ReferenceEquals(mActive, mOnnx) ? OnnxName : OllamaName;
+    public string ActiveBackendName => BackendName;
 
     /// <summary>
     ///     Switch to the ONNX backend. Always succeeds immediately.

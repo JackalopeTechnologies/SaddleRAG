@@ -301,14 +301,21 @@ public sealed class ClassifierToolsTests : IDisposable
 
     private sealed class StubOllamaLlmClassifier : ILlmClassifier
     {
+        public string BackendName => "ollama";
+        public string ModelId => string.Empty;
+
         public Task<(DocCategory Category, float Confidence)> ClassifyAsync(PageRecord page,
                                                                             string libraryHint,
                                                                             CancellationToken ct = default) =>
             Task.FromResult((DocCategory.HowTo, 0.9f));
+
+        public string GetCurrentVersion() => $"{ModelId}-v1";
     }
 
     private sealed class StubClassifierGenerator : IClassifierGenerator
     {
+        public string ModelId => string.Empty;
+
         public Task<string> GenerateAsync(string prompt, CancellationToken ct = default) =>
             Task.FromResult("{\"category\":\"HowTo\",\"confidence\":0.9}");
     }

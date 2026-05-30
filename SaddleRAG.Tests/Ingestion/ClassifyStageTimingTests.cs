@@ -43,10 +43,15 @@ public sealed class ClassifyStageTimingTests
 
     private sealed class FixedClassifier : ILlmClassifier
     {
+        public string BackendName => "stub";
+        public string ModelId => string.Empty;
+
         public Task<(DocCategory Category, float Confidence)> ClassifyAsync(PageRecord page,
                                                                             string libraryHint,
                                                                             CancellationToken ct = default) =>
             Task.FromResult((DocCategory.HowTo, 0.91f));
+
+        public string GetCurrentVersion() => $"{ModelId}-v1";
     }
 
     private static PageRecord NewPage() => new()

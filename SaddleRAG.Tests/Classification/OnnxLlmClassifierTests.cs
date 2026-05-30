@@ -26,10 +26,13 @@ public sealed class OnnxLlmClassifierTests
 {
     private sealed class FakeGenerator : IClassifierGenerator
     {
+        public string ModelIdValue { get; init; } = string.Empty;
         public string Response { get; set; } = string.Empty;
         public Exception? ToThrow { get; set; }
         public string? ReceivedPrompt { get; private set; }
         public int CallCount { get; private set; }
+
+        public string ModelId => ModelIdValue;
 
         public Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
         {
@@ -161,5 +164,13 @@ public sealed class OnnxLlmClassifierTests
         Assert.Contains("library-xyz", generator.ReceivedPrompt);
         Assert.Contains("https://docs.test/page", generator.ReceivedPrompt);
         Assert.Contains("The Title", generator.ReceivedPrompt);
+    }
+
+    [Fact]
+    public void OnnxClassifierModelIdComesFromGenerator()
+    {
+        var generator = new FakeGenerator { ModelIdValue = "phi-3-mini-4k-instruct-directml" };
+        var classifier = NewClassifier(generator);
+        Assert.Equal("phi-3-mini-4k-instruct-directml", classifier.ModelId);
     }
 }

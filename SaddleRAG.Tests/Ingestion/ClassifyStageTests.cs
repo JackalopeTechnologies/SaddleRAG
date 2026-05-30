@@ -31,6 +31,8 @@ public sealed class ClassifyStageTests
     {
         public Func<PageRecord, string, (DocCategory Category, float Confidence)>? Behavior { get; set; }
         public List<(PageRecord Page, string Hint)> Calls { get; } = [];
+        public string BackendName => "stub";
+        public string ModelId => string.Empty;
 
         public Task<(DocCategory Category, float Confidence)> ClassifyAsync(PageRecord page,
                                                                             string libraryHint,
@@ -40,6 +42,8 @@ public sealed class ClassifyStageTests
             var result = Behavior?.Invoke(page, libraryHint) ?? (DocCategory.Unclassified, 0f);
             return Task.FromResult(result);
         }
+
+        public string GetCurrentVersion() => $"{ModelId}-v1";
     }
 
     private static ScrapeJob NewJob() => new()

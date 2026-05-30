@@ -39,6 +39,15 @@ public class OnnxLlmClassifier : ILlmClassifier
     private readonly IClassifierGenerator mGenerator;
     private readonly ILogger<OnnxLlmClassifier> mLogger;
 
+    /// <inheritdoc />
+    public string BackendName => OnnxBackendName;
+
+    /// <inheritdoc />
+    public string ModelId => mGenerator.ModelId;
+
+    /// <inheritdoc />
+    public string GetCurrentVersion() => $"{mGenerator.ModelId}-{PromptVersion}";
+
     /// <summary>
     ///     Classify a page with the local ONNX GenAI model. Returns category
     ///     and confidence. Never throws: a generation failure is logged and the
@@ -79,4 +88,7 @@ public class OnnxLlmClassifier : ILlmClassifier
 
         return (category, confidence);
     }
+
+    private const string OnnxBackendName = "onnx";
+    private const string PromptVersion = "v1";
 }

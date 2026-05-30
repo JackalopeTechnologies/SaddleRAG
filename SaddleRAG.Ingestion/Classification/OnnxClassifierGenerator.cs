@@ -55,6 +55,9 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
     private Tokenizer? mTokenizer;
     private bool mDisposed;
 
+    /// <inheritdoc />
+    public string ModelId => mEntry.Name;
+
     /// <summary>
     ///     Loads the native GenAI <see cref="Model" /> and
     ///     <see cref="Tokenizer" /> from the configured folder if they are not

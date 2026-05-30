@@ -21,6 +21,14 @@ namespace SaddleRAG.Ingestion.Classification;
 public interface IClassifierGenerator
 {
     /// <summary>
+    ///     Stable model identifier for the loaded GenAI model — the on-disk
+    ///     entry name (e.g. "phi-3-mini-4k-instruct-directml"). Surfaced so the
+    ///     classifier can report which model produced a classification for
+    ///     provenance and health reporting.
+    /// </summary>
+    string ModelId { get; }
+
+    /// <summary>
     ///     Generates the model's completion for <paramref name="prompt" /> and
     ///     returns the raw decoded text (no parsing). The implementation is
     ///     responsible for applying the model's generation parameters and for

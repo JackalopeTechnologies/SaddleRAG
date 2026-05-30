@@ -56,6 +56,12 @@ public class OllamaLlmClassifier : ILlmClassifier
     private readonly ILogger<OllamaLlmClassifier> mLogger;
     private readonly OllamaSettings mSettings;
 
+    /// <inheritdoc />
+    public string BackendName => OllamaBackendName;
+
+    /// <inheritdoc />
+    public string ModelId => mSettings.GetActiveClassificationModel().Name;
+
     /// <summary>
     ///     Returns the current classifier version for this instance, used
     ///     by RescrubService to populate the manifest and decide whether
@@ -178,6 +184,8 @@ public class OllamaLlmClassifier : ILlmClassifier
     ///     template changes meaningfully.
     /// </summary>
     public const string PromptVersion = "v1";
+
+    private const string OllamaBackendName = "ollama";
 
     private const int MaxResponseChars = 4096;
     private const string JsonCodeFenceOpen = "```json";
