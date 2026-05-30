@@ -129,19 +129,16 @@ public class OnnxSettings
     /// <summary>
     ///     Ordered registry of classifier model entries. <strong>First entry
     ///     is the default</strong> when <see cref="ActiveClassifierModel" /> is
-    ///     unset. Each entry typically represents one provider variant (CPU,
-    ///     DirectML, or CUDA) because GenAI models ship as provider-specific
-    ///     folder trees rather than a single portable <c>.onnx</c> file.
-    ///     Switch provider variants by changing <see cref="ActiveClassifierModel" />
-    ///     to the desired entry name.
-    ///     The list is pre-populated with the <c>phi-4-mini-instruct</c>
-    ///     provider variants. appsettings.json can override it entirely; the
-    ///     defaults are here so the server is functional without a config entry.
-    ///     The entry whose name matches <see cref="ActiveClassifierModel" /> (or
-    ///     the first entry when <see cref="ActiveClassifierModel" /> is unset) is
-    ///     the build-appropriate variant — CPU for the standard build,
-    ///     DirectML/CUDA for the GPU builds — because CPU is listed first and the
-    ///     GPU entries follow.
+    ///     unset. Each entry represents one provider variant (CPU or CUDA) because
+    ///     GenAI models ship as provider-specific folder trees rather than a single
+    ///     portable <c>.onnx</c> file. Switch provider variants by changing
+    ///     <see cref="ActiveClassifierModel" /> to the desired entry name.
+    ///     The list is pre-populated with the two verified
+    ///     <c>microsoft/Phi-4-mini-instruct-onnx</c> variants. appsettings.json
+    ///     can override it entirely; the defaults are here so the server is
+    ///     functional without a config entry.
+    ///     CPU is listed first (the default build variant). CUDA follows for
+    ///     GPU-enabled builds.
     /// </summary>
     public List<ClassifierModelEntry> ClassifierModels { get; set; } =
     [
@@ -150,23 +147,13 @@ public class OnnxSettings
             Name = Phi4MiniCpuName,
             Description = "phi-4-mini-instruct quantised for CPU (int4 RTN). ~4.8 GB download. Use on any machine; slower than GPU variants.",
             RepoId = Phi4MiniRepoId,
-            // TODO(3.3): verify exact HF subfolder path for the CPU variant
             ModelFolder = Phi4MiniCpuFolder
         },
         new ClassifierModelEntry
         {
-            Name = Phi4MiniDirectMlName,
-            Description = "phi-4-mini-instruct quantised for DirectML (int4 AWQ). ~3.6 GB download. Requires DX12-capable GPU; Windows-only.",
-            RepoId = Phi4MiniRepoId,
-            // TODO(3.3): verify exact HF subfolder path for the DirectML variant
-            ModelFolder = Phi4MiniDirectMlFolder
-        },
-        new ClassifierModelEntry
-        {
             Name = Phi4MiniCudaName,
-            Description = "phi-4-mini-instruct quantised for CUDA (int4 AWQ). ~3.6 GB download. Requires the CUDA build (UseGpuCuda=true).",
+            Description = "phi-4-mini-instruct quantised for CUDA (int4 RTN). Requires the CUDA build (UseGpuCuda=true).",
             RepoId = Phi4MiniRepoId,
-            // TODO(3.3): verify exact HF subfolder path for the CUDA variant
             ModelFolder = Phi4MiniCudaFolder
         }
     ];
@@ -228,34 +215,20 @@ public class OnnxSettings
     /// <summary>Registry name for the phi-4-mini CPU variant entry.</summary>
     public const string Phi4MiniCpuName = "phi-4-mini-instruct-cpu";
 
-    /// <summary>Registry name for the phi-4-mini DirectML variant entry.</summary>
-    public const string Phi4MiniDirectMlName = "phi-4-mini-instruct-directml";
-
     /// <summary>Registry name for the phi-4-mini CUDA variant entry.</summary>
     public const string Phi4MiniCudaName = "phi-4-mini-instruct-cuda";
 
-    // TODO(3.3): verify all three HF subfolder paths below against the
-    // actual microsoft/Phi-4-mini-instruct-onnx repo tree before running
-    // the downloader. Names are plausible based on similar Phi-3 releases
-    // but have NOT been confirmed from the live repo.
-
     /// <summary>
-    ///     HuggingFace subfolder for the phi-4-mini CPU variant (int4 RTN).
-    ///     Must be verified in Task 3.3.
+    ///     HuggingFace subfolder for the phi-4-mini CPU variant (int4 RTN, acc-level-4).
+    ///     Verified against the live microsoft/Phi-4-mini-instruct-onnx repo tree.
     /// </summary>
     public const string Phi4MiniCpuFolder = "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4";
 
     /// <summary>
-    ///     HuggingFace subfolder for the phi-4-mini DirectML variant (int4 AWQ).
-    ///     Must be verified in Task 3.3.
+    ///     HuggingFace subfolder for the phi-4-mini CUDA variant (int4 RTN).
+    ///     Verified against the live microsoft/Phi-4-mini-instruct-onnx repo tree.
     /// </summary>
-    public const string Phi4MiniDirectMlFolder = "directml/directml-int4-awq-block-128";
-
-    /// <summary>
-    ///     HuggingFace subfolder for the phi-4-mini CUDA variant (int4 AWQ).
-    ///     Must be verified in Task 3.3.
-    /// </summary>
-    public const string Phi4MiniCudaFolder = "cuda/cuda-int4-awq-block-128";
+    public const string Phi4MiniCudaFolder = "gpu/gpu-int4-rtn-block-32";
 
     /// <summary>
     ///     Returns true if <paramref name="value" /> can be parsed as a

@@ -4,6 +4,7 @@
 
 #region Usings
 
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
@@ -100,6 +101,77 @@ public class OnnxModelDownloader
         await DownloadTokenizerAsync(entry.TokenizerFamily, entry.VocabFile, entry.SpmFile,
                                      entry.RepoId, modelDir, entry.Name, ct
                                     );
+    }
+
+    /// <summary>
+    ///     Downloads every file listed under <paramref name="modelFolder" /> in
+    ///     the given HuggingFace repository to <paramref name="targetDir" />.
+    ///     Uses the HF tree API to enumerate files then the standard resolve
+    ///     endpoint to fetch each one. Idempotent: files already present and
+    ///     non-empty are skipped, matching the single-file download behavior.
+    ///     GenAI models (e.g. phi-4-mini-instruct) ship as a folder of files
+    ///     rather than a single <c>.onnx</c> file; this method downloads the
+    ///     complete folder in one call.
+    /// </summary>
+    public async Task DownloadModelFolderAsync(string repoId,
+                                               string modelFolder,
+                                               string targetDir,
+                                               CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(repoId);
+        ArgumentException.ThrowIfNullOrEmpty(modelFolder);
+        ArgumentException.ThrowIfNullOrEmpty(targetDir);
+
+        Directory.CreateDirectory(targetDir);
+
+        var files = await ListFolderFilesAsync(repoId, modelFolder, ct);
+
+        mLogger.LogInformation("DownloadModelFolderAsync: {Count} files listed under {RepoId}/{Folder}",
+                               files.Count, repoId, modelFolder);
+
+        foreach (var file in files)
+        {
+            string relativeName = ComputeRelativeName(file.Path, modelFolder);
+            string destPath = Path.Combine(targetDir, relativeName);
+            string? destDir = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(destDir))
+                Directory.CreateDirectory(destDir);
+
+            await DownloadIfMissingAsync(repoId, file.Path, destPath, ct);
+        }
+    }
+
+    private async Task<List<HfTreeEntry>> ListFolderFilesAsync(string repoId,
+                                                                string modelFolder,
+                                                                CancellationToken ct)
+    {
+        string treeUrl = string.Format(HuggingFaceTreeUrlFormat, repoId, modelFolder);
+        mLogger.LogDebug("Fetching HF tree: {Url}", treeUrl);
+
+        var client = mHttpClientFactory.CreateClient(HttpClientName);
+        using HttpResponseMessage response = await client.GetAsync(treeUrl, ct);
+        response.EnsureSuccessStatusCode();
+
+        string json = await response.Content.ReadAsStringAsync(ct);
+        var entries = JsonSerializer.Deserialize(json, HfTreeSerializerContext.Default.ListHfTreeEntry)
+                      ?? throw new InvalidOperationException(
+                          string.Format(NullTreeResponseFormat, treeUrl)
+                      );
+
+        var files = new List<HfTreeEntry>(entries.Count);
+        foreach (var entry in entries.Where(e => e.Type == HfTreeFileType))
+            files.Add(entry);
+
+        return files;
+    }
+
+    private static string ComputeRelativeName(string fullPath, string modelFolder)
+    {
+        string prefix = modelFolder.TrimEnd('/') + "/";
+        string result = fullPath.StartsWith(prefix, StringComparison.Ordinal)
+            ? fullPath[prefix.Length..]
+            : fullPath;
+        return result;
     }
 
     private async Task DownloadTokenizerAsync(TokenizerFamily family,
@@ -213,9 +285,19 @@ public class OnnxModelDownloader
     public const string HttpClientName = "OnnxModelDownloader";
 
     private const string EmptyResponseFormat = "Download from '{0}' returned a 200 OK but the response body was empty. Refusing to write a zero-byte model file. Verify the RepoId/ModelFile combination resolves on HuggingFace.";
+    private const string NullTreeResponseFormat = "HuggingFace tree API at '{0}' returned a null JSON array. Verify the repoId and modelFolder values.";
 
     private const string HuggingFaceBase = "https://huggingface.co";
     private const string HuggingFaceResolveSegment = "resolve/main";
+
+    /// <summary>
+    ///     Format string for the HuggingFace model tree API endpoint.
+    ///     {0} = repo ID (e.g. <c>microsoft/Phi-4-mini-instruct-onnx</c>),
+    ///     {1} = folder path within the repo (e.g. <c>cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4</c>).
+    /// </summary>
+    public const string HuggingFaceTreeUrlFormat = "https://huggingface.co/api/models/{0}/tree/main/{1}";
+
+    private const string HfTreeFileType = "file";
     private const string ModelOnnxFileName = "model.onnx";
     private const string VocabTxtFileName = "vocab.txt";
     private const string SpmModelFileName = "spm.model";
