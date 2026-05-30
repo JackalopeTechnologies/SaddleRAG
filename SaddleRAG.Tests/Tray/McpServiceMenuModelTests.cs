@@ -24,7 +24,7 @@ public sealed class McpServiceMenuModelTests
     }
 
     [Fact]
-    public void WhenStopped_StartEnabled_StopDisabled()
+    public void WhenStoppedStartEnabledStopDisabled()
     {
         FakeController fake = new() { State = McpServiceState.Stopped };
         McpServiceMenuModel model = new(fake);
@@ -36,7 +36,7 @@ public sealed class McpServiceMenuModelTests
     }
 
     [Fact]
-    public void WhenRunning_StopEnabled_StartDisabled()
+    public void WhenRunningStopEnabledStartDisabled()
     {
         FakeController fake = new() { State = McpServiceState.Running };
         McpServiceMenuModel model = new(fake);
@@ -48,7 +48,7 @@ public sealed class McpServiceMenuModelTests
     }
 
     [Fact]
-    public void WhenNotInstalled_BothDisabled()
+    public void WhenNotInstalledBothDisabled()
     {
         FakeController fake = new() { State = McpServiceState.NotInstalled };
         McpServiceMenuModel model = new(fake);
@@ -60,7 +60,7 @@ public sealed class McpServiceMenuModelTests
     }
 
     [Fact]
-    public void Start_InvokesControllerAndRefreshes()
+    public void StartInvokesControllerAndRefreshes()
     {
         FakeController fake = new() { State = McpServiceState.Stopped };
         McpServiceMenuModel model = new(fake);
