@@ -110,7 +110,7 @@ services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
 services.AddSingleton<IScrapeAuditWriter>(sp =>
                                               new ScrapeAuditWriter(sp.GetRequiredService<IScrapeAuditRepository>())
                                          );
-services.AddSingleton<LlmClassifier>();
+services.AddSingleton<OllamaLlmClassifier>();
 services.AddSingleton<SymbolExtractor>();
 services.AddSingleton<LibraryProfileService>();
 services.AddSingleton<CliReconFallback>();
@@ -355,7 +355,7 @@ reclassifyCommand.SetAction(async (parseResult, ct) =>
                                                                         provider
                                                                             .GetRequiredService<IChunkRepository>(),
                                                                         provider
-                                                                            .GetRequiredService<LlmClassifier>(),
+                                                                            .GetRequiredService<OllamaLlmClassifier>(),
                                                                         Console.Out,
                                                                         ct
                                                                        );

@@ -12,10 +12,10 @@ namespace SaddleRAG.Ingestion.Classification;
 
 /// <summary>
 ///     Shared prompt construction for the page classifiers. Both the Ollama
-///     <see cref="LlmClassifier" /> and the ONNX <see cref="OnnxLlmClassifier" />
+///     <see cref="OllamaLlmClassifier" /> and the ONNX <see cref="OnnxLlmClassifier" />
 ///     build the identical prompt here so the two backends classify pages by
 ///     the same instructions and category list. The matching output parser
-///     lives on <see cref="LlmClassifier.ParseClassificationResponse" /> and is
+///     lives on <see cref="OllamaLlmClassifier.ParseClassificationResponse" /> and is
 ///     reused by both backends as well; keeping the prompt and parser in one
 ///     place is what makes the two classifiers behaviorally interchangeable.
 /// </summary>

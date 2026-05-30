@@ -38,7 +38,7 @@ public class RescrubService
     }
 
     public RescrubService(SymbolExtractor extractor,
-                          LlmClassifier classifier,
+                          OllamaLlmClassifier classifier,
                           ILogger<RescrubService> logger)
     {
         mExtractor = extractor;
@@ -46,7 +46,7 @@ public class RescrubService
         mLogger = logger;
     }
 
-    private readonly LlmClassifier mClassifier;
+    private readonly OllamaLlmClassifier mClassifier;
 
     private readonly SymbolExtractor mExtractor;
     private readonly ILogger<RescrubService> mLogger;

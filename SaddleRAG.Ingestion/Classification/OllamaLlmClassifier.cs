@@ -1,4 +1,4 @@
-// LlmClassifier.cs
+// OllamaLlmClassifier.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
 
@@ -20,20 +20,40 @@ namespace SaddleRAG.Ingestion.Classification;
 
 /// <summary>
 ///     LLM-based page classifier using Ollama chat completion.
-///     Authoritative classification â€” overrides heuristic results.
+///     Authoritative classification — overrides heuristic results.
+///     All Ollama generate calls are routed through <see cref="IOllamaGenerateClient" />
+///     so the generate path is unit-testable without a live Ollama instance.
 /// </summary>
-public class LlmClassifier : ILlmClassifier
+public class OllamaLlmClassifier : ILlmClassifier
 {
-    public LlmClassifier(IOptions<OllamaSettings> settings,
-                         ILogger<LlmClassifier> logger)
+    /// <summary>
+    ///     Primary constructor: builds a real <see cref="OllamaApiClient" /> from
+    ///     <paramref name="settings" /> and wraps it behind
+    ///     <see cref="IOllamaGenerateClient" />. Used by the DI container.
+    /// </summary>
+    public OllamaLlmClassifier(IOptions<OllamaSettings> settings,
+                               ILogger<OllamaLlmClassifier> logger)
     {
         mSettings = settings.Value;
         mLogger = logger;
-        mClient = new OllamaApiClient(new Uri(mSettings.Endpoint));
+        mGenerateClient = new OllamaApiClientAdapter(new OllamaApiClient(new Uri(mSettings.Endpoint)));
     }
 
-    private readonly OllamaApiClient mClient;
-    private readonly ILogger<LlmClassifier> mLogger;
+    /// <summary>
+    ///     Seam constructor: accepts an injected <see cref="IOllamaGenerateClient" />.
+    ///     Used in tests and any future scenario that supplies an alternative adapter.
+    /// </summary>
+    internal OllamaLlmClassifier(IOptions<OllamaSettings> settings,
+                                 IOllamaGenerateClient generateClient,
+                                 ILogger<OllamaLlmClassifier> logger)
+    {
+        mSettings = settings.Value;
+        mGenerateClient = generateClient;
+        mLogger = logger;
+    }
+
+    private readonly IOllamaGenerateClient mGenerateClient;
+    private readonly ILogger<OllamaLlmClassifier> mLogger;
     private readonly OllamaSettings mSettings;
 
     /// <summary>
@@ -68,7 +88,7 @@ public class LlmClassifier : ILlmClassifier
                               };
 
             var responseBuilder = new StringBuilder();
-            await foreach(var token in mClient.GenerateAsync(request, ct))
+            await foreach(var token in mGenerateClient.GenerateAsync(request, ct))
             {
                 if (responseBuilder.Length < MaxResponseChars)
                     responseBuilder.Append(token?.Response ?? string.Empty);

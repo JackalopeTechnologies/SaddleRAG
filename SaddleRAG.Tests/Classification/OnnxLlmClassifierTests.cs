@@ -18,7 +18,7 @@ namespace SaddleRAG.Tests.Classification;
 ///     <see cref="IClassifierGenerator" /> so the prompt-building, output
 ///     parsing, and failure handling are covered without a real GenAI model.
 ///     The classifier reuses the same prompt and parser as the Ollama
-///     <see cref="LlmClassifier" />, so these tests also lock in that the two
+///     <see cref="OllamaLlmClassifier" />, so these tests also lock in that the two
 ///     backends agree on the prompt shape and the safe-default-on-failure
 ///     contract (Unclassified, zero confidence).
 /// </summary>

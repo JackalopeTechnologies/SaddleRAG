@@ -15,9 +15,9 @@ namespace SaddleRAG.Ingestion.Classification;
 /// <summary>
 ///     LLM-based page classifier backed by a local phi-3-mini-4k-instruct ONNX
 ///     GenAI model. Behaviorally equivalent to the Ollama
-///     <see cref="LlmClassifier" />: it builds the same prompt via
+///     <see cref="OllamaLlmClassifier" />: it builds the same prompt via
 ///     <see cref="ClassificationPrompt" />, parses the model output with the
-///     same <see cref="LlmClassifier.ParseClassificationResponse" /> contract,
+///     same <see cref="OllamaLlmClassifier.ParseClassificationResponse" /> contract,
 ///     and returns the same safe default (<see cref="DocCategory.Unclassified" />,
 ///     zero confidence) when generation fails. All
 ///     <c>Microsoft.ML.OnnxRuntimeGenAI</c> calls sit behind
@@ -62,7 +62,7 @@ public class OnnxLlmClassifier : ILlmClassifier
         {
             var responseText = await mGenerator.GenerateAsync(prompt, ct);
 
-            var parsed = LlmClassifier.ParseClassificationResponse(responseText.Trim());
+            var parsed = OllamaLlmClassifier.ParseClassificationResponse(responseText.Trim());
             category = parsed.Category;
             confidence = parsed.Confidence;
 
