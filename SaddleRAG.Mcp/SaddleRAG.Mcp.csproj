@@ -38,19 +38,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\assets\branding\favicon.ico" Link="wwwroot\favicon.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <TargetPath>wwwroot\favicon.ico</TargetPath>
-    </Content>
-    <Content Include="..\assets\branding\saddlerag-icon.svg" Link="wwwroot\saddlerag-icon.svg">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <TargetPath>wwwroot\saddlerag-icon.svg</TargetPath>
-    </Content>
-  </ItemGroup>
-
-  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SaddleRAG.Tests</_Parameter1>
     </AssemblyAttribute>
