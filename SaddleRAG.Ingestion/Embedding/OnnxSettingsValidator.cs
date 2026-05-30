@@ -42,8 +42,10 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
             var failures = new List<string>();
             CollectEmbeddingFailures(options, failures);
             CollectRerankerFailures(options, failures);
+            CollectClassifierFailures(options, failures);
             CollectDuplicateNames(EmbeddingRegistryLabel, options.EmbeddingModels.Select(e => e.Name), failures);
             CollectDuplicateNames(RerankerRegistryLabel, options.RerankerModels.Select(e => e.Name), failures);
+            CollectDuplicateNames(ClassifierRegistryLabel, options.ClassifierModels.Select(e => e.Name), failures);
             CollectActiveModelResolution(options, failures);
             result = failures.Count == 0
                          ? ValidateOptionsResult.Success
@@ -87,6 +89,21 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
         }
     }
 
+    private static void CollectClassifierFailures(OnnxSettings options, List<string> failures)
+    {
+        foreach(var entry in options.ClassifierModels)
+        {
+            if (string.IsNullOrEmpty(entry.Name))
+                failures.Add(EmptyNameMessage);
+
+            if (string.IsNullOrEmpty(entry.RepoId))
+                failures.Add(string.Format(MissingRepoIdFormat, entry.Name));
+
+            if (string.IsNullOrEmpty(entry.ModelFolder))
+                failures.Add(string.Format(ClassifierMissingModelFolderFormat, entry.Name));
+        }
+    }
+
     private static void CollectActiveModelResolution(OnnxSettings options, List<string> failures)
     {
         if (!string.IsNullOrEmpty(options.ActiveEmbeddingModel))
@@ -117,6 +134,18 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
                                            options.ActiveRerankerModel,
                                            OnnxSettings.RerankerNoneSentinel,
                                            string.Join(",", options.RerankerModels.Select(e => e.Name))
+                                          ));
+        }
+
+        if (!string.IsNullOrEmpty(options.ActiveClassifierModel))
+        {
+            bool resolves = options.ClassifierModels.Any(
+                e => string.Equals(e.Name, options.ActiveClassifierModel, StringComparison.Ordinal)
+            );
+            if (!resolves)
+                failures.Add(string.Format(ActiveClassifierDoesNotResolveFormat,
+                                           options.ActiveClassifierModel,
+                                           string.Join(",", options.ClassifierModels.Select(e => e.Name))
                                           ));
         }
     }
@@ -180,4 +209,7 @@ public class OnnxSettingsValidator : IValidateOptions<OnnxSettings>
     private const string EmbeddingMaxSequenceLengthFormat = "Onnx embedding entry '{0}' has MaxSequenceLength={1}. Must be > 0; OnnxEmbeddingProvider's Math.Min(tokenIds.Count, MaxSequenceLength) would silently zero out every embedding otherwise.";
     private const string ActiveEmbeddingDoesNotResolveFormat = "Onnx.ActiveEmbeddingModel='{0}' does not match any entry in EmbeddingModels (registered names: [{1}]). Either leave it unset (first entry becomes the default) or set it to a registered name.";
     private const string ActiveRerankerDoesNotResolveFormat = "Onnx.ActiveRerankerModel='{0}' does not match any entry in RerankerModels and is not the '{1}' sentinel (registered names: [{2}]). Either leave it unset (first entry becomes the default), set it to a registered name, or set it to '{1}' to disable reranking.";
+    private const string ClassifierRegistryLabel = "ClassifierModels";
+    private const string ClassifierMissingModelFolderFormat = "Onnx classifier entry '{0}' has no ModelFolder; the downloader needs the provider-specific subfolder path within the HuggingFace repo.";
+    private const string ActiveClassifierDoesNotResolveFormat = "Onnx.ActiveClassifierModel='{0}' does not match any entry in ClassifierModels (registered names: [{1}]). Either leave it unset (first entry becomes the default) or set it to a registered name.";
 }
