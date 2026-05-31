@@ -308,10 +308,16 @@
                  Value="--codex=true"
                  Condition="REGISTER_CODEX = &quot;1&quot;" />
 
+        <!-- Unattended, best-effort registration: --detected-only registers only the -->
+        <!-- agents whose config/CLI is actually present on the machine and silently     -->
+        <!-- skips the rest (missing => skipped, exit 0, never fatal). It deliberately   -->
+        <!-- ignores the per-agent [REGISTER_*_ARG] flags built above (see              -->
+        <!-- RegisterClientsCommand.cs), so those SetProperty actions are inert here and -->
+        <!-- the AiClientsDlg checkboxes no longer gate registration; detection does.    -->
         <SetProperty Id="RegisterAiClients"
                      Before="RegisterAiClients"
                      Sequence="execute"
-                 Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients [REGISTER_CLAUDE_CODE_ARG] [REGISTER_CLAUDE_DESKTOP_ARG] [REGISTER_VSCODE_MCP_ARG] [REGISTER_COPILOT_CLI_ARG] [REGISTER_CODEX_ARG] --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
+                 Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients --detected-only --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
 
         <CustomAction Id="RegisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
@@ -320,8 +326,11 @@
                       Return="ignore"
                       Impersonate="yes" />
 
-        <!-- Unregister SaddleRAG from all four AI tools on uninstall. Always runs against -->
-        <!-- the full set; per-tool selection at install time does not affect uninstall.   -->
+        <!-- Unregister SaddleRAG from all nine AI tools on uninstall. With no per-agent  -->
+        <!-- flags, unregister-clients targets the full set (claude-code, claude-desktop, -->
+        <!-- vscode-mcp, copilot-cli, codex, copilot-ide, gemini, qwen, windsurf); the    -->
+        <!-- per-tool selection at install time does not affect uninstall. Return=ignore  -->
+        <!-- keeps it best-effort so a missing/locked config never blocks uninstall.      -->
         <SetProperty Id="UnregisterAiClients"
                      Before="UnregisterAiClients"
                      Sequence="execute"
@@ -401,6 +410,17 @@
                       Return="check"
                       Impersonate="no" />
 
+        <!-- Launch the tray once immediately after a fresh install so the user gets the -->
+        <!-- status icon without waiting for the next logon. Fire-and-forget: asyncNoWait -->
+        <!-- never waits on or fails from the launch. Runs impersonated so the icon appears -->
+        <!-- in the installing user's session. The HKLM Run key handles subsequent logons. -->
+        <CustomAction Id="LaunchTray"
+                      Directory="MCPFOLDER"
+                      ExeCommand="&quot;[MCPFOLDER]SaddleRAG.Tray.exe&quot;"
+                      Execute="immediate"
+                      Impersonate="yes"
+                      Return="asyncNoWait" />
+
         <InstallExecuteSequence>
             <!-- Must precede LaunchConditions: the launch gate reads -->
             <!-- WINDOWSBUILDNUMBER that this CA populates.            -->
@@ -415,6 +435,11 @@
             <Custom Action="UnregisterAiClients" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="PrewarmService" Before="StartAndMonitorService" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="StartAndMonitorService" Before="StartServices" Condition="NOT Installed OR REINSTALL" />
+            <!-- Immediate exe CA must run after files are committed to disk; there is no -->
+            <!-- service-start action to anchor to, so use InstallFinalize. Fresh install -->
+            <!-- only (NOT Installed) so repairs/upgrades don't spawn an extra tray; the   -->
+            <!-- HKLM Run key + CloseApplication handle those paths. -->
+            <Custom Action="LaunchTray" After="InstallFinalize" Condition="NOT Installed" />
         </InstallExecuteSequence>
 
         <!-- Run CheckOllamaKeepAlive in the UI sequence so the Ollama dialog -->
