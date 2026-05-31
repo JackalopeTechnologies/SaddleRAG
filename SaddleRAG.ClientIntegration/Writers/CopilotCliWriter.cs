@@ -21,7 +21,7 @@ public sealed class CopilotCliWriter : IClientWriter
     private const string SaddleRagKey = "saddlerag";
     private const string TypeKey = "type";
     private const string UrlKey = "url";
-    private const string SseType = "sse";
+    private const string HttpType = "http";
     private const string CopilotHomeEnvVar = "COPILOT_HOME";
     private const string DefaultCopilotDir = ".copilot";
     private const string McpConfigFileName = "mcp-config.json";
@@ -202,7 +202,7 @@ public sealed class CopilotCliWriter : IClientWriter
         JsonObject servers = (root[McpServersKey] as JsonObject) ?? [];
         servers[SaddleRagKey] = new JsonObject
                                     {
-                                        [TypeKey] = SseType,
+                                        [TypeKey] = HttpType,
                                         [UrlKey] = endpoint.Url
                                     };
         root[McpServersKey] = servers;

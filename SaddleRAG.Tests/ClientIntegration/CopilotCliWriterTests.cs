@@ -146,6 +146,22 @@ public sealed class CopilotCliWriterTests : IDisposable
         Assert.Contains(overrideDir, writer.SkillsBaseDir);
     }
 
+    [Fact]
+    public async Task RegisterWritesHttpType()
+    {
+        var writer = new CopilotCliWriter(mConfigPath, mSkillsBaseDir);
+        await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
+
+        string actual = await File.ReadAllTextAsync(mConfigPath, TestContext.Current.CancellationToken);
+        using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(actual);
+        System.Text.Json.JsonElement root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("mcpServers", out System.Text.Json.JsonElement servers));
+        Assert.True(servers.TryGetProperty("saddlerag", out System.Text.Json.JsonElement entry));
+        Assert.True(entry.TryGetProperty("type", out System.Text.Json.JsonElement typeEl));
+        Assert.Equal("http", typeEl.GetString());
+    }
+
     private static string NormalizeJson(string raw)
     {
         return raw.Replace("\r\n", "\n").Trim();
