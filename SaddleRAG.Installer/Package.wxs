@@ -308,12 +308,12 @@
                  Value="--codex=true"
                  Condition="REGISTER_CODEX = &quot;1&quot;" />
 
-        <!-- Unattended, best-effort registration: --detected-only registers only the -->
-        <!-- agents whose config/CLI is actually present on the machine and silently     -->
-        <!-- skips the rest (missing => skipped, exit 0, never fatal). It deliberately   -->
-        <!-- ignores the per-agent [REGISTER_*_ARG] flags built above (see              -->
-        <!-- RegisterClientsCommand.cs), so those SetProperty actions are inert here and -->
-        <!-- the AiClientsDlg checkboxes no longer gate registration; detection does.    -->
+        <!-- Unattended, best-effort registration: the detected-only flag registers only -->
+        <!-- the agents whose config/CLI is actually present on the machine and silently  -->
+        <!-- skips the rest (missing => skipped, exit 0, never fatal). It deliberately    -->
+        <!-- ignores the per-agent [REGISTER_*_ARG] flags built above (see                -->
+        <!-- RegisterClientsCommand.cs), so those SetProperty actions are inert here and  -->
+        <!-- the AiClientsDlg checkboxes no longer gate registration; detection does.     -->
         <SetProperty Id="RegisterAiClients"
                      Before="RegisterAiClients"
                      Sequence="execute"
