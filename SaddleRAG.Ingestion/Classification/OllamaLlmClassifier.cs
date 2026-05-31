@@ -60,14 +60,30 @@ public class OllamaLlmClassifier : ILlmClassifier
     public string BackendName => ClassifierBackendNames.Ollama;
 
     /// <inheritdoc />
-    public string ModelId => mSettings.GetActiveClassificationModel().Name;
+    public string ModelId
+    {
+        get
+        {
+            string result = OllamaUnconfiguredModel;
 
-    /// <summary>
-    ///     Returns the current classifier version for this instance, used
-    ///     by RescrubService to populate the manifest and decide whether
-    ///     reclassification is needed on a future rescrub.
-    /// </summary>
-    public string GetCurrentVersion() => $"{mSettings.GetActiveClassificationModel().Name}-{ClassificationPrompt.PromptVersion}";
+            try
+            {
+                var entry = mSettings.GetActiveClassificationModel();
+                if (!string.IsNullOrEmpty(entry.Name))
+                    result = entry.Name;
+            }
+            catch(Exception ex)
+            {
+                mLogger.LogWarning(ex, "Could not resolve active Ollama classification model; reporting as unconfigured.");
+            }
+
+            return result;
+        }
+    }
+
+    /// <inheritdoc />
+    public string GetCurrentVersion() =>
+        $"{mSettings.GetActiveClassificationModel().Name}-{ClassificationPrompt.PromptVersion}";
 
     /// <summary>
     ///     Classify a page using the LLM. Returns category and confidence.
@@ -176,6 +192,7 @@ public class OllamaLlmClassifier : ILlmClassifier
         return (category, confidence);
     }
 
+    private const string OllamaUnconfiguredModel = "(unconfigured)";
     private const int MaxResponseChars = 4096;
     private const string JsonCodeFenceOpen = "```json";
     private const string CodeFence = "```";

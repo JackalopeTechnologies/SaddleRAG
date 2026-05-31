@@ -37,7 +37,8 @@ public class RescrubService
         public required ExtractedSymbols Extracted { get; init; }
     }
 
-    // Bound to ILlmClassifier (the live ClassifierBackendSwitch) so reextract honors the active backend; recorded provenance is therefore truthful.
+    // Bound to ILlmClassifier (the live ClassifierBackendSwitch) so reextract honors the active backend;
+    // recorded provenance is therefore truthful.
     public RescrubService(SymbolExtractor extractor,
                           ILlmClassifier classifier,
                           ILogger<RescrubService> logger)

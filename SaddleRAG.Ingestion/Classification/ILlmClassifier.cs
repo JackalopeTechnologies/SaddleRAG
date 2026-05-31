@@ -29,7 +29,7 @@ public interface ILlmClassifier
     string BackendName { get; }
 
     /// <summary>
-    ///     Model identifier of the active backend (e.g.
+    ///     Model identifier reported by this backend (e.g.
     ///     "phi-3-mini-4k-instruct-directml" or "phi4-mini").
     /// </summary>
     string ModelId { get; }

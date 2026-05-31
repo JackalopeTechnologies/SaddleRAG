@@ -14,11 +14,19 @@
     private MonitorConfigClassifier? mClassifier;
 
     private const string OnnxBackendName = "onnx";
+    private const string UnknownModelLabel = "(unknown)";
 
-    private string ActiveModelLabel =>
-        string.Equals(mClassifier?.ActiveBackend, OnnxBackendName, StringComparison.OrdinalIgnoreCase)
-            ? mClassifier!.ActiveOnnxModel
-            : mClassifier!.OllamaClassificationModel;
+    private string ActiveModelLabel
+    {
+        get
+        {
+            string selected =
+                string.Equals(mClassifier?.ActiveBackend, OnnxBackendName, StringComparison.OrdinalIgnoreCase)
+                    ? mClassifier!.ActiveOnnxModel
+                    : mClassifier!.OllamaClassificationModel;
+            return string.IsNullOrEmpty(selected) ? UnknownModelLabel : selected;
+        }
+    }
 
     protected override void OnInitialized()
     {

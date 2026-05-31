@@ -51,9 +51,23 @@ public sealed class ClassifierBadgeInitializationTests
             }
         }
 
+        public string? ActiveModelLabelForTest
+        {
+            get
+            {
+                var reflectedField = typeof(ClassifierBadge)
+                                     .GetProperty(ActiveModelLabelPropertyName,
+                                                  BindingFlags.Instance | BindingFlags.NonPublic)
+                                     ?? throw new InvalidOperationException(
+                                         "ActiveModelLabel property missing on ClassifierBadge");
+                return (string?) reflectedField.GetValue(this);
+            }
+        }
+
         private const string ConfigSourcePropertyName = "ConfigSource";
         private const string InitMethodName = "OnInitialized";
         private const string ClassifierFieldName = "mClassifier";
+        private const string ActiveModelLabelPropertyName = "ActiveModelLabel";
     }
 
     private static MonitorConfigSnapshot NewOnnxSnapshot() =>
@@ -76,6 +90,24 @@ public sealed class ClassifierBadgeInitializationTests
 
     private static MonitorConfigSnapshot NewOllamaSnapshot() =>
         new(Classifier: new MonitorConfigClassifier("ollama", "phi-3-mini-4k-instruct-cpu",
+                                                    "microsoft/Phi-3-mini-4k-instruct-onnx",
+                                                    "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4",
+                                                    ModelFilesPresent: false,
+                                                    OllamaClassificationModel: "phi4-mini:3.8b"
+                                                   ),
+            Embedding: new MonitorConfigEmbedding("stub", "stub-model", 4, OnnxBacked: false, OnnxEmbeddingEnabled: false),
+            Reranker: new MonitorConfigReranker("Off", ActiveModel: null, OnnxEnabled: false),
+            ExecutionProvider: new MonitorConfigExecutionProvider("Cpu", "Cpu", MatchesRequested: true,
+                                                                  CompiledInProviders: ["Cpu"],
+                                                                  LastLoadWarning: null
+                                                                 ),
+            Mongo: new MonitorConfigMongo("(direct)", "mongodb://localhost", "saddlerag", CredentialsPresent: false),
+            Ollama: new MonitorConfigOllama("http://localhost:11434", "llama3", "llama3", "nomic-embed-text"),
+            Profile: new MonitorConfigProfile("(direct)")
+           );
+
+    private static MonitorConfigSnapshot NewOnnxEmptyModelSnapshot() =>
+        new(Classifier: new MonitorConfigClassifier("onnx", string.Empty,
                                                     "microsoft/Phi-3-mini-4k-instruct-onnx",
                                                     "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4",
                                                     ModelFilesPresent: false,
@@ -132,5 +164,41 @@ public sealed class ClassifierBadgeInitializationTests
 
         Assert.Equal("ollama", badge.ClassifierForTest?.ActiveBackend);
         Assert.Equal("phi4-mini:3.8b", badge.ClassifierForTest?.OllamaClassificationModel);
+    }
+
+    [Fact]
+    public void ActiveModelLabelReturnsOnnxModelWhenOnnxActive()
+    {
+        var snapshot = NewOnnxSnapshot();
+        var source = Substitute.For<IMonitorConfigSource>();
+        source.GetSnapshot().Returns(snapshot);
+        var badge = new TestableClassifierBadge(source);
+        badge.InitializeForTest();
+
+        Assert.Equal("phi-3-mini-4k-instruct-cpu", badge.ActiveModelLabelForTest);
+    }
+
+    [Fact]
+    public void ActiveModelLabelReturnsOllamaModelWhenOllamaActive()
+    {
+        var snapshot = NewOllamaSnapshot();
+        var source = Substitute.For<IMonitorConfigSource>();
+        source.GetSnapshot().Returns(snapshot);
+        var badge = new TestableClassifierBadge(source);
+        badge.InitializeForTest();
+
+        Assert.Equal("phi4-mini:3.8b", badge.ActiveModelLabelForTest);
+    }
+
+    [Fact]
+    public void ActiveModelLabelReturnsUnknownPlaceholderWhenModelEmpty()
+    {
+        var snapshot = NewOnnxEmptyModelSnapshot();
+        var source = Substitute.For<IMonitorConfigSource>();
+        source.GetSnapshot().Returns(snapshot);
+        var badge = new TestableClassifierBadge(source);
+        badge.InitializeForTest();
+
+        Assert.Equal("(unknown)", badge.ActiveModelLabelForTest);
     }
 }

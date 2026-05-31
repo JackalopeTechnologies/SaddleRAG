@@ -153,13 +153,30 @@ internal sealed class IndexStage
         }
     }
 
+    private (string? Backend, string? Model) ReadClassifierIdentitySafely()
+    {
+        string? backend = null;
+        string? model = null;
+
+        try
+        {
+            backend = mLlmClassifier.BackendName;
+            model = mLlmClassifier.ModelId;
+        }
+        catch(Exception ex)
+        {
+            mLogger.LogWarning(ex, "Could not read classifier identity for audit provenance; recording it as unknown.");
+        }
+
+        return (backend, model);
+    }
+
     private void EmitIndexedAuditRecords(AuditContext auditCtx,
                                          IReadOnlyDictionary<string, (int ChunkCount, DocCategory Category)>
                                              pageChunkCounts,
                                          IReadOnlyDictionary<string, (int Depth, string? ParentUrl)> pageMetadata)
     {
-        string classifierBackend = mLlmClassifier.BackendName;
-        string classifierModel = mLlmClassifier.ModelId;
+        (string? classifierBackend, string? classifierModel) = ReadClassifierIdentitySafely();
         foreach((var pageUrl, (var chunkCount, var category)) in pageChunkCounts)
         {
             var host = new Uri(pageUrl).Host;

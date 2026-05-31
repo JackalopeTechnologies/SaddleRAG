@@ -204,4 +204,35 @@ public sealed class ClassifierBackendSwitchTests
         Assert.Equal("phi-3-mini-4k-instruct-directml", sut.ModelId);
         Assert.Contains("phi-3-mini-4k-instruct-directml", sut.GetCurrentVersion());
     }
+
+    [Fact]
+    public async Task BackendIdentityFollowsRuntimeSwap()
+    {
+        var onnxFakeClassifier = new FakeClassifier
+            {
+                ReturnCategory = DocCategory.Overview,
+                ModelId = "phi-3-mini-4k-instruct-directml"
+            };
+        var onnx = NewOnnxClassifier(onnxFakeClassifier);
+        var ollamaFake = new FakeClassifier
+            {
+                ReturnCategory = DocCategory.HowTo,
+                BackendName = "ollama",
+                ModelId = "phi4-mini"
+            };
+        var probe = new FakeOllamaProbe { Reachable = true };
+        var sut = new ClassifierBackendSwitch(onnx, ollamaFake, probe, NullLogger<ClassifierBackendSwitch>.Instance);
+
+        Assert.Equal("onnx", sut.BackendName);
+
+        await sut.UseOllamaAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("ollama", sut.BackendName);
+        Assert.Equal("phi4-mini", sut.ModelId);
+        Assert.Contains("phi4-mini", sut.GetCurrentVersion());
+
+        sut.UseOnnx();
+
+        Assert.Equal("onnx", sut.BackendName);
+    }
 }
