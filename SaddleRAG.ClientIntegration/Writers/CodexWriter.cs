@@ -42,6 +42,12 @@ public sealed class CodexWriter : IClientWriter
 
     public string ConfigPath => mConfigPath;
 
+    public bool IsDetected()
+    {
+        string? codexDir = Path.GetDirectoryName(mConfigPath);
+        return codexDir is not null && Directory.Exists(codexDir);
+    }
+
     public static CodexWriter ForCurrentUser()
     {
         string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

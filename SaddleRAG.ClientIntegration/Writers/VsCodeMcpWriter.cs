@@ -97,6 +97,13 @@ public sealed class VsCodeMcpWriter : IClientWriter
 
     public string ClientName => Name;
 
+    public bool IsDetected()
+    {
+        string? userDir = Path.GetDirectoryName(mConfigPath);
+        string? codeDir = userDir is null ? null : Path.GetDirectoryName(userDir);
+        return codeDir is not null && Directory.Exists(codeDir);
+    }
+
     public static VsCodeMcpWriter ForCurrentUser()
     {
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);

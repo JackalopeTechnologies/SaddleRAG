@@ -13,6 +13,8 @@ namespace SaddleRAG.ClientIntegration;
 public sealed class ClientRegistrar
 {
     private const string UnhandledExceptionPrefix = "unhandled exception: ";
+    private const string NotDetectedReason = "agent not detected";
+    private const string DetectionFailedPrefix = "detection failed: ";
 
     private readonly IReadOnlyList<IClientWriter> mWriters;
 
@@ -28,6 +30,18 @@ public sealed class ClientRegistrar
         foreach (IClientWriter writer in mWriters)
         {
             RegisterResult result = await SafeRegisterAsync(writer, endpoint, ct);
+            results.Add(result);
+        }
+        return RegistrarResult.ForRegister(results);
+    }
+
+    public async Task<RegistrarResult> RegisterDetectedAsync(SaddleRagEndpoint endpoint, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        List<RegisterResult> results = [];
+        foreach (IClientWriter writer in mWriters)
+        {
+            RegisterResult result = await SafeRegisterDetectedAsync(writer, endpoint, ct);
             results.Add(result);
         }
         return RegistrarResult.ForRegister(results);
@@ -65,6 +79,29 @@ public sealed class ClientRegistrar
         catch (Exception ex)
         {
             res = RegisterResult.Failed(writer.ClientName, string.Empty, $"{UnhandledExceptionPrefix}{ex.Message}");
+        }
+        return res;
+    }
+
+    private static async Task<RegisterResult> SafeRegisterDetectedAsync(IClientWriter writer, SaddleRagEndpoint endpoint, CancellationToken ct)
+    {
+        RegisterResult? shortCircuit = ResolveDetectionShortCircuit(writer);
+        RegisterResult res = shortCircuit ?? await SafeRegisterAsync(writer, endpoint, ct);
+        return res;
+    }
+
+    private static RegisterResult? ResolveDetectionShortCircuit(IClientWriter writer)
+    {
+        RegisterResult? res = null;
+        try
+        {
+            res = writer.IsDetected()
+                      ? null
+                      : RegisterResult.SkippedFor(writer.ClientName, NotDetectedReason);
+        }
+        catch (Exception ex)
+        {
+            res = RegisterResult.Failed(writer.ClientName, string.Empty, $"{DetectionFailedPrefix}{ex.Message}");
         }
         return res;
     }

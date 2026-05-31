@@ -52,6 +52,12 @@ public sealed class ClaudeDesktopWriter : IClientWriter
 
     public string ClientName => Name;
 
+    public bool IsDetected()
+    {
+        string? claudeDir = Path.GetDirectoryName(mConfigPath);
+        return claudeDir is not null && Directory.Exists(claudeDir);
+    }
+
     public static ClaudeDesktopWriter ForCurrentUser()
     {
         string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

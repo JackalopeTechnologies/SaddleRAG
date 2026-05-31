@@ -14,6 +14,13 @@ public interface IClientWriter
 {
     string ClientName { get; }
 
+    /// <summary>
+    ///     True when this agent appears installed on the machine (its config
+    ///     directory or a marker exists). Used to register only detected agents.
+    ///     Pure existence check — no I/O beyond Directory/File.Exists, never throws.
+    /// </summary>
+    bool IsDetected();
+
     Task<RegisterResult> RegisterAsync(SaddleRagEndpoint endpoint, CancellationToken ct);
 
     Task<UnregisterResult> UnregisterAsync(CancellationToken ct);

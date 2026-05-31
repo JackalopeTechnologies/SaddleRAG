@@ -56,6 +56,14 @@ public sealed class ClaudeCodeWriter : IClientWriter
 
     public string ClientName => Name;
 
+    public bool IsDetected()
+    {
+        string? claudeDir = Path.GetDirectoryName(mSkillsBaseDir);
+        bool configExists = File.Exists(mConfigPath);
+        bool claudeDirExists = claudeDir is not null && Directory.Exists(claudeDir);
+        return configExists || claudeDirExists;
+    }
+
     public static ClaudeCodeWriter ForCurrentUser()
     {
         string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

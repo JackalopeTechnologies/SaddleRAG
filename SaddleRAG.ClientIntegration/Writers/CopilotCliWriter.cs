@@ -56,6 +56,12 @@ public sealed class CopilotCliWriter : IClientWriter
 
     public string SkillsBaseDir => mSkillsBaseDir;
 
+    public bool IsDetected()
+    {
+        string? copilotDir = Path.GetDirectoryName(mConfigPath);
+        return copilotDir is not null && Directory.Exists(copilotDir);
+    }
+
     public static CopilotCliWriter ForCurrentUser()
     {
         string home = Environment.GetEnvironmentVariable(CopilotHomeEnvVar)
