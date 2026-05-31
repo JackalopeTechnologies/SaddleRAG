@@ -33,4 +33,28 @@ public sealed class StatusCommandTests
         Command cmd = StatusCommand.Build();
         Assert.Contains(cmd.Options, o => o.Name == "--log-file");
     }
+
+    [Fact]
+    public void ExposesAllClientOptions()
+    {
+        Command cmd = StatusCommand.Build();
+        var optionNames = cmd.Options.Select(o => o.Name).ToList();
+        Assert.Contains("--claude-code", optionNames);
+        Assert.Contains("--claude-desktop", optionNames);
+        Assert.Contains("--vscode-mcp", optionNames);
+        Assert.Contains("--copilot-cli", optionNames);
+        Assert.Contains("--codex", optionNames);
+        Assert.Contains("--cursor", optionNames);
+        Assert.Contains("--gemini-cli", optionNames);
+        Assert.Contains("--windsurf", optionNames);
+        Assert.Contains("--visual-studio", optionNames);
+    }
+
+    [Fact]
+    public void DoesNotExposeDetectedOnlyOption()
+    {
+        Command cmd = StatusCommand.Build();
+        var optionNames = cmd.Options.Select(o => o.Name).ToList();
+        Assert.DoesNotContain("--detected-only", optionNames);
+    }
 }

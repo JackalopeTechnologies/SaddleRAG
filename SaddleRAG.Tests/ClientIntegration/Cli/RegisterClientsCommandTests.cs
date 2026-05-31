@@ -25,6 +25,11 @@ public sealed class RegisterClientsCommandTests
             "--vscode-mcp",
             "--copilot-cli",
             "--codex",
+            "--cursor",
+            "--gemini-cli",
+            "--windsurf",
+            "--visual-studio",
+            "--detected-only",
             "--quiet",
             "--log-file"
             ];

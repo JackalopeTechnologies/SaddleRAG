@@ -24,6 +24,12 @@ public sealed class UnregisterClientsCommandTests
             "--claude-desktop",
             "--vscode-mcp",
             "--copilot-cli",
+            "--codex",
+            "--cursor",
+            "--gemini-cli",
+            "--windsurf",
+            "--visual-studio",
+            "--detected-only",
             "--quiet",
             "--log-file"
             ];
