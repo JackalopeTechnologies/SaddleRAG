@@ -12,6 +12,7 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Suspect;
 
 #endregion
@@ -66,13 +67,26 @@ public sealed class IngestionFinalizerTests
         return provider;
     }
 
+    private static ILlmClassifier StubClassifier(string backendName = "onnx",
+                                                  string modelId = "phi-3-mini-4k-instruct-directml")
+    {
+        var classifier = Substitute.For<ILlmClassifier>();
+        classifier.BackendName.Returns(backendName);
+        classifier.ModelId.Returns(modelId);
+        classifier.GetCurrentVersion().Returns($"{modelId}-v1");
+        classifier.ClassifyAsync(Arg.Any<PageRecord>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                  .Returns(Task.FromResult((DocCategory.Unclassified, 0f)));
+        return classifier;
+    }
+
     private static IngestionFinalizer NewFinalizer(IChunkRepository? chunks = null,
                                                    IBm25ShardRepository? shards = null,
                                                    ILibraryIndexRepository? indexes = null,
                                                    ILibraryRepository? libraries = null,
                                                    IEmbeddingProvider? provider = null,
                                                    ILibraryProfileRepository? profiles = null,
-                                                   SuspectDetector? suspect = null) =>
+                                                   SuspectDetector? suspect = null,
+                                                   ILlmClassifier? classifier = null) =>
         new(chunks ?? Substitute.For<IChunkRepository>(),
             shards ?? Substitute.For<IBm25ShardRepository>(),
             indexes ?? Substitute.For<ILibraryIndexRepository>(),
@@ -80,6 +94,7 @@ public sealed class IngestionFinalizerTests
             provider ?? StubProvider(),
             profiles ?? Substitute.For<ILibraryProfileRepository>(),
             suspect ?? new SuspectDetector(),
+            classifier ?? StubClassifier(),
             NullLogger.Instance
            );
 
@@ -345,5 +360,27 @@ public sealed class IngestionFinalizerTests
                                         Arg.Any<IReadOnlyList<string>>(),
                                         Arg.Any<CancellationToken>()
                                        );
+    }
+
+    [Fact]
+    public async Task FinalizerRecordsClassifierProvenanceOnVersion()
+    {
+        LibraryVersionRecord? saved = null;
+        var libraries = Substitute.For<ILibraryRepository>();
+        libraries.GetLibraryAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<LibraryRecord?>(null));
+        libraries.UpsertVersionAsync(Arg.Do<LibraryVersionRecord>(v => saved = v), Arg.Any<CancellationToken>())
+                 .Returns(Task.CompletedTask);
+        var chunks = Substitute.For<IChunkRepository>();
+        chunks.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+              .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
+        var classifier = StubClassifier(backendName: "onnx", modelId: "phi-3-mini-4k-instruct-directml");
+        var finalizer = NewFinalizer(chunks: chunks, libraries: libraries, classifier: classifier);
+
+        await finalizer.RunAsync(NewJob(), NewProgress(), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(saved);
+        Assert.Equal("onnx", saved.ClassifierBackend);
+        Assert.Equal("phi-3-mini-4k-instruct-directml", saved.ClassifierModel);
     }
 }

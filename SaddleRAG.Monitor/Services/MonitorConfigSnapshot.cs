@@ -11,6 +11,7 @@ namespace SaddleRAG.Monitor.Services;
 ///     options + runtime-capability objects in the host process.
 /// </summary>
 public sealed record MonitorConfigSnapshot(
+    MonitorConfigClassifier Classifier,
     MonitorConfigEmbedding Embedding,
     MonitorConfigReranker Reranker,
     MonitorConfigExecutionProvider ExecutionProvider,

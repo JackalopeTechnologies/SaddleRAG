@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -55,6 +56,86 @@ public sealed class OnnxDiSmokeTests
         Assert.IsType<OnnxEmbeddingProvider>(provider);
         Assert.Equal("onnx", provider.ProviderId);
         Assert.Equal("nomic-embed-text-v1.5", provider.ModelName);
+    }
+
+    [Fact]
+    public void ClassifierBindingResolvesToBackendSwitch()
+    {
+        var classifier = BuildClassifier();
+
+        Assert.IsType<ClassifierBackendSwitch>(classifier);
+    }
+
+    [Fact]
+    public void BackendSwitchDefaultsToOnnxBackend()
+    {
+        var classifier = (ClassifierBackendSwitch) BuildClassifier();
+
+        Assert.Equal("onnx", classifier.ActiveBackendName);
+    }
+
+    /// <summary>
+    ///     Mirrors the classifier DI wiring in <c>SaddleRAG.Mcp.Program</c>:
+    ///     the ONNX generator loads lazily so no model files are required to
+    ///     build the graph, and <see cref="ILlmClassifier" /> resolves to the
+    ///     <see cref="ClassifierBackendSwitch" /> composing ONNX (default),
+    ///     Ollama, and the probe. A regression in that wiring (e.g. a DI cycle
+    ///     from binding the switch's Ollama arg to the ILlmClassifier seam, or
+    ///     the generator loading eagerly) gets caught here without booting the
+    ///     host or staging a model.
+    /// </summary>
+    private static ILlmClassifier BuildClassifier()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        services.AddLogging();
+        services.AddHttpClient();
+
+        services.Configure<OllamaSettings>(opts =>
+        {
+            opts.Endpoint = "http://localhost:11434";
+        });
+
+        services.Configure<OnnxSettings>(opts =>
+        {
+            opts.Enabled = true;
+            opts.ModelsDir = Path.GetTempPath();
+            opts.ExecutionProvider = OnnxExecutionProvider.Cpu;
+        });
+
+        services.AddSingleton<OllamaLlmClassifier>();
+
+        services.AddSingleton<OnnxClassifierGenerator>(sp =>
+        {
+            var onnxSettings = sp.GetRequiredService<IOptions<OnnxSettings>>().Value;
+            var entry = ClassifierEntryResolver.Resolve(onnxSettings, onnxSettings.ExecutionProvider);
+            string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
+            return new OnnxClassifierGenerator(modelFolder, entry);
+        });
+
+        services.AddSingleton<OnnxLlmClassifier>(sp =>
+            new OnnxLlmClassifier(sp.GetRequiredService<OnnxClassifierGenerator>(),
+                                  sp.GetRequiredService<ILogger<OnnxLlmClassifier>>()
+                                 )
+        );
+
+        services.AddSingleton<IOllamaProbe>(sp =>
+        {
+            var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var ollamaSettings = sp.GetRequiredService<IOptions<OllamaSettings>>().Value;
+            return new OllamaProbe(httpFactory.CreateClient(), ollamaSettings);
+        });
+
+        services.AddSingleton<ILlmClassifier>(sp =>
+            new ClassifierBackendSwitch(sp.GetRequiredService<OnnxLlmClassifier>(),
+                                        sp.GetRequiredService<OllamaLlmClassifier>(),
+                                        sp.GetRequiredService<IOllamaProbe>(),
+                                        sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>()
+                                       )
+        );
+
+        var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<ILlmClassifier>();
     }
 
     private static IEmbeddingProvider BuildEmbeddingProvider(bool enabled, bool embeddingEnabled, bool includeFiles)

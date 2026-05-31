@@ -27,7 +27,7 @@ namespace SaddleRAG.Ingestion;
 public class IngestionOrchestrator
 {
     public IngestionOrchestrator(IPageCrawler crawler,
-                                 LlmClassifier llmClassifier,
+                                 ILlmClassifier llmClassifier,
                                  CategoryAwareChunker chunker,
                                  IEmbeddingProvider embeddingProvider,
                                  IVectorSearchProvider vectorSearch,
@@ -53,7 +53,7 @@ public class IngestionOrchestrator
         mClassifyStage = new ClassifyStage(llmClassifier, pageRepository, broadcaster, logger);
         mChunkStage = new ChunkStage(chunker, broadcaster, logger);
         mEmbedStage = new EmbedStage(embeddingProvider, chunkRepository, broadcaster, logger);
-        mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger);
+        mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger, llmClassifier);
         mFinalizer = new IngestionFinalizer(chunkRepository,
                                             bm25ShardRepository,
                                             libraryIndexRepository,
@@ -61,6 +61,7 @@ public class IngestionOrchestrator
                                             embeddingProvider,
                                             libraryProfileRepository,
                                             suspectDetector,
+                                            llmClassifier,
                                             logger
                                            );
     }

@@ -115,6 +115,48 @@ public sealed class MonitorDataServiceEnrichmentTests
     }
 
     [Fact]
+    public async Task GetLibraryDetailAsyncCarriesClassifierBackendAndModel()
+    {
+        var libRepo = new FakeLibraryRepository();
+        libRepo.AddLibrary(new LibraryRecord
+                               {
+                                   Id = LibraryAlpha,
+                                   Name = LibraryAlpha,
+                                   Hint = string.Empty,
+                                   CurrentVersion = VersionOne,
+                                   AllVersions = [VersionOne]
+                               }
+                          );
+        libRepo.AddVersion(new LibraryVersionRecord
+                               {
+                                   Id = "alpha/1",
+                                   LibraryId = LibraryAlpha,
+                                   Version = VersionOne,
+                                   ScrapedAt = DateTime.UtcNow,
+                                   PageCount = 5,
+                                   ChunkCount = 50,
+                                   EmbeddingProviderId = "ollama",
+                                   EmbeddingModelName = "nomic-embed-text",
+                                   EmbeddingDimensions = 768,
+                                   ClassifierBackend = "onnx",
+                                   ClassifierModel = "phi-3-mini-4k-instruct-directml"
+                               }
+                          );
+
+        var svc = new MonitorDataService(libRepo,
+                                         new FakeChunkRepository(),
+                                         new FakeLibraryProfileRepository(),
+                                         EmptyJobView(),
+                                         new FakeScrapeAuditRepository()
+                                        );
+        var detail = await svc.GetLibraryDetailAsync(LibraryAlpha, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(detail);
+        Assert.Equal("onnx", detail.ClassifierBackend);
+        Assert.Equal("phi-3-mini-4k-instruct-directml", detail.ClassifierModel);
+    }
+
+    [Fact]
     public async Task GetLibraryDetailAsyncReturnsHostnameDistributionAndLanguageMix()
     {
         var libRepo = new FakeLibraryRepository();

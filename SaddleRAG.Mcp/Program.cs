@@ -59,6 +59,7 @@ const string HttpClientNuGet = "NuGet";
 const string HttpClientNpm = "npm";
 const string HttpClientPyPi = "PyPI";
 const string HttpClientDocUrlProbe = "DocUrlProbe";
+const string OllamaProbeHttpClientName = "OllamaProbe";
 const string KestrelHttpsEndpointKey = "Kestrel:Endpoints:Https:Url";
 const string HealthEndpointPath = "/health";
 const string HealthyStatus = "Healthy";
@@ -244,8 +245,51 @@ builder.Services.AddSingleton<IReRanker>(sp => sp.GetRequiredService<ToggleableR
 
 
 // Classification
+//
+// ClassifierBackendSwitch is the live ILlmClassifier (ONNX default, Ollama
+// selectable at runtime). It composes:
+//   - OnnxLlmClassifier over a real OnnxClassifierGenerator. The generator's
+//     model variant (directml/cuda/cpu) is resolved against the configured
+//     execution provider via ClassifierEntryResolver, and its local model
+//     folder is <Onnx.ModelsDir>/<entry.Name> (mirrors embed/reranker). The
+//     generator loads the native GenAI model LAZILY on first use, so DI
+//     construction here does NOT require the model files to be present yet —
+//     warmup downloads them before the first classify.
+//   - OllamaLlmClassifier as the optional Ollama backend (resolved directly,
+//     not via the ILlmClassifier binding, to avoid a self-referential cycle).
+//   - IOllamaProbe for the reachability check used when switching to Ollama.
+builder.Services.AddSingleton<OllamaLlmClassifier>();
 
-builder.Services.AddSingleton<LlmClassifier>();
+builder.Services.AddSingleton<OnnxClassifierGenerator>(sp =>
+{
+    var onnxSettings = sp.GetRequiredService<IOptions<OnnxSettings>>().Value;
+    var entry = ClassifierEntryResolver.Resolve(onnxSettings, onnxSettings.ExecutionProvider);
+    string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
+    return new OnnxClassifierGenerator(modelFolder, entry);
+});
+
+builder.Services.AddSingleton<OnnxLlmClassifier>(sp =>
+    new OnnxLlmClassifier(sp.GetRequiredService<OnnxClassifierGenerator>(),
+                          sp.GetRequiredService<ILogger<OnnxLlmClassifier>>()
+                         )
+);
+
+builder.Services.AddHttpClient(OllamaProbeHttpClientName);
+builder.Services.AddSingleton<IOllamaProbe>(sp =>
+{
+    var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var ollamaSettings = sp.GetRequiredService<IOptions<OllamaSettings>>().Value;
+    return new OllamaProbe(httpFactory.CreateClient(OllamaProbeHttpClientName), ollamaSettings);
+});
+
+builder.Services.AddSingleton<ClassifierBackendSwitch>(sp =>
+    new ClassifierBackendSwitch(sp.GetRequiredService<OnnxLlmClassifier>(),
+                                sp.GetRequiredService<OllamaLlmClassifier>(),
+                                sp.GetRequiredService<IOllamaProbe>(),
+                                sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>()
+                               )
+);
+builder.Services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
 
 // Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
 builder.Services.AddSingleton<LibraryProfileService>();

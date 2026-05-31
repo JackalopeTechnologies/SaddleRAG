@@ -20,6 +20,18 @@ public sealed record AuditPageOutcome
     public string? Category { get; init; }
 
     /// <summary>
+    ///     Classifier backend that produced <see cref="Category" />
+    ///     ("onnx" or "ollama"). Null on audit rows written before provenance.
+    /// </summary>
+    public string? ClassifierBackend { get; init; }
+
+    /// <summary>
+    ///     Classifier model id that produced <see cref="Category" />. Null on
+    ///     older audit rows.
+    /// </summary>
+    public string? ClassifierModel { get; init; }
+
+    /// <summary>
     ///     Number of chunks produced from this page.
     /// </summary>
     public int? ChunkCount { get; init; }

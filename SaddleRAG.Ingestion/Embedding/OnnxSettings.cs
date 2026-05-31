@@ -119,6 +119,56 @@ public class OnnxSettings
     /// </summary>
     public List<RerankerModelEntry> RerankerModels { get; set; } = [];
 
+    /// <summary>
+    ///     Name of the <see cref="ClassifierModels" /> entry to use. Missing
+    ///     or empty falls back to the first entry. An invalid name throws
+    ///     at startup rather than silently defaulting.
+    /// </summary>
+    public string ActiveClassifierModel { get; set; } = string.Empty;
+
+    /// <summary>
+    ///     Ordered registry of classifier model entries. <strong>First entry
+    ///     is the default</strong> when <see cref="ActiveClassifierModel" /> is
+    ///     unset. Each entry represents one provider variant (DirectML, CUDA,
+    ///     or CPU) because GenAI models ship as provider-specific folder trees
+    ///     rather than a single portable <c>.onnx</c> file. Switch provider
+    ///     variants by changing <see cref="ActiveClassifierModel" /> to the
+    ///     desired entry name.
+    ///     The list is pre-populated with the three verified
+    ///     <c>microsoft/Phi-3-mini-4k-instruct-onnx</c> variants. appsettings.json
+    ///     can override it entirely; the defaults are here so the server is
+    ///     functional without a config entry.
+    ///     Active variant is resolved to match the runtime execution provider in
+    ///     DI/warmup (DirectML build -&gt; directml entry, CUDA -&gt; cuda, CPU -&gt; cpu);
+    ///     registry default-to-first is the DirectML build's default — a CPU/Linux
+    ///     build resolves to the cpu entry.
+    /// </summary>
+    // Active variant is resolved to match the runtime execution provider in DI/warmup (DirectML build -> directml entry, CUDA -> cuda, CPU -> cpu); registry default-to-first is the DirectML build's default — a CPU/Linux build resolves to the cpu entry.
+    public List<ClassifierModelEntry> ClassifierModels { get; set; } =
+    [
+        new ClassifierModelEntry
+        {
+            Name = Phi3MiniDirectMlName,
+            Description = "phi-3-mini-4k-instruct quantised for DirectML (int4 AWQ). Runs on any DX12 GPU — default for the DirectML build.",
+            RepoId = Phi3MiniRepoId,
+            ModelFolder = Phi3MiniDirectMlFolder
+        },
+        new ClassifierModelEntry
+        {
+            Name = Phi3MiniCudaName,
+            Description = "phi-3-mini-4k-instruct quantised for CUDA (int4 RTN). Requires the CUDA build (UseGpuCuda=true).",
+            RepoId = Phi3MiniRepoId,
+            ModelFolder = Phi3MiniCudaFolder
+        },
+        new ClassifierModelEntry
+        {
+            Name = Phi3MiniCpuName,
+            Description = "phi-3-mini-4k-instruct quantised for CPU (int4 RTN, acc-level-4). Use on any machine; slower than GPU variants.",
+            RepoId = Phi3MiniRepoId,
+            ModelFolder = Phi3MiniCpuFolder
+        }
+    ];
+
     /// <summary>Configuration section name in appsettings.</summary>
     public const string SectionName = "Onnx";
 
@@ -169,6 +219,36 @@ public class OnnxSettings
     private const string ModelsDirAppName = "SaddleRAG";
     private const string ModelsDirModelsSegment = "models";
     private const string ModelsDirOnnxSegment = "onnx";
+
+    /// <summary>HuggingFace repo ID for the phi-3-mini-4k-instruct ONNX variants.</summary>
+    public const string Phi3MiniRepoId = "microsoft/Phi-3-mini-4k-instruct-onnx";
+
+    /// <summary>Registry name for the phi-3-mini-4k DirectML variant entry.</summary>
+    public const string Phi3MiniDirectMlName = "phi-3-mini-4k-instruct-directml";
+
+    /// <summary>Registry name for the phi-3-mini-4k CUDA variant entry.</summary>
+    public const string Phi3MiniCudaName = "phi-3-mini-4k-instruct-cuda";
+
+    /// <summary>Registry name for the phi-3-mini-4k CPU variant entry.</summary>
+    public const string Phi3MiniCpuName = "phi-3-mini-4k-instruct-cpu";
+
+    /// <summary>
+    ///     HuggingFace subfolder for the phi-3-mini-4k DirectML variant (int4 AWQ).
+    ///     Verified against the live microsoft/Phi-3-mini-4k-instruct-onnx repo tree.
+    /// </summary>
+    public const string Phi3MiniDirectMlFolder = "directml/directml-int4-awq-block-128";
+
+    /// <summary>
+    ///     HuggingFace subfolder for the phi-3-mini-4k CUDA variant (int4 RTN).
+    ///     Verified against the live microsoft/Phi-3-mini-4k-instruct-onnx repo tree.
+    /// </summary>
+    public const string Phi3MiniCudaFolder = "cuda/cuda-int4-rtn-block-32";
+
+    /// <summary>
+    ///     HuggingFace subfolder for the phi-3-mini-4k CPU variant (int4 RTN, acc-level-4).
+    ///     Verified against the live microsoft/Phi-3-mini-4k-instruct-onnx repo tree.
+    /// </summary>
+    public const string Phi3MiniCpuFolder = "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4";
 
     /// <summary>
     ///     Returns true if <paramref name="value" /> can be parsed as a
@@ -259,6 +339,27 @@ public class OnnxSettings
                                   $"Use '{RerankerNoneSentinel}' to disable reranking, leave empty for the default (first entry)."
                               )
         };
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Resolves the active <see cref="ClassifierModelEntry" /> per the
+    ///     first-in-list-is-default convention. Throws if the registry is
+    ///     empty or if <see cref="ActiveClassifierModel" /> names an entry
+    ///     that doesn't exist.
+    /// </summary>
+    public ClassifierModelEntry GetActiveClassifierModel()
+    {
+        if (ClassifierModels.Count == 0)
+            throw new InvalidOperationException("Onnx.ClassifierModels registry is empty; cannot resolve an active classifier model.");
+
+        ClassifierModelEntry result = string.IsNullOrEmpty(ActiveClassifierModel)
+            ? ClassifierModels[index: 0]
+            : ClassifierModels.FirstOrDefault(e => e.Name == ActiveClassifierModel)
+              ?? throw new InvalidOperationException(
+                  $"Onnx.ActiveClassifierModel '{ActiveClassifierModel}' does not match any entry in ClassifierModels."
+              );
 
         return result;
     }

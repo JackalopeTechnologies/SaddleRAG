@@ -4,12 +4,14 @@
 
 #region Usings
 
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Mcp.Monitor;
 using SaddleRAG.Monitor.Services;
@@ -48,19 +50,44 @@ public sealed class MonitorConfigSnapshotTests
         return caps;
     }
 
+    private static ClassifierBackendSwitch StubBackendSwitch(OnnxSettings? onnx = null)
+    {
+        var settings = onnx ?? new OnnxSettings();
+        var onnxClassifier = new OnnxLlmClassifier(new StubClassifierGenerator(),
+                                                    NullLogger<OnnxLlmClassifier>.Instance
+                                                   );
+        var ollamaClassifier = Substitute.For<ILlmClassifier>();
+        var probe = Substitute.For<IOllamaProbe>();
+        return new ClassifierBackendSwitch(onnxClassifier,
+                                           ollamaClassifier,
+                                           probe,
+                                           NullLogger<ClassifierBackendSwitch>.Instance
+                                          );
+    }
+
     private static McpMonitorConfigSource NewSource(OnnxSettings? onnx = null,
                                                     OllamaSettings? ollama = null,
                                                     SaddleRagDbSettings? mongo = null,
                                                     RankingSettings? ranking = null,
                                                     OnnxRuntimeCapabilities? capabilities = null,
-                                                    IEmbeddingProvider? provider = null) =>
+                                                    IEmbeddingProvider? provider = null,
+                                                    ClassifierBackendSwitch? classifierSwitch = null) =>
         new(Opt(onnx ?? new OnnxSettings()),
             Opt(ollama ?? new OllamaSettings()),
             Opt(mongo ?? new SaddleRagDbSettings()),
             Opt(ranking ?? new RankingSettings()),
             capabilities ?? new OnnxRuntimeCapabilities(),
-            provider ?? StubProvider()
+            provider ?? StubProvider(),
+            classifierSwitch ?? StubBackendSwitch(onnx)
            );
+
+    private sealed class StubClassifierGenerator : IClassifierGenerator
+    {
+        public string ModelId => string.Empty;
+
+        public Task<string> GenerateAsync(string prompt, CancellationToken ct = default) =>
+            Task.FromResult("{\"category\":\"HowTo\",\"confidence\":0.9}");
+    }
 
     [Theory]
     [InlineData("mongodb://user:secret@host:27017/db", "mongodb://***:***@host:27017/db")]
@@ -216,5 +243,42 @@ public sealed class MonitorConfigSnapshotTests
         Assert.Equal("llama3.2-3b", snap.Ollama.ClassificationModel);
         Assert.Equal("llama3.2-3b", snap.Ollama.ReconModel);
         Assert.Equal("nomic-embed-text", snap.Ollama.EmbeddingModel);
+    }
+
+    [Fact]
+    public void GetSnapshotClassifierCardShowsOnnxBackendByDefault()
+    {
+        var onnx = new OnnxSettings { ExecutionProvider = OnnxExecutionProvider.Cpu };
+        var ollama = new OllamaSettings { ActiveClassificationModel = "phi4-mini:3.8b" };
+        var source = NewSource(onnx: onnx, ollama: ollama);
+
+        var snap = source.GetSnapshot();
+
+        Assert.Equal("onnx", snap.Classifier.ActiveBackend);
+        Assert.NotEmpty(snap.Classifier.ActiveOnnxModel);
+        Assert.Equal("phi4-mini:3.8b", snap.Classifier.OllamaClassificationModel);
+    }
+
+    [Fact]
+    public void GetSnapshotClassifierCardShowsOllamaBackendAfterSwitch()
+    {
+        var onnx = new OnnxSettings { ExecutionProvider = OnnxExecutionProvider.Cpu };
+        var onnxClassifier = new OnnxLlmClassifier(new StubClassifierGenerator(),
+                                                    NullLogger<OnnxLlmClassifier>.Instance
+                                                   );
+        var ollamaClassifier = Substitute.For<ILlmClassifier>();
+        var probe = Substitute.For<IOllamaProbe>();
+        var switchInstance = new ClassifierBackendSwitch(onnxClassifier,
+                                                         ollamaClassifier,
+                                                         probe,
+                                                         NullLogger<ClassifierBackendSwitch>.Instance
+                                                        );
+        probe.IsReachableAsync(Arg.Any<CancellationToken>()).Returns(true);
+        switchInstance.UseOnnx();
+
+        var source = NewSource(onnx: onnx, classifierSwitch: switchInstance);
+        var snap = source.GetSnapshot();
+
+        Assert.Equal("onnx", snap.Classifier.ActiveBackend);
     }
 }

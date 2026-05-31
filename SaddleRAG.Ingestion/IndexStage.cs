@@ -10,6 +10,7 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Ingestion.Classification;
 
 #endregion
 
@@ -28,20 +29,24 @@ internal sealed class IndexStage
     public IndexStage(IVectorSearchProvider vectorSearch,
                       IScrapeAuditWriter auditWriter,
                       IMonitorBroadcaster broadcaster,
-                      ILogger logger)
+                      ILogger logger,
+                      ILlmClassifier classifier)
     {
         ArgumentNullException.ThrowIfNull(vectorSearch);
         ArgumentNullException.ThrowIfNull(auditWriter);
         ArgumentNullException.ThrowIfNull(broadcaster);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(classifier);
         mVectorSearch = vectorSearch;
         mAuditWriter = auditWriter;
         mBroadcaster = broadcaster;
         mLogger = logger;
+        mLlmClassifier = classifier;
     }
 
     private readonly IScrapeAuditWriter mAuditWriter;
     private readonly IMonitorBroadcaster mBroadcaster;
+    private readonly ILlmClassifier mLlmClassifier;
     private readonly ILogger mLogger;
     private readonly IVectorSearchProvider mVectorSearch;
 
@@ -148,11 +153,30 @@ internal sealed class IndexStage
         }
     }
 
+    private (string? Backend, string? Model) ReadClassifierIdentitySafely()
+    {
+        string? backend = null;
+        string? model = null;
+
+        try
+        {
+            backend = mLlmClassifier.BackendName;
+            model = mLlmClassifier.ModelId;
+        }
+        catch(Exception ex)
+        {
+            mLogger.LogWarning(ex, "Could not read classifier identity for audit provenance; recording it as unknown.");
+        }
+
+        return (backend, model);
+    }
+
     private void EmitIndexedAuditRecords(AuditContext auditCtx,
                                          IReadOnlyDictionary<string, (int ChunkCount, DocCategory Category)>
                                              pageChunkCounts,
                                          IReadOnlyDictionary<string, (int Depth, string? ParentUrl)> pageMetadata)
     {
+        (string? classifierBackend, string? classifierModel) = ReadClassifierIdentitySafely();
         foreach((var pageUrl, (var chunkCount, var category)) in pageChunkCounts)
         {
             var host = new Uri(pageUrl).Host;
@@ -166,7 +190,9 @@ internal sealed class IndexStage
                                            {
                                                FetchStatus = null,
                                                Category = category.ToString(),
-                                               ChunkCount = chunkCount
+                                               ChunkCount = chunkCount,
+                                               ClassifierBackend = classifierBackend,
+                                               ClassifierModel = classifierModel
                                            }
                                       );
             mBroadcaster.RecordPageCompleted(auditCtx.JobId);

@@ -114,6 +114,12 @@
                                 <MudText Typo="Typo.body2">
                                     <strong>Category:</strong> @(context.PageOutcome.Category ?? "—")
                                 </MudText>
+                                @if (!string.IsNullOrEmpty(context.PageOutcome.ClassifierBackend))
+                                {
+                                    <MudText Typo="Typo.body2">
+                                        <strong>Classifier:</strong> @context.PageOutcome.ClassifierBackend / @(string.IsNullOrEmpty(context.PageOutcome.ClassifierModel) ? "(unknown model)" : context.PageOutcome.ClassifierModel)
+                                    </MudText>
+                                }
                                 <MudText Typo="Typo.body2">
                                     <strong>Chunks:</strong> @(context.PageOutcome.ChunkCount?.ToString() ?? "—")
                                 </MudText>

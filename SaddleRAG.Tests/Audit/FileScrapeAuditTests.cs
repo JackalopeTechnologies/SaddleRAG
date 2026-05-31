@@ -200,8 +200,8 @@ public sealed class FileScrapeAuditTests
 
         var ollamaSettings = new OllamaSettings();
         ollamaSettings.ClassificationModels.Add(new OllamaModelEntry { Name = "test-classifier:latest" });
-        var llmClassifier = new LlmClassifier(Options.Create(ollamaSettings),
-                                              NullLogger<LlmClassifier>.Instance
+        var llmClassifier = new OllamaLlmClassifier(Options.Create(ollamaSettings),
+                                              NullLogger<OllamaLlmClassifier>.Instance
                                              );
 
         var symbolExtractor = new SymbolExtractor();

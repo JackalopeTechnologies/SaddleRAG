@@ -6,12 +6,14 @@
 
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Ingestion;
+using SaddleRAG.Ingestion.Classification;
 
 #endregion
 
@@ -291,14 +293,63 @@ public sealed class IndexStageAuditTests
         Assert.Empty(auditWriter.IndexedCalls);
     }
 
+    [Fact]
+    public async Task IndexedAuditRecordsCarryClassifierProvenance()
+    {
+        var auditWriter = new SpyAuditWriter();
+        var broadcaster = new SilentMonitorBroadcaster();
+        var vectorSearch = Substitute.For<IVectorSearchProvider>();
+        using var cts = new CancellationTokenSource();
+
+        var classifier = Substitute.For<ILlmClassifier>();
+        classifier.BackendName.Returns("onnx");
+        classifier.ModelId.Returns("phi-3-mini-4k-instruct-directml");
+
+        var indexStage = CreateIndexStage(vectorSearch, auditWriter, broadcaster, classifier);
+
+        const string PageUrl = "https://docs.example.com/provenance-page";
+        var channel = Channel.CreateUnbounded<DocChunk[]>();
+        await channel.Writer.WriteAsync(MakePageChunks(PageUrl,
+                                                       count: 2,
+                                                       depth: 1,
+                                                       "https://docs.example.com/"
+                                                      ),
+                                        TestContext.Current.CancellationToken
+                                       );
+        channel.Writer.Complete();
+
+        var job = MakeJob();
+        var auditCtx = MakeAuditCtx("test-job-provenance");
+        var progress = MakeProgress(job);
+
+        await indexStage.RunAsync(profile: null,
+                                  job,
+                                  auditCtx,
+                                  channel.Reader,
+                                  progress,
+                                  onProgress: null,
+                                  cts
+                                 );
+
+        Assert.Single(auditWriter.IndexedCalls);
+        var outcome = auditWriter.IndexedCalls[index: 0].Outcome;
+        Assert.Equal("onnx", outcome.ClassifierBackend);
+        Assert.Equal("phi-3-mini-4k-instruct-directml", outcome.ClassifierModel);
+    }
+
     private static IndexStage CreateIndexStage(IVectorSearchProvider vectorSearch,
                                                IScrapeAuditWriter auditWriter,
-                                               IMonitorBroadcaster broadcaster) =>
-        new IndexStage(vectorSearch,
-                       auditWriter,
-                       broadcaster,
-                       NullLogger<IndexStage>.Instance
-                      );
+                                               IMonitorBroadcaster broadcaster,
+                                               ILlmClassifier? classifier = null)
+    {
+        var effectiveClassifier = classifier ?? Substitute.For<ILlmClassifier>();
+        return new IndexStage(vectorSearch,
+                              auditWriter,
+                              broadcaster,
+                              NullLogger<IndexStage>.Instance,
+                              effectiveClassifier
+                             );
+    }
 
     private static DocChunk[] MakePageChunks(string pageUrl, int count, int depth, string? parentUrl)
     {

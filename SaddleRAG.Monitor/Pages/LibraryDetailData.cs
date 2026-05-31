@@ -27,6 +27,8 @@ public sealed record LibraryDetailData
     public double? BoundaryIssuePct { get; init; }
     public string? EmbeddingProviderId { get; init; }
     public string? EmbeddingModelName { get; init; }
+    public string? ClassifierBackend { get; init; }
+    public string? ClassifierModel { get; init; }
     public IReadOnlyList<HostBucket> HostnameDistribution { get; init; } = [];
     public IReadOnlyDictionary<string, double> LanguageMix { get; init; } = new Dictionary<string, double>();
 }

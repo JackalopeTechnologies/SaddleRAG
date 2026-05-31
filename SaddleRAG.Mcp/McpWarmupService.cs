@@ -13,6 +13,7 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
 using SaddleRAG.Database.Migrations;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -72,7 +73,28 @@ public sealed class McpWarmupService : BackgroundService
 
             var onnxDownloader = scope.ServiceProvider.GetRequiredService<OnnxModelDownloader>();
 
+            var onnxSettings = scope.ServiceProvider.GetRequiredService<IOptions<OnnxSettings>>().Value;
+
+            var classifier = scope.ServiceProvider.GetRequiredService<ILlmClassifier>();
+
             var vectorSearch = scope.ServiceProvider.GetRequiredService<IVectorSearchProvider>();
+
+            // Whether any Ollama backend is actually active. The Ollama
+            // bootstrap (model pulls + keep-alive warm) only runs when at
+            // least one of these is true:
+            //   - Ollama provides embeddings (Onnx disabled, or ONNX on but
+            //     EmbeddingEnabled=false — the embedding fallback path), OR
+            //   - the active classifier backend is Ollama.
+            // On the all-ONNX path (ONNX embed + ONNX classifier) the
+            // bootstrap/warm is skipped entirely, removing the slow/failing
+            // Ollama classification warm from the default startup.
+            bool ollamaEmbeddingActive = !onnxSettings.Enabled || !onnxSettings.EmbeddingEnabled;
+            bool ollamaClassifierActive = classifier is ClassifierBackendSwitch backendSwitch
+                                          && string.Equals(backendSwitch.ActiveBackendName,
+                                                           ClassifierBackendNames.Ollama,
+                                                           StringComparison.OrdinalIgnoreCase
+                                                          );
+            bool ollamaBackendActive = ollamaEmbeddingActive || ollamaClassifierActive;
 
             // IEmbeddingProvider is resolved *after* EnsureActiveModelsAsync below:
             // OnnxEmbeddingProvider's constructor opens model.onnx + vocab.txt from
@@ -109,14 +131,25 @@ public sealed class McpWarmupService : BackgroundService
 
             stepSw.Restart();
 
-            await bootstrapper.BootstrapAsync(requiredModels.ToList(), stoppingToken);
+            if (ollamaBackendActive)
+            {
+                await bootstrapper.BootstrapAsync(requiredModels.ToList(), stoppingToken);
 
-            mWarmupState.MarkPhase(PhaseOllamaBootstrapFinished);
+                mWarmupState.MarkPhase(PhaseOllamaBootstrapFinished);
 
-            mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - Ollama bootstrap finished",
-                                   startupSw.Elapsed.TotalSeconds,
-                                   stepSw.ElapsedMilliseconds
-                                  );
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - Ollama bootstrap finished",
+                                       startupSw.Elapsed.TotalSeconds,
+                                       stepSw.ElapsedMilliseconds
+                                      );
+            }
+            else
+            {
+                mWarmupState.MarkPhase(PhaseOllamaBootstrapSkipped);
+
+                mLogger.LogInformation("[Warmup] T+{Sec:F1}s - Ollama bootstrap skipped (all-ONNX path)",
+                                       startupSw.Elapsed.TotalSeconds
+                                      );
+            }
 
 
             stepSw.Restart();
@@ -147,6 +180,27 @@ public sealed class McpWarmupService : BackgroundService
                                    startupSw.Elapsed.TotalSeconds,
                                    stepSw.ElapsedMilliseconds
                                   );
+
+
+            // Download the active classifier model folder (idempotent) and
+            // warm the ONNX classifier so the first real classification isn't
+            // cold. Gated on Onnx.Enabled — when ONNX is off the classifier
+            // path is Ollama and this whole block is skipped. Non-fatal: a
+            // download or warm failure logs a warning but does NOT abort
+            // warmup (mirrors the search-path warm's non-fatal pattern), so
+            // the operator can still serve search while resolving the issue.
+            if (onnxSettings.Enabled)
+            {
+                stepSw.Restart();
+
+                await EnsureAndWarmOnnxClassifierAsync(onnxDownloader,
+                                                       onnxSettings,
+                                                       classifier,
+                                                       startupSw,
+                                                       stepSw,
+                                                       stoppingToken
+                                                      );
+            }
 
 
             var embeddingProvider = scope.ServiceProvider.GetRequiredService<IEmbeddingProvider>();
@@ -516,6 +570,76 @@ public sealed class McpWarmupService : BackgroundService
 
     private const string PhaseClassifierDegraded = "Completed (classifier warm failed; search ready)";
 
+    /// <summary>
+    ///     Downloads the active classifier model folder (idempotent) and warms
+    ///     the ONNX classifier by classifying a tiny probe page, which triggers
+    ///     the generator's lazy GenAI-model load. Non-fatal: any failure logs a
+    ///     warning and marks <see cref="PhaseOnnxClassifierWarmSkipped" /> so
+    ///     warmup continues — search is unaffected and the first real
+    ///     classification will simply pay the cold-load cost. Resolves the
+    ///     active classifier variant against the configured execution provider
+    ///     so the directml/cuda/cpu folder downloaded matches the generator's.
+    /// </summary>
+    private async Task EnsureAndWarmOnnxClassifierAsync(OnnxModelDownloader downloader,
+                                                        OnnxSettings onnxSettings,
+                                                        ILlmClassifier classifier,
+                                                        Stopwatch startupSw,
+                                                        Stopwatch stepSw,
+                                                        CancellationToken ct)
+    {
+        try
+        {
+            var entry = ClassifierEntryResolver.Resolve(onnxSettings, onnxSettings.ExecutionProvider);
+            string targetDir = Path.Combine(onnxSettings.ModelsDir, entry.Name);
+
+            await downloader.DownloadModelFolderAsync(entry.RepoId, entry.ModelFolder, targetDir, ct);
+
+            mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - ONNX classifier model ready ({Entry})",
+                                   startupSw.Elapsed.TotalSeconds,
+                                   stepSw.ElapsedMilliseconds,
+                                   entry.Name
+                                  );
+
+            stepSw.Restart();
+
+            await classifier.ClassifyAsync(BuildClassifierWarmupProbePage(), ClassifierWarmupLibraryHint, ct);
+
+            mWarmupState.MarkPhase(PhaseOnnxClassifierWarm);
+
+            mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - ONNX classifier warm",
+                                   startupSw.Elapsed.TotalSeconds,
+                                   stepSw.ElapsedMilliseconds
+                                  );
+        }
+        catch(Exception ex) when(ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            mWarmupState.MarkPhase(PhaseOnnxClassifierWarmSkipped);
+
+            mLogger.LogWarning(ex,
+                               "[Warmup] T+{Sec:F1}s - ONNX classifier download/warm failed (non-fatal); the first classification will cold-load.",
+                               startupSw.Elapsed.TotalSeconds
+                              );
+        }
+    }
+
+
+    private static PageRecord BuildClassifierWarmupProbePage()
+    {
+        return new PageRecord
+                   {
+                       Id = ClassifierWarmupProbeId,
+                       LibraryId = ClassifierWarmupLibraryHint,
+                       Version = ClassifierWarmupProbeVersion,
+                       Url = ClassifierWarmupProbeUrl,
+                       Title = ClassifierWarmupProbeTitle,
+                       Category = DocCategory.Unclassified,
+                       RawContent = ClassifierWarmupProbeContent,
+                       FetchedAt = DateTime.UtcNow,
+                       ContentHash = ClassifierWarmupProbeHash
+                   };
+    }
+
+
     private const string PhaseStarting = "Starting";
 
     private const string PhaseMongoDbProfilesDiscovered = "MongoDB profiles discovered";
@@ -523,6 +647,12 @@ public sealed class McpWarmupService : BackgroundService
     private const string PhaseOllamaBootstrapFinished = "Ollama bootstrap finished";
 
     private const string PhaseOnnxModelsReady = "ONNX models ready";
+
+    private const string PhaseOllamaBootstrapSkipped = "Ollama bootstrap skipped (all-ONNX path)";
+
+    private const string PhaseOnnxClassifierWarm = "ONNX classifier warm";
+
+    private const string PhaseOnnxClassifierWarmSkipped = "ONNX classifier warm skipped";
 
     private const string PhaseOnnxDownloadFailed = "ONNX download failed";
 
@@ -535,6 +665,20 @@ public sealed class McpWarmupService : BackgroundService
     private const string WarmupProbeText = "warmup";
 
     private const string WarmupSearchProbeText = "warmup search";
+
+    private const string ClassifierWarmupLibraryHint = "warmup";
+
+    private const string ClassifierWarmupProbeId = "warmup-classifier-probe";
+
+    private const string ClassifierWarmupProbeVersion = "warmup";
+
+    private const string ClassifierWarmupProbeUrl = "https://warmup.local/classify";
+
+    private const string ClassifierWarmupProbeTitle = "warmup";
+
+    private const string ClassifierWarmupProbeContent = "Warmup probe page for the ONNX classifier. This text is classified once at startup so the GenAI model loads off the hot path.";
+
+    private const string ClassifierWarmupProbeHash = "warmup";
 
     private const string WarmupCanceledMessage = "Warmup canceled during shutdown.";
 
