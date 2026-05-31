@@ -24,6 +24,10 @@
 
   <ItemGroup>
     <Resource Include="..\assets\branding\saddlerag-icon.ico" Link="Resources\saddlerag-icon.ico" />
+    <Resource Include="Resources\tray-running.ico" />
+    <Resource Include="Resources\tray-stopped.ico" />
+    <Resource Include="Resources\tray-notinstalled.ico" />
+    <Resource Include="Resources\tray-transitioning.ico" />
   </ItemGroup>
 
 </Project>

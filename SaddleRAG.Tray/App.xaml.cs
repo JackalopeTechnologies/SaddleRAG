@@ -28,6 +28,7 @@ public partial class App : Application
     private const string OpeningDashboardMessage = "Opening dashboard";
     private const string HelperInstallFailedPrefix = "Helper install failed: ";
     private const string ActionFailedSuffix = " failed: ";
+    private const string IconRenderFailedMessage = "Status icon update failed: ";
 
     private TaskbarIcon? mTrayIcon;
     private McpServiceMenuModel? mMenuModel;
@@ -63,6 +64,7 @@ public partial class App : Application
         {
             mMenuModel.Refresh();
             mTrayIcon.ToolTipText = mMenuModel.Tooltip;
+            UpdateIcon(mMenuModel.State);
             // x:Name on items inside Application.Resources does NOT generate code-behind
             // fields, and index-based access breaks if a Separator/order changes. Look up
             // by name instead.
@@ -81,6 +83,21 @@ public partial class App : Application
         if (mTrayIcon?.ContextMenu is not null)
             res = mTrayIcon.ContextMenu.Items.OfType<MenuItem>().FirstOrDefault(m => m.Name == name);
         return res;
+    }
+
+    private void UpdateIcon(McpServiceState state)
+    {
+        if (mTrayIcon is not null)
+        {
+            try
+            {
+                mTrayIcon.IconSource = TrayIconRenderer.ForState(state);
+            }
+            catch (Exception ex)
+            {
+                ShowBalloon($"{IconRenderFailedMessage}{ex.Message}");
+            }
+        }
     }
 
     private void OnStart(object sender, RoutedEventArgs e)
