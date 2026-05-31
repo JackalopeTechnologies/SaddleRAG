@@ -51,20 +51,25 @@ public sealed class ClientResultFormatterTests
     }
 
     [Fact]
-    public void SummarizeStatusReportsRegisteredAndDetected()
+    public void SummarizeStatusReportsTwoAxisCombinations()
     {
         StatusResult registered = new("claude-code", ConfigPath, true, true, true, true, "ok");
         StatusResult missing = new("codex", ConfigPath, false, false, false, null, "absent");
+        StatusResult oldEndpoint = new("cursor", ConfigPath, true, true, false, null, "stale");
+        StatusResult installedMissing = new("windsurf", ConfigPath, true, false, false, null, "no entry");
         List<ClientResultFormatter.StatusLineInput> inputs =
         [
             new ClientResultFormatter.StatusLineInput("Claude Code", registered, true),
-            new ClientResultFormatter.StatusLineInput("Codex", missing, false)
+            new ClientResultFormatter.StatusLineInput("Codex", missing, false),
+            new ClientResultFormatter.StatusLineInput("Cursor", oldEndpoint, true),
+            new ClientResultFormatter.StatusLineInput("Windsurf", installedMissing, true)
         ];
 
         string summary = ClientResultFormatter.SummarizeStatus(inputs);
 
-        Assert.Contains("Claude Code: registered (detected)", summary);
-        Assert.Contains("Codex: not registered", summary);
-        Assert.DoesNotContain("Codex: not registered (detected)", summary);
+        Assert.Contains("Claude Code: installed, registered", summary);
+        Assert.Contains("Codex: absent, not registered", summary);
+        Assert.Contains("Cursor: installed, old endpoint", summary);
+        Assert.Contains("Windsurf: installed, not registered", summary);
     }
 }

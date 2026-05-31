@@ -6,6 +6,7 @@ namespace SaddleRAG.Tray.Services;
 
 public enum McpServiceState
 {
+    Unknown,
     NotInstalled,
     Stopped,
     Running,

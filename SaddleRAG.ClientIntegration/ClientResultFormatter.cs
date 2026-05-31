@@ -64,16 +64,23 @@ public static class ClientResultFormatter
 
     private static string FormatStatusLine(StatusLineInput input)
     {
-        string state = input.Status.SaddleRagEntryPresent ? RegisteredText : NotRegisteredText;
-        string detected = input.IsDetected ? DetectedSuffix : string.Empty;
-        return $"{input.DisplayName}: {state}{detected}";
+        string presence = input.IsDetected ? InstalledMark : AbsentMark;
+        string regMark = (input.Status.SaddleRagEntryPresent, input.Status.EndpointMatchesCanonical) switch
+        {
+            (true, true) => RegisteredMark,
+            (true, false) => OldMark,
+            _ => MissingMark
+        };
+        return $"{input.DisplayName}: {presence}, {regMark}";
     }
 
     private const string OkPrefix = "OK ";
     private const string ErrPrefix = "ERR";
     private const string SkipPrefix = "SKIP";
     private const string NoopPrefix = "NOOP";
-    private const string RegisteredText = "registered";
-    private const string NotRegisteredText = "not registered";
-    private const string DetectedSuffix = " (detected)";
+    private const string InstalledMark = "installed";
+    private const string AbsentMark = "absent";
+    private const string RegisteredMark = "registered";
+    private const string OldMark = "old endpoint";
+    private const string MissingMark = "not registered";
 }

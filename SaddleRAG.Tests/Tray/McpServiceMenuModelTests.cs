@@ -71,4 +71,13 @@ public sealed class McpServiceMenuModelTests
         Assert.True(model.CanStop);
         Assert.False(model.CanStart);
     }
+
+    [Fact]
+    public void WhenUnknownTooltipHasNoSuffix()
+    {
+        FakeController fake = new() { State = McpServiceState.Unknown };
+        McpServiceMenuModel model = new(fake);
+
+        Assert.Equal("SaddleRAG MCP", model.Tooltip);
+    }
 }

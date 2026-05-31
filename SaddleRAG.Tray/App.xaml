@@ -16,7 +16,7 @@
                     <Separator/>
                     <MenuItem x:Name="InstallMenu"   Header="Install into"/>
                     <MenuItem x:Name="UninstallMenu" Header="Uninstall from"/>
-                    <MenuItem Header="Status" Click="OnStatus"/>
+                    <MenuItem x:Name="StatusItem" Header="Status…" Click="OnStatus"/>
                     <Separator/>
                     <MenuItem Header="Exit" Click="OnExitClicked"/>
                 </ContextMenu>
