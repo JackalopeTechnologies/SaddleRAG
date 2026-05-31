@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using H.NotifyIcon;
+using SaddleRAG.ClientIntegration;
 using SaddleRAG.Tray.Services;
 
 #endregion
@@ -22,17 +23,25 @@ public partial class App : Application
     private const string TrayIconResourceKey = "TrayIcon";
     private const string StartItemName = "StartItem";
     private const string StopItemName = "StopItem";
+    private const string InstallMenuName = "InstallMenu";
+    private const string UninstallMenuName = "UninstallMenu";
+
+    private const string AllItemHeader = "All";
+    private const string AllKey = "all";
 
     private const string StartingMessage = "Starting MCP service";
     private const string StoppingMessage = "Stopping MCP service";
     private const string OpeningDashboardMessage = "Opening dashboard";
-    private const string HelperInstallFailedPrefix = "Helper install failed: ";
+    private const string InstallFailedPrefix = "Install failed: ";
+    private const string UninstallFailedPrefix = "Uninstall failed: ";
+    private const string StatusFailedPrefix = "Status failed: ";
+    private const string StatusTitle = "SaddleRAG — client status";
     private const string ActionFailedSuffix = " failed: ";
     private const string IconRenderFailedMessage = "Status icon update failed: ";
 
     private TaskbarIcon? mTrayIcon;
     private McpServiceMenuModel? mMenuModel;
-    private readonly HelperInstaller mHelperInstaller = new();
+    private readonly TrayClientService mClientService = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -46,6 +55,8 @@ public partial class App : Application
         // relying on the ForceCreate() default.
         mTrayIcon.ForceCreate(enablesEfficiencyMode: true);
 
+        PopulateClientMenus();
+
         mTrayIcon.ContextMenu.Opened += (_, _) => SyncMenu();
         SyncMenu();
     }
@@ -56,6 +67,32 @@ public partial class App : Application
         // official sample and is the recommended "cleaner" path.
         mTrayIcon?.Dispose();
         base.OnExit(e);
+    }
+
+    private void PopulateClientMenus()
+    {
+        MenuItem? installMenu = FindMenuItem(InstallMenuName);
+        MenuItem? uninstallMenu = FindMenuItem(UninstallMenuName);
+        if (installMenu is not null)
+            BuildClientSubmenu(installMenu, OnInstallClient);
+        if (uninstallMenu is not null)
+            BuildClientSubmenu(uninstallMenu, OnUninstallClient);
+    }
+
+    private static void BuildClientSubmenu(MenuItem parent, RoutedEventHandler handler)
+    {
+        parent.Items.Clear();
+        foreach (ClientWriterCatalog.ClientDescriptor descriptor in ClientWriterCatalog.All)
+        {
+            MenuItem item = new() { Header = descriptor.DisplayName, Tag = descriptor.Key };
+            item.Click += handler;
+            parent.Items.Add(item);
+        }
+
+        parent.Items.Add(new Separator());
+        MenuItem allItem = new() { Header = AllItemHeader, Tag = AllKey };
+        allItem.Click += handler;
+        parent.Items.Add(allItem);
     }
 
     private void SyncMenu()
@@ -121,29 +158,53 @@ public partial class App : Application
             OpeningDashboardMessage);
     }
 
-    private void OnInstallClaudeCode(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.ClaudeCode);
-    private void OnInstallClaudeDesktop(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.ClaudeDesktop);
-    private void OnInstallVsCode(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.VsCode);
-    private void OnInstallCopilot(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.CopilotCli);
-    private void OnInstallCodex(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.Codex);
-    private void OnInstallAll(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.All);
-
-    private void OnExitClicked(object sender, RoutedEventArgs e)
+    private async void OnInstallClient(object sender, RoutedEventArgs e)
     {
-        Shutdown();
-    }
-
-    private async void InstallHelper(HelperClient client)
-    {
+        string key = ((MenuItem) sender).Tag as string ?? AllKey;
         try
         {
-            string summary = await mHelperInstaller.RegisterAsync(client, CancellationToken.None);
+            string summary = await mClientService.InstallAsync(NormalizeKey(key), CancellationToken.None);
             ShowBalloon(summary);
         }
         catch (Exception ex)
         {
-            ShowBalloon($"{HelperInstallFailedPrefix}{ex.Message}");
+            ShowBalloon($"{InstallFailedPrefix}{ex.Message}");
         }
+    }
+
+    private async void OnUninstallClient(object sender, RoutedEventArgs e)
+    {
+        string key = ((MenuItem) sender).Tag as string ?? AllKey;
+        try
+        {
+            string summary = await mClientService.UninstallAsync(NormalizeKey(key), CancellationToken.None);
+            ShowBalloon(summary);
+        }
+        catch (Exception ex)
+        {
+            ShowBalloon($"{UninstallFailedPrefix}{ex.Message}");
+        }
+    }
+
+    private async void OnStatus(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string summary = await mClientService.StatusAsync(CancellationToken.None);
+            MessageBox.Show(summary, StatusTitle, MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            ShowBalloon($"{StatusFailedPrefix}{ex.Message}");
+        }
+    }
+
+    private static string? NormalizeKey(string key) =>
+        string.Equals(key, AllKey, StringComparison.OrdinalIgnoreCase) ? null : key;
+
+    private void OnExitClicked(object sender, RoutedEventArgs e)
+    {
+        Shutdown();
     }
 
     private void RunGuarded(Action action, string workingMessage)

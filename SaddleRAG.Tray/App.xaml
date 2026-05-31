@@ -14,15 +14,9 @@
                     <Separator/>
                     <MenuItem Header="Open dashboard" Click="OnOpenDashboard"/>
                     <Separator/>
-                    <MenuItem Header="Install helpers">
-                        <MenuItem Header="Claude Code"    Click="OnInstallClaudeCode"/>
-                        <MenuItem Header="Claude Desktop" Click="OnInstallClaudeDesktop"/>
-                        <MenuItem Header="VSCode"         Click="OnInstallVsCode"/>
-                        <MenuItem Header="Copilot CLI"    Click="OnInstallCopilot"/>
-                        <MenuItem Header="Codex"          Click="OnInstallCodex"/>
-                        <Separator/>
-                        <MenuItem Header="All"            Click="OnInstallAll"/>
-                    </MenuItem>
+                    <MenuItem x:Name="InstallMenu"   Header="Install into"/>
+                    <MenuItem x:Name="UninstallMenu" Header="Uninstall from"/>
+                    <MenuItem Header="Status" Click="OnStatus"/>
                     <Separator/>
                     <MenuItem Header="Exit" Click="OnExitClicked"/>
                 </ContextMenu>
