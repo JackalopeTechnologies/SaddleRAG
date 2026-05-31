@@ -39,10 +39,6 @@ public sealed record RegisterResult(
 
     /// <summary>
     ///     Creates a skipped result (agent not detected). Counts as a success
-    ///     for aggregation so a missing agent never fails the batch.
-    /// </summary>
-    /// <summary>
-    ///     Creates a skipped result (agent not detected). Counts as a success
     ///     for aggregation so a missing agent never fails the batch. Named
     ///     SkippedFor because the record already exposes a Skipped property.
     /// </summary>
