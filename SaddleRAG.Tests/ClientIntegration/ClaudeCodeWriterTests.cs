@@ -4,6 +4,7 @@
 
 #region Usings
 
+using System.Text.Json.Nodes;
 using SaddleRAG.ClientIntegration.Models;
 using SaddleRAG.ClientIntegration.Writers;
 
@@ -127,6 +128,22 @@ public sealed class ClaudeCodeWriterTests : IDisposable
 
         Assert.True(result.Success);
         Assert.True(result.WasNoOp);
+    }
+
+    [Fact]
+    public async Task RegisterWritesTimeoutInMilliseconds()
+    {
+        var writer = new ClaudeCodeWriter(mConfigPath, mSkillsBaseDir);
+        await writer.RegisterAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
+
+        string saved = await File.ReadAllTextAsync(mConfigPath, TestContext.Current.CancellationToken);
+        JsonNode? root = JsonNode.Parse(saved);
+        Assert.NotNull(root);
+        JsonNode? timeoutNode = root["mcpServers"]?["saddlerag"]?["timeout"];
+        Assert.NotNull(timeoutNode);
+        int timeout = (int) timeoutNode;
+
+        Assert.Equal(300000, timeout);
     }
 
     private static string NormalizeJson(string raw)

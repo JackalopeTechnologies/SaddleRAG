@@ -24,6 +24,8 @@ public sealed class ClaudeCodeWriter : IClientWriter
     private const string KeyType = "type";
     private const string KeyUrl = "url";
     private const string TmpSuffix = ".tmp";
+    private const int MinTimeoutSeconds = 10;
+    private const int MillisecondsPerSecond = 1000;
 
     private const string ConfigFileName = ".claude.json";
     private const string ClaudeUserDir = ".claude";
@@ -200,7 +202,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
                                     {
                                         [KeyType] = "http",
                                         [KeyUrl] = endpoint.Url,
-                                        ["timeout"] = endpoint.TimeoutSeconds
+                                        ["timeout"] = Math.Max(endpoint.TimeoutSeconds, MinTimeoutSeconds) * MillisecondsPerSecond
                                     };
         root[KeyMcpServers] = servers;
     }

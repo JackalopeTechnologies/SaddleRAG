@@ -3,7 +3,7 @@
     "saddlerag": {
       "type": "http",
       "url": "http://localhost:6100/mcp",
-      "timeout": 300
+      "timeout": 300000
     }
   },
   "permissions": {
