@@ -1,4 +1,7 @@
 // CheckGpuCapability.js
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 // Detect whether this machine looks DirectX 12-capable so the installer can
 // pre-select the right execution-provider radio in ExecutionModeDlg and so
 // silent installs that don't pass ONNX_EXECUTION_PROVIDER pick the right

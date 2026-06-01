@@ -1,4 +1,7 @@
 # scripts/dev.ps1
+# Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+# SPDX-License-Identifier: MIT
+# Licensed under the MIT License. See the LICENSE file in the repo root.
 # Dev-loop helper for SaddleRAG. Wraps the common operations the IDE / terminal
 # wants: stop the installed Windows service, start it, check health, tail
 # logs. Tolerant of the service not being installed - useful for fresh

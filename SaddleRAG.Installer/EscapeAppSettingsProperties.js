@@ -1,4 +1,7 @@
 // EscapeAppSettingsProperties.js
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 // Pre-escape MSI properties before they get interpolated into the
 // PatchAppSettings powershell.exe command line. WiX SetProperty substitutes
 // [MSI_PROPERTY] literally inside the double-quoted argv tokens; if a

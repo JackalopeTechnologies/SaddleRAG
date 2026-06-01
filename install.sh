@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# install.sh
+# Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+# SPDX-License-Identifier: MIT
+# Licensed under the MIT License. See the LICENSE file in the repo root.
 # install.sh — turnkey bare-metal install for Ubuntu/Debian and Rocky/RHEL.
 # Must run as root (sudo install.sh).
 # Installs: .NET ASP.NET Core Runtime 10, MongoDB 8, Ollama, SaddleRAG.

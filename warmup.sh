@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# warmup.sh
+# Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+# SPDX-License-Identifier: MIT
+# Licensed under the MIT License. See the LICENSE file in the repo root.
 # warmup.sh — run once after first `docker compose up -d` to download models.
 # ONNX models (~200-500 MB) come from HuggingFace.
 # Ollama models (nomic-embed-text + phi4-mini:3.8b, ~3 GB total) come from Ollama registry.

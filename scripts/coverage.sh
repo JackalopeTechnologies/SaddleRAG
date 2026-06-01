@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# coverage.sh
+# Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+# SPDX-License-Identifier: MIT
+# Licensed under the MIT License. See the LICENSE file in the repo root.
 # Run the test suite with code-coverage collection and produce an HTML report.
 # See scripts/README.md for the full workflow, flags, gating policy, and CI
 # parity notes. No coverage gate is enforced.
