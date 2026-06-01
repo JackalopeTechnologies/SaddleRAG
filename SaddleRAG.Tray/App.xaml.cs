@@ -247,11 +247,39 @@ public partial class App : Application
         try
         {
             string summary = await mClientService.StatusAsync(CancellationToken.None);
-            MessageBox.Show(summary, StatusTitle, MessageBoxButton.OK, MessageBoxImage.Information);
+            ShowOwnedDialog(summary, StatusTitle);
         }
         catch (Exception ex)
         {
             ShowBalloon($"{StatusFailedPrefix}{ex.Message}");
+        }
+    }
+
+    private static void ShowOwnedDialog(string message, string title)
+    {
+        // A tray app has no main window, so an ownerless MessageBox opens unactivated and the
+        // closing context menu's input dismisses it before the user can read it. Give it a
+        // tiny, off-screen, topmost owner window that is activated first, so the dialog stays
+        // modal and on top until the user clicks OK. The owner is closed in finally.
+        Window owner = new()
+                           {
+                               Width = 1,
+                               Height = 1,
+                               Left = -10000,
+                               Top = -10000,
+                               ShowInTaskbar = false,
+                               WindowStyle = WindowStyle.None,
+                               Topmost = true,
+                               ShowActivated = true
+                           };
+        try
+        {
+            owner.Show();
+            MessageBox.Show(owner, message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        finally
+        {
+            owner.Close();
         }
     }
 
