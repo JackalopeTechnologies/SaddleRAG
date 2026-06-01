@@ -1,6 +1,7 @@
 // StatusCommand.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -18,6 +19,24 @@ public static class StatusCommand
 {
     private const string CommandName = "clients-status";
     private const string CommandDescription = "Show SaddleRAG registration status across all supported AI tools, including VS Code plugin path and enabled state";
+    private const string ClaudeCodeOptionName = "--claude-code";
+    private const string ClaudeCodeOptionDescription = "Include Claude Code.";
+    private const string ClaudeDesktopOptionName = "--claude-desktop";
+    private const string ClaudeDesktopOptionDescription = "Include Claude Desktop.";
+    private const string VscodeMcpOptionName = "--vscode-mcp";
+    private const string VscodeMcpOptionDescription = "Include VS Code.";
+    private const string CopilotCliOptionName = "--copilot-cli";
+    private const string CopilotCliOptionDescription = "Include GitHub Copilot CLI.";
+    private const string CodexOptionName = "--codex";
+    private const string CodexOptionDescription = "Include OpenAI Codex CLI.";
+    private const string CursorOptionName = "--cursor";
+    private const string CursorOptionDescription = "Include Cursor.";
+    private const string GeminiCliOptionName = "--gemini-cli";
+    private const string GeminiCliOptionDescription = "Include Gemini CLI.";
+    private const string WindsurfOptionName = "--windsurf";
+    private const string WindsurfOptionDescription = "Include Windsurf.";
+    private const string VisualStudioOptionName = "--visual-studio";
+    private const string VisualStudioOptionDescription = "Include Visual Studio 2022.";
     private const string JsonOptionName = "--json";
     private const string JsonOptionDescription = "Emit JSON instead of human-readable lines";
     private const string LogFileOptionName = "--log-file";
@@ -34,6 +53,16 @@ public static class StatusCommand
     private const string DisabledState = "false";
     private const string UnknownState = "unknown";
 
+    private static readonly Option<bool> smClaudeCode    = new(ClaudeCodeOptionName)    { Description = ClaudeCodeOptionDescription,    DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smClaudeDesktop = new(ClaudeDesktopOptionName) { Description = ClaudeDesktopOptionDescription, DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smVscodeMcp     = new(VscodeMcpOptionName)     { Description = VscodeMcpOptionDescription,     DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smCopilotCli    = new(CopilotCliOptionName)    { Description = CopilotCliOptionDescription,    DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smCodex         = new(CodexOptionName)         { Description = CodexOptionDescription,         DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smCursor        = new(CursorOptionName)        { Description = CursorOptionDescription,        DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smGeminiCli     = new(GeminiCliOptionName)     { Description = GeminiCliOptionDescription,     DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smWindsurf      = new(WindsurfOptionName)      { Description = WindsurfOptionDescription,      DefaultValueFactory = _ => true };
+    private static readonly Option<bool> smVisualStudio  = new(VisualStudioOptionName)  { Description = VisualStudioOptionDescription,  DefaultValueFactory = _ => true };
+
     private static readonly Option<bool> smJson = new(JsonOptionName)
     {
         Description = JsonOptionDescription,
@@ -48,6 +77,15 @@ public static class StatusCommand
     public static Command Build()
     {
         Command cmd = new(CommandName, CommandDescription);
+        cmd.Options.Add(smClaudeCode);
+        cmd.Options.Add(smClaudeDesktop);
+        cmd.Options.Add(smVscodeMcp);
+        cmd.Options.Add(smCopilotCli);
+        cmd.Options.Add(smCodex);
+        cmd.Options.Add(smCursor);
+        cmd.Options.Add(smGeminiCli);
+        cmd.Options.Add(smWindsurf);
+        cmd.Options.Add(smVisualStudio);
         cmd.Options.Add(smJson);
         cmd.Options.Add(smLogFile);
         cmd.SetAction(ExecuteAsync);
@@ -56,10 +94,19 @@ public static class StatusCommand
 
     private static async Task<int> ExecuteAsync(ParseResult parseResult, CancellationToken ct)
     {
-        bool emitJson = parseResult.GetValue(smJson);
+        bool cc         = parseResult.GetValue(smClaudeCode);
+        bool cd         = parseResult.GetValue(smClaudeDesktop);
+        bool vs         = parseResult.GetValue(smVscodeMcp);
+        bool co         = parseResult.GetValue(smCopilotCli);
+        bool cx         = parseResult.GetValue(smCodex);
+        bool cur        = parseResult.GetValue(smCursor);
+        bool gem        = parseResult.GetValue(smGeminiCli);
+        bool win        = parseResult.GetValue(smWindsurf);
+        bool vstudio    = parseResult.GetValue(smVisualStudio);
+        bool emitJson   = parseResult.GetValue(smJson);
         string? logFile = parseResult.GetValue(smLogFile);
 
-        var writers   = ClientFlagParser.SelectWritersForCurrentUser(claudeCode: true, claudeDesktop: true, vscodeMcp: true, copilotCli: true, codex: true);
+        var writers   = ClientFlagParser.SelectWritersForCurrentUser(cc, cd, vs, co, cx, cur, gem, win, vstudio);
         var registrar = new ClientRegistrar(writers);
         IReadOnlyList<StatusResult> results = await registrar.GetStatusAsync(ct);
         string output = emitJson ? BuildJsonOutput(results) : BuildTextOutput(results);

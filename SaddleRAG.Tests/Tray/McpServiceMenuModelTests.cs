@@ -1,6 +1,7 @@
 // McpServiceMenuModelTests.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -70,5 +71,14 @@ public sealed class McpServiceMenuModelTests
         Assert.Equal(1, fake.StartCalls);
         Assert.True(model.CanStop);
         Assert.False(model.CanStart);
+    }
+
+    [Fact]
+    public void WhenUnknownTooltipHasNoSuffix()
+    {
+        FakeController fake = new() { State = McpServiceState.Unknown };
+        McpServiceMenuModel model = new(fake);
+
+        Assert.Equal("SaddleRAG MCP", model.Tooltip);
     }
 }

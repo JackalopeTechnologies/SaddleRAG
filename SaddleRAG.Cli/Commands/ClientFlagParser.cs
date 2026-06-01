@@ -1,6 +1,7 @@
 // ClientFlagParser.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -18,7 +19,11 @@ internal static class ClientFlagParser
         bool claudeDesktop,
         bool vscodeMcp,
         bool copilotCli,
-        bool codex)
+        bool codex,
+        bool cursor,
+        bool gemini,
+        bool windsurf,
+        bool visualStudio)
     {
         if (claudeCode)
             yield return ClaudeCodeWriter.ForCurrentUser();
@@ -34,5 +39,17 @@ internal static class ClientFlagParser
 
         if (codex)
             yield return CodexWriter.ForCurrentUser();
+
+        if (cursor)
+            yield return CursorWriter.ForCurrentUser();
+
+        if (gemini)
+            yield return GeminiCliWriter.ForCurrentUser();
+
+        if (windsurf)
+            yield return WindsurfWriter.ForCurrentUser();
+
+        if (visualStudio)
+            yield return VisualStudio2022Writer.ForCurrentUser();
     }
 }

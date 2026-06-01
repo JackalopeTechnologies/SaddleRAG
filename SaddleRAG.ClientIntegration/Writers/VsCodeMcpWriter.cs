@@ -1,6 +1,7 @@
 // VsCodeMcpWriter.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -96,6 +97,13 @@ public sealed class VsCodeMcpWriter : IClientWriter
     }
 
     public string ClientName => Name;
+
+    public bool IsDetected()
+    {
+        string? userDir = Path.GetDirectoryName(mConfigPath);
+        string? codeDir = userDir is null ? null : Path.GetDirectoryName(userDir);
+        return codeDir is not null && Directory.Exists(codeDir);
+    }
 
     public static VsCodeMcpWriter ForCurrentUser()
     {

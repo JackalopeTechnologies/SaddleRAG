@@ -1,6 +1,7 @@
 // McpServiceMenuModel.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 namespace SaddleRAG.Tray.Services;
 
@@ -10,6 +11,7 @@ public sealed class McpServiceMenuModel
     private const string TooltipStopped = "SaddleRAG MCP — stopped";
     private const string TooltipNotInstalled = "SaddleRAG MCP — not installed";
     private const string TooltipTransitioning = "SaddleRAG MCP — working…";
+    private const string TooltipUnknown = "SaddleRAG MCP";
 
     private readonly IMcpServiceController mController;
 
@@ -19,7 +21,7 @@ public sealed class McpServiceMenuModel
         State = controller.GetState();
     }
 
-    public McpServiceState State { get; private set; }
+    public McpServiceState State { get; private set; } = McpServiceState.Unknown;
 
     public bool CanStart => State == McpServiceState.Stopped;
 
@@ -30,7 +32,8 @@ public sealed class McpServiceMenuModel
                                  McpServiceState.Running => TooltipRunning,
                                  McpServiceState.Stopped => TooltipStopped,
                                  McpServiceState.NotInstalled => TooltipNotInstalled,
-                                 _ => TooltipTransitioning
+                                 McpServiceState.Transitioning => TooltipTransitioning,
+                                 _ => TooltipUnknown
                              };
 
     public void Refresh()

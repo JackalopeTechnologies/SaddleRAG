@@ -1,6 +1,7 @@
 // RegisterClientsCommandTests.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -25,6 +26,11 @@ public sealed class RegisterClientsCommandTests
             "--vscode-mcp",
             "--copilot-cli",
             "--codex",
+            "--cursor",
+            "--gemini-cli",
+            "--windsurf",
+            "--visual-studio",
+            "--detected-only",
             "--quiet",
             "--log-file"
             ];

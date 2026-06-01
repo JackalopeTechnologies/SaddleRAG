@@ -1,6 +1,7 @@
 // CodexWriter.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -41,6 +42,12 @@ public sealed class CodexWriter : IClientWriter
     public string ClientName => Name;
 
     public string ConfigPath => mConfigPath;
+
+    public bool IsDetected()
+    {
+        string? codexDir = Path.GetDirectoryName(mConfigPath);
+        return codexDir is not null && Directory.Exists(codexDir);
+    }
 
     public static CodexWriter ForCurrentUser()
     {

@@ -1,4 +1,7 @@
 // CheckOllamaKeepAlive.js
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 // Read the system OLLAMA_KEEP_ALIVE environment variable so the Ollama dialog
 // can decide whether to show the "we will set OLLAMA_KEEP_ALIVE=-1" notice.
 //

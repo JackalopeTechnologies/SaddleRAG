@@ -1,6 +1,7 @@
 // CopilotCliWriter.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -21,7 +22,7 @@ public sealed class CopilotCliWriter : IClientWriter
     private const string SaddleRagKey = "saddlerag";
     private const string TypeKey = "type";
     private const string UrlKey = "url";
-    private const string SseType = "sse";
+    private const string HttpType = "http";
     private const string CopilotHomeEnvVar = "COPILOT_HOME";
     private const string DefaultCopilotDir = ".copilot";
     private const string McpConfigFileName = "mcp-config.json";
@@ -55,6 +56,12 @@ public sealed class CopilotCliWriter : IClientWriter
     public string ConfigPath => mConfigPath;
 
     public string SkillsBaseDir => mSkillsBaseDir;
+
+    public bool IsDetected()
+    {
+        string? copilotDir = Path.GetDirectoryName(mConfigPath);
+        return copilotDir is not null && Directory.Exists(copilotDir);
+    }
 
     public static CopilotCliWriter ForCurrentUser()
     {
@@ -202,7 +209,7 @@ public sealed class CopilotCliWriter : IClientWriter
         JsonObject servers = (root[McpServersKey] as JsonObject) ?? [];
         servers[SaddleRagKey] = new JsonObject
                                     {
-                                        [TypeKey] = SseType,
+                                        [TypeKey] = HttpType,
                                         [UrlKey] = endpoint.Url
                                     };
         root[McpServersKey] = servers;

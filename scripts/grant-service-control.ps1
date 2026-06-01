@@ -1,4 +1,7 @@
 # scripts/grant-service-control.ps1
+# Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+# SPDX-License-Identifier: MIT
+# Licensed under the MIT License. See the LICENSE file in the repo root.
 #
 # One-time setup: grant the current Windows user the right to start, stop,
 # and query the SaddleRAGMcp service WITHOUT needing UAC elevation. After

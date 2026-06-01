@@ -1,3 +1,9 @@
+<!--
+    App.xaml
+    Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+    SPDX-License-Identifier: MIT
+    Licensed under the MIT License. See the LICENSE file in the repo root.
+-->
 <Application x:Class="SaddleRAG.Tray.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -14,15 +20,9 @@
                     <Separator/>
                     <MenuItem Header="Open dashboard" Click="OnOpenDashboard"/>
                     <Separator/>
-                    <MenuItem Header="Install helpers">
-                        <MenuItem Header="Claude Code"    Click="OnInstallClaudeCode"/>
-                        <MenuItem Header="Claude Desktop" Click="OnInstallClaudeDesktop"/>
-                        <MenuItem Header="VSCode"         Click="OnInstallVsCode"/>
-                        <MenuItem Header="Copilot CLI"    Click="OnInstallCopilot"/>
-                        <MenuItem Header="Codex"          Click="OnInstallCodex"/>
-                        <Separator/>
-                        <MenuItem Header="All"            Click="OnInstallAll"/>
-                    </MenuItem>
+                    <MenuItem x:Name="InstallMenu"   Header="Install into"/>
+                    <MenuItem x:Name="UninstallMenu" Header="Uninstall from"/>
+                    <MenuItem x:Name="StatusItem" Header="Status…" Click="OnStatus"/>
                     <Separator/>
                     <MenuItem Header="Exit" Click="OnExitClicked"/>
                 </ContextMenu>

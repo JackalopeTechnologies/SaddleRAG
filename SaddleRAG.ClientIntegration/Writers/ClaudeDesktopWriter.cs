@@ -1,6 +1,7 @@
 // ClaudeDesktopWriter.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -51,6 +52,12 @@ public sealed class ClaudeDesktopWriter : IClientWriter
     }
 
     public string ClientName => Name;
+
+    public bool IsDetected()
+    {
+        string? claudeDir = Path.GetDirectoryName(mConfigPath);
+        return claudeDir is not null && Directory.Exists(claudeDir);
+    }
 
     public static ClaudeDesktopWriter ForCurrentUser()
     {

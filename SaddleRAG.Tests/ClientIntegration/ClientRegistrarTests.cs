@@ -1,6 +1,7 @@
 // ClientRegistrarTests.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -68,22 +69,102 @@ public sealed class ClientRegistrarTests
         Assert.Equal(endpoint, w1.LastEndpoint);
     }
 
+    [Fact]
+    public async Task RegisterDetectedUndetectedAgentIsSkippedAndCountsAsSuccess()
+    {
+        var undetected = new FakeWriter("alpha", succeed: true, detected: false);
+        var registrar = new ClientRegistrar([undetected]);
+
+        var result = await registrar.RegisterDetectedAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
+
+        RegisterResult only = Assert.Single(result.RegisterResults);
+        Assert.True(only.Skipped);
+        Assert.True(only.Success);
+        Assert.True(result.AllRegisterSucceeded);
+        Assert.Equal(expected: 0, undetected.RegisterCallCount);
+    }
+
+    [Fact]
+    public async Task RegisterDetectedDetectedAgentIsRegistered()
+    {
+        var detected = new FakeWriter("alpha", succeed: true, detected: true);
+        var registrar = new ClientRegistrar([detected]);
+
+        var result = await registrar.RegisterDetectedAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
+
+        RegisterResult only = Assert.Single(result.RegisterResults);
+        Assert.False(only.Skipped);
+        Assert.True(only.Success);
+        Assert.Equal(expected: 1, detected.RegisterCallCount);
+    }
+
+    [Fact]
+    public async Task RegisterDetectedReportsSkippedRegisteredAndFailedBestEffort()
+    {
+        var skipped = new FakeWriter("missing", succeed: true, detected: false);
+        var okWriter = new FakeWriter("ok", succeed: true, detected: true);
+        var throwing = new FakeWriter("boom", succeed: true, detected: true, throwOnRegister: true);
+        var registrar = new ClientRegistrar([skipped, okWriter, throwing]);
+
+        var result = await registrar.RegisterDetectedAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: 3, result.RegisterResults.Count);
+        Assert.True(result.RegisterResults.Single(r => r.ClientName == "missing").Skipped);
+        Assert.True(result.RegisterResults.Single(r => r.ClientName == "ok").Success);
+        Assert.False(result.RegisterResults.Single(r => r.ClientName == "boom").Success);
+        Assert.False(result.AllRegisterSucceeded);
+    }
+
+    [Fact]
+    public async Task RegisterDetectedDetectionThrowsYieldsFailedNotFatal()
+    {
+        var throwsOnDetect = new FakeWriter("bad", succeed: true, throwOnDetect: true);
+        var okWriter = new FakeWriter("ok", succeed: true, detected: true);
+        var registrar = new ClientRegistrar([throwsOnDetect, okWriter]);
+
+        var result = await registrar.RegisterDetectedAsync(SaddleRagEndpoint.Default, TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: 2, result.RegisterResults.Count);
+        Assert.False(result.RegisterResults.Single(r => r.ClientName == "bad").Success);
+        Assert.True(result.RegisterResults.Single(r => r.ClientName == "ok").Success);
+    }
+
     private sealed class FakeWriter : IClientWriter
     {
         private readonly bool mSucceed;
+        private readonly bool mDetected;
+        private readonly bool mThrowOnRegister;
+        private readonly bool mThrowOnDetect;
 
-        public FakeWriter(string name, bool succeed)
+        public FakeWriter(
+            string name,
+            bool succeed,
+            bool detected = true,
+            bool throwOnRegister = false,
+            bool throwOnDetect = false)
         {
             ClientName = name;
             mSucceed = succeed;
+            mDetected = detected;
+            mThrowOnRegister = throwOnRegister;
+            mThrowOnDetect = throwOnDetect;
         }
 
         public string ClientName { get; }
         public int RegisterCallCount { get; private set; }
         public SaddleRagEndpoint? LastEndpoint { get; private set; }
 
+        public bool IsDetected()
+        {
+            if (mThrowOnDetect)
+                throw new InvalidOperationException("detect-boom");
+            return mDetected;
+        }
+
         public Task<RegisterResult> RegisterAsync(SaddleRagEndpoint endpoint, CancellationToken ct)
         {
+            if (mThrowOnRegister)
+                throw new InvalidOperationException("register-boom");
             RegisterCallCount++;
             LastEndpoint = endpoint;
             RegisterResult res = mSucceed

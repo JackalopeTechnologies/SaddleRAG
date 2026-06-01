@@ -1,13 +1,18 @@
 // App.xaml.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using H.NotifyIcon;
+using Microsoft.Extensions.Logging;
+using SaddleRAG.ClientIntegration;
+using SaddleRAG.Tray.Core.Logging;
 using SaddleRAG.Tray.Services;
 
 #endregion
@@ -22,31 +27,76 @@ public partial class App : Application
     private const string TrayIconResourceKey = "TrayIcon";
     private const string StartItemName = "StartItem";
     private const string StopItemName = "StopItem";
+    private const string InstallMenuName = "InstallMenu";
+    private const string UninstallMenuName = "UninstallMenu";
+
+    private const string AllItemHeader = "All";
+    private const string AllKey = "all";
 
     private const string StartingMessage = "Starting MCP service";
     private const string StoppingMessage = "Stopping MCP service";
     private const string OpeningDashboardMessage = "Opening dashboard";
-    private const string HelperInstallFailedPrefix = "Helper install failed: ";
+    private const string InstallFailedPrefix = "Install failed: ";
+    private const string UninstallFailedPrefix = "Uninstall failed: ";
+    private const string StatusFailedPrefix = "Status failed: ";
+    private const string StatusTitle = "SaddleRAG — client status";
     private const string ActionFailedSuffix = " failed: ";
+    private const string StartupFailedPrefix = "SaddleRAG tray failed to start: ";
+    private const string StartupFailedLogMessage = "Tray failed to start";
+    private const string StartedLogMessage = "SaddleRAG tray started";
+    private const string InstallLogMessage = "Install into {Client}: {Summary}";
+    private const string UninstallLogMessage = "Uninstall from {Client}: {Summary}";
+    private const string InstallFailedLogMessage = "Install into {Client} failed";
+    private const string UninstallFailedLogMessage = "Uninstall from {Client} failed";
+    private const string ActionFailedLogMessage = "{Action} failed";
+    private const string IconRenderFailedLogMessage = "Tray icon render failed";
+
+    private const string LogDirName = "SaddleRAG";
+    private const string LogFileName = "tray.log";
 
     private TaskbarIcon? mTrayIcon;
     private McpServiceMenuModel? mMenuModel;
-    private readonly HelperInstaller mHelperInstaller = new();
+    private ILogger<App>? mLog;
+    private ILoggerFactory? mLoggerFactory;
+    private readonly TrayClientService mClientService = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        mMenuModel = new McpServiceMenuModel(new McpServiceController());
-        mTrayIcon = (TaskbarIcon) FindResource(TrayIconResourceKey);
 
-        // Efficiency Mode (EcoQoS) is desirable here: the tray is an idle background
-        // controller, NOT a host for the MCP server (that's a separate Windows service),
-        // so throttling its mostly-sleeping process is a win. Set explicitly rather than
-        // relying on the ForceCreate() default.
-        mTrayIcon.ForceCreate(enablesEfficiencyMode: true);
+        // Startup is the one path that runs unattended right after install. Guard it so a
+        // failure produces a visible message (the tray icon may not exist yet, so use a
+        // MessageBox, not a balloon) and a log entry, rather than a silent crash that the
+        // installer still reports as "started".
+        try
+        {
+            mLoggerFactory = CreateLoggerFactory();
+            mLog = mLoggerFactory.CreateLogger<App>();
 
-        mTrayIcon.ContextMenu.Opened += (_, _) => SyncMenu();
-        SyncMenu();
+            mMenuModel = new McpServiceMenuModel(new McpServiceController());
+            mTrayIcon = (TaskbarIcon) FindResource(TrayIconResourceKey);
+
+            // Efficiency Mode (EcoQoS) is desirable here: the tray is an idle background
+            // controller, NOT a host for the MCP server (that's a separate Windows service),
+            // so throttling its mostly-sleeping process is a win. Set explicitly rather than
+            // relying on the ForceCreate() default.
+            mTrayIcon.ForceCreate(enablesEfficiencyMode: true);
+
+            PopulateClientMenus();
+
+            mTrayIcon.ContextMenu.Opened += (_, _) => SyncMenu();
+            SyncMenu();
+            mLog.LogInformation(StartedLogMessage);
+        }
+        catch (Exception ex)
+        {
+            mLog?.LogError(ex, StartupFailedLogMessage);
+            MessageBox.Show($"{StartupFailedPrefix}{ex.Message}",
+                            BalloonTitle,
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Error);
+            Shutdown();
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -54,7 +104,42 @@ public partial class App : Application
         // Clean exit auto-disposes via DisposeAfterExit; this explicit call mirrors the
         // official sample and is the recommended "cleaner" path.
         mTrayIcon?.Dispose();
+        mLoggerFactory?.Dispose();
         base.OnExit(e);
+    }
+
+    private static ILoggerFactory CreateLoggerFactory()
+    {
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                   LogDirName,
+                                   LogFileName);
+        return LoggerFactory.Create(builder => builder.AddProvider(new FileLoggerProvider(path)));
+    }
+
+    private void PopulateClientMenus()
+    {
+        MenuItem? installMenu = FindMenuItem(InstallMenuName);
+        MenuItem? uninstallMenu = FindMenuItem(UninstallMenuName);
+        if (installMenu is not null)
+            BuildClientSubmenu(installMenu, OnInstallClient);
+        if (uninstallMenu is not null)
+            BuildClientSubmenu(uninstallMenu, OnUninstallClient);
+    }
+
+    private static void BuildClientSubmenu(MenuItem parent, RoutedEventHandler handler)
+    {
+        parent.Items.Clear();
+        foreach (ClientWriterCatalog.ClientDescriptor descriptor in ClientWriterCatalog.All)
+        {
+            MenuItem item = new() { Header = descriptor.DisplayName, Tag = descriptor.Key };
+            item.Click += handler;
+            parent.Items.Add(item);
+        }
+
+        parent.Items.Add(new Separator());
+        MenuItem allItem = new() { Header = AllItemHeader, Tag = AllKey };
+        allItem.Click += handler;
+        parent.Items.Add(allItem);
     }
 
     private void SyncMenu()
@@ -63,6 +148,7 @@ public partial class App : Application
         {
             mMenuModel.Refresh();
             mTrayIcon.ToolTipText = mMenuModel.Tooltip;
+            UpdateIcon(mMenuModel.State);
             // x:Name on items inside Application.Resources does NOT generate code-behind
             // fields, and index-based access breaks if a Separator/order changes. Look up
             // by name instead.
@@ -81,6 +167,26 @@ public partial class App : Application
         if (mTrayIcon?.ContextMenu is not null)
             res = mTrayIcon.ContextMenu.Items.OfType<MenuItem>().FirstOrDefault(m => m.Name == name);
         return res;
+    }
+
+    private void UpdateIcon(McpServiceState state)
+    {
+        // Reflect run state with a colored status dot on the logo, via a pre-rendered state
+        // .ico exposed as a pack:// URI BitmapImage — the same URI-backed path the base icon
+        // already uses. Do NOT feed IconSource a runtime-rendered bitmap; that crashes the
+        // process inside H.NotifyIcon's async conversion on a task no try/catch can observe.
+        // Loading is guarded best-effort and any failure is logged, never swallowed.
+        if (mTrayIcon is not null)
+        {
+            try
+            {
+                mTrayIcon.IconSource = TrayIconRenderer.ForState(state);
+            }
+            catch (Exception ex)
+            {
+                mLog?.LogWarning(ex, IconRenderFailedLogMessage);
+            }
+        }
     }
 
     private void OnStart(object sender, RoutedEventArgs e)
@@ -104,29 +210,57 @@ public partial class App : Application
             OpeningDashboardMessage);
     }
 
-    private void OnInstallClaudeCode(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.ClaudeCode);
-    private void OnInstallClaudeDesktop(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.ClaudeDesktop);
-    private void OnInstallVsCode(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.VsCode);
-    private void OnInstallCopilot(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.CopilotCli);
-    private void OnInstallCodex(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.Codex);
-    private void OnInstallAll(object sender, RoutedEventArgs e) => InstallHelper(HelperClient.All);
-
-    private void OnExitClicked(object sender, RoutedEventArgs e)
+    private async void OnInstallClient(object sender, RoutedEventArgs e)
     {
-        Shutdown();
-    }
-
-    private async void InstallHelper(HelperClient client)
-    {
+        string key = ((MenuItem) sender).Tag as string ?? AllKey;
         try
         {
-            string summary = await mHelperInstaller.RegisterAsync(client, CancellationToken.None);
+            string summary = await mClientService.InstallAsync(NormalizeKey(key), CancellationToken.None);
+            mLog?.LogInformation(InstallLogMessage, key, summary);
             ShowBalloon(summary);
         }
         catch (Exception ex)
         {
-            ShowBalloon($"{HelperInstallFailedPrefix}{ex.Message}");
+            mLog?.LogError(ex, InstallFailedLogMessage, key);
+            ShowBalloon($"{InstallFailedPrefix}{ex.Message}");
         }
+    }
+
+    private async void OnUninstallClient(object sender, RoutedEventArgs e)
+    {
+        string key = ((MenuItem) sender).Tag as string ?? AllKey;
+        try
+        {
+            string summary = await mClientService.UninstallAsync(NormalizeKey(key), CancellationToken.None);
+            mLog?.LogInformation(UninstallLogMessage, key, summary);
+            ShowBalloon(summary);
+        }
+        catch (Exception ex)
+        {
+            mLog?.LogError(ex, UninstallFailedLogMessage, key);
+            ShowBalloon($"{UninstallFailedPrefix}{ex.Message}");
+        }
+    }
+
+    private async void OnStatus(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string summary = await mClientService.StatusAsync(CancellationToken.None);
+            MessageBox.Show(summary, StatusTitle, MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            ShowBalloon($"{StatusFailedPrefix}{ex.Message}");
+        }
+    }
+
+    private static string? NormalizeKey(string key) =>
+        string.Equals(key, AllKey, StringComparison.OrdinalIgnoreCase) ? null : key;
+
+    private void OnExitClicked(object sender, RoutedEventArgs e)
+    {
+        Shutdown();
     }
 
     private void RunGuarded(Action action, string workingMessage)
@@ -138,6 +272,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
+            mLog?.LogWarning(ex, ActionFailedLogMessage, workingMessage);
             ShowBalloon($"{workingMessage}{ActionFailedSuffix}{ex.Message}");
         }
     }

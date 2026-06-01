@@ -1,0 +1,32 @@
+# Normalize line endings. Text is stored as LF in the repository; Windows
+# working trees still check out as CRLF, so day-to-day editing is unchanged.
+* text=auto
+
+# Shell scripts MUST be LF even on Windows checkout — they run on Linux and
+# inside the Docker images, where CRLF breaks the shebang and the script body.
+*.sh    text eol=lf
+
+# Windows-only scripts stay CRLF.
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Binary assets — never normalize or diff as text.
+*.png   binary
+*.ico   binary
+*.bmp   binary
+*.dib   binary
+*.rtf   binary
+*.gif   binary
+*.jpg   binary
+*.jpeg  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.zip   binary
+*.gz    binary
+*.onnx  binary
+*.dll   binary
+*.exe   binary
+*.pdb   binary

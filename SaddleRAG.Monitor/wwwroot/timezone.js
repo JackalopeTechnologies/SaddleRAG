@@ -1,4 +1,7 @@
 // timezone.js
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 // Copyright (c) 2012-Present Jackalope Technologies, Inc. and Doug Gerard.
 // Converts <span data-utc="..." data-fmt="..."> markers emitted by the
 // TimeDisplay Blazor component into the browser's local time, with an

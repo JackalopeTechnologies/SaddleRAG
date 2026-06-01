@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# uninstall.sh
+# Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+# SPDX-License-Identifier: MIT
+# Licensed under the MIT License. See the LICENSE file in the repo root.
 # uninstall.sh — removes a bare-metal SaddleRAG installation.
 # Does NOT remove MongoDB, Ollama, or .NET runtime (shared system deps).
 # By default preserves downloaded models (/var/lib/saddlerag/models/).

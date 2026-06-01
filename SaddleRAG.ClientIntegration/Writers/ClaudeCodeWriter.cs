@@ -1,6 +1,7 @@
 // ClaudeCodeWriter.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
 
 #region Usings
 
@@ -24,6 +25,8 @@ public sealed class ClaudeCodeWriter : IClientWriter
     private const string KeyType = "type";
     private const string KeyUrl = "url";
     private const string TmpSuffix = ".tmp";
+    private const int MinTimeoutSeconds = 10;
+    private const int MillisecondsPerSecond = 1000;
 
     private const string ConfigFileName = ".claude.json";
     private const string ClaudeUserDir = ".claude";
@@ -53,6 +56,14 @@ public sealed class ClaudeCodeWriter : IClientWriter
     }
 
     public string ClientName => Name;
+
+    public bool IsDetected()
+    {
+        string? claudeDir = Path.GetDirectoryName(mSkillsBaseDir);
+        bool configExists = File.Exists(mConfigPath);
+        bool claudeDirExists = claudeDir is not null && Directory.Exists(claudeDir);
+        return configExists || claudeDirExists;
+    }
 
     public static ClaudeCodeWriter ForCurrentUser()
     {
@@ -200,7 +211,7 @@ public sealed class ClaudeCodeWriter : IClientWriter
                                     {
                                         [KeyType] = "http",
                                         [KeyUrl] = endpoint.Url,
-                                        ["timeout"] = endpoint.TimeoutSeconds
+                                        ["timeout"] = Math.Max(endpoint.TimeoutSeconds, MinTimeoutSeconds) * MillisecondsPerSecond
                                     };
         root[KeyMcpServers] = servers;
     }
