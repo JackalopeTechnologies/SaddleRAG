@@ -80,6 +80,63 @@ function Register-SaddleRagService
     }
 }
 
+function Add-UsersServiceControlAce
+{
+    param(
+        [string]$Name,
+        [System.Diagnostics.Stopwatch]$Sw
+    )
+
+    # Extend the service DACL with an ACE letting the built-in Users group (SDDL
+    # alias 'BU', S-1-5-32-545) start, stop, and query the service WITHOUT UAC, so
+    # the non-elevated SaddleRAG tray can manage it. This replaces a former
+    # util:PermissionEx in Package.wxs: that compiles to Wix4ExecSecureObjects,
+    # which MSI runs ~94 sequence slots BEFORE this script creates the service, so
+    # it failed fatally with 0x80070424 ERROR_SERVICE_DOES_NOT_EXIST and rolled the
+    # install back. Granting here keeps the ACE in lockstep with creation. Mirrors
+    # scripts/grant-service-control.ps1 (ACE A;;RPWPLORC;;;BU). Best-effort: a grant
+    # failure degrades tray control to requiring UAC but never fails the install.
+    $ourAce = '(A;;RPWPLORC;;;BU)'
+
+    $existingSddl = (& sc.exe sdshow $Name | Out-String).Trim()
+    if (-not $existingSddl -or $existingSddl -notmatch '^D:')
+    {
+        Write-Stamp "Could not read SDDL for '$Name' to grant Users control; skipping (tray will need UAC). sc.exe: $existingSddl" $Sw
+        return
+    }
+
+    if ($existingSddl -match [regex]::Escape($ourAce))
+    {
+        Write-Stamp "Users-group control ACE already present on '$Name'; no change." $Sw
+        return
+    }
+
+    # Insert our ACE at the end of the DACL, before any SACL. The DACL is a run of
+    # (...) ACEs; the SACL (if present) begins at the ')S:' boundary. A naive
+    # ^D:[^S]* split fails because DACL access flags contain 'S' (e.g. SW).
+    $saclMarkerIndex = $existingSddl.IndexOf(')S:')
+    if ($saclMarkerIndex -lt 0)
+    {
+        $newSddl = "$existingSddl$ourAce"
+    }
+    else
+    {
+        $daclPart = $existingSddl.Substring(0, $saclMarkerIndex + 1)
+        $saclPart = $existingSddl.Substring($saclMarkerIndex + 1)
+        $newSddl = "$daclPart$ourAce$saclPart"
+    }
+
+    $output = & sc.exe sdset $Name $newSddl 2>&1
+    if ($LASTEXITCODE -eq 0)
+    {
+        Write-Stamp "Granted Users-group start/stop/query control on '$Name' (no-UAC tray control)." $Sw
+    }
+    else
+    {
+        Write-Stamp "sc.exe sdset failed ($LASTEXITCODE) granting Users control on '$Name'; tray will need UAC. $output" $Sw
+    }
+}
+
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $startAttempts = 0
 $lastStatus = ''
@@ -97,6 +154,9 @@ catch
     Write-Stamp "Service registration failed: $($_.Exception.Message)" $sw
     exit 1
 }
+
+# Best-effort, non-fatal: grant the Users group no-UAC start/stop/query control.
+Add-UsersServiceControlAce -Name $ServiceName -Sw $sw
 
 while (-not $healthy -and $sw.Elapsed.TotalSeconds -lt $TotalTimeoutSec)
 {
