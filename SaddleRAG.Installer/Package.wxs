@@ -111,21 +111,29 @@
                             Description="Documentation RAG system - MCP server for AI-assisted code documentation lookup."
                             Start="auto"
                             ErrorControl="normal"
-                            Account="LocalSystem">
-                <!-- Let non-admin users start/stop the service from the tray without UAC.
-                     Mirrors scripts/grant-service-control.ps1 (ACE A;;RPWPLORC;;;<Users>). -->
-                <util:PermissionEx User="Users"
-                                   ServiceStart="yes"
-                                   ServiceStop="yes"
-                                   ServiceQueryStatus="yes"
-                                   ServicePauseContinue="no" />
-            </ServiceInstall>
+                            Account="LocalSystem" />
+            <!--
+                The per-user service-control ACL grant (so the non-elevated tray can
+                start/stop the service without UAC) is applied by start-and-monitor.ps1
+                (Add-UsersServiceControlAce), NOT by a util:PermissionEx here.
 
-            <!-- Start="install" stays so InstallServices actually registers the service in SCM. -->
-            <!-- Our StartAndMonitorService CA runs BEFORE MSI's standard StartServices, drives the -->
-            <!-- service to Running with retries (since cold .NET startup can trip SCM's 30s -->
-            <!-- pre-dispatcher gate), and gates install success on a /health 200. By the time MSI's -->
-            <!-- StartServices fires, the service is already Running, so it's a no-op pass. -->
+                Why: in practice MSI's standard InstallServices (seq 5800) does not
+                create this service - ServiceComponent has no keypath exe (the binary is
+                harvested into PublishOutput), so InstallServices emits no create op.
+                start-and-monitor.ps1 registers the service via New-Service at the
+                StartAndMonitorService CA (seq 5899). A util:PermissionEx compiles to
+                Wix4ExecSecureObjects (seq 5801), which runs ~94 slots BEFORE the
+                service exists and fails fatally with 0x80070424
+                ERROR_SERVICE_DOES_NOT_EXIST, rolling the whole install back. Granting
+                in the PS1 - immediately after New-Service - keeps the ACE
+                (A;;RPWPLORC;;;BU) in lockstep with service creation. -->
+
+            <!-- ServiceControl drives stop-on-install/uninstall and removal on uninstall. -->
+            <!-- Our StartAndMonitorService CA (which also registers the service via New-Service) -->
+            <!-- runs BEFORE MSI's standard StartServices, drives the service to Running with -->
+            <!-- retries (since cold .NET startup can trip SCM's 30s pre-dispatcher gate), and -->
+            <!-- gates install success on a /health 200. By the time MSI's StartServices fires, -->
+            <!-- the service is already Running, so it's a no-op pass. -->
             <ServiceControl Id="StartSaddleRAGMcp"
                             Name="SaddleRAGMcp"
                             Start="install"
@@ -314,10 +322,15 @@
         <!-- ignores the per-agent [REGISTER_*_ARG] flags built above (see                -->
         <!-- RegisterClientsCommand.cs), so those SetProperty actions are inert here and  -->
         <!-- the AiClientsDlg checkboxes no longer gate registration; detection does.     -->
+        <!-- Routed through cmd /c so %TEMP% is expanded at runtime in the impersonated -->
+        <!-- user's context. WixQuietExec CreateProcess-es the target directly and does  -->
+        <!-- NOT expand environment variables, so a bare %TEMP% reaches the CLI as a     -->
+        <!-- literal and crashes it with DirectoryNotFoundException (the CA's CWD is     -->
+        <!-- SysWOW64). [%ComSpec] resolves to cmd.exe at install time.                  -->
         <SetProperty Id="RegisterAiClients"
                      Before="RegisterAiClients"
                      Sequence="execute"
-                 Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients --detected-only --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;" />
+                 Value="&quot;[%ComSpec]&quot; /c &quot;&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-clients --detected-only --quiet --log-file &quot;%TEMP%\SaddleRAG-register.log&quot;&quot;" />
 
         <CustomAction Id="RegisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
@@ -331,10 +344,11 @@
         <!-- vscode-mcp, copilot-cli, codex, cursor, gemini-cli, windsurf, visual-studio);-->
         <!-- per-tool selection at install time does not affect uninstall. Return=ignore  -->
         <!-- keeps it best-effort so a missing/locked config never blocks uninstall.      -->
+        <!-- cmd /c wrapper: see RegisterAiClients above (runtime %TEMP% expansion). -->
         <SetProperty Id="UnregisterAiClients"
                      Before="UnregisterAiClients"
                      Sequence="execute"
-                     Value="&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; unregister-clients --quiet --log-file &quot;%TEMP%\SaddleRAG-unregister.log&quot;" />
+                     Value="&quot;[%ComSpec]&quot; /c &quot;&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; unregister-clients --quiet --log-file &quot;%TEMP%\SaddleRAG-unregister.log&quot;&quot;" />
 
         <CustomAction Id="UnregisterAiClients"
                       BinaryRef="Wix4UtilCA_X86"
