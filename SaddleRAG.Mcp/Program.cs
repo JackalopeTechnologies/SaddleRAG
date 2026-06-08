@@ -498,6 +498,10 @@ builder.Services
                                      ValueTask.FromResult(new ListResourcesResult { Resources = [] }))
        .WithListResourceTemplatesHandler(static (request, cancellationToken) =>
                                              ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
+       .WithListPromptsHandler(static (request, cancellationToken) =>
+                                   ValueTask.FromResult(SaddleRAG.Mcp.SaddleRagPrompts.List()))
+       .WithGetPromptHandler(static (request, cancellationToken) =>
+                                 ValueTask.FromResult(SaddleRAG.Mcp.SaddleRagPrompts.Get(request.Params?.Name)))
        .WithToolsFromAssembly();
 
 // Blazor Server + SignalR for /monitor
