@@ -24,7 +24,10 @@ public static class LibraryTools
 {
     [McpServerTool(Name = "list_libraries")]
     [McpMeta("anthropic/alwaysLoad", value: true)]
-    [Description("List all available documentation libraries with their current version and all ingested versions.")]
+    [Description("Start here: call this first to see what is indexed before answering any library, " +
+                 "framework, or API question. " +
+                 "Lists all available documentation libraries with their current version and all ingested versions."
+                )]
     public static async Task<string> ListLibraries(RepositoryFactory repositoryFactory,
                                                    [Description("Optional database profile name (use list_profiles to discover)"
                                                                )]
