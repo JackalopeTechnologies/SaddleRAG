@@ -429,6 +429,54 @@ var serverVersion = Assembly.GetExecutingAssembly()
                             ?.InformationalVersion ??
                     DefaultDevVersion;
 
+// Server-level instructions returned in the MCP initialize response. Every compliant
+// client folds this into the model's context, so it is the one client-agnostic lever
+// that delivers the "SaddleRAG-first" role to clients with no skill concept (Claude
+// Desktop, Cursor, Codex, Gemini, Windsurf), mirroring the saddlerag-first skill that
+// Claude Code gets as a file. Keep this in sync with
+// SaddleRAG.ClientIntegration/Resources/saddlerag-first.md.
+const string SaddleRagServerInstructions = """
+    SaddleRAG provides indexed, current documentation for libraries, frameworks, and APIs —
+    often more current than an LLM's training data and authoritative for niche or
+    post-cutoff topics.
+
+    Use SaddleRAG FIRST, before answering from memory, whenever a request names or implies a
+    specific library, framework, API, product, or symbol — including any code you write that
+    imports or calls an external library.
+
+    Workflow:
+    1. Call list_libraries to see what is indexed (do this once early in a session before
+       answering coding questions, so later queries are scoped correctly).
+    2. Then query: search_docs (natural-language; pass `library` and optional `category` to
+       scope), get_class_reference (exact-then-fuzzy symbol lookup by name),
+       get_library_overview (concepts / getting-started), or list_symbols (enumerate
+       documented types).
+
+    Rules:
+    - Verify against the indexed docs before recommending; check the version on results
+      against the user's actual dependency.
+    - Do not paste raw search output as the answer — synthesize the relevant snippet.
+    - If a library is not indexed (absent from list_libraries), say so explicitly. You can
+      offer to index it (see below), or fall back to training/web rather than implying you
+      checked.
+
+    Getting a library indexed, and managing scrapes:
+    - recon_library characterizes an unfamiliar docs site (canonical root URL, structure,
+      suggested exclude patterns) — use it first when you don't know the site.
+    - dryrun_scrape validates crawl scope (what would be fetched) WITHOUT ingesting; review it
+      before committing to a large crawl.
+    - scrape_docs runs the full pipeline (crawl, classify, chunk, embed, index) against the
+      live site and returns a job id. It is long-running; for routine refreshes of an
+      already-indexed library prefer rescrape_library.
+    - Manage in-flight work with get_scrape_status / get_job_status / list_scrape_jobs, and
+      cancel_job to stop a runaway crawl. Diagnose thin or noisy results with inspect_scrape
+      and get_library_health; if results are wrong, recon again and adjust patterns before
+      re-scraping.
+
+    Do NOT use SaddleRAG for questions about the user's own working-directory code (use file
+    tools) or for purely conceptual questions independent of a specific library.
+    """;
+
 // MCP server with Streamable HTTP transport
 
 builder.Services
@@ -441,6 +489,7 @@ builder.Services
 
                                                       Version = serverVersion
                                                   };
+                         options.ServerInstructions = SaddleRagServerInstructions;
                      }
                     )
        .WithHttpTransport(t => t.Stateless = true)
@@ -449,6 +498,10 @@ builder.Services
                                      ValueTask.FromResult(new ListResourcesResult { Resources = [] }))
        .WithListResourceTemplatesHandler(static (request, cancellationToken) =>
                                              ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
+       .WithListPromptsHandler(static (request, cancellationToken) =>
+                                   ValueTask.FromResult(SaddleRAG.Mcp.SaddleRagPrompts.List()))
+       .WithGetPromptHandler(static (request, cancellationToken) =>
+                                 ValueTask.FromResult(SaddleRAG.Mcp.SaddleRagPrompts.Get(request.Params?.Name)))
        .WithToolsFromAssembly();
 
 // Blazor Server + SignalR for /monitor
