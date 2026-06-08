@@ -8,6 +8,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using SaddleRAG.Ingestion;
 using SaddleRAG.Packaging;
 
 #endregion
@@ -63,6 +64,7 @@ public static class PackagingTools
                  "enqueued per imported version. Pass compact=true to run compact_collections " +
                  "automatically after a successful overwrite-import.")]
     public static async Task<string> ImportLibrary(LibraryImporter importer,
+                                                   ScrapeJobRunner runner,
                                                    [Description("Path to a .srlib.zip bundle on disk.")]
                                                    string bundlePath,
                                                    [Description("If true, replace existing (library, version) targets. Default false (refuse on conflict).")]
@@ -74,12 +76,21 @@ public static class PackagingTools
                                                    CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(importer);
+        ArgumentNullException.ThrowIfNull(runner);
         ArgumentException.ThrowIfNullOrEmpty(bundlePath);
 
         var result = await importer.ImportAsync(
             new ImportRequest { BundlePath = bundlePath, Overwrite = overwrite, Compact = compact, Profile = profile },
             progress: null,
             ct: ct);
+
+        // An import writes chunks and embeddings straight into MongoDB but, unlike scrape
+        // ingestion, does not refresh the in-memory vector index — so a freshly imported
+        // library returns zero search candidates until the next reload or restart. Reload
+        // the profile here so imported content is immediately searchable. Skipped when the
+        // import was a no-op (nothing imported or overwritten).
+        if (result.VersionsImported.Count > 0 || result.OverwrittenVersions.Count > 0)
+            await runner.ReloadProfileAsync(profile, ct);
 
         return JsonSerializer.Serialize(result, smJsonOptions);
     }
