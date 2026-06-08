@@ -1,0 +1,31 @@
+{
+  "manifest_version": "0.3",
+  "name": "saddlerag",
+  "display_name": "SaddleRAG",
+  "version": "0.0.0-dev",
+  "description": "SaddleRAG documentation RAG — query indexed library/API docs and manage scrapes. Bridges to the local SaddleRAG MCP server at http://localhost:6100/mcp.",
+  "long_description": "Exposes the local SaddleRAG MCP server (http://localhost:6100/mcp) to Claude Desktop via the mcp-remote stdio bridge, so the tools, the SaddleRAG-first instructions, and the scrape/recon/maintain prompts are available. This is the durable path for the newer Claude Desktop build, which does not persist externally-written claude_desktop_config.json mcpServers entries and whose custom-connector UI requires HTTPS (incompatible with a local HTTP server). The version field is overwritten at pack time by scripts/pack-desktop-extension.ps1.",
+  "author": {
+    "name": "Jackalope Technologies"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "http://localhost:6100/mcp",
+        "--allow-http"
+      ],
+      "env": {}
+    }
+  },
+  "compatibility": {
+    "platforms": ["win32", "darwin", "linux"],
+    "runtimes": {
+      "node": ">=16.0.0"
+    }
+  }
+}
