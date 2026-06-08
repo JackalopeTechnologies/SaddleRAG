@@ -155,11 +155,24 @@ jobs:
       - name: Build MSI
         run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ steps.version.outputs.PackageVersion }}/publish -d Version=${{ steps.version.outputs.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
 
+      - name: Pack Desktop extension (.mcpb)
+        # The Claude Desktop Extension (durable registration on the newer Desktop
+        # build, which strips externally-written claude_desktop_config.json
+        # mcpServers entries). A .mcpb is a zip with manifest.json at the root.
+        shell: pwsh
+        run: ./scripts/pack-desktop-extension.ps1 -Version ${{ steps.version.outputs.PackageVersion }} -OutputDir ./artifacts/${{ steps.version.outputs.PackageVersion }}
+
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v7
         with:
           name: SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}
           path: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
+
+      - name: Upload .mcpb artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: saddlerag-desktop-extension-${{ steps.version.outputs.PackageVersion }}
+          path: ./artifacts/${{ steps.version.outputs.PackageVersion }}/saddlerag-${{ steps.version.outputs.PackageVersion }}.mcpb
 
       - name: Check release state
         # softprops/action-gh-release@v3 always deletes existing same-named
@@ -182,12 +195,14 @@ jobs:
           echo "is_draft=$state" >> $env:GITHUB_OUTPUT
           Write-Host "Release ${tag}: isDraft=${state}"
 
-      - name: Upload MSI to draft release
+      - name: Upload MSI + Desktop extension to draft release
         if: (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && steps.release-state.outputs.is_draft != 'false'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.PackageVersion }}
-          files: ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
+          files: |
+            ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
+            ./artifacts/${{ steps.version.outputs.PackageVersion }}/saddlerag-${{ steps.version.outputs.PackageVersion }}.mcpb
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
           draft: true
 
