@@ -456,8 +456,22 @@ const string SaddleRagServerInstructions = """
     - Verify against the indexed docs before recommending; check the version on results
       against the user's actual dependency.
     - Do not paste raw search output as the answer — synthesize the relevant snippet.
-    - If a library is not indexed (absent from list_libraries), say so explicitly and fall
-      back to training/web rather than implying you checked.
+    - If a library is not indexed (absent from list_libraries), say so explicitly. You can
+      offer to index it (see below), or fall back to training/web rather than implying you
+      checked.
+
+    Getting a library indexed, and managing scrapes:
+    - recon_library characterizes an unfamiliar docs site (canonical root URL, structure,
+      suggested exclude patterns) — use it first when you don't know the site.
+    - dryrun_scrape validates crawl scope (what would be fetched) WITHOUT ingesting; review it
+      before committing to a large crawl.
+    - scrape_docs runs the full pipeline (crawl, classify, chunk, embed, index) against the
+      live site and returns a job id. It is long-running; for routine refreshes of an
+      already-indexed library prefer rescrape_library.
+    - Manage in-flight work with get_scrape_status / get_job_status / list_scrape_jobs, and
+      cancel_job to stop a runaway crawl. Diagnose thin or noisy results with inspect_scrape
+      and get_library_health; if results are wrong, recon again and adjust patterns before
+      re-scraping.
 
     Do NOT use SaddleRAG for questions about the user's own working-directory code (use file
     tools) or for purely conceptual questions independent of a specific library.
