@@ -76,6 +76,7 @@ function Resolve-ConfigValue
         [string]$Existing,
 
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Default
     )
 
