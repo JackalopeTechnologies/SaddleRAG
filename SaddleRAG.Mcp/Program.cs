@@ -546,6 +546,12 @@ var startupSw = Stopwatch.StartNew();
 
 var app = builder.Build();
 
+// Force the skill catalog to load eagerly at startup so a missing or renamed embedded skill
+// resource fails here, in the boot log, rather than lazily (as a TypeInitializationException)
+// on the first prompts/list or prompts/get call.
+app.Logger.LogInformation("Loaded {Count} SaddleRAG skill prompts.",
+                          SaddleRAG.ClientIntegration.Skills.SkillCatalog.All.Count);
+
 bool prewarmMode = args.Any(a => string.Equals(a, PrewarmFlag, StringComparison.OrdinalIgnoreCase));
 
 var exitCode = 0;

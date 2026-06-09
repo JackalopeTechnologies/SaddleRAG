@@ -6,6 +6,7 @@
 #region Usings
 
 using SaddleRAG.ClientIntegration.Skills;
+using SaddleRAG.ClientIntegration.Writers;
 
 #endregion
 
@@ -35,6 +36,14 @@ public sealed class SkillCatalogTests
             Assert.False(string.IsNullOrWhiteSpace(skill.Description), $"{skill.Name} description should be set");
             Assert.False(string.IsNullOrWhiteSpace(skill.Body), $"{skill.Name} body should be set");
         }
+    }
+
+    [Fact]
+    public void AllCoversEverySkillManifestEntry()
+    {
+        // Forces the catalog to load in CI and catches a manifest entry whose embedded
+        // resource is missing/renamed (which would otherwise throw lazily at first prompt use).
+        Assert.Equal(SkillManifest.pmAll.Length, SkillCatalog.All.Count);
     }
 
     [Fact]
