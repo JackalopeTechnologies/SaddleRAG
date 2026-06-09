@@ -165,6 +165,54 @@ public sealed class PatchAppSettingsTests
     }
 
     [Fact]
+    public void WhitespaceMongoAndOllamaInputsPreserveExistingConfig()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // A whitespace-only escaped value (e.g. from an escape CA) must be treated
+        // like blank and must not overwrite the existing config.
+        string fixturePath = CreateFixture();
+        try
+        {
+            RunPatchScript(fixturePath, "   ", "   ", "   ", "DirectMl");
+
+            JsonNode patched = LoadJson(fixturePath);
+            Assert.Equal("mongodb://placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["ConnectionString"]);
+            Assert.Equal("Placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["DatabaseName"]);
+            Assert.Equal("http://placeholder", (string?) patched["Ollama"]?["Endpoint"]);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
+    public void PartialBlankInputUpdatesProvidedAndPreservesBlank()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // ConnectionString + Ollama provided, DatabaseName blank: the provided two
+        // are written and the blank one is preserved — locks the per-property wiring.
+        string fixturePath = CreateFixture();
+        try
+        {
+            RunPatchScript(fixturePath, "mongodb://example:27017", string.Empty, "http://example:11434", "DirectMl");
+
+            JsonNode patched = LoadJson(fixturePath);
+            Assert.Equal("mongodb://example:27017", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["ConnectionString"]);
+            Assert.Equal("Placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["DatabaseName"]);
+            Assert.Equal("http://example:11434", (string?) patched["Ollama"]?["Endpoint"]);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
     public void MissingFixtureExitsNonZero()
     {
         if (!OperatingSystem.IsWindows())

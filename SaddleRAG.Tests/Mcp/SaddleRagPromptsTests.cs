@@ -31,13 +31,15 @@ public sealed class SaddleRagPromptsTests
     [Fact]
     public void GetReturnsSkillBodyAsAUserTextMessage()
     {
+        SkillContent expected = SkillCatalog.All.First(s => s.Name == ScrapeSkillName);
+
         GetPromptResult result = SaddleRagPrompts.Get(ScrapeSkillName);
 
-        Assert.False(string.IsNullOrWhiteSpace(result.Description));
+        Assert.Equal(expected.Description, result.Description);
         PromptMessage message = Assert.Single(result.Messages);
         Assert.Equal(Role.User, message.Role);
         TextContentBlock text = Assert.IsType<TextContentBlock>(message.Content);
-        Assert.False(string.IsNullOrWhiteSpace(text.Text));
+        Assert.Equal(expected.Body, text.Text);
     }
 
     [Fact]
