@@ -250,6 +250,7 @@ public sealed class LibraryImporter
 
         return new ImportResult
                    {
+                       LibraryId = manifest.Library.Id,
                        VersionsImported = versionsImported,
                        OverwrittenVersions = overwroteVersions,
                        BytesFreed = bytesFreed,

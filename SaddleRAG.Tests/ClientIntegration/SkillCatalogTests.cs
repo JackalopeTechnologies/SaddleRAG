@@ -6,6 +6,7 @@
 #region Usings
 
 using SaddleRAG.ClientIntegration.Skills;
+using SaddleRAG.ClientIntegration.Writers;
 
 #endregion
 
@@ -38,6 +39,14 @@ public sealed class SkillCatalogTests
     }
 
     [Fact]
+    public void AllCoversEverySkillManifestEntry()
+    {
+        // Forces the catalog to load in CI and catches a manifest entry whose embedded
+        // resource is missing/renamed (which would otherwise throw lazily at first prompt use).
+        Assert.Equal(SkillManifest.pmAll.Length, SkillCatalog.All.Count);
+    }
+
+    [Fact]
     public void AllContainsExactlyTheExpectedSkillNames()
     {
         string[] names = SkillCatalog.All.Select(s => s.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
@@ -54,5 +63,43 @@ public sealed class SkillCatalogTests
                          $"{skill.Name} body should not retain the frontmatter fence");
             Assert.StartsWith("#", skill.Body, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void ParseWithoutFrontmatterUsesFolderNameAndWholeBody()
+    {
+        SkillContent skill = SkillCatalog.Parse("my-skill", "# Title\n\nBody text.");
+
+        Assert.Equal("my-skill", skill.Name);
+        Assert.Equal(string.Empty, skill.Description);
+        Assert.StartsWith("# Title", skill.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseWithUnterminatedFrontmatterFallsBackToFolderNameAndRawBody()
+    {
+        SkillContent skill = SkillCatalog.Parse("my-skill", "---\nname: ignored\n# no closing fence");
+
+        Assert.Equal("my-skill", skill.Name);
+        Assert.StartsWith("---", skill.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseNormalizesCrlfFrontmatter()
+    {
+        SkillContent skill = SkillCatalog.Parse("fallback", "---\r\nname: bar\r\ndescription: a desc\r\n---\r\n# Body");
+
+        Assert.Equal("bar", skill.Name);
+        Assert.Equal("a desc", skill.Description);
+        Assert.Equal("# Body", skill.Body);
+    }
+
+    [Fact]
+    public void ParseKeepsColonsInDescriptionValue()
+    {
+        SkillContent skill = SkillCatalog.Parse("fallback", "---\ndescription: a: b: c\n---\nBody");
+
+        Assert.Equal("a: b: c", skill.Description);
+        Assert.Equal("fallback", skill.Name);
     }
 }

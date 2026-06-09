@@ -10,6 +10,7 @@ namespace SaddleRAG.Packaging;
 /// </summary>
 public sealed record ImportResult
 {
+    public required string LibraryId { get; init; }
     public required IReadOnlyList<string> VersionsImported { get; init; }
     public required IReadOnlyList<string> OverwrittenVersions { get; init; }
     public required long BytesFreed { get; init; }

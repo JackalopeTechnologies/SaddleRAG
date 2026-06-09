@@ -51,6 +51,11 @@ public partial class App : Application
     private const string ActionFailedLogMessage = "{Action} failed";
     private const string IconRenderFailedLogMessage = "Tray icon render failed";
     private const string AutoRegisterLogMessage = "Auto-registered detected clients on startup: {Summary}";
+    private const string AutoRegisterPartialFailLogMessage = "Auto-register: one or more clients failed on startup: {Summary}";
+
+    // Mirrors ClientResultFormatter.ErrPrefix — a per-client registration failure renders with
+    // this status token in the summary (OK/SKIP do not), so a real failure can be raised to Warning.
+    private const string RegistrationFailedMarker = "ERR";
     private const string AutoRegisterFailedLogMessage = "Auto-register of detected clients on startup failed";
 
     private const string LogDirName = "SaddleRAG";
@@ -113,7 +118,10 @@ public partial class App : Application
         try
         {
             string summary = await mClientService.InstallAsync(null, CancellationToken.None);
-            mLog?.LogInformation(AutoRegisterLogMessage, summary);
+            if (summary.Contains(RegistrationFailedMarker, StringComparison.Ordinal))
+                mLog?.LogWarning(AutoRegisterPartialFailLogMessage, summary);
+            else
+                mLog?.LogInformation(AutoRegisterLogMessage, summary);
         }
         catch (Exception ex)
         {

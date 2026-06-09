@@ -54,7 +54,7 @@ public static class SkillCatalog
         return reader.ReadToEnd();
     }
 
-    private static SkillContent Parse(string fallbackName, string markdown)
+    internal static SkillContent Parse(string fallbackName, string markdown)
     {
         // Skill files lead with a YAML frontmatter block fenced by '---'. Pull name and
         // description from it for the prompt metadata; the body (everything after the

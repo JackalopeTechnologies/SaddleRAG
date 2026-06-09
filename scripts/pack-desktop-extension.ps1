@@ -41,7 +41,10 @@ Get-ChildItem -Path $StagingDir -Filter '*.md' -File | Remove-Item -Force
 $manifestPath = Join-Path $StagingDir $ManifestFileName
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $manifest.version = $Version
-$manifest | ConvertTo-Json -Depth $JsonDepth | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+# Write BOM-less UTF-8 so the manifest is valid for strict JSON parsers regardless of host
+# (Windows PowerShell 5.1's `Set-Content -Encoding UTF8` emits a BOM; pwsh 7 does not).
+$manifestJson = $manifest | ConvertTo-Json -Depth $JsonDepth
+[System.IO.File]::WriteAllText($manifestPath, $manifestJson, [System.Text.UTF8Encoding]::new($false))
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $OutputPath = Join-Path $OutputDir "saddlerag-$Version.mcpb"
