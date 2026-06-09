@@ -433,8 +433,9 @@ var serverVersion = Assembly.GetExecutingAssembly()
 // client folds this into the model's context, so it is the one client-agnostic lever
 // that delivers the "SaddleRAG-first" role to clients with no skill concept (Claude
 // Desktop, Cursor, Codex, Gemini, Windsurf), mirroring the saddlerag-first skill that
-// Claude Code gets as a file. Keep this in sync with
-// SaddleRAG.ClientIntegration/Resources/saddlerag-first.md.
+// Claude Code gets as a file. This is a deliberately condensed summary of the same guidance
+// as SaddleRAG.ClientIntegration/Resources/saddlerag-first.md (they intentionally differ in
+// length); update both when the SaddleRAG-first workflow changes.
 const string SaddleRagServerInstructions = """
     SaddleRAG provides indexed, current documentation for libraries, frameworks, and APIs —
     often more current than an LLM's training data and authoritative for niche or

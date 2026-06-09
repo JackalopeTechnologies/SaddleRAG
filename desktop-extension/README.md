@@ -7,9 +7,9 @@ SaddleRAG MCP server with Claude Desktop.
 
 `SaddleRAG.ClientIntegration`'s `ClaudeDesktopWriter` registers SaddleRAG by writing an
 `mcpServers` entry into `claude_desktop_config.json` (via the `mcp-remote` stdio bridge).
-That works on standard Claude Desktop, but the newer (Cowork/Connectors-era) build **owns
-that file and rewrites it, dropping externally-added `mcpServers` entries** — so the
-registration does not persist. Its "Add custom connector" UI is no alternative for a local
+That works on standard Claude Desktop, but **as of early 2026** the newer
+(Cowork/Connectors-era) build was observed to **own that file and rewrite it, dropping
+externally-added `mcpServers` entries** — so the registration does not persist. Its "Add custom connector" UI is no alternative for a local
 server: it requires an **HTTPS** URL, and SaddleRAG serves plain HTTP on `localhost:6100`.
 
 A Desktop Extension is the durable path: Claude Desktop installs and manages it in its own
@@ -26,7 +26,7 @@ the manifest schema, so the extension wraps the same local `mcp-remote` stdio br
 ## Build
 
 ```pwsh
-pwsh scripts/pack-desktop-extension.ps1 -Version 1.3.4 -OutputDir ./artifacts/1.3.4
+pwsh scripts/pack-desktop-extension.ps1 -Version <version> -OutputDir ./artifacts/<version>
 ```
 
 Produces `saddlerag-<version>.mcpb`. CI builds and uploads it alongside the MSI.
