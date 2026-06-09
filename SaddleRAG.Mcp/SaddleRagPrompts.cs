@@ -5,6 +5,7 @@
 
 #region Usings
 
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using SaddleRAG.ClientIntegration.Skills;
 
@@ -23,6 +24,7 @@ namespace SaddleRAG.Mcp;
 internal static class SaddleRagPrompts
 {
     private const string UnknownPromptPrefix = "Unknown SaddleRAG prompt: ";
+    private const string BlankNameMessage = "A prompt name is required.";
 
     public static ListPromptsResult List()
     {
@@ -38,13 +40,15 @@ internal static class SaddleRagPrompts
 
     public static GetPromptResult Get(string? name)
     {
+        // prompts/get is client-driven input, not a server bug — throw McpException so the
+        // SDK maps it to a clean JSON-RPC error. (UseToolExceptionFilter only wraps tools.)
         if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentNullException(nameof(name));
+            throw new McpException(BlankNameMessage);
 
         SkillContent? skill = SkillCatalog.All
                                           .FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal));
         if (skill is null)
-            throw new ArgumentException($"{UnknownPromptPrefix}{name}", nameof(name));
+            throw new McpException($"{UnknownPromptPrefix}{name}");
 
         return new GetPromptResult
                    {

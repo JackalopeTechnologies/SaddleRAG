@@ -5,6 +5,7 @@
 
 #region Usings
 
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using SaddleRAG.ClientIntegration.Skills;
 using SaddleRAG.Mcp;
@@ -40,15 +41,15 @@ public sealed class SaddleRagPromptsTests
     }
 
     [Fact]
-    public void GetWithBlankNameThrowsArgumentNull()
+    public void GetWithBlankNameThrowsMcpException()
     {
-        Assert.Throws<ArgumentNullException>(() => SaddleRagPrompts.Get(null));
-        Assert.Throws<ArgumentNullException>(() => SaddleRagPrompts.Get("   "));
+        Assert.Throws<McpException>(() => SaddleRagPrompts.Get(null));
+        Assert.Throws<McpException>(() => SaddleRagPrompts.Get("   "));
     }
 
     [Fact]
-    public void GetWithUnknownNameThrowsArgument()
+    public void GetWithUnknownNameThrowsMcpException()
     {
-        Assert.Throws<ArgumentException>(() => SaddleRagPrompts.Get("does-not-exist"));
+        Assert.Throws<McpException>(() => SaddleRagPrompts.Get("does-not-exist"));
     }
 }
