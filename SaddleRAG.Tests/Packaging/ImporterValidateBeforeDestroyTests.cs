@@ -49,12 +49,7 @@ namespace SaddleRAG.Tests.Packaging;
 [Trait("Category", "Integration")]
 public sealed class ImporterValidateBeforeDestroyTests : IAsyncLifetime
 {
-    private string mDbName = string.Empty;
-    private SaddleRagDbContext mContext = new SaddleRagDbContext(Options.Create(new SaddleRagDbSettings()));
-    private string mValidBundlePath = string.Empty;
-    private string mCorruptBundlePath = string.Empty;
-
-    public async ValueTask InitializeAsync()
+    public ImporterValidateBeforeDestroyTests()
     {
         mDbName = $"saddlerag-test-import-guard-{Guid.NewGuid():N}";
         var settings = Options.Create(new SaddleRagDbSettings
@@ -63,6 +58,15 @@ public sealed class ImporterValidateBeforeDestroyTests : IAsyncLifetime
                                               DatabaseName = mDbName
                                           });
         mContext = new SaddleRagDbContext(settings);
+    }
+
+    private readonly string mDbName;
+    private readonly SaddleRagDbContext mContext;
+    private string mValidBundlePath = string.Empty;
+    private string mCorruptBundlePath = string.Empty;
+
+    public async ValueTask InitializeAsync()
+    {
         await mContext.EnsureIndexesAsync(TestContext.Current.CancellationToken);
 
         mValidBundlePath = Path.Combine(Path.GetTempPath(),
@@ -211,30 +215,30 @@ public sealed class ImporterValidateBeforeDestroyTests : IAsyncLifetime
     }
 
     private const string TestConnectionString = "mongodb://localhost:27017";
-}
 
-/// <summary>
-///     Minimal <see cref="IEmbeddingProvider" /> for the import-guard
-///     integration test.  Encoder fields match the bundle so the importer
-///     recognises an encoder-match; <see cref="EmbedAsync" /> is never
-///     called and throws to make any accidental invocation visible.
-/// </summary>
-internal sealed class ImportGuardFakeEmbeddingProvider : IEmbeddingProvider
-{
-    public ImportGuardFakeEmbeddingProvider(string providerId, string modelName, int dimensions)
+    /// <summary>
+    ///     Minimal <see cref="IEmbeddingProvider" /> for the import-guard
+    ///     integration test.  Encoder fields match the bundle so the importer
+    ///     recognises an encoder-match; <see cref="EmbedAsync" /> is never
+    ///     called and throws to make any accidental invocation visible.
+    /// </summary>
+    private sealed class ImportGuardFakeEmbeddingProvider : IEmbeddingProvider
     {
-        ProviderId = providerId;
-        ModelName = modelName;
-        Dimensions = dimensions;
+        public ImportGuardFakeEmbeddingProvider(string providerId, string modelName, int dimensions)
+        {
+            ProviderId = providerId;
+            ModelName = modelName;
+            Dimensions = dimensions;
+        }
+
+        public string ProviderId { get; }
+        public string ModelName { get; }
+        public int Dimensions { get; }
+
+        public Task<float[][]> EmbedAsync(IReadOnlyList<string> texts,
+                                          EmbedRole role = EmbedRole.Document,
+                                          CancellationToken ct = default)
+            => throw new NotSupportedException(
+                "Import-guard test should not call EmbedAsync; validation fails before embedding is needed.");
     }
-
-    public string ProviderId { get; }
-    public string ModelName { get; }
-    public int Dimensions { get; }
-
-    public Task<float[][]> EmbedAsync(IReadOnlyList<string> texts,
-                                      EmbedRole role = EmbedRole.Document,
-                                      CancellationToken ct = default)
-        => throw new NotSupportedException(
-            "Import-guard test should not call EmbedAsync; validation fails before embedding is needed.");
 }
