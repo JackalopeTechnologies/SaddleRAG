@@ -234,55 +234,110 @@ public class LibraryRepository : ILibraryRepository
         await mContext.LibraryVersions.UpdateOneAsync(filter, update, cancellationToken: ct);
     }
 
+    private const int RemapBatchSize = 500;
+
+    private static string RemapIdSegment(string id, int segmentIndex, string newSegment)
+    {
+        var segments = id.Split('/');
+        segments[segmentIndex] = newSegment;
+        return string.Join('/', segments);
+    }
+
+    private static async Task<long> CopyRemappedAsync<T>(IMongoCollection<T> collection,
+                                                  FilterDefinition<T> oldFilter,
+                                                  Func<T, T> rebuild,
+                                                  CancellationToken ct)
+    {
+        long copied = 0;
+        var batch = new List<T>(RemapBatchSize);
+        using var cursor = await collection.FindAsync(oldFilter, cancellationToken: ct);
+        while (await cursor.MoveNextAsync(ct))
+        {
+            foreach (var doc in cursor.Current)
+            {
+                batch.Add(rebuild(doc));
+                if (batch.Count >= RemapBatchSize)
+                {
+                    await collection.InsertManyAsync(batch, cancellationToken: ct);
+                    copied += batch.Count;
+                    batch.Clear();
+                }
+            }
+        }
+
+        if (batch.Count > 0)
+        {
+            await collection.InsertManyAsync(batch, cancellationToken: ct);
+            copied += batch.Count;
+        }
+
+        return copied;
+    }
+
     private async Task<RenameLibraryResult> ApplyRenameAsync(string oldId, string newId, CancellationToken ct)
     {
-        var libFilter = Builders<LibraryRecord>.Filter.Eq(l => l.Id, oldId);
-        var libUpdate = Builders<LibraryRecord>.Update.Set(l => l.Id, newId);
-        var libRes = await mContext.Libraries.UpdateOneAsync(libFilter, libUpdate, cancellationToken: ct);
+        // Copy phase: every (LibraryId)-keyed collection. _id embeds the library id
+        // (segment 0) and is immutable, so each row is re-inserted under a rebuilt _id;
+        // old rows are deleted afterwards.
+        var versions = await CopyRemappedAsync(mContext.LibraryVersions,
+            Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, oldId),
+            d => d with { Id = RemapIdSegment(d.Id, 0, newId), LibraryId = newId }, ct);
 
-        var verFilter = Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, oldId);
-        var verUpdate = Builders<LibraryVersionRecord>.Update.Set(v => v.LibraryId, newId);
-        var verRes = await mContext.LibraryVersions.UpdateManyAsync(verFilter, verUpdate, cancellationToken: ct);
+        var chunks = await CopyRemappedAsync(mContext.Chunks,
+            Builders<DocChunk>.Filter.Eq(c => c.LibraryId, oldId),
+            d => d with { Id = RemapIdSegment(d.Id, 0, newId), LibraryId = newId }, ct);
 
-        var chunkFilter = Builders<DocChunk>.Filter.Eq(c => c.LibraryId, oldId);
-        var chunkUpdate = Builders<DocChunk>.Update.Set(c => c.LibraryId, newId);
-        var chunkRes = await mContext.Chunks.UpdateManyAsync(chunkFilter, chunkUpdate, cancellationToken: ct);
+        var pages = await CopyRemappedAsync(mContext.Pages,
+            Builders<PageRecord>.Filter.Eq(p => p.LibraryId, oldId),
+            d => d with { Id = RemapIdSegment(d.Id, 0, newId), LibraryId = newId }, ct);
 
-        var pageFilter = Builders<PageRecord>.Filter.Eq(p => p.LibraryId, oldId);
-        var pageUpdate = Builders<PageRecord>.Update.Set(p => p.LibraryId, newId);
-        var pageRes = await mContext.Pages.UpdateManyAsync(pageFilter, pageUpdate, cancellationToken: ct);
+        var profiles = await CopyRemappedAsync(mContext.LibraryProfiles,
+            Builders<LibraryProfile>.Filter.Eq(p => p.LibraryId, oldId),
+            d => d with { Id = RemapIdSegment(d.Id, 0, newId), LibraryId = newId }, ct);
 
-        var profileFilter = Builders<LibraryProfile>.Filter.Eq(p => p.LibraryId, oldId);
-        var profileUpdate = Builders<LibraryProfile>.Update.Set(p => p.LibraryId, newId);
-        var profileRes =
-            await mContext.LibraryProfiles.UpdateManyAsync(profileFilter, profileUpdate, cancellationToken: ct);
+        var indexes = await CopyRemappedAsync(mContext.LibraryIndexes,
+            Builders<LibraryIndex>.Filter.Eq(i => i.LibraryId, oldId),
+            d => d with { Id = RemapIdSegment(d.Id, 0, newId), LibraryId = newId }, ct);
 
-        var indexFilter = Builders<LibraryIndex>.Filter.Eq(i => i.LibraryId, oldId);
-        var indexUpdate = Builders<LibraryIndex>.Update.Set(i => i.LibraryId, newId);
-        var indexRes = await mContext.LibraryIndexes.UpdateManyAsync(indexFilter, indexUpdate, cancellationToken: ct);
+        var shards = await CopyRemappedAsync(mContext.Bm25Shards,
+            Builders<Bm25Shard>.Filter.Eq(s => s.LibraryId, oldId),
+            d => d with { Id = RemapIdSegment(d.Id, 0, newId), LibraryId = newId }, ct);
 
-        var shardFilter = Builders<Bm25Shard>.Filter.Eq(s => s.LibraryId, oldId);
-        var shardUpdate = Builders<Bm25Shard>.Update.Set(s => s.LibraryId, newId);
-        var shardRes = await mContext.Bm25Shards.UpdateManyAsync(shardFilter, shardUpdate, cancellationToken: ct);
+        var excluded = await CopyRemappedAsync(mContext.ExcludedSymbols,
+            Builders<ExcludedSymbol>.Filter.Eq(e => e.LibraryId, oldId),
+            d => d with { Id = RemapIdSegment(d.Id, 0, newId), LibraryId = newId }, ct);
 
-        var exFilter = Builders<ExcludedSymbol>.Filter.Eq(e => e.LibraryId, oldId);
-        var exUpdate = Builders<ExcludedSymbol>.Update.Set(e => e.LibraryId, newId);
-        var exRes = await mContext.ExcludedSymbols.UpdateManyAsync(exFilter, exUpdate, cancellationToken: ct);
-
+        // Jobs: GUID _id — a field update is sufficient.
         var jobFilter = Builders<JobRecord>.Filter.Eq(j => j.LibraryId, oldId);
         var jobUpdate = Builders<JobRecord>.Update.Set(j => j.LibraryId, newId);
         var jobRes = await mContext.Jobs.UpdateManyAsync(jobFilter, jobUpdate, cancellationToken: ct);
 
-        var result = new RenameLibraryResult(libRes.ModifiedCount,
-                                             verRes.ModifiedCount,
-                                             chunkRes.ModifiedCount,
-                                             pageRes.ModifiedCount,
-                                             profileRes.ModifiedCount,
-                                             indexRes.ModifiedCount,
-                                             shardRes.ModifiedCount,
-                                             exRes.ModifiedCount,
-                                             jobRes.ModifiedCount
-                                            );
+        // Pointer flip: the libraries row _id IS the library id, so move it (insert new, delete old).
+        var oldLib = await GetLibraryAsync(oldId, ct);
+        if (oldLib == null)
+            throw new InvalidOperationException($"Library '{oldId}' disappeared during rename.");
+        var newLib = new LibraryRecord
+                         {
+                             Id = newId,
+                             Name = oldLib.Name,
+                             Hint = oldLib.Hint,
+                             CurrentVersion = oldLib.CurrentVersion,
+                             AllVersions = oldLib.AllVersions
+                         };
+        await mContext.Libraries.InsertOneAsync(newLib, cancellationToken: ct);
+
+        // Delete phase: old rows now that copies exist.
+        await mContext.LibraryVersions.DeleteManyAsync(Builders<LibraryVersionRecord>.Filter.Eq(v => v.LibraryId, oldId), ct);
+        await mContext.Chunks.DeleteManyAsync(Builders<DocChunk>.Filter.Eq(c => c.LibraryId, oldId), ct);
+        await mContext.Pages.DeleteManyAsync(Builders<PageRecord>.Filter.Eq(p => p.LibraryId, oldId), ct);
+        await mContext.LibraryProfiles.DeleteManyAsync(Builders<LibraryProfile>.Filter.Eq(p => p.LibraryId, oldId), ct);
+        await mContext.LibraryIndexes.DeleteManyAsync(Builders<LibraryIndex>.Filter.Eq(i => i.LibraryId, oldId), ct);
+        await mContext.Bm25Shards.DeleteManyAsync(Builders<Bm25Shard>.Filter.Eq(s => s.LibraryId, oldId), ct);
+        await mContext.ExcludedSymbols.DeleteManyAsync(Builders<ExcludedSymbol>.Filter.Eq(e => e.LibraryId, oldId), ct);
+        await mContext.Libraries.DeleteOneAsync(l => l.Id == oldId, ct);
+
+        var result = new RenameLibraryResult(Libraries: 1, versions, chunks, pages, profiles, indexes, shards, excluded,
+                                             jobRes.ModifiedCount);
         return result;
     }
 }
