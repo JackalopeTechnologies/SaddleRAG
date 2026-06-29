@@ -21,6 +21,11 @@ public static class BackgroundJobTypes
     public const string RenameLibrary = "rename_library";
 
     /// <summary>
+    ///     Rename a single version of a library across all collections.
+    /// </summary>
+    public const string RenameVersion = "rename_version";
+
+    /// <summary>
     ///     Delete a single (library, version) from all collections.
     /// </summary>
     public const string DeleteVersion = "delete_version";

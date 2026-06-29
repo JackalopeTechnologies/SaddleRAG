@@ -216,6 +216,7 @@ public sealed class JobsUnificationMigration
         "dryrun_scrape"              => JobType.DryRunScrape,
         "rechunk"                    => JobType.Rechunk,
         "rename_library"             => JobType.RenameLibrary,
+        "rename_version"             => JobType.RenameVersion,
         "delete_version"             => JobType.DeleteVersion,
         "delete_library"             => JobType.DeleteLibrary,
         "index_project_dependencies" => JobType.IndexProjectDependencies,

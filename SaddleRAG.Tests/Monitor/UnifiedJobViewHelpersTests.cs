@@ -221,6 +221,23 @@ public sealed class UnifiedJobViewHelpersTests
         Assert.Null(row.RenameToId);
     }
 
+    [Fact]
+    public void ProjectExtractsNewVersionHintForRenameVersionJobs()
+    {
+        var record = new JobRecord
+                         {
+                             Id = "j1",
+                             JobType = JobType.RenameVersion,
+                             LibraryId = "lib",
+                             Version = "current",
+                             InputJson = "{\"library\":\"lib\",\"version\":\"current\",\"newVersion\":\"v8\"}"
+                         };
+
+        var row = UnifiedJobView.Project(record);
+
+        Assert.Equal("v8", row.RenameToId);
+    }
+
     #endregion
 
     private static JobRow MakeRow(string jobId,

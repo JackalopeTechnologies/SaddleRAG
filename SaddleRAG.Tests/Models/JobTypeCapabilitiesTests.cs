@@ -26,6 +26,7 @@ public sealed class JobTypeCapabilitiesTests
 
     [Theory]
     [InlineData(JobType.RenameLibrary)]
+    [InlineData(JobType.RenameVersion)]
     [InlineData(JobType.DeleteVersion)]
     [InlineData(JobType.DeleteLibrary)]
     [InlineData(JobType.IndexProjectDependencies)]

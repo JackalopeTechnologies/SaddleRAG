@@ -16,6 +16,7 @@ public enum JobType
     Rescrub,
     Reembed,
     RenameLibrary,
+    RenameVersion,
     DeleteVersion,
     DeleteLibrary,
     IndexProjectDependencies,
