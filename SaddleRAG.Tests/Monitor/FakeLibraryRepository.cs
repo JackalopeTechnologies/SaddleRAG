@@ -92,6 +92,15 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
         return Task.FromResult(result);
     }
 
+    public Task<RenameLibraryResponse> RenameVersionAsync(string libraryId,
+                                                          string oldVersion,
+                                                          string newVersion,
+                                                          CancellationToken ct = default)
+    {
+        var result = new RenameLibraryResponse(RenameLibraryOutcome.NotFound, Counts: null);
+        return Task.FromResult(result);
+    }
+
     public Task SetSuspectAsync(string libraryId,
                                 string version,
                                 IReadOnlyList<string> reasons,

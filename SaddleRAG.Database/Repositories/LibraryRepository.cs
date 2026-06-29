@@ -234,7 +234,102 @@ public class LibraryRepository : ILibraryRepository
         await mContext.LibraryVersions.UpdateOneAsync(filter, update, cancellationToken: ct);
     }
 
+    /// <inheritdoc />
+    public async Task<RenameLibraryResponse> RenameVersionAsync(string libraryId,
+                                                                string oldVersion,
+                                                                string newVersion,
+                                                                CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(oldVersion);
+        ArgumentException.ThrowIfNullOrEmpty(newVersion);
+
+        RenameLibraryResponse result;
+
+        var existing = await GetVersionAsync(libraryId, oldVersion, ct);
+        if (existing == null)
+            result = new RenameLibraryResponse(RenameLibraryOutcome.NotFound, Counts: null);
+        else
+        {
+            var collision = await GetVersionAsync(libraryId, newVersion, ct);
+            if (collision != null)
+                result = new RenameLibraryResponse(RenameLibraryOutcome.Collision, Counts: null);
+            else
+            {
+                var counts = await ApplyVersionRenameAsync(libraryId, oldVersion, newVersion, ct);
+                result = new RenameLibraryResponse(RenameLibraryOutcome.Renamed, counts);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<RenameLibraryResult> ApplyVersionRenameAsync(string lib,
+                                                                     string oldVer,
+                                                                     string newVer,
+                                                                     CancellationToken ct)
+    {
+        static FilterDefinition<T> ByLibVer<T>(string l, string v) =>
+            Builders<T>.Filter.And(
+                Builders<T>.Filter.Eq(new StringFieldDefinition<T, string>(LibraryIdField), l),
+                Builders<T>.Filter.Eq(new StringFieldDefinition<T, string>(VersionField), v));
+
+        // Copy phase: version is segment 1 of every composite _id.
+        var versions = await CopyRemappedAsync(mContext.LibraryVersions, ByLibVer<LibraryVersionRecord>(lib, oldVer),
+            d => d with { Id = RemapIdSegment(d.Id, 1, newVer), Version = newVer }, ct);
+
+        var chunks = await CopyRemappedAsync(mContext.Chunks, ByLibVer<DocChunk>(lib, oldVer),
+            d => d with { Id = RemapIdSegment(d.Id, 1, newVer), Version = newVer }, ct);
+
+        var pages = await CopyRemappedAsync(mContext.Pages, ByLibVer<PageRecord>(lib, oldVer),
+            d => d with { Id = RemapIdSegment(d.Id, 1, newVer), Version = newVer }, ct);
+
+        var profiles = await CopyRemappedAsync(mContext.LibraryProfiles, ByLibVer<LibraryProfile>(lib, oldVer),
+            d => d with { Id = RemapIdSegment(d.Id, 1, newVer), Version = newVer }, ct);
+
+        var indexes = await CopyRemappedAsync(mContext.LibraryIndexes, ByLibVer<LibraryIndex>(lib, oldVer),
+            d => d with { Id = RemapIdSegment(d.Id, 1, newVer), Version = newVer }, ct);
+
+        // Bm25 shards keep their GridFS blob refs (ShardGridFsRef / ExternalTerms) unchanged.
+        var shards = await CopyRemappedAsync(mContext.Bm25Shards, ByLibVer<Bm25Shard>(lib, oldVer),
+            d => d with { Id = RemapIdSegment(d.Id, 1, newVer), Version = newVer }, ct);
+
+        var excluded = await CopyRemappedAsync(mContext.ExcludedSymbols, ByLibVer<ExcludedSymbol>(lib, oldVer),
+            d => d with { Id = RemapIdSegment(d.Id, 1, newVer), Version = newVer }, ct);
+
+        // Jobs: GUID _id — field update.
+        var jobUpdate = Builders<JobRecord>.Update.Set(j => j.Version, newVer);
+        var jobRes = await mContext.Jobs.UpdateManyAsync(ByLibVer<JobRecord>(lib, oldVer), jobUpdate, cancellationToken: ct);
+
+        // Pointer flip: libraries _id is unchanged; update AllVersions / CurrentVersion fields.
+        var libRec = await GetLibraryAsync(lib, ct);
+        if (libRec == null)
+            throw new InvalidOperationException($"Library '{lib}' disappeared during version rename.");
+        var newAll = libRec.AllVersions.Select(v => v == oldVer ? newVer : v).ToList();
+        var newCurrent = libRec.CurrentVersion == oldVer ? newVer : libRec.CurrentVersion;
+        await UpsertLibraryAsync(new LibraryRecord
+                                     {
+                                         Id = libRec.Id, Name = libRec.Name, Hint = libRec.Hint,
+                                         CurrentVersion = newCurrent, AllVersions = newAll
+                                     }, ct);
+
+        // Delete phase: old version rows.
+        await mContext.LibraryVersions.DeleteManyAsync(ByLibVer<LibraryVersionRecord>(lib, oldVer), ct);
+        await mContext.Chunks.DeleteManyAsync(ByLibVer<DocChunk>(lib, oldVer), ct);
+        await mContext.Pages.DeleteManyAsync(ByLibVer<PageRecord>(lib, oldVer), ct);
+        await mContext.LibraryProfiles.DeleteManyAsync(ByLibVer<LibraryProfile>(lib, oldVer), ct);
+        await mContext.LibraryIndexes.DeleteManyAsync(ByLibVer<LibraryIndex>(lib, oldVer), ct);
+        await mContext.Bm25Shards.DeleteManyAsync(ByLibVer<Bm25Shard>(lib, oldVer), ct);
+        await mContext.ExcludedSymbols.DeleteManyAsync(ByLibVer<ExcludedSymbol>(lib, oldVer), ct);
+
+        var result = new RenameLibraryResult(Libraries: 1, versions, chunks, pages, profiles, indexes, shards, excluded,
+                                             jobRes.ModifiedCount);
+        return result;
+    }
+
     private const int RemapBatchSize = 500;
+    private const string LibraryIdField = "LibraryId";
+    private const string VersionField = "Version";
 
     private static string RemapIdSegment(string id, int segmentIndex, string newSegment)
     {
