@@ -70,6 +70,17 @@ public interface ILibraryRepository
     Task<RenameLibraryResponse> RenameAsync(string oldId, string newId, CancellationToken ct = default);
 
     /// <summary>
+    ///     Rename a version of a library by remapping the version segment of every
+    ///     composite _id across all collections (copy→flip pointer→delete). Pre-checks
+    ///     for collision (target version exists) and missing source version. Repoints
+    ///     CurrentVersion when the renamed version was current.
+    /// </summary>
+    Task<RenameLibraryResponse> RenameVersionAsync(string libraryId,
+                                                   string oldVersion,
+                                                   string newVersion,
+                                                   CancellationToken ct = default);
+
+    /// <summary>
     ///     Mark a library version as suspect, recording the reasons and evaluation timestamp.
     /// </summary>
     Task SetSuspectAsync(string libraryId,

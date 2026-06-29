@@ -26,6 +26,7 @@ internal static class MonitorTypeFormatting
                 JobType.Reembed => Color.Primary,
                 JobType.SubmitUrlCorrection => Color.Primary,
                 JobType.RenameLibrary => Color.Warning,
+                JobType.RenameVersion => Color.Warning,
                 JobType.DeleteVersion => Color.Warning,
                 JobType.DeleteLibrary => Color.Warning,
                 JobType.CleanupAuditLog => Color.Warning,
@@ -46,6 +47,7 @@ internal static class MonitorTypeFormatting
                 JobType.Rescrub => LabelRescrub,
                 JobType.Reembed => LabelReembed,
                 JobType.RenameLibrary => LabelRename,
+                JobType.RenameVersion => LabelRenameVersion,
                 JobType.DeleteVersion => LabelDeleteVersion,
                 JobType.DeleteLibrary => LabelDeleteLibrary,
                 JobType.IndexProjectDependencies => LabelIndexDeps,
@@ -69,6 +71,7 @@ internal static class MonitorTypeFormatting
     private const string LabelRescrub = "Rescrub";
     private const string LabelReembed = "Re-embed";
     private const string LabelRename = "Rename";
+    private const string LabelRenameVersion = "Rename version";
     private const string LabelDeleteVersion = "Delete version";
     private const string LabelDeleteLibrary = "Delete library";
     private const string LabelIndexDeps = "Index deps";

@@ -110,7 +110,7 @@ public sealed class UnifiedJobView : IUnifiedJobView
     {
         (string? RenameTo, string? ScanPath) result = (null, null);
         if (!string.IsNullOrEmpty(r.InputJson) &&
-            r.JobType is JobType.RenameLibrary or JobType.IndexProjectDependencies)
+            r.JobType is JobType.RenameLibrary or JobType.RenameVersion or JobType.IndexProjectDependencies)
         {
             try
             {
@@ -118,6 +118,7 @@ public sealed class UnifiedJobView : IUnifiedJobView
                 result = r.JobType switch
                          {
                              JobType.RenameLibrary             => (ReadProperty(doc, NewIdJsonProperty), null),
+                             JobType.RenameVersion             => (ReadProperty(doc, NewVersionJsonProperty), null),
                              JobType.IndexProjectDependencies  => (null, ReadProperty(doc, PathJsonProperty)),
                              _                                 => (null, null)
                          };
@@ -134,5 +135,6 @@ public sealed class UnifiedJobView : IUnifiedJobView
         doc.RootElement.TryGetProperty(propertyName, out JsonElement el) ? el.GetString() : null;
 
     private const string NewIdJsonProperty = "newId";
+    private const string NewVersionJsonProperty = "newVersion";
     private const string PathJsonProperty = "path";
 }

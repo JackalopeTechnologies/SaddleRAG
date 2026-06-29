@@ -43,7 +43,7 @@ public sealed class MutationToolsTests
                                                      "new",
                                                      dryRun: true,
                                                      profile: null,
-                                                     TestContext.Current.CancellationToken
+                                                     ct: TestContext.Current.CancellationToken
                                                     );
 
         Assert.Contains("\"DryRun\": true", json);
@@ -69,7 +69,7 @@ public sealed class MutationToolsTests
                                                      "new",
                                                      dryRun: true,
                                                      profile: null,
-                                                     TestContext.Current.CancellationToken
+                                                     ct: TestContext.Current.CancellationToken
                                                     );
 
         Assert.Contains("\"DryRun\": true", json);
@@ -105,7 +105,7 @@ public sealed class MutationToolsTests
                                                      "new",
                                                      dryRun: false,
                                                      profile: null,
-                                                     TestContext.Current.CancellationToken
+                                                     ct: TestContext.Current.CancellationToken
                                                     );
 
         Assert.Contains("\"JobId\":", json);
@@ -130,7 +130,7 @@ public sealed class MutationToolsTests
                                                      "new",
                                                      dryRun: false,
                                                      profile: null,
-                                                     TestContext.Current.CancellationToken
+                                                     ct: TestContext.Current.CancellationToken
                                                     );
 
         Assert.Contains("\"JobId\":", json);
@@ -308,6 +308,102 @@ public sealed class MutationToolsTests
         await chunkRepo.Received().DeleteChunksAsync("foo", Arg.Any<string>(), Arg.Any<CancellationToken>());
         await libraryRepo.Received(requiredNumberOfCalls: 1).DeleteAsync("foo", Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task RenameVersionDryRunReportsCountsWithoutWriting()
+    {
+        var libraryRepo = Substitute.For<ILibraryRepository>();
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        var pageRepo = Substitute.For<IPageRepository>();
+        var factory = Substitute.For<RepositoryFactory>([null]);
+
+        factory.GetLibraryRepository(profile: null).Returns(libraryRepo);
+        factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
+        factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
+
+        libraryRepo.GetVersionAsync("scichart-wpf", "current", Arg.Any<CancellationToken>())
+                   .Returns(MakeVersionRecord("scichart-wpf", "current"));
+        libraryRepo.GetVersionAsync("scichart-wpf", "v8", Arg.Any<CancellationToken>())
+                   .Returns((LibraryVersionRecord?) null);
+        libraryRepo.GetLibraryAsync("scichart-wpf", Arg.Any<CancellationToken>())
+                   .Returns(new LibraryRecord { Id = "scichart-wpf", Name = "s", Hint = "h",
+                                                CurrentVersion = "current", AllVersions = ["current"] });
+        chunkRepo.GetChunkCountAsync("scichart-wpf", "current", Arg.Any<CancellationToken>()).Returns(48734);
+        pageRepo.GetPageCountAsync("scichart-wpf", "current", Arg.Any<CancellationToken>()).Returns(20636);
+
+        var json = await MutationTools.RenameLibrary(factory, MakeNoopRunner(), "scichart-wpf",
+                                                     newId: null, version: "current", newVersion: "v8",
+                                                     dryRun: true, profile: null,
+                                                     TestContext.Current.CancellationToken);
+
+        Assert.Contains("\"DryRun\": true", json);
+        Assert.Contains("\"Outcome\": \"Renamed\"", json);
+        Assert.Contains("\"Chunks\": 48734", json);
+        Assert.Contains("\"CurrentVersionRepointedTo\": \"v8\"", json);
+        await libraryRepo.DidNotReceive()
+                         .RenameVersionAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                                             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RenameVersionApplyQueuesJobAndCallsRenameVersionAsync()
+    {
+        var libraryRepo = Substitute.For<ILibraryRepository>();
+        var factory = Substitute.For<RepositoryFactory>([null]);
+        factory.GetLibraryRepository(profile: null).Returns(libraryRepo);
+        libraryRepo.RenameVersionAsync("scichart-wpf", "current", "v8", Arg.Any<CancellationToken>())
+                   .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
+                                new RenameLibraryResult(1, 1, 48734, 20636, 1, 1, 4, 0, 0)));
+
+        var json = await MutationTools.RenameLibrary(factory, MakeInlineRunner(), "scichart-wpf",
+                                                     newId: null, version: "current", newVersion: "v8",
+                                                     dryRun: false, profile: null,
+                                                     TestContext.Current.CancellationToken);
+
+        Assert.Contains("\"JobId\":", json);
+        Assert.Contains("\"Status\": \"Queued\"", json);
+        await libraryRepo.Received(1)
+                         .RenameVersionAsync("scichart-wpf", "current", "v8", Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    // both modes
+    [InlineData("new", "current", "v8")]
+    // version without newVersion
+    [InlineData(null, "current", null)]
+    // newVersion without version
+    [InlineData(null, null, "v8")]
+    // identical
+    [InlineData(null, "v8", "v8")]
+    // slash in newVersion
+    [InlineData(null, "current", "a/b")]
+    // nothing
+    [InlineData(null, null, null)]
+    public async Task RenameRejectsInvalidArgumentCombos(string? newId, string? version, string? newVersion)
+    {
+        var factory = Substitute.For<RepositoryFactory>([null]);
+
+        var json = await MutationTools.RenameLibrary(factory, MakeNoopRunner(), "lib",
+                                                     newId, version, newVersion,
+                                                     dryRun: true, profile: null,
+                                                     TestContext.Current.CancellationToken);
+
+        Assert.Contains("\"Error\":", json);
+    }
+
+    private static LibraryVersionRecord MakeVersionRecord(string lib, string ver) =>
+        new()
+        {
+            Id = $"{lib}/{ver}",
+            LibraryId = lib,
+            Version = ver,
+            ScrapedAt = DateTime.UtcNow,
+            PageCount = 1,
+            ChunkCount = 1,
+            EmbeddingProviderId = "onnx",
+            EmbeddingModelName = "nomic-embed-text-v1.5",
+            EmbeddingDimensions = 768
+        };
 
     private static IBackgroundJobRunner MakeNoopRunner()
     {
