@@ -27,19 +27,23 @@ namespace SaddleRAG.Mcp.Tools;
 public static class MutationTools
 {
     [McpServerTool(Name = "rename_library")]
-    [Description("Rename a library across every collection that stores LibraryId. " +
-                 "Defaults to dryRun=true — preview the per-collection update counts " +
-                 "before passing dryRun=false to apply. dryRun=false returns { JobId, Status: 'Queued' } " +
-                 "immediately; poll get_job_status for the outcome. " +
-                 "Errors with Outcome=Collision if the new id already exists; never silently merges libraries."
-                )]
+    [Description("Rename a library OR a single version. Library mode: pass 'newId' to rename the " +
+                 "library across every collection. Version mode: pass 'version' + 'newVersion' to " +
+                 "relabel one version (e.g. current -> v8), repointing CurrentVersion if needed. " +
+                 "Exactly one mode per call. Defaults to dryRun=true; dryRun=false queues a background " +
+                 "job and returns { JobId, Status: 'Queued' }. Outcome=Collision if the target id/version " +
+                 "already exists; never merges.")]
     public static async Task<string> RenameLibrary(RepositoryFactory repositoryFactory,
                                                    [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                    IBackgroundJobRunner runner,
                                                    [Description("Current library identifier")]
                                                    string library,
-                                                   [Description("New library identifier")]
-                                                   string newId,
+                                                   [Description("New library identifier (library-rename mode)")]
+                                                   string? newId = null,
+                                                   [Description("Existing version to rename (version-rename mode)")]
+                                                   string? version = null,
+                                                   [Description("New version label (version-rename mode)")]
+                                                   string? newVersion = null,
                                                    [Description("If true (default), preview without writing.")]
                                                    bool dryRun = true,
                                                    [Description("Optional database profile name")]
@@ -49,32 +53,141 @@ public static class MutationTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentException.ThrowIfNullOrEmpty(library);
-        ArgumentException.ThrowIfNullOrEmpty(newId);
 
+        string? modeError = ValidateRenameMode(newId, version, newVersion);
+        string ver = version ?? string.Empty;
+        string newVer = newVersion ?? string.Empty;
+        Task<string> dispatch = modeError switch
+            {
+                not null => Task.FromResult(JsonSerializer.Serialize(new { Error = modeError }, smJsonOptions)),
+                var _ when !string.IsNullOrEmpty(newId)
+                    => RunLibraryRenameAsync(repositoryFactory, runner, library, newId, dryRun, profile, ct),
+                var _ => RunVersionRenameAsync(repositoryFactory, runner, library, ver, newVer, dryRun, profile, ct)
+            };
+        string result = await dispatch;
+        return result;
+    }
+
+    private static string? ValidateRenameMode(string? newId, string? version, string? newVersion)
+    {
+        bool wantsLibrary = !string.IsNullOrEmpty(newId);
+        bool wantsVersion = !string.IsNullOrEmpty(version) || !string.IsNullOrEmpty(newVersion);
+        bool newIdHasSlash = newId != null && newId.Contains(SlashString, StringComparison.Ordinal);
+        bool newVersionHasSlash = newVersion != null && newVersion.Contains(SlashString, StringComparison.Ordinal);
+
+        string? error = (wantsLibrary, wantsVersion) switch
+            {
+                (true, true)   => BothModesError,
+                (false, false) => NothingToRenameError,
+                (true, false) when newIdHasSlash => NewIdSlashError,
+                (false, true) when string.IsNullOrEmpty(version) || string.IsNullOrEmpty(newVersion)
+                               => VersionBothRequiredError,
+                (false, true) when string.Equals(version, newVersion, StringComparison.Ordinal)
+                               => NewVersionSameError,
+                (false, true) when newVersionHasSlash => NewVersionSlashError,
+                var _ => null
+            };
+        return error;
+    }
+
+    private static async Task<string> RunLibraryRenameAsync(RepositoryFactory repositoryFactory,
+                                                            IBackgroundJobRunner runner,
+                                                            string library, string newId,
+                                                            bool dryRun, string? profile, CancellationToken ct)
+    {
         string result;
         if (dryRun)
         {
             var preview = await PreviewRenameAsync(repositoryFactory, profile, library, newId, ct);
-            var response = new
-                               {
-                                   DryRun = true,
-                                   Outcome = preview.outcome.ToString(),
-                                   WouldRename = preview.counts
-                               };
+            var response = new { DryRun = true, Outcome = preview.outcome.ToString(), WouldRename = preview.counts };
             result = JsonSerializer.Serialize(response, smJsonOptions);
         }
         else
         {
-            result = await QueueRenameLibraryJobAsync(library,
-                                                      newId,
-                                                      repositoryFactory,
-                                                      runner,
-                                                      profile,
-                                                      ct
-                                                     );
+            result = await QueueRenameLibraryJobAsync(library, newId, repositoryFactory, runner, profile, ct);
         }
 
         return result;
+    }
+
+    private static async Task<string> RunVersionRenameAsync(RepositoryFactory repositoryFactory,
+                                                            IBackgroundJobRunner runner,
+                                                            string library, string version, string newVersion,
+                                                            bool dryRun, string? profile, CancellationToken ct)
+    {
+        string result;
+        if (dryRun)
+        {
+            var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
+            var chunkRepo = repositoryFactory.GetChunkRepository(profile);
+            var pageRepo = repositoryFactory.GetPageRepository(profile);
+
+            var existing = await libraryRepo.GetVersionAsync(library, version, ct);
+            var collision = await libraryRepo.GetVersionAsync(library, newVersion, ct);
+            var lib = await libraryRepo.GetLibraryAsync(library, ct);
+
+            var outcome = existing is null ? RenameLibraryOutcome.NotFound
+                        : collision is not null ? RenameLibraryOutcome.Collision
+                        : RenameLibraryOutcome.Renamed;
+
+            object? wouldRename = null;
+            if (outcome == RenameLibraryOutcome.Renamed)
+            {
+                var chunks = await chunkRepo.GetChunkCountAsync(library, version, ct);
+                var pages = await pageRepo.GetPageCountAsync(library, version, ct);
+                string? repoint = lib?.CurrentVersion == version ? newVersion : null;
+                wouldRename = new { Versions = 1, Chunks = chunks, Pages = pages, CurrentVersionRepointedTo = repoint };
+            }
+
+            var response = new { DryRun = true, Outcome = outcome.ToString(), WouldRename = wouldRename };
+            result = JsonSerializer.Serialize(response, smJsonOptions);
+        }
+        else
+        {
+            result = await QueueRenameVersionJobAsync(library, version, newVersion, repositoryFactory, runner,
+                                                      profile, ct);
+        }
+
+        return result;
+    }
+
+    private static async Task<string> QueueRenameVersionJobAsync(string library,
+                                                                 string version,
+                                                                 string newVersion,
+                                                                 RepositoryFactory repositoryFactory,
+                                                                 IBackgroundJobRunner runner,
+                                                                 string? profile,
+                                                                 CancellationToken ct)
+    {
+        var inputJson = JsonSerializer.Serialize(new { library, version, newVersion, profile });
+        var jobRecord = new BackgroundJobRecord
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                JobType = BackgroundJobTypes.RenameVersion,
+                                Profile = profile,
+                                LibraryId = library,
+                                Version = version,
+                                InputJson = inputJson
+                            };
+
+        var jobId = await runner.QueueAsync(jobRecord,
+                                            async (record, _, jobCt) =>
+                                            {
+                                                var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
+                                                var renameResult =
+                                                    await libraryRepo.RenameVersionAsync(library, version, newVersion,
+                                                                                         jobCt);
+                                                record.ResultJson = JsonSerializer.Serialize(new
+                                                             {
+                                                                 DryRun = false,
+                                                                 Outcome = renameResult.Outcome.ToString(),
+                                                                 renameResult.Counts
+                                                             }, smJsonOptions);
+                                            },
+                                            ct
+                                           );
+
+        return JsonSerializer.Serialize(new { JobId = jobId, Status = nameof(ScrapeJobStatus.Queued) }, smJsonOptions);
     }
 
     private static async Task<string> QueueRenameLibraryJobAsync(string library,
@@ -465,6 +578,16 @@ public static class MutationTools
 
     private const string PreservedForAudit = "preserved for audit";
     private const string NotFoundStatus = "NotFound";
+    private const string SlashString = "/";
+    private const string BothModesError =
+        "Specify a library rename ('newId') OR a version rename ('version' + 'newVersion'), not both.";
+    private const string NothingToRenameError =
+        "Nothing to rename: provide 'newId', or both 'version' and 'newVersion'.";
+    private const string NewIdSlashError = "'newId' must not contain '/'.";
+    private const string VersionBothRequiredError =
+        "A version rename requires both 'version' and 'newVersion'.";
+    private const string NewVersionSameError = "'newVersion' must differ from 'version'.";
+    private const string NewVersionSlashError = "'newVersion' must not contain '/'.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }
