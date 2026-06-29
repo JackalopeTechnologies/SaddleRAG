@@ -53,6 +53,45 @@ param
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Built-in defaults for the local profile. A blank installer input (an empty MSI
+# property, or an escape CA that produced an empty *_ESCAPED value) must never
+# overwrite a good value with "" -- that strands the service with no database and
+# no Ollama endpoint. These mirror the ExecutionProvider -> Cpu fallback applied
+# below, and match the shipped SaddleRAG.Mcp/appsettings.json template.
+$DefaultConnectionString = 'mongodb://localhost:27017'
+$DefaultDatabaseName     = 'SaddleRAG'
+$DefaultOllamaEndpoint   = 'http://localhost:11434'
+
+# Resolve a config value with a three-tier fallback: the provided installer value
+# wins when non-blank; otherwise keep whatever the shipped template already holds;
+# otherwise fall back to the built-in default. Never returns an empty string.
+function Resolve-ConfigValue
+{
+    param
+    (
+        [AllowEmptyString()]
+        [string]$Provided,
+
+        [AllowEmptyString()]
+        [string]$Existing,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Default
+    )
+
+    $res = $Default
+    if (-not [string]::IsNullOrWhiteSpace($Provided))
+    {
+        $res = $Provided
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($Existing))
+    {
+        $res = $Existing
+    }
+    return $res
+}
+
 $TempPath = $AppSettingsPath + '.tmp'
 
 # Win32 MoveFileEx is the canonical atomic file-replace API on Windows.
@@ -84,9 +123,9 @@ try
 
     $json = Get-Content -LiteralPath $AppSettingsPath -Raw | ConvertFrom-Json
 
-    $json.MongoDB.Profiles.local.ConnectionString = $ConnectionString
-    $json.MongoDB.Profiles.local.DatabaseName     = $DatabaseName
-    $json.Ollama.Endpoint                         = $OllamaEndpoint
+    $json.MongoDB.Profiles.local.ConnectionString = Resolve-ConfigValue -Provided $ConnectionString -Existing ([string]$json.MongoDB.Profiles.local.ConnectionString) -Default $DefaultConnectionString
+    $json.MongoDB.Profiles.local.DatabaseName     = Resolve-ConfigValue -Provided $DatabaseName     -Existing ([string]$json.MongoDB.Profiles.local.DatabaseName)     -Default $DefaultDatabaseName
+    $json.Ollama.Endpoint                         = Resolve-ConfigValue -Provided $OllamaEndpoint    -Existing ([string]$json.Ollama.Endpoint)                         -Default $DefaultOllamaEndpoint
 
     $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider))
                          {

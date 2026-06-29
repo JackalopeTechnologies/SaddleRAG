@@ -40,6 +40,9 @@ public sealed class ClassifierToolsTests : IDisposable
     public async Task GetClassifierHealthReturnsActiveBackendAndOnnxEntry()
     {
         var settings = BuildSettingsWithRegistry();
+        // Point at an empty temp dir (no model folder created) so ModelFilesPresent is
+        // deterministically false, regardless of what models exist on the host's default dir.
+        settings.ModelsDir = mTempDir;
         var ollamaSettings = new OllamaSettings { ActiveClassificationModel = "phi4-mini:3.8b" };
         var backendSwitch = BuildBackendSwitch(settings);
         var probe = new StubOllamaProbe(reachable: false);

@@ -50,6 +50,13 @@ public partial class App : Application
     private const string UninstallFailedLogMessage = "Uninstall from {Client} failed";
     private const string ActionFailedLogMessage = "{Action} failed";
     private const string IconRenderFailedLogMessage = "Tray icon render failed";
+    private const string AutoRegisterLogMessage = "Auto-registered detected clients on startup: {Summary}";
+    private const string AutoRegisterPartialFailLogMessage = "Auto-register: one or more clients failed on startup: {Summary}";
+
+    // Mirrors ClientResultFormatter.ErrPrefix — a per-client registration failure renders with
+    // this status token in the summary (OK/SKIP do not), so a real failure can be raised to Warning.
+    private const string RegistrationFailedMarker = "ERR";
+    private const string AutoRegisterFailedLogMessage = "Auto-register of detected clients on startup failed";
 
     private const string LogDirName = "SaddleRAG";
     private const string LogFileName = "tray.log";
@@ -87,6 +94,13 @@ public partial class App : Application
             mTrayIcon.ContextMenu.Opened += (_, _) => SyncMenu();
             SyncMenu();
             mLog.LogInformation(StartedLogMessage);
+
+            // Clients installed (or first-launched) after SaddleRAG are missed by the
+            // installer's one-shot detected-only registration. Re-run detected registration
+            // on every tray startup so a newly-installed agent is picked up on the next login.
+            // Idempotent (rewrites the same entry) and skips undetected agents; fire-and-forget
+            // so a slow or failing config write never blocks startup.
+            _ = AutoRegisterDetectedClientsAsync();
         }
         catch (Exception ex)
         {
@@ -96,6 +110,22 @@ public partial class App : Application
                             MessageBoxButton.OK,
                             MessageBoxImage.Error);
             Shutdown();
+        }
+    }
+
+    private async Task AutoRegisterDetectedClientsAsync()
+    {
+        try
+        {
+            string summary = await mClientService.InstallAsync(null, CancellationToken.None);
+            if (summary.Contains(RegistrationFailedMarker, StringComparison.Ordinal))
+                mLog?.LogWarning(AutoRegisterPartialFailLogMessage, summary);
+            else
+                mLog?.LogInformation(AutoRegisterLogMessage, summary);
+        }
+        catch (Exception ex)
+        {
+            mLog?.LogWarning(ex, AutoRegisterFailedLogMessage);
         }
     }
 

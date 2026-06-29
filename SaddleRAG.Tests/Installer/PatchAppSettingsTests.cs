@@ -105,6 +105,114 @@ public sealed class PatchAppSettingsTests
     }
 
     [Fact]
+    public void EmptyMongoAndOllamaInputsPreserveExistingConfig()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // The Critical bug: a blank installer input must NOT overwrite a good
+        // existing value with "". The fixture's template values must survive.
+        string fixturePath = CreateFixture();
+        try
+        {
+            RunPatchScript(fixturePath,
+                           string.Empty,
+                           string.Empty,
+                           string.Empty,
+                           "DirectMl"
+                          );
+
+            JsonNode patched = LoadJson(fixturePath);
+            Assert.Equal("mongodb://placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["ConnectionString"]);
+            Assert.Equal("Placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["DatabaseName"]);
+            Assert.Equal("http://placeholder", (string?) patched["Ollama"]?["Endpoint"]);
+            Assert.Equal("DirectMl", (string?) patched["Onnx"]?["ExecutionProvider"]);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
+    public void BlankExistingAndBlankInputFallBackToBuiltInDefaults()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // Reproduces the observed broken install: the local profile is already
+        // empty AND the installer input is empty. The script must fall back to
+        // the built-in localhost defaults, never leaving the strings blank.
+        string fixturePath = CreateFixtureWithBlankLocalProfile();
+        try
+        {
+            RunPatchScript(fixturePath,
+                           string.Empty,
+                           string.Empty,
+                           string.Empty,
+                           "DirectMl"
+                          );
+
+            JsonNode patched = LoadJson(fixturePath);
+            Assert.Equal("mongodb://localhost:27017", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["ConnectionString"]);
+            Assert.Equal("SaddleRAG", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["DatabaseName"]);
+            Assert.Equal("http://localhost:11434", (string?) patched["Ollama"]?["Endpoint"]);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
+    public void WhitespaceMongoAndOllamaInputsPreserveExistingConfig()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // A whitespace-only escaped value (e.g. from an escape CA) must be treated
+        // like blank and must not overwrite the existing config.
+        string fixturePath = CreateFixture();
+        try
+        {
+            RunPatchScript(fixturePath, "   ", "   ", "   ", "DirectMl");
+
+            JsonNode patched = LoadJson(fixturePath);
+            Assert.Equal("mongodb://placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["ConnectionString"]);
+            Assert.Equal("Placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["DatabaseName"]);
+            Assert.Equal("http://placeholder", (string?) patched["Ollama"]?["Endpoint"]);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
+    public void PartialBlankInputUpdatesProvidedAndPreservesBlank()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+
+        // ConnectionString + Ollama provided, DatabaseName blank: the provided two
+        // are written and the blank one is preserved — locks the per-property wiring.
+        string fixturePath = CreateFixture();
+        try
+        {
+            RunPatchScript(fixturePath, "mongodb://example:27017", string.Empty, "http://example:11434", "DirectMl");
+
+            JsonNode patched = LoadJson(fixturePath);
+            Assert.Equal("mongodb://example:27017", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["ConnectionString"]);
+            Assert.Equal("Placeholder", (string?) patched["MongoDB"]?["Profiles"]?["local"]?["DatabaseName"]);
+            Assert.Equal("http://example:11434", (string?) patched["Ollama"]?["Endpoint"]);
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
+    }
+
+    [Fact]
     public void MissingFixtureExitsNonZero()
     {
         if (!OperatingSystem.IsWindows())
@@ -320,6 +428,32 @@ public sealed class PatchAppSettingsTests
                 }
             },
             ["Ollama"] = new JsonObject { ["Endpoint"] = "http://placeholder" },
+            ["Onnx"]   = new JsonObject { ["ExecutionProvider"] = "Cpu" }
+        };
+        File.WriteAllText(tempPath, seed.ToJsonString(), Encoding.UTF8);
+        return tempPath;
+    }
+
+    private static string CreateFixtureWithBlankLocalProfile()
+    {
+        // The local profile strings are already empty -- the shape an install
+        // lands in when the escaped MSI properties arrive blank. Exercises the
+        // built-in-default tier of Resolve-ConfigValue in PatchAppSettings.ps1.
+        string tempPath = Path.Combine(Path.GetTempPath(), $"saddlerag-appsettings-blank-{Guid.NewGuid()}.json");
+        var seed = new JsonObject
+        {
+            ["MongoDB"] = new JsonObject
+            {
+                ["Profiles"] = new JsonObject
+                {
+                    ["local"] = new JsonObject
+                    {
+                        ["ConnectionString"] = string.Empty,
+                        ["DatabaseName"] = string.Empty
+                    }
+                }
+            },
+            ["Ollama"] = new JsonObject { ["Endpoint"] = string.Empty },
             ["Onnx"]   = new JsonObject { ["ExecutionProvider"] = "Cpu" }
         };
         File.WriteAllText(tempPath, seed.ToJsonString(), Encoding.UTF8);

@@ -7,7 +7,9 @@
 
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using SaddleRAG.Ingestion;
 using SaddleRAG.Packaging;
 
 #endregion
@@ -63,6 +65,8 @@ public static class PackagingTools
                  "enqueued per imported version. Pass compact=true to run compact_collections " +
                  "automatically after a successful overwrite-import.")]
     public static async Task<string> ImportLibrary(LibraryImporter importer,
+                                                   ScrapeJobRunner runner,
+                                                   ILogger<PackagingToolsLog> logger,
                                                    [Description("Path to a .srlib.zip bundle on disk.")]
                                                    string bundlePath,
                                                    [Description("If true, replace existing (library, version) targets. Default false (refuse on conflict).")]
@@ -74,6 +78,8 @@ public static class PackagingTools
                                                    CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(importer);
+        ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(logger);
         ArgumentException.ThrowIfNullOrEmpty(bundlePath);
 
         var result = await importer.ImportAsync(
@@ -81,8 +87,51 @@ public static class PackagingTools
             progress: null,
             ct: ct);
 
+        result = await ReloadImportedLibraryAsync(runner, logger, result, profile, bundlePath, ct);
         return JsonSerializer.Serialize(result, smJsonOptions);
     }
+
+    // An import writes chunks and embeddings straight into MongoDB but, unlike scrape
+    // ingestion, does not refresh the in-memory vector index — so a freshly imported library
+    // returns zero search candidates until a reload or restart. Reload only the imported
+    // library's own versions (targeted, not a whole-profile reindex), which also makes
+    // non-current imported versions searchable. The data was already committed, so a reload
+    // failure is reported via RecommendedFollowUp rather than surfaced as an import failure;
+    // cancellation still propagates.
+    private static async Task<ImportResult> ReloadImportedLibraryAsync(ScrapeJobRunner runner,
+                                                                       ILogger<PackagingToolsLog> logger,
+                                                                       ImportResult result,
+                                                                       string? profile,
+                                                                       string bundlePath,
+                                                                       CancellationToken ct)
+    {
+        ImportResult res = result;
+        List<string> versions = result.VersionsImported
+                                      .Concat(result.OverwrittenVersions)
+                                      .Distinct(StringComparer.Ordinal)
+                                      .ToList();
+        if (versions.Count > 0)
+        {
+            try
+            {
+                foreach (string version in versions)
+                    await runner.ReloadIndexForLibraryAsync(profile, result.LibraryId, version, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, ReloadFailedLogMessage, bundlePath, result.LibraryId);
+                res = result with { RecommendedFollowUp = AppendReloadWarning(result.RecommendedFollowUp) };
+            }
+        }
+        return res;
+    }
+
+    private static string AppendReloadWarning(string existing) =>
+        string.IsNullOrEmpty(existing) ? ReloadWarningFollowUp : $"{existing} {ReloadWarningFollowUp}";
 
     private static VersionFilter ParseVersions(string? versions)
     {
@@ -109,5 +158,19 @@ public static class PackagingTools
         return result;
     }
 
+    private const string ReloadFailedLogMessage =
+        "Imported {Bundle} ({Library}) but the vector-index reload failed; run reload_profile or restart to search it.";
+
+    private const string ReloadWarningFollowUp =
+        "WARNING: import succeeded but the vector-index reload failed; run reload_profile or restart to make searchable.";
+
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
+
+    /// <summary>
+    ///     Logger category marker for <see cref="PackagingTools" /> — a static class cannot be the
+    ///     <c>T</c> in <c>ILogger&lt;T&gt;</c>, so the DI-injected logger uses this type instead.
+    /// </summary>
+    public sealed class PackagingToolsLog
+    {
+    }
 }

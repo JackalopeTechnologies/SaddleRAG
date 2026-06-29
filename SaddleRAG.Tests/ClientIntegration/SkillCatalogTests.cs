@@ -1,0 +1,105 @@
+// SkillCatalogTests.cs
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
+
+#region Usings
+
+using SaddleRAG.ClientIntegration.Skills;
+using SaddleRAG.ClientIntegration.Writers;
+
+#endregion
+
+namespace SaddleRAG.Tests.ClientIntegration;
+
+public sealed class SkillCatalogTests
+{
+    private static readonly string[] smExpectedSkills =
+        [
+            "saddlerag-first",
+            "saddlerag-query",
+            "saddlerag-recon",
+            "saddlerag-scrape",
+            "saddlerag-scrape-strategy",
+            "saddlerag-maintain"
+        ];
+
+    [Fact]
+    public void AllExposesEverySkillWithContent()
+    {
+        IReadOnlyList<SkillContent> skills = SkillCatalog.All;
+
+        Assert.Equal(smExpectedSkills.Length, skills.Count);
+        foreach (SkillContent skill in skills)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(skill.Name), "skill name should be set");
+            Assert.False(string.IsNullOrWhiteSpace(skill.Description), $"{skill.Name} description should be set");
+            Assert.False(string.IsNullOrWhiteSpace(skill.Body), $"{skill.Name} body should be set");
+        }
+    }
+
+    [Fact]
+    public void AllCoversEverySkillManifestEntry()
+    {
+        // Forces the catalog to load in CI and catches a manifest entry whose embedded
+        // resource is missing/renamed (which would otherwise throw lazily at first prompt use).
+        Assert.Equal(SkillManifest.pmAll.Length, SkillCatalog.All.Count);
+    }
+
+    [Fact]
+    public void AllContainsExactlyTheExpectedSkillNames()
+    {
+        string[] names = SkillCatalog.All.Select(s => s.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        string[] expected = smExpectedSkills.OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        Assert.Equal(expected, names);
+    }
+
+    [Fact]
+    public void BodyHasFrontmatterStripped()
+    {
+        foreach (SkillContent skill in SkillCatalog.All)
+        {
+            Assert.False(skill.Body.StartsWith("---", StringComparison.Ordinal),
+                         $"{skill.Name} body should not retain the frontmatter fence");
+            Assert.StartsWith("#", skill.Body, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ParseWithoutFrontmatterUsesFolderNameAndWholeBody()
+    {
+        SkillContent skill = SkillCatalog.Parse("my-skill", "# Title\n\nBody text.");
+
+        Assert.Equal("my-skill", skill.Name);
+        Assert.Equal(string.Empty, skill.Description);
+        Assert.StartsWith("# Title", skill.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseWithUnterminatedFrontmatterFallsBackToFolderNameAndRawBody()
+    {
+        SkillContent skill = SkillCatalog.Parse("my-skill", "---\nname: ignored\n# no closing fence");
+
+        Assert.Equal("my-skill", skill.Name);
+        Assert.StartsWith("---", skill.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseNormalizesCrlfFrontmatter()
+    {
+        SkillContent skill = SkillCatalog.Parse("fallback", "---\r\nname: bar\r\ndescription: a desc\r\n---\r\n# Body");
+
+        Assert.Equal("bar", skill.Name);
+        Assert.Equal("a desc", skill.Description);
+        Assert.Equal("# Body", skill.Body);
+    }
+
+    [Fact]
+    public void ParseKeepsColonsInDescriptionValue()
+    {
+        SkillContent skill = SkillCatalog.Parse("fallback", "---\ndescription: a: b: c\n---\nBody");
+
+        Assert.Equal("a: b: c", skill.Description);
+        Assert.Equal("fallback", skill.Name);
+    }
+}
