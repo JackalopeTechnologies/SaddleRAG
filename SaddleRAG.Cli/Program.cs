@@ -120,15 +120,36 @@ services.AddSingleton<IScrapeAuditWriter>(sp =>
 // not require the files; a CLI-only run before any download fails at first
 // classify with DirectoryNotFoundException (the generator's documented contract).
 services.AddSingleton<OllamaLlmClassifier>();
+services.AddSingleton<OnnxRuntimeCapabilities>();
 services.AddSingleton<OnnxClassifierGenerator>(sp =>
 {
     var onnxSettings = sp.GetRequiredService<IOptions<OnnxSettings>>().Value;
-    var entry = ClassifierEntryResolver.Resolve(onnxSettings, onnxSettings.ExecutionProvider);
+    var capabilities = sp.GetRequiredService<OnnxRuntimeCapabilities>();
+
+    // Clamp the configured EP to the compiled-in set BEFORE variant selection:
+    // requesting DirectMl on a CPU-only build resolved the DirectML model
+    // variant against the CPU GenAI native and killed the process with a
+    // native AV in OgaCreateGenerator (issue #135).
+    var entry = ClassifierEntryResolver.Resolve(onnxSettings,
+                                                onnxSettings.ExecutionProvider,
+                                                capabilities.CompiledInProviders);
+
+    if (!capabilities.CompiledInProviders.Contains(onnxSettings.ExecutionProvider))
+    {
+        var logger = sp.GetRequiredService<ILogger<OnnxClassifierGenerator>>();
+        logger.LogWarning("Configured ONNX execution provider {Requested} is not compiled into this build; classifier clamped to the CPU model variant ({Entry})",
+                          onnxSettings.ExecutionProvider,
+                          entry.Name);
+    }
+
     string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
     return new OnnxClassifierGenerator(modelFolder, entry);
 });
+// SerializedClassifierGenerator: onnxruntime-genai Generator creation over a
+// shared Model is not thread-safe; overlapping generate calls crash the whole
+// process with a native AV in OgaCreateGenerator (issue #135).
 services.AddSingleton<OnnxLlmClassifier>(sp =>
-    new OnnxLlmClassifier(sp.GetRequiredService<OnnxClassifierGenerator>(),
+    new OnnxLlmClassifier(new SerializedClassifierGenerator(sp.GetRequiredService<OnnxClassifierGenerator>()),
                           sp.GetRequiredService<ILogger<OnnxLlmClassifier>>()
                          ));
 services.AddHttpClient(OllamaProbeHttpClientName);

@@ -101,6 +101,24 @@ if ($RemoveFiles -and -not [string]::IsNullOrWhiteSpace($existingInstallDirector
     }
 }
 
+# Remove the WER LocalDumps configuration written by install-service.ps1 /
+# update-service.ps1 (#136). Captured dumps are intentionally left on disk -
+# they may still be needed for a post-mortem after uninstalling.
+$localDumpsKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\SaddleRAG.Mcp.exe'
+
+if (Test-Path -LiteralPath $localDumpsKey)
+{
+    if ($PSCmdlet.ShouldProcess($localDumpsKey, 'Remove WER LocalDumps configuration'))
+    {
+        Remove-Item -LiteralPath $localDumpsKey -Recurse -Force
+        Write-Output 'CrashCapture: removed WER LocalDumps configuration'
+    }
+}
+else
+{
+    Write-Output 'CrashCapture: no WER LocalDumps configuration present'
+}
+
 # Conditionally remove OLLAMA_KEEP_ALIVE if (and only if) install-service.ps1
 # set it during install AND the value still matches what we set. Always
 # clears the marker registry value so we leave nothing behind.

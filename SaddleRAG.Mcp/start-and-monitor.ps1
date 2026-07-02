@@ -137,6 +137,31 @@ function Add-UsersServiceControlAce
     }
 }
 
+function Set-ServiceRecoveryActions
+{
+    param(
+        [string]$Name,
+        [System.Diagnostics.Stopwatch]$Sw
+    )
+
+    # Configure SCM failure actions so the service self-heals after a crash
+    # (issue #137): restart after 5s, then 30s, then 60s, with the failure
+    # counter resetting daily. The escalating delays avoid a tight crash loop
+    # when the fault is deterministic on startup. failureflag 1 extends
+    # recovery to non-crash error exits. Best-effort: a failure here degrades
+    # to no auto-restart but never fails the install.
+    $output = & sc.exe failure $Name reset= 86400 actions= restart/5000/restart/30000/restart/60000
+    if ($LASTEXITCODE -eq 0)
+    {
+        & sc.exe failureflag $Name 1 | Out-Null
+        Write-Stamp "Configured recovery actions on '$Name' (restart 5s/30s/60s, daily reset)." $Sw
+    }
+    else
+    {
+        Write-Stamp "sc.exe failure failed ($LASTEXITCODE) configuring recovery on '$Name'; service will not auto-restart. $output" $Sw
+    }
+}
+
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $startAttempts = 0
 $lastStatus = ''
@@ -157,6 +182,9 @@ catch
 
 # Best-effort, non-fatal: grant the Users group no-UAC start/stop/query control.
 Add-UsersServiceControlAce -Name $ServiceName -Sw $sw
+
+# Best-effort, non-fatal: auto-restart after crashes (issue #137).
+Set-ServiceRecoveryActions -Name $ServiceName -Sw $sw
 
 while (-not $healthy -and $sw.Elapsed.TotalSeconds -lt $TotalTimeoutSec)
 {

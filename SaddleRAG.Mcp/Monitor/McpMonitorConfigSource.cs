@@ -11,6 +11,7 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Mcp.Tools;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -32,7 +33,8 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
                                   IOptions<RankingSettings> ranking,
                                   OnnxRuntimeCapabilities capabilities,
                                   IEmbeddingProvider embeddingProvider,
-                                  ClassifierBackendSwitch classifierSwitch)
+                                  ClassifierBackendSwitch classifierSwitch,
+                                  CrashReportService crashReportService)
     {
         ArgumentNullException.ThrowIfNull(onnx);
         ArgumentNullException.ThrowIfNull(ollama);
@@ -41,6 +43,7 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
         ArgumentNullException.ThrowIfNull(classifierSwitch);
+        ArgumentNullException.ThrowIfNull(crashReportService);
         mOnnx = onnx;
         mOllama = ollama;
         mMongo = mongo;
@@ -48,10 +51,12 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
         mCapabilities = capabilities;
         mEmbeddingProvider = embeddingProvider;
         mClassifierSwitch = classifierSwitch;
+        mCrashReportService = crashReportService;
     }
 
     private readonly OnnxRuntimeCapabilities mCapabilities;
     private readonly ClassifierBackendSwitch mClassifierSwitch;
+    private readonly CrashReportService mCrashReportService;
     private readonly IEmbeddingProvider mEmbeddingProvider;
     private readonly IOptions<SaddleRagDbSettings> mMongo;
     private readonly IOptions<OllamaSettings> mOllama;
@@ -66,7 +71,11 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
         var mongo = mMongo.Value;
         var ranking = mRanking.Value;
 
-        ClassifierModelEntry classifierEntry = ClassifierEntryResolver.Resolve(onnx, onnx.ExecutionProvider);
+        // Clamped overload so the page reports the variant the service actually
+    // loads when the configured EP is not compiled into this build (#135).
+    ClassifierModelEntry classifierEntry = ClassifierEntryResolver.Resolve(onnx,
+                                                                           onnx.ExecutionProvider,
+                                                                           mCapabilities.CompiledInProviders);
         string classifierModelDir = Path.Combine(onnx.ModelsDir, classifierEntry.Name);
         bool classifierFilesPresent = Directory.Exists(classifierModelDir);
         var classifier = new MonitorConfigClassifier(ActiveBackend: mClassifierSwitch.ActiveBackendName,
@@ -129,8 +138,26 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
                                          ExecutionProvider: executionProvider,
                                          Mongo: mongoCard,
                                          Ollama: ollamaCard,
-                                         Profile: profile
+                                         Profile: profile,
+                                         Crash: BuildCrashCard()
                                         );
+    }
+
+    private MonitorConfigCrash BuildCrashCard()
+    {
+        CrashReport report = mCrashReportService.Build();
+
+        CrashDumpInfo? newestDump = report.CrashDumps.FirstOrDefault();
+        DateTime? lastCrashUtc = report.LastRuntimeCrash?.TimeUtc;
+
+        if (newestDump != null && (lastCrashUtc == null || newestDump.LastWriteUtc > lastCrashUtc))
+            lastCrashUtc = newestDump.LastWriteUtc;
+
+        return new MonitorConfigCrash(LastCrashUtc: lastCrashUtc,
+                                      CrashDumpCount: report.CrashDumps.Count,
+                                      LastDumpFileName: newestDump?.FileName,
+                                      HasManagedCrashMarker: report.LastManagedCrash != null
+                                     );
     }
 
     /// <summary>

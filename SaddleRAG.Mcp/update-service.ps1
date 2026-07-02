@@ -162,6 +162,17 @@ if ($PSCmdlet.ShouldProcess($ServiceName, "Create Windows service using $service
     New-Service -Name $ServiceName -BinaryPathName $serviceBinaryPath -DisplayName $DisplayName -Description $Description -StartupType Automatic
 }
 
+# Configure SCM failure actions so the service self-heals after a crash
+# (issue #137): restart after 5s/30s/60s with a daily failure-counter reset.
+# Re-applied on every update because Remove-Service above discards the
+# previous registration's recovery settings. Mirrors start-and-monitor.ps1.
+if ($PSCmdlet.ShouldProcess($ServiceName, 'Configure service recovery actions (restart 5s/30s/60s, daily reset)'))
+{
+    & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/30000/restart/60000 | Out-Null
+    & sc.exe failureflag $ServiceName 1 | Out-Null
+    Write-Output "Recovery: '$ServiceName' will auto-restart after failures (5s/30s/60s, daily reset)"
+}
+
 if (-not $SkipStart)
 {
     if ($PSCmdlet.ShouldProcess($ServiceName, 'Start Windows service'))
@@ -171,6 +182,25 @@ if (-not $SkipStart)
 }
 
 $service = Get-Service -Name $ServiceName
+
+# Configure WER LocalDumps so a native crash (e.g. an ONNX access violation,
+# issue #135) leaves a full memory dump for post-mortem analysis (#136).
+# Mirrors SaddleRAG.Installer\ConfigureCrashCapture.ps1 and install-service.ps1
+# so existing installs pick up crash capture on update. Idempotent.
+$dumpFolder    = Join-Path $env:ProgramData 'SaddleRAG\CrashDumps'
+$localDumpsKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\SaddleRAG.Mcp.exe'
+$fullDumpType  = 2
+$dumpCount     = 5
+
+if ($PSCmdlet.ShouldProcess($localDumpsKey, "Configure WER LocalDumps (full dumps, keep $dumpCount, folder $dumpFolder)"))
+{
+    New-Item -ItemType Directory -Force -Path $dumpFolder | Out-Null
+    New-Item -Path $localDumpsKey -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpType -PropertyType DWord -Value $fullDumpType -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpCount -PropertyType DWord -Value $dumpCount -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpFolder -PropertyType ExpandString -Value $dumpFolder -Force | Out-Null
+    Write-Output "CrashCapture: WER LocalDumps configured -> $dumpFolder (full dumps, keep $dumpCount)"
+}
 
 Write-Output "ServiceName: $ServiceName"
 Write-Output "InstallDirectory: $targetDirectory"

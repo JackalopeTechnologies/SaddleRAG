@@ -52,7 +52,9 @@ using Serilog.Events;
 const string AppName = "SaddleRAG";
 const string McpApplicationName = "SaddleRAG.Mcp";
 const string DataProtectionKeysSubdirectory = "DataProtection-Keys";
-const string LogSubdirectory = "logs";
+const string CrashDumpsSubdirectory = "CrashDumps";
+const string WerReportArchiveRelativePath = @"Microsoft\Windows\WER\ReportArchive";
+const string WerReportQueueRelativePath = @"Microsoft\Windows\WER\ReportQueue";
 const string MicrosoftAspNetCoreNamespace = "Microsoft.AspNetCore";
 const string LogFileNamePattern = "saddlerag-.log";
 const string HttpClientNuGet = "NuGet";
@@ -68,15 +70,20 @@ const string MonitorEndpointPath = "/monitor";
 const string KestrelHttpPortKey = "Kestrel:Endpoints:Http:Port";
 const int DefaultMonitorPort = 6100;
 
-var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                AppName,
-                                LogSubdirectory
-                               );
+// Service mode logs to %ProgramData%\SaddleRAG\logs (readable without
+// elevation, next to CrashDumps); interactive runs keep the per-user
+// LocalApplicationData location (issue #138).
+var logDirectory = LogDirectoryResolver.Resolve(WindowsServiceHelpers.IsWindowsService());
 
 Directory.CreateDirectory(logDirectory);
 
 
-var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Warning);
+// Information default so the FILE log captures lifecycle, warmup phases,
+// and job progress for post-mortems (issue #138); the console sink below is
+// statically floored at Warning so interactive output stays quiet. The
+// toggle_logging MCP tool moves this switch at runtime (e.g. Debug for
+// deeper troubleshooting, Error for silence).
+var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 const string McpEndpointPattern = "/mcp";
 
@@ -87,7 +94,7 @@ const string EventLogName = "Application";
 var loggerConfig = new LoggerConfiguration()
                    .MinimumLevel.ControlledBy(levelSwitch)
                    .MinimumLevel.Override(MicrosoftAspNetCoreNamespace, LogEventLevel.Warning)
-                   .WriteTo.Console()
+                   .WriteTo.Console(restrictedToMinimumLevel: LogEventLevel.Warning)
                    .WriteTo.File(Path.Combine(logDirectory, LogFileNamePattern),
                                  rollingInterval: RollingInterval.Day,
                                  retainedFileCountLimit: 7,
@@ -105,6 +112,31 @@ if (WindowsServiceHelpers.IsWindowsService())
 }
 
 Log.Logger = loggerConfig.CreateLogger();
+
+
+// Crash black box (issue #139): running marker + last-crash marker live in
+// the SaddleRAG data root next to the logs. The running marker is engaged
+// only for real (non-prewarm) runs further below; the hooks here record
+// managed crash details before the process dies. Native access violations
+// bypass managed handlers entirely — those are covered by WER LocalDumps
+// (issue #136) plus the leftover running marker detected at next startup.
+var runSentinel = new RunSentinel(Path.GetDirectoryName(logDirectory) ?? logDirectory);
+
+AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+{
+    if (eventArgs.ExceptionObject is Exception unhandled)
+    {
+        runSentinel.WriteCrashMarker(unhandled, DateTime.UtcNow);
+        Log.Fatal(unhandled, "Unhandled exception; process is terminating");
+        Log.CloseAndFlush();
+    }
+};
+
+TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
+{
+    Log.Error(eventArgs.Exception, "Unobserved task exception");
+    eventArgs.SetObserved();
+};
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -145,6 +177,22 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddSingleton(levelSwitch);
 
 builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
+builder.Services.AddSingleton(runSentinel);
+
+// Crash triage (issue #140): get_crash_report aggregates event-log records,
+// WER AppCrash reports, captured dumps (#136), the managed crash marker
+// (#139), and the log tail; the Monitor /config page shows a compact card
+// from the same service.
+var commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+builder.Services.AddSingleton<ICrashEventReader, WindowsEventLogCrashReader>();
+builder.Services.AddSingleton(new CrashReportService.Options(Path.Combine(commonAppData, AppName, CrashDumpsSubdirectory),
+                                                             [
+                                                                 Path.Combine(commonAppData, WerReportArchiveRelativePath),
+                                                                 Path.Combine(commonAppData, WerReportQueueRelativePath)
+                                                             ],
+                                                             logDirectory
+                                                            ));
+builder.Services.AddSingleton<CrashReportService>();
 
 builder.Services.AddSingleton<McpWarmupState>();
 
@@ -263,13 +311,33 @@ builder.Services.AddSingleton<OllamaLlmClassifier>();
 builder.Services.AddSingleton<OnnxClassifierGenerator>(sp =>
 {
     var onnxSettings = sp.GetRequiredService<IOptions<OnnxSettings>>().Value;
-    var entry = ClassifierEntryResolver.Resolve(onnxSettings, onnxSettings.ExecutionProvider);
+    var capabilities = sp.GetRequiredService<OnnxRuntimeCapabilities>();
+
+    // Clamp the configured EP to the compiled-in set BEFORE variant selection:
+    // runtime-overrides.json requesting DirectMl on a CPU-only build resolved
+    // the DirectML model variant against the CPU GenAI native and killed the
+    // process with a native AV in OgaCreateGenerator (issue #135).
+    var entry = ClassifierEntryResolver.Resolve(onnxSettings,
+                                                onnxSettings.ExecutionProvider,
+                                                capabilities.CompiledInProviders);
+
+    if (!capabilities.CompiledInProviders.Contains(onnxSettings.ExecutionProvider))
+    {
+        var logger = sp.GetRequiredService<ILogger<OnnxClassifierGenerator>>();
+        logger.LogWarning("Configured ONNX execution provider {Requested} is not compiled into this build; classifier clamped to the CPU model variant ({Entry})",
+                          onnxSettings.ExecutionProvider,
+                          entry.Name);
+    }
+
     string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
     return new OnnxClassifierGenerator(modelFolder, entry);
 });
 
+// SerializedClassifierGenerator: onnxruntime-genai Generator creation over a
+// shared Model is not thread-safe; overlapping generate calls crash the whole
+// process with a native AV in OgaCreateGenerator (issue #135).
 builder.Services.AddSingleton<OnnxLlmClassifier>(sp =>
-    new OnnxLlmClassifier(sp.GetRequiredService<OnnxClassifierGenerator>(),
+    new OnnxLlmClassifier(new SerializedClassifierGenerator(sp.GetRequiredService<OnnxClassifierGenerator>()),
                           sp.GetRequiredService<ILogger<OnnxLlmClassifier>>()
                          )
 );
@@ -610,6 +678,23 @@ else
 
 {
     app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” HTTP server starting", startupSw.Elapsed.TotalSeconds);
+
+    // Engage the crash black box for real runs only: prewarm's start/stop
+    // cycle must not leave (or clear) a running marker. A leftover marker
+    // here means the previous run died without ApplicationStopped firing —
+    // surface its identity so the post-mortem knows what was running.
+    const string UnknownProductVersion = "unknown";
+    string productVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? UnknownProductVersion;
+    var priorRun = runSentinel.MarkStarted(Environment.ProcessId, productVersion, DateTime.UtcNow);
+
+    if (priorRun != null)
+        app.Logger.LogError("Previous run (PID {Pid}, version {Version}, started {StartedUtc:O}) did not shut down cleanly — check the Application event log and the CrashDumps folder for evidence",
+                            priorRun.Pid,
+                            priorRun.Version,
+                            priorRun.StartedUtc
+                           );
+
+    app.Lifetime.ApplicationStopped.Register(runSentinel.MarkStoppedCleanly);
 
 
     // Log first real request

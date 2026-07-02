@@ -190,6 +190,8 @@
             <File Source="SetOllamaKeepAlive.ps1" />
             <File Source="UnsetOllamaKeepAlive.ps1" />
             <File Source="PatchAppSettings.ps1" />
+            <File Source="ConfigureCrashCapture.ps1" />
+            <File Source="RemoveCrashCapture.ps1" />
         </Component>
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
@@ -389,6 +391,36 @@
                       Return="ignore"
                       Impersonate="no" />
 
+        <!-- Configure WER LocalDumps for SaddleRAG.Mcp.exe so native crashes -->
+        <!-- (e.g. the ONNX access violation in issue #135) leave a full dump -->
+        <!-- under %ProgramData%\SaddleRAG\CrashDumps for post-mortems (#136). -->
+        <!-- Impersonate="no": writes HKLM, must run elevated. -->
+        <SetProperty Id="ConfigureCrashCapture"
+                     Before="ConfigureCrashCapture"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]ConfigureCrashCapture.ps1&quot;" />
+
+        <CustomAction Id="ConfigureCrashCapture"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="no" />
+
+        <!-- Remove the LocalDumps registry configuration on uninstall. Captured -->
+        <!-- dumps are intentionally left on disk for post-uninstall forensics. -->
+        <SetProperty Id="RemoveCrashCapture"
+                     Before="RemoveCrashCapture"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]RemoveCrashCapture.ps1&quot;" />
+
+        <CustomAction Id="RemoveCrashCapture"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="no" />
+
         <!-- Prewarm OS file cache + validate the binary by running it once with the prewarm flag. -->
         <!-- This forces all 215 MB of self-contained runtime into the page cache so SCM's 30s start -->
         <!-- timeout doesn't kill the service on first cold-disk launch. Return is "check" so a real -->
@@ -445,6 +477,8 @@
             <Custom Action="PatchAppSettings" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="SetOllamaKeepAlive" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="ConfigureCrashCapture" After="SetOllamaKeepAlive" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="RemoveCrashCapture" Before="UnsetOllamaKeepAlive" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="UnsetOllamaKeepAlive" Before="UnregisterAiClients" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="UnregisterAiClients" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="PrewarmService" Before="StartAndMonitorService" Condition="NOT Installed OR REINSTALL" />
@@ -487,6 +521,8 @@
             <ProgressText Action="UnregisterAiClients" Message="Removing AI tool integrations..." />
             <ProgressText Action="SetOllamaKeepAlive" Message="Configuring Ollama keep-alive..." />
             <ProgressText Action="UnsetOllamaKeepAlive" Message="Removing Ollama keep-alive setting..." />
+            <ProgressText Action="ConfigureCrashCapture" Message="Configuring crash dump capture..." />
+            <ProgressText Action="RemoveCrashCapture" Message="Removing crash dump configuration..." />
             <ProgressText Action="PrewarmService" Message="Warming up runtime, please wait (this takes 15-30 seconds)..." />
             <ProgressText Action="StartAndMonitorService" Message="Starting SaddleRAG service..." />
 

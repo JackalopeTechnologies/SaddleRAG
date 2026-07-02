@@ -18,4 +18,5 @@ public sealed record MonitorConfigSnapshot(
     MonitorConfigExecutionProvider ExecutionProvider,
     MonitorConfigMongo Mongo,
     MonitorConfigOllama Ollama,
-    MonitorConfigProfile Profile);
+    MonitorConfigProfile Profile,
+    MonitorConfigCrash? Crash = null);

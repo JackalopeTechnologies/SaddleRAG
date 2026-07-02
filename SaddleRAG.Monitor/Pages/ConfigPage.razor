@@ -103,5 +103,27 @@ else
                 </MudList>
             </MudPaper>
         </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Crash history</MudText>
+                @if (Snapshot.Crash is null)
+                {
+                    <MudText Typo="Typo.body2">Crash information unavailable.</MudText>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true">
+                        <MudListItem Text="@($"Last crash: {(Snapshot.Crash.LastCrashUtc?.ToLocalTime().ToString("g") ?? "none recorded")}")"/>
+                        <MudListItem Text="@($"Crash dumps on disk: {Snapshot.Crash.CrashDumpCount}")"/>
+                        <MudListItem Text="@($"Latest dump: {Snapshot.Crash.LastDumpFileName ?? "(none)"}")"/>
+                        <MudListItem Text="@($"Managed crash marker: {(Snapshot.Crash.HasManagedCrashMarker ? "present" : "none")}")"/>
+                    </MudList>
+                    <MudText Typo="Typo.caption">
+                        Full evidence via the get_crash_report MCP tool.
+                    </MudText>
+                }
+            </MudPaper>
+        </MudItem>
     </MudGrid>
 }
