@@ -52,7 +52,6 @@ using Serilog.Events;
 const string AppName = "SaddleRAG";
 const string McpApplicationName = "SaddleRAG.Mcp";
 const string DataProtectionKeysSubdirectory = "DataProtection-Keys";
-const string LogSubdirectory = "logs";
 const string MicrosoftAspNetCoreNamespace = "Microsoft.AspNetCore";
 const string LogFileNamePattern = "saddlerag-.log";
 const string HttpClientNuGet = "NuGet";
@@ -68,15 +67,20 @@ const string MonitorEndpointPath = "/monitor";
 const string KestrelHttpPortKey = "Kestrel:Endpoints:Http:Port";
 const int DefaultMonitorPort = 6100;
 
-var logDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                AppName,
-                                LogSubdirectory
-                               );
+// Service mode logs to %ProgramData%\SaddleRAG\logs (readable without
+// elevation, next to CrashDumps); interactive runs keep the per-user
+// LocalApplicationData location (issue #138).
+var logDirectory = LogDirectoryResolver.Resolve(WindowsServiceHelpers.IsWindowsService());
 
 Directory.CreateDirectory(logDirectory);
 
 
-var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Warning);
+// Information default so the FILE log captures lifecycle, warmup phases,
+// and job progress for post-mortems (issue #138); the console sink below is
+// statically floored at Warning so interactive output stays quiet. The
+// toggle_logging MCP tool moves this switch at runtime (e.g. Debug for
+// deeper troubleshooting, Error for silence).
+var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
 
 const string McpEndpointPattern = "/mcp";
 
@@ -87,7 +91,7 @@ const string EventLogName = "Application";
 var loggerConfig = new LoggerConfiguration()
                    .MinimumLevel.ControlledBy(levelSwitch)
                    .MinimumLevel.Override(MicrosoftAspNetCoreNamespace, LogEventLevel.Warning)
-                   .WriteTo.Console()
+                   .WriteTo.Console(restrictedToMinimumLevel: LogEventLevel.Warning)
                    .WriteTo.File(Path.Combine(logDirectory, LogFileNamePattern),
                                  rollingInterval: RollingInterval.Day,
                                  retainedFileCountLimit: 7,
