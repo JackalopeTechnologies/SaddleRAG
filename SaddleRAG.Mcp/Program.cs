@@ -111,6 +111,31 @@ if (WindowsServiceHelpers.IsWindowsService())
 Log.Logger = loggerConfig.CreateLogger();
 
 
+// Crash black box (issue #139): running marker + last-crash marker live in
+// the SaddleRAG data root next to the logs. The running marker is engaged
+// only for real (non-prewarm) runs further below; the hooks here record
+// managed crash details before the process dies. Native access violations
+// bypass managed handlers entirely — those are covered by WER LocalDumps
+// (issue #136) plus the leftover running marker detected at next startup.
+var runSentinel = new RunSentinel(Path.GetDirectoryName(logDirectory) ?? logDirectory);
+
+AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
+{
+    if (eventArgs.ExceptionObject is Exception unhandled)
+    {
+        runSentinel.WriteCrashMarker(unhandled, DateTime.UtcNow);
+        Log.Fatal(unhandled, "Unhandled exception; process is terminating");
+        Log.CloseAndFlush();
+    }
+};
+
+TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
+{
+    Log.Error(eventArgs.Exception, "Unobserved task exception");
+    eventArgs.SetObserved();
+};
+
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Runtime overrides file: written by the set_active_embedding_model /
@@ -149,6 +174,7 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddSingleton(levelSwitch);
 
 builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
+builder.Services.AddSingleton(runSentinel);
 
 builder.Services.AddSingleton<McpWarmupState>();
 
@@ -634,6 +660,23 @@ else
 
 {
     app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” HTTP server starting", startupSw.Elapsed.TotalSeconds);
+
+    // Engage the crash black box for real runs only: prewarm's start/stop
+    // cycle must not leave (or clear) a running marker. A leftover marker
+    // here means the previous run died without ApplicationStopped firing —
+    // surface its identity so the post-mortem knows what was running.
+    const string UnknownProductVersion = "unknown";
+    string productVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? UnknownProductVersion;
+    var priorRun = runSentinel.MarkStarted(Environment.ProcessId, productVersion, DateTime.UtcNow);
+
+    if (priorRun != null)
+        app.Logger.LogError("Previous run (PID {Pid}, version {Version}, started {StartedUtc:O}) did not shut down cleanly — check the Application event log and the CrashDumps folder for evidence",
+                            priorRun.Pid,
+                            priorRun.Version,
+                            priorRun.StartedUtc
+                           );
+
+    app.Lifetime.ApplicationStopped.Register(runSentinel.MarkStoppedCleanly);
 
 
     // Log first real request
