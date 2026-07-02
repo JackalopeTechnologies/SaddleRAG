@@ -59,6 +59,41 @@ public static class ClassifierEntryResolver
     ///     The registry is empty, or an explicit override names an entry that
     ///     does not exist.
     /// </exception>
+    /// <summary>
+    ///     Resolves the active classifier entry for <paramref name="requestedProvider" />,
+    ///     first clamping it to <paramref name="compiledInProviders" /> (falling back to
+    ///     <see cref="OnnxExecutionProvider.Cpu" /> when the requested EP is not compiled
+    ///     into this build). Guards against runtime-overrides requesting a GPU EP on a
+    ///     CPU-only build: resolving the DirectML model variant against the CPU GenAI
+    ///     native access-violates in <c>OgaCreateGenerator</c> and kills the process
+    ///     (issue #135). An explicit <see cref="OnnxSettings.ActiveClassifierModel" />
+    ///     override still wins unconditionally, matching the single-parameter overload.
+    /// </summary>
+    /// <param name="settings">The bound ONNX settings (registry + active selector).</param>
+    /// <param name="requestedProvider">The configured execution provider (appsettings or runtime overrides).</param>
+    /// <param name="compiledInProviders">
+    ///     The EPs this build flavor actually ships, from
+    ///     <see cref="OnnxRuntimeCapabilities.CompiledInProviders" />.
+    /// </param>
+    /// <returns>The classifier entry to construct the generator from.</returns>
+    /// <exception cref="InvalidOperationException">
+    ///     The registry is empty, or an explicit override names an entry that
+    ///     does not exist.
+    /// </exception>
+    public static ClassifierModelEntry Resolve(OnnxSettings settings,
+                                               OnnxExecutionProvider requestedProvider,
+                                               IReadOnlyList<OnnxExecutionProvider> compiledInProviders)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(compiledInProviders);
+
+        OnnxExecutionProvider effective = compiledInProviders.Contains(requestedProvider)
+                                              ? requestedProvider
+                                              : OnnxExecutionProvider.Cpu;
+
+        return Resolve(settings, effective);
+    }
+
     public static ClassifierModelEntry Resolve(OnnxSettings settings, OnnxExecutionProvider runtimeProvider)
     {
         ArgumentNullException.ThrowIfNull(settings);

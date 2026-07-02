@@ -5,6 +5,7 @@
 
 #region Usings
 
+using System.Runtime.CompilerServices;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Classification;
@@ -127,11 +128,83 @@ public sealed class ClassifierEntryResolverTests
         );
     }
 
+    [Fact]
+    public void RequestedDirectMlNotCompiledInClampsToCpuEntry()
+    {
+        // Regression for issue #135: runtime-overrides.json requested DirectMl
+        // on a CPU-only build; resolving the directml model variant against the
+        // CPU GenAI native access-violated in OgaCreateGenerator and killed the
+        // service. The requested EP must clamp to the compiled-in set BEFORE
+        // variant selection.
+        var settings = BuildDefaultRegistrySettings();
+
+        var entry = ClassifierEntryResolver.Resolve(settings,
+                                                    OnnxExecutionProvider.DirectMl,
+                                                    [OnnxExecutionProvider.Cpu]);
+
+        Assert.Equal(OnnxSettings.Phi3MiniCpuName, entry.Name);
+    }
+
+    [Fact]
+    public void RequestedDirectMlCompiledInResolvesDirectMlEntry()
+    {
+        var settings = BuildDefaultRegistrySettings();
+
+        var entry = ClassifierEntryResolver.Resolve(settings,
+                                                    OnnxExecutionProvider.DirectMl,
+                                                    [OnnxExecutionProvider.Cpu, OnnxExecutionProvider.DirectMl]);
+
+        Assert.Equal(OnnxSettings.Phi3MiniDirectMlName, entry.Name);
+    }
+
+    [Fact]
+    public void RequestedCudaNotCompiledInClampsToCpuEntry()
+    {
+        var settings = BuildDefaultRegistrySettings();
+
+        var entry = ClassifierEntryResolver.Resolve(settings,
+                                                    OnnxExecutionProvider.Cuda,
+                                                    [OnnxExecutionProvider.Cpu]);
+
+        Assert.Equal(OnnxSettings.Phi3MiniCpuName, entry.Name);
+    }
+
+    [Fact]
+    public void ExplicitActiveOverrideStillWinsOverClamp()
+    {
+        var settings = BuildDefaultRegistrySettings();
+        settings.ActiveClassifierModel = OnnxSettings.Phi3MiniDirectMlName;
+
+        var entry = ClassifierEntryResolver.Resolve(settings,
+                                                    OnnxExecutionProvider.DirectMl,
+                                                    [OnnxExecutionProvider.Cpu]);
+
+        Assert.Equal(OnnxSettings.Phi3MiniDirectMlName, entry.Name);
+    }
+
+    [Fact]
+    public void NullCompiledInProvidersThrows()
+    {
+        var settings = BuildDefaultRegistrySettings();
+
+        Assert.Throws<ArgumentNullException>(
+            () => ClassifierEntryResolver.Resolve(settings,
+                                                  OnnxExecutionProvider.Cpu,
+                                                  NullRef<IReadOnlyList<OnnxExecutionProvider>>())
+        );
+    }
+
     private static OnnxSettings BuildDefaultRegistrySettings()
     {
         // The OnnxSettings default ClassifierModels list already carries the
         // three verified Phi-3-mini variants (directml, cuda, cpu), so a fresh
         // instance is the registry under test.
         return new OnnxSettings();
+    }
+
+    private static T NullRef<T>() where T : class
+    {
+        T? nullable = null;
+        return Unsafe.As<T?, T>(ref nullable);
     }
 }
