@@ -112,6 +112,25 @@ if (-not $SkipStart)
 
 $service = Get-Service -Name $ServiceName
 
+# Configure WER LocalDumps so a native crash (e.g. an ONNX access violation,
+# issue #135) leaves a full memory dump for post-mortem analysis (#136).
+# Mirrors SaddleRAG.Installer\ConfigureCrashCapture.ps1, which does the same
+# for MSI installs. Idempotent.
+$dumpFolder    = Join-Path $env:ProgramData 'SaddleRAG\CrashDumps'
+$localDumpsKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\SaddleRAG.Mcp.exe'
+$fullDumpType  = 2
+$dumpCount     = 5
+
+if ($PSCmdlet.ShouldProcess($localDumpsKey, "Configure WER LocalDumps (full dumps, keep $dumpCount, folder $dumpFolder)"))
+{
+    New-Item -ItemType Directory -Force -Path $dumpFolder | Out-Null
+    New-Item -Path $localDumpsKey -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpType -PropertyType DWord -Value $fullDumpType -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpCount -PropertyType DWord -Value $dumpCount -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpFolder -PropertyType ExpandString -Value $dumpFolder -Force | Out-Null
+    Write-Output "CrashCapture: WER LocalDumps configured -> $dumpFolder (full dumps, keep $dumpCount)"
+}
+
 # Set OLLAMA_KEEP_ALIVE=-1 system-wide if not already configured.
 # Records a registry marker so uninstall-service.ps1 can clean up only if
 # we set the value (and the user did not change it afterward).

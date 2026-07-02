@@ -172,6 +172,25 @@ if (-not $SkipStart)
 
 $service = Get-Service -Name $ServiceName
 
+# Configure WER LocalDumps so a native crash (e.g. an ONNX access violation,
+# issue #135) leaves a full memory dump for post-mortem analysis (#136).
+# Mirrors SaddleRAG.Installer\ConfigureCrashCapture.ps1 and install-service.ps1
+# so existing installs pick up crash capture on update. Idempotent.
+$dumpFolder    = Join-Path $env:ProgramData 'SaddleRAG\CrashDumps'
+$localDumpsKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\SaddleRAG.Mcp.exe'
+$fullDumpType  = 2
+$dumpCount     = 5
+
+if ($PSCmdlet.ShouldProcess($localDumpsKey, "Configure WER LocalDumps (full dumps, keep $dumpCount, folder $dumpFolder)"))
+{
+    New-Item -ItemType Directory -Force -Path $dumpFolder | Out-Null
+    New-Item -Path $localDumpsKey -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpType -PropertyType DWord -Value $fullDumpType -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpCount -PropertyType DWord -Value $dumpCount -Force | Out-Null
+    New-ItemProperty -Path $localDumpsKey -Name DumpFolder -PropertyType ExpandString -Value $dumpFolder -Force | Out-Null
+    Write-Output "CrashCapture: WER LocalDumps configured -> $dumpFolder (full dumps, keep $dumpCount)"
+}
+
 Write-Output "ServiceName: $ServiceName"
 Write-Output "InstallDirectory: $targetDirectory"
 Write-Output "Status: $($service.Status)"
