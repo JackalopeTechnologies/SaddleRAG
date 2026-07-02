@@ -66,7 +66,11 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
         var mongo = mMongo.Value;
         var ranking = mRanking.Value;
 
-        ClassifierModelEntry classifierEntry = ClassifierEntryResolver.Resolve(onnx, onnx.ExecutionProvider);
+        // Clamped overload so the page reports the variant the service actually
+    // loads when the configured EP is not compiled into this build (#135).
+    ClassifierModelEntry classifierEntry = ClassifierEntryResolver.Resolve(onnx,
+                                                                           onnx.ExecutionProvider,
+                                                                           mCapabilities.CompiledInProviders);
         string classifierModelDir = Path.Combine(onnx.ModelsDir, classifierEntry.Name);
         bool classifierFilesPresent = Directory.Exists(classifierModelDir);
         var classifier = new MonitorConfigClassifier(ActiveBackend: mClassifierSwitch.ActiveBackendName,
