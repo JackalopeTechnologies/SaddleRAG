@@ -127,8 +127,11 @@ services.AddSingleton<OnnxClassifierGenerator>(sp =>
     string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
     return new OnnxClassifierGenerator(modelFolder, entry);
 });
+// SerializedClassifierGenerator: onnxruntime-genai Generator creation over a
+// shared Model is not thread-safe; overlapping generate calls crash the whole
+// process with a native AV in OgaCreateGenerator (issue #135).
 services.AddSingleton<OnnxLlmClassifier>(sp =>
-    new OnnxLlmClassifier(sp.GetRequiredService<OnnxClassifierGenerator>(),
+    new OnnxLlmClassifier(new SerializedClassifierGenerator(sp.GetRequiredService<OnnxClassifierGenerator>()),
                           sp.GetRequiredService<ILogger<OnnxLlmClassifier>>()
                          ));
 services.AddHttpClient(OllamaProbeHttpClientName);

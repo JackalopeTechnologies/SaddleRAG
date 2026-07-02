@@ -25,6 +25,10 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     real multi-gigabyte model and the native runtime. All decision logic
 ///     lives in <see cref="OnnxLlmClassifier" />, which is testable through the
 ///     <see cref="IClassifierGenerator" /> seam.
+///     NOT thread-safe for concurrent generation: native <see cref="Generator" />
+///     creation over the shared <see cref="Model" /> access-violates when calls
+///     overlap (issue #135). Composition roots must wrap this class in
+///     <see cref="SerializedClassifierGenerator" />.
 /// </summary>
 public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
 {

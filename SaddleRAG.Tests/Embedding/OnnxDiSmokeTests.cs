@@ -115,7 +115,7 @@ public sealed class OnnxDiSmokeTests
         });
 
         services.AddSingleton<OnnxLlmClassifier>(sp =>
-            new OnnxLlmClassifier(sp.GetRequiredService<OnnxClassifierGenerator>(),
+            new OnnxLlmClassifier(new SerializedClassifierGenerator(sp.GetRequiredService<OnnxClassifierGenerator>()),
                                   sp.GetRequiredService<ILogger<OnnxLlmClassifier>>()
                                  )
         );
