@@ -52,6 +52,9 @@ using Serilog.Events;
 const string AppName = "SaddleRAG";
 const string McpApplicationName = "SaddleRAG.Mcp";
 const string DataProtectionKeysSubdirectory = "DataProtection-Keys";
+const string CrashDumpsSubdirectory = "CrashDumps";
+const string WerReportArchiveRelativePath = @"Microsoft\Windows\WER\ReportArchive";
+const string WerReportQueueRelativePath = @"Microsoft\Windows\WER\ReportQueue";
 const string MicrosoftAspNetCoreNamespace = "Microsoft.AspNetCore";
 const string LogFileNamePattern = "saddlerag-.log";
 const string HttpClientNuGet = "NuGet";
@@ -175,6 +178,21 @@ builder.Services.AddSingleton(levelSwitch);
 
 builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
 builder.Services.AddSingleton(runSentinel);
+
+// Crash triage (issue #140): get_crash_report aggregates event-log records,
+// WER AppCrash reports, captured dumps (#136), the managed crash marker
+// (#139), and the log tail; the Monitor /config page shows a compact card
+// from the same service.
+var commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+builder.Services.AddSingleton<ICrashEventReader, WindowsEventLogCrashReader>();
+builder.Services.AddSingleton(new CrashReportService.Options(Path.Combine(commonAppData, AppName, CrashDumpsSubdirectory),
+                                                             [
+                                                                 Path.Combine(commonAppData, WerReportArchiveRelativePath),
+                                                                 Path.Combine(commonAppData, WerReportQueueRelativePath)
+                                                             ],
+                                                             logDirectory
+                                                            ));
+builder.Services.AddSingleton<CrashReportService>();
 
 builder.Services.AddSingleton<McpWarmupState>();
 

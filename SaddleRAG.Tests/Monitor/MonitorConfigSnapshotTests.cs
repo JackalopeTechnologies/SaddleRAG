@@ -14,7 +14,9 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Mcp;
 using SaddleRAG.Mcp.Monitor;
+using SaddleRAG.Mcp.Tools;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -79,8 +81,27 @@ public sealed class MonitorConfigSnapshotTests
             Opt(ranking ?? new RankingSettings()),
             capabilities ?? new OnnxRuntimeCapabilities(),
             provider ?? StubProvider(),
-            classifierSwitch ?? StubBackendSwitch(onnx)
+            classifierSwitch ?? StubBackendSwitch(onnx),
+            StubCrashReportService()
            );
+
+    private static CrashReportService StubCrashReportService()
+    {
+        // Non-existent paths + a null event reader: the crash card resolves
+        // to "no evidence" without touching real machine state.
+        string root = Path.Combine(Path.GetTempPath(), "saddlerag-configsnapshot-" + Guid.NewGuid().ToString("N"));
+        var options = new CrashReportService.Options(Path.Combine(root, "dumps"),
+                                                     [Path.Combine(root, "wer")],
+                                                     Path.Combine(root, "logs"));
+        return new CrashReportService(options, new RunSentinel(root), new NullCrashEventReader());
+    }
+
+    private sealed class NullCrashEventReader : ICrashEventReader
+    {
+        public CrashEventInfo? ReadLastRuntimeCrash() => null;
+        public CrashEventInfo? ReadLastFault() => null;
+        public CrashEventInfo? ReadLastServiceTermination() => null;
+    }
 
     private sealed class StubClassifierGenerator : IClassifierGenerator
     {

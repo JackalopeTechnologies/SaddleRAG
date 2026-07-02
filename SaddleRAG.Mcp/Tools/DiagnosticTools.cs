@@ -96,6 +96,19 @@ public static class DiagnosticTools
         return json;
     }
 
+    [McpServerTool(Name = "get_crash_report")]
+    [Description("One-call crash post-mortem for the SaddleRAG service: latest .NET Runtime unhandled-exception event " +
+                 "(with managed stack), latest Application Error fault event, latest Service Control Manager " +
+                 "unexpected-termination event, WER AppCrash report folders, captured crash dumps, the managed " +
+                 "last-crash marker, and the tail of the current service log."
+                )]
+    public static string GetCrashReport(CrashReportService crashReportService)
+    {
+        ArgumentNullException.ThrowIfNull(crashReportService);
+
+        return JsonSerializer.Serialize(crashReportService.Build(), smJsonOptions);
+    }
+
     /// <summary>
     ///     Pick the most recently written log file matching the search pattern.
     ///     Sort by <see cref="FileSystemInfo.LastWriteTimeUtc" /> rather than
