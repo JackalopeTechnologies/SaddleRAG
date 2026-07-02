@@ -162,6 +162,17 @@ if ($PSCmdlet.ShouldProcess($ServiceName, "Create Windows service using $service
     New-Service -Name $ServiceName -BinaryPathName $serviceBinaryPath -DisplayName $DisplayName -Description $Description -StartupType Automatic
 }
 
+# Configure SCM failure actions so the service self-heals after a crash
+# (issue #137): restart after 5s/30s/60s with a daily failure-counter reset.
+# Re-applied on every update because Remove-Service above discards the
+# previous registration's recovery settings. Mirrors start-and-monitor.ps1.
+if ($PSCmdlet.ShouldProcess($ServiceName, 'Configure service recovery actions (restart 5s/30s/60s, daily reset)'))
+{
+    & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/30000/restart/60000 | Out-Null
+    & sc.exe failureflag $ServiceName 1 | Out-Null
+    Write-Output "Recovery: '$ServiceName' will auto-restart after failures (5s/30s/60s, daily reset)"
+}
+
 if (-not $SkipStart)
 {
     if ($PSCmdlet.ShouldProcess($ServiceName, 'Start Windows service'))
