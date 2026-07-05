@@ -52,7 +52,7 @@ public static class DiagnosticTools
         ArgumentNullException.ThrowIfNull(logConfig);
 
         int lineCount = Math.Clamp(lines, MinLineCount, MaxLineCount);
-        string? logFile = FindLatestLogFile(logConfig.LogDirectory);
+        string? logFile = ServerLogFiles.FindLatest(logConfig.LogDirectory);
         string json;
 
         if (logFile == null)
@@ -61,7 +61,7 @@ public static class DiagnosticTools
         {
             try
             {
-                var allLines = ReadLogFileShared(logFile);
+                var allLines = ServerLogFiles.ReadAllLinesShared(logFile);
 
                 IEnumerable<string> filtered = allLines;
                 if (!string.IsNullOrEmpty(filter))
@@ -113,45 +113,7 @@ public static class DiagnosticTools
         return JsonSerializer.Serialize(crashReportService.Build(), smJsonOptions);
     }
 
-    /// <summary>
-    ///     Pick the most recently written log file matching the search pattern.
-    ///     Sort by <see cref="FileSystemInfo.LastWriteTimeUtc" /> rather than
-    ///     filename so the picker is robust against rotation schemes that
-    ///     don't sort lexicographically.
-    /// </summary>
-    private static string? FindLatestLogFile(string logDirectory)
-    {
-        string? result = null;
-        if (Directory.Exists(logDirectory))
-        {
-            result = new DirectoryInfo(logDirectory)
-                     .EnumerateFiles(LogFileSearchPattern)
-                     .OrderByDescending(f => f.LastWriteTimeUtc)
-                     .FirstOrDefault()
-                     ?.FullName;
-        }
-
-        return result;
-    }
-
-    private static IReadOnlyList<string> ReadLogFileShared(string path)
-    {
-        var lines = new List<string>();
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(stream);
-
-        string? line = reader.ReadLine();
-        while (line != null)
-        {
-            lines.Add(line);
-            line = reader.ReadLine();
-        }
-
-        return lines;
-    }
-
     private const string NoLogFilesFoundMessage = "No log files found.";
-    private const string LogFileSearchPattern = "saddlerag-*.log";
     private const int MinLineCount = 1;
     private const int DefaultLineCount = 50;
     private const int MaxLineCount = 500;

@@ -61,7 +61,18 @@ else
                     <MudListItem Text="@($"Active: {Snapshot.ExecutionProvider.Active}")"/>
                     <MudListItem Text="@($"Matches requested: {Snapshot.ExecutionProvider.MatchesRequested}")"/>
                     <MudListItem Text="@($"Compiled-in: {string.Join(", ", Snapshot.ExecutionProvider.CompiledInProviders)}")"/>
+                    @if (Snapshot.ExecutionProvider.DeviceLossRecoveryCount > 0)
+                    {
+                        <MudListItem Text="@($"Device-loss recoveries: {Snapshot.ExecutionProvider.DeviceLossRecoveryCount} (last {Snapshot.ExecutionProvider.LastDeviceLossUtc:u})")"/>
+                    }
                 </MudList>
+                @if (Snapshot.ExecutionProvider.DeviceLossFallbackActive)
+                {
+                    <MudAlert Severity="Severity.Error" Class="mt-2" Dense="true">
+                        GPU device was lost; running on CPU fallback. Restart the service or use
+                        set_execution_provider to return to GPU.
+                    </MudAlert>
+                }
                 @if (!string.IsNullOrEmpty(Snapshot.ExecutionProvider.LastLoadWarning))
                 {
                     <MudAlert Severity="Severity.Warning" Class="mt-2" Dense="true">

@@ -103,8 +103,11 @@ public static class OnnxTools
                  "no CUDA-flavored OnnxRuntime NuGet ships with this build). ActiveSetting is the " +
                  "current Onnx.ExecutionProvider value (the request). ActiveProvider is what the " +
                  "session actually got (CPU if a GPU EP failed at session creation). " +
-                 "LastLoadWarning surfaces the fallback reason if any. Use set_execution_provider " +
-                 "to change the request; it requires a restart."
+                 "LastLoadWarning surfaces the fallback reason if any. DeviceLossRecoveryCount / " +
+                 "DeviceLossFallbackActive / LastDeviceLossUtc report GPU device-loss self-healing: " +
+                 "recovered incidents since process start, and whether repeated loss forced the " +
+                 "sessions onto CPU (restart or set_execution_provider to return to GPU). " +
+                 "Use set_execution_provider to change the request; it requires a restart."
                 )]
     public static string ListExecutionProviders(OnnxRuntimeCapabilities capabilities,
                                                 IOptions<OnnxSettings> settings)
@@ -122,7 +125,10 @@ public static class OnnxTools
                                ActiveSetting = settings.Value.ExecutionProvider,
                                capabilities.ActiveProvider,
                                capabilities.RequestedProvider,
-                               capabilities.LastLoadWarning
+                               capabilities.LastLoadWarning,
+                               capabilities.DeviceLossRecoveryCount,
+                               capabilities.DeviceLossFallbackActive,
+                               capabilities.LastDeviceLossUtc
                            };
         string result = JsonSerializer.Serialize(response, smJsonOptions);
         return result;
