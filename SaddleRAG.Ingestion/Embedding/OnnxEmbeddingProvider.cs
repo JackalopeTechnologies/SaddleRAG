@@ -37,6 +37,7 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
 
         mSettings = settings.Value;
         mLogger = logger;
+        mCapabilities = capabilities;
         mEntry = mSettings.GetActiveEmbeddingModel();
 
         mModelsDir = ResolveModelDir(mSettings.ModelsDir, mEntry.Name);
@@ -51,21 +52,40 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
 
         mTokenizer = CreateTokenizer(mEntry, mModelsDir, vocabPath);
 
-        var sessionOptions = new SessionOptions
-        {
-            GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),
-            IntraOpNumThreads = mSettings.IntraOpNumThreads
-        };
-        OnnxExecutionProvider actualProvider = OnnxExecutionProviderConfigurator.Configure(
-            sessionOptions, mSettings.ExecutionProvider, capabilities, mLogger
-        );
-        mSession = new InferenceSession(modelPath, sessionOptions);
+        // Primary factory re-runs Configure on every rebuild so a successful
+        // GPU recovery re-records the load outcome; the CPU factory stays
+        // bare so RequestedProvider keeps showing the operator's GPU request
+        // while the fallback state carries the degraded truth (issue #144).
+        mSession = new RecoverableOnnxSession(modelPath,
+                                              CreatePrimarySessionOptions,
+                                              CreateSessionOptions,
+                                              capabilities,
+                                              mLogger,
+                                              SessionName
+                                             );
         mModelHasTokenTypeIds = mSession.InputMetadata.ContainsKey(InputNameTokenTypeIds);
 
         mLogger.LogInformation(
             "OnnxEmbeddingProvider ready: model={Name} dims={Dims} family={Family} hasTokenTypeIds={HasTTI} executionProvider={Ep}",
-            mEntry.Name, mEntry.Dimensions, mEntry.TokenizerFamily, mModelHasTokenTypeIds, actualProvider
+            mEntry.Name, mEntry.Dimensions, mEntry.TokenizerFamily, mModelHasTokenTypeIds, capabilities.ActiveProvider
         );
+    }
+
+    private SessionOptions CreateSessionOptions()
+    {
+        var options = new SessionOptions
+        {
+            GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),
+            IntraOpNumThreads = mSettings.IntraOpNumThreads
+        };
+        return options;
+    }
+
+    private SessionOptions CreatePrimarySessionOptions()
+    {
+        SessionOptions options = CreateSessionOptions();
+        OnnxExecutionProviderConfigurator.Configure(options, mSettings.ExecutionProvider, mCapabilities, mLogger);
+        return options;
     }
 
     #region IEmbeddingProvider properties
@@ -81,11 +101,12 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
 
     #endregion
 
+    private readonly OnnxRuntimeCapabilities mCapabilities;
     private readonly EmbeddingModelEntry mEntry;
     private readonly ILogger<OnnxEmbeddingProvider> mLogger;
     private readonly bool mModelHasTokenTypeIds;
     private readonly string mModelsDir;
-    private readonly InferenceSession mSession;
+    private readonly RecoverableOnnxSession mSession;
     private readonly OnnxSettings mSettings;
     private readonly BertTokenizer mTokenizer;
 
@@ -280,6 +301,7 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
     }
 
     private const string ProviderIdValue = "onnx";
+    private const string SessionName = "embedding";
     private const string InputNameInputIds = "input_ids";
     private const string InputNameAttentionMask = "attention_mask";
     private const string InputNameTokenTypeIds = "token_type_ids";
