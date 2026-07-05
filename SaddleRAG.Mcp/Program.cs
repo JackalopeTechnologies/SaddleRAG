@@ -177,6 +177,9 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddSingleton(levelSwitch);
 
 builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
+
+// Monitor Logs page + error badge (issue #143) read the same log files.
+builder.Services.AddSingleton<IServerLogReader>(new FileServerLogTailReader(logDirectory));
 builder.Services.AddSingleton(runSentinel);
 
 // Crash triage (issue #140): get_crash_report aggregates event-log records,
