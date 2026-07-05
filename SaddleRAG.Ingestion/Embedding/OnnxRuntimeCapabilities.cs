@@ -72,6 +72,26 @@ public class OnnxRuntimeCapabilities
     public string? LastLoadWarning { get; private set; }
 
     /// <summary>
+    ///     Number of GPU device-loss incidents the query-path sessions have
+    ///     recovered from since process start (issue #144). Recovered
+    ///     incidents log at Warning — they never appear as Error entries.
+    /// </summary>
+    public int DeviceLossRecoveryCount { get; private set; }
+
+    /// <summary>
+    ///     True when repeated device loss forced the sessions onto the CPU
+    ///     execution provider. Restoring GPU requires a restart or
+    ///     <c>set_execution_provider</c>.
+    /// </summary>
+    public bool DeviceLossFallbackActive { get; private set; }
+
+    /// <summary>
+    ///     UTC timestamp of the most recent recovered device-loss incident,
+    ///     or null if none has occurred.
+    /// </summary>
+    public DateTime? LastDeviceLossUtc { get; private set; }
+
+    /// <summary>
     ///     Records the outcome of an EP-append attempt. Called by
     ///     <see cref="OnnxExecutionProviderConfigurator" /> after each
     ///     attempted session-options configuration. Enforces two invariants:
@@ -107,6 +127,32 @@ public class OnnxRuntimeCapabilities
 
         RequestedProvider = requested;
         ActiveProvider = actual;
+        LastLoadWarning = warning;
+    }
+
+    /// <summary>
+    ///     Records a device-loss incident that ended with the query served —
+    ///     either a same-provider session rebuild or a CPU fallback. Called
+    ///     by <see cref="RecoverableOnnxSession" /> under the inference gate.
+    /// </summary>
+    public void RecordDeviceLossRecovery()
+    {
+        DeviceLossRecoveryCount++;
+        LastDeviceLossUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    ///     Records that repeated device loss forced a rebuild on the CPU
+    ///     execution provider. <paramref name="warning" /> is mandatory —
+    ///     silent fallbacks are a bug, mirroring
+    ///     <see cref="RecordLoadOutcome" />'s invariant.
+    /// </summary>
+    public void RecordDeviceLossFallbackToCpu(string warning)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(warning);
+
+        DeviceLossFallbackActive = true;
+        ActiveProvider = OnnxExecutionProvider.Cpu;
         LastLoadWarning = warning;
     }
 
