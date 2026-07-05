@@ -1,0 +1,90 @@
+@* SaddleRAG.Monitor/Pages/LogsPage.razor *@
+@page "/monitor/logs"
+@rendermode InteractiveServer
+@inherits LogsPageBase
+@using SaddleRAG.Monitor.Services
+
+<MudText Typo="Typo.h4" Class="mb-3">Server logs</MudText>
+
+<MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3" Wrap="Wrap.Wrap">
+    <MudSelect T="ServerLogLevelFilter" @bind-Value="LevelFilter" Label="Level" Dense="true"
+               Style="min-width: 140px">
+        <MudSelectItem Value="ServerLogLevelFilter.All">All</MudSelectItem>
+        <MudSelectItem Value="ServerLogLevelFilter.WarningsPlus">Warnings+</MudSelectItem>
+        <MudSelectItem Value="ServerLogLevelFilter.ErrorsOnly">Errors</MudSelectItem>
+    </MudSelect>
+    <MudTextField T="string" @bind-Value="FilterText" Label="Filter text" Clearable="true"
+                  Immediate="true" Style="min-width: 220px"/>
+    <MudSelect T="int" @bind-Value="MaxEntries" Label="Entries" Dense="true" Style="min-width: 100px">
+        <MudSelectItem Value="100">100</MudSelectItem>
+        <MudSelectItem Value="250">250</MudSelectItem>
+        <MudSelectItem Value="500">500</MudSelectItem>
+    </MudSelect>
+    <MudSwitch T="bool" @bind-Value="AutoRefresh" Color="Color.Primary" Label="Auto-refresh"/>
+    <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="@RefreshNow" title="Refresh now"/>
+</MudStack>
+
+@if (ReadError != null)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-3">
+        Log read failed: @ReadError (showing last good snapshot)
+    </MudAlert>
+}
+
+@if (Snapshot is null)
+{
+    <MudProgressCircular Indeterminate="true"/>
+}
+else if (Snapshot.LogFileName is null)
+{
+    <MudText Typo="Typo.body1">No log files found.</MudText>
+}
+else
+{
+    <MudText Typo="Typo.caption" Class="mb-2">
+        @Snapshot.LogFileName — showing @FilteredEntries.Count of @Snapshot.TotalEntriesInWindow entries
+        @if (Snapshot.TruncatedAtWindow)
+        {
+            <text> (older entries beyond the 512 KB tail window are not shown)</text>
+        }
+    </MudText>
+
+    <MudTable Items="@FilteredEntries" Dense="true" Hover="true" T="ServerLogEntry"
+              Breakpoint="Breakpoint.None">
+        <HeaderContent>
+            <MudTh Style="width: 180px">Time</MudTh>
+            <MudTh Style="width: 110px">Level</MudTh>
+            <MudTh>Message</MudTh>
+            <MudTh Style="width: 48px"></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd Style="font-family: monospace; font-size: .75rem; white-space: nowrap">
+                <TimeDisplay Utc="@context.Timestamp.UtcDateTime"/>
+            </MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Color="@LevelColor(context.Level)">
+                    @context.Level
+                </MudChip>
+            </MudTd>
+            <MudTd Style="font-family: monospace; font-size: .75rem">@context.Message</MudTd>
+            <MudTd>
+                @if (context.DetailLines.Count > 0)
+                {
+                    <MudIconButton Size="Size.Small"
+                                   Icon="@(IsExpanded(context) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                   OnClick="@(() => ToggleExpanded(context))"/>
+                }
+            </MudTd>
+        </RowTemplate>
+        <ChildRowContent>
+            @if (IsExpanded(context))
+            {
+                <MudTr>
+                    <MudTd colspan="4">
+                        <pre style="font-size: .7rem; overflow-x: auto; margin: 0">@string.Join('\n', context.DetailLines)</pre>
+                    </MudTd>
+                </MudTr>
+            }
+        </ChildRowContent>
+    </MudTable>
+}
