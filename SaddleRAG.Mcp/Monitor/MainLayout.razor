@@ -16,6 +16,10 @@
         <MudLink Href="/monitor/jobs" Color="Color.Inherit" Class="mx-2">Jobs</MudLink>
         <MudLink Href="/monitor/performance" Color="Color.Inherit" Class="mx-2">Performance</MudLink>
         <MudLink Href="/monitor/config" Color="Color.Inherit" Class="mx-2">Config</MudLink>
+        <MudBadge Content="@RecentErrorCount" Color="Color.Error" Overlap="true"
+                  Visible="@(RecentErrorCount > 0)">
+            <MudLink Href="/monitor/logs" Color="Color.Inherit" Class="mx-2">Logs</MudLink>
+        </MudBadge>
     </MudAppBar>
     <MudDrawer @bind-Open="DrawerOpen" Elevation="1" Variant="DrawerVariant.Mini"
                OpenMiniOnHover="true">
@@ -24,6 +28,10 @@
             <MudNavLink Href="/monitor/jobs" Icon="@Icons.Material.Filled.History">Jobs</MudNavLink>
             <MudNavLink Href="/monitor/performance" Icon="@Icons.Material.Filled.Speed">Performance</MudNavLink>
             <MudNavLink Href="/monitor/config" Icon="@Icons.Material.Filled.Settings">Config</MudNavLink>
+            <MudBadge Content="@RecentErrorCount" Color="Color.Error" Overlap="true"
+                      Visible="@(RecentErrorCount > 0)">
+                <MudNavLink Href="/monitor/logs" Icon="@Icons.Material.Filled.Article">Logs</MudNavLink>
+            </MudBadge>
         </MudNavMenu>
     </MudDrawer>
     <MudMainContent>
