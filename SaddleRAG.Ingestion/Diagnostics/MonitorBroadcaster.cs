@@ -375,6 +375,8 @@ public sealed class MonitorBroadcaster : IMonitorBroadcaster, IMonitorEvents
         }
         catch(UriFormatException)
         {
+            // Malformed URL → empty host; the hostname distribution simply
+            // buckets it under the empty key rather than failing a broadcast.
         }
 
         return result;

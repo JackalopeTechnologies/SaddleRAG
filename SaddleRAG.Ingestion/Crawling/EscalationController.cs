@@ -184,17 +184,17 @@ public sealed class EscalationController
             }
             catch(ObjectDisposedException ex)
             {
-                mLogger.LogError(ex,
-                                 "EscalationController onEscalate threw ObjectDisposedException; navigator swap committed but {Count} URLs may not have been requeued",
-                                 urls.Count
-                                );
+                mLogger.LogWarning(ex,
+                                   "EscalationController onEscalate threw ObjectDisposedException; navigator swap committed but {Count} URLs may not have been requeued",
+                                   urls.Count
+                                  );
             }
             catch(InvalidOperationException ex)
             {
-                mLogger.LogError(ex,
-                                 "EscalationController onEscalate threw InvalidOperationException; navigator swap committed but {Count} URLs may not have been requeued",
-                                 urls.Count
-                                );
+                mLogger.LogWarning(ex,
+                                   "EscalationController onEscalate threw InvalidOperationException; navigator swap committed but {Count} URLs may not have been requeued",
+                                   urls.Count
+                                  );
             }
         }
     }

@@ -151,9 +151,11 @@ public class GitHubRepoScraper
             }
             catch
             {
+                // Best-effort kill of a clone that already failed; the process
+                // may have exited on its own between the exception and here.
             }
 
-            mLogger.LogError(ex, "git clone failed for {Url}", repoUrl);
+            mLogger.LogWarning(ex, "git clone failed for {Url}", repoUrl);
         }
         finally
         {
@@ -276,6 +278,8 @@ public class GitHubRepoScraper
         }
         catch
         {
+            // Unreadable directory (permissions, reparse point) — skip it
+            // and keep walking the rest of the clone.
             subdirs = [];
         }
 
@@ -292,6 +296,7 @@ public class GitHubRepoScraper
         }
         catch
         {
+            // Unreadable directory — treat as empty and keep walking.
             files = [];
         }
 
@@ -343,7 +348,7 @@ public class GitHubRepoScraper
         return result;
     }
 
-    private static void TryDeleteDirectory(string path)
+    private void TryDeleteDirectory(string path)
     {
         try
         {
@@ -353,8 +358,11 @@ public class GitHubRepoScraper
                 Directory.Delete(path, recursive: true);
             }
         }
-        catch
+        catch(Exception ex) when(ex is IOException or UnauthorizedAccessException)
         {
+            // Cleanup is best-effort, but a failed delete leaks a full clone
+            // under %TEMP% — make the leak visible (issue #147).
+            mLogger.LogWarning(ex, "Failed to delete temp clone directory {Path}; directory leaked", path);
         }
     }
 
@@ -368,6 +376,9 @@ public class GitHubRepoScraper
             }
             catch
             {
+                // Attribute reset is a best-effort pre-pass so read-only git
+                // objects don't fail the recursive delete; leave failures to
+                // the delete itself.
             }
         }
     }
