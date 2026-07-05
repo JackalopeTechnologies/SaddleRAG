@@ -114,7 +114,10 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
                                                                    CompiledInProviders: mCapabilities
                                                                        .CompiledInProviders.Select(p => p.ToString())
                                                                        .ToList(),
-                                                                   LastLoadWarning: mCapabilities.LastLoadWarning
+                                                                   LastLoadWarning: mCapabilities.LastLoadWarning,
+                                                                   DeviceLossRecoveryCount: mCapabilities.DeviceLossRecoveryCount,
+                                                                   DeviceLossFallbackActive: mCapabilities.DeviceLossFallbackActive,
+                                                                   LastDeviceLossUtc: mCapabilities.LastDeviceLossUtc
                                                                   );
 
         (var connectionString, var databaseName) = mongo.Resolve();

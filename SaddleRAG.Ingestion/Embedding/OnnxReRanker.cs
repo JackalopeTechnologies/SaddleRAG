@@ -41,6 +41,7 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
 
         mSettings = settings.Value;
         mLogger = logger;
+        mCapabilities = capabilities;
         mEntry = mSettings.GetActiveRerankerModel();
 
         if (mEntry == null)
@@ -59,15 +60,17 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
                     modelPath
                 );
 
-            var sessionOptions = new SessionOptions
-            {
-                GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),
-                IntraOpNumThreads = mSettings.IntraOpNumThreads
-            };
-            OnnxExecutionProvider actualProvider = OnnxExecutionProviderConfigurator.Configure(
-                sessionOptions, mSettings.ExecutionProvider, capabilities, mLogger
-            );
-            mSession = new InferenceSession(modelPath, sessionOptions);
+            // Primary factory re-runs Configure on every rebuild so a
+            // successful GPU recovery re-records the load outcome; the CPU
+            // factory stays bare so RequestedProvider keeps showing the
+            // operator's GPU request (issue #144).
+            mSession = new RecoverableOnnxSession(modelPath,
+                                                  CreatePrimarySessionOptions,
+                                                  CreateSessionOptions,
+                                                  capabilities,
+                                                  mLogger,
+                                                  SessionName
+                                                 );
             mModelHasTokenTypeIds = mSession.InputMetadata.ContainsKey(InputNameTokenTypeIds);
 
             var loaded = LoadTokenizer(mEntry, modelDir);
@@ -77,7 +80,8 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
 
             mLogger.LogInformation(
                 "OnnxReRanker ready: model={Name} family={Family} batchSize={Batch} hasTokenTypeIds={HasTTI} executionProvider={Ep}",
-                mEntry.Name, mEntry.TokenizerFamily, mSettings.RerankBatchSize, mModelHasTokenTypeIds, actualProvider
+                mEntry.Name, mEntry.TokenizerFamily, mSettings.RerankBatchSize, mModelHasTokenTypeIds,
+                capabilities.ActiveProvider
             );
         }
     }
@@ -85,11 +89,12 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
     public string ModelName => mEntry?.Name ?? string.Empty;
 
     private readonly BertTokenizer? mBertTokenizer;
+    private readonly OnnxRuntimeCapabilities mCapabilities;
     private readonly RerankerModelEntry? mEntry;
     private readonly ILogger<OnnxReRanker> mLogger;
     private readonly bool mModelHasTokenTypeIds;
     private readonly long mPadTokenId;
-    private readonly InferenceSession? mSession;
+    private readonly RecoverableOnnxSession? mSession;
     private readonly OnnxSettings mSettings;
     private readonly SentencePieceTokenizer? mSpTokenizer;
 
@@ -133,7 +138,7 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
         if (candidates.Count > 0)
         {
             RerankerModelEntry entry = RequireEntry();
-            InferenceSession session = RequireSession();
+            RecoverableOnnxSession session = RequireSession();
 
             long[] queryTokens = TokenizeWithoutSpecials(entry, query);
             float[] scores = new float[candidates.Count];
@@ -172,17 +177,34 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
         return result;
     }
 
-    private InferenceSession RequireSession()
+    private RecoverableOnnxSession RequireSession()
     {
-        InferenceSession result = mSession
-                                  ?? throw new InvalidOperationException(
-                                      "OnnxReRanker session is null; this code path runs only when reranking is enabled."
-                                  );
+        RecoverableOnnxSession result = mSession
+                                        ?? throw new InvalidOperationException(
+                                            "OnnxReRanker session is null; this code path runs only when reranking is enabled."
+                                        );
         return result;
     }
 
+    private SessionOptions CreateSessionOptions()
+    {
+        var options = new SessionOptions
+        {
+            GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),
+            IntraOpNumThreads = mSettings.IntraOpNumThreads
+        };
+        return options;
+    }
+
+    private SessionOptions CreatePrimarySessionOptions()
+    {
+        SessionOptions options = CreateSessionOptions();
+        OnnxExecutionProviderConfigurator.Configure(options, mSettings.ExecutionProvider, mCapabilities, mLogger);
+        return options;
+    }
+
     private void ScoreBatch(RerankerModelEntry entry,
-                            InferenceSession session,
+                            RecoverableOnnxSession session,
                             long[] queryTokens,
                             IReadOnlyList<DocChunk> candidates,
                             int start,
@@ -422,6 +444,7 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
     private const string InputNameAttentionMask = "attention_mask";
     private const string InputNameTokenTypeIds = "token_type_ids";
     private const string ModelOnnxFileName = "model.onnx";
+    private const string SessionName = "reranker";
     private const string ClsTokenName = "[CLS]";
     private const string SepTokenName = "[SEP]";
     private const string PadTokenName = "[PAD]";
