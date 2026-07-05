@@ -85,6 +85,10 @@ public static class DiagnosticTools
             }
             catch(Exception ex) when(ex is IOException or UnauthorizedAccessException)
             {
+                // The tool call fails for the caller, so it must also leave a
+                // trace in the log (issue #147); the Serilog file sink is a
+                // separate handle from the read that just failed.
+                Serilog.Log.Error(ex, "get_server_logs failed to read {LogFile}", Path.GetFileName(logFile));
                 var error = new
                                 {
                                     Error = $"Failed to read log file '{Path.GetFileName(logFile)}': {ex.Message}"

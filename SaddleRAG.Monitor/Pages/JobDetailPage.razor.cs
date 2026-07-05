@@ -7,6 +7,7 @@
 
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Logging;
 using MudBlazor;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Services;
@@ -28,6 +29,12 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 
     [Inject]
     private MonitorDataService? DataService { get; set; }
+
+    [Inject]
+    private ISnackbar? Snackbar { get; set; }
+
+    [Inject]
+    private ILogger<JobDetailPageBase>? Logger { get; set; }
 
     protected JobTickEvent? CurrentTick { get; private set; }
     protected bool HubConnected { get; private set; } = true;
@@ -98,7 +105,10 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     protected async Task CancelClicked()
     {
         ArgumentNullException.ThrowIfNull(WriteService);
-        await WriteService.CancelJobAsync(JobId);
+        ArgumentNullException.ThrowIfNull(Snackbar);
+        bool accepted = await WriteService.CancelJobAsync(JobId);
+        if (!accepted)
+            Snackbar.Add($"Cancel request for job {JobId} was rejected by the server.", Severity.Error);
     }
 
     protected override async Task OnInitializedAsync()
@@ -220,10 +230,22 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
-                await PollOnceAsync(ct);
+            {
+                try
+                {
+                    await PollOnceAsync(ct);
+                }
+                catch(Exception ex) when(ex is not OperationCanceledException)
+                {
+                    // A failed poll must not kill the loop — the server being
+                    // unreachable is exactly why we are polling (issue #147).
+                    Logger?.LogWarning(ex, "Fallback poll for job {JobId} failed; retrying", JobId);
+                }
+            }
         }
         catch(OperationCanceledException)
         {
+            // Normal exit: hub reconnected or the page was disposed.
         }
     }
 

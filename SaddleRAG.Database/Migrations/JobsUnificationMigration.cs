@@ -66,8 +66,18 @@ public sealed class JobsUnificationMigration
             IReadOnlyList<JobRecord> projected = ProjectSafely(docs, projector, legacyName);
             await UpsertAllAsync(projected, ct);
             migrated = projected.Count;
-            await database.DropCollectionAsync(legacyName, ct);
-            mLogger.LogInformation(LegacyDroppedFormat, migrated, legacyName);
+            int skipped = docs.Count - projected.Count;
+            if (skipped == 0)
+            {
+                await database.DropCollectionAsync(legacyName, ct);
+                mLogger.LogInformation(LegacyDroppedFormat, migrated, legacyName);
+            }
+            else
+            {
+                // Dropping the source would permanently destroy the documents
+                // that failed projection (issue #147) — keep it for repair.
+                mLogger.LogError(LegacyRetainedFormat, legacyName, skipped, migrated);
+            }
         }
         catch (Exception ex)
         {
@@ -101,7 +111,7 @@ public sealed class JobsUnificationMigration
         catch (Exception ex)
         {
             string id = doc.GetValueOrString(IdField, UnknownIdLabel);
-            mLogger.LogWarning(ex, ProjectorFailedFormat, legacyName, id);
+            mLogger.LogError(ex, ProjectorFailedFormat, legacyName, id);
         }
         return result;
     }
@@ -282,4 +292,6 @@ public sealed class JobsUnificationMigration
         "JobsUnificationMigration: failed while migrating {LegacyName} after {Migrated} record(s); source collection left in place for retry.";
     private const string ProjectorFailedFormat =
         "JobsUnificationMigration: projector for {LegacyName} threw on document {Id}; skipping.";
+    private const string LegacyRetainedFormat =
+        "JobsUnificationMigration: {LegacyName} retained — {Skipped} document(s) failed projection ({Migrated} migrated). Fix or remove the failing documents to complete the migration.";
 }

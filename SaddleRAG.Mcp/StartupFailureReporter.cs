@@ -251,6 +251,8 @@ internal static class StartupFailureReporter
         }
         catch(InvalidOperationException)
         {
+            // Process exited (or access denied) during property reads; the
+            // diagnostic stays best-effort.
         }
         return res;
     }

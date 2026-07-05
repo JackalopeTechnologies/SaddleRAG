@@ -123,7 +123,7 @@ public static class PackagingTools
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, ReloadFailedLogMessage, bundlePath, result.LibraryId);
+                logger.LogWarning(ex, ReloadFailedLogMessage, bundlePath, result.LibraryId);
                 res = result with { RecommendedFollowUp = AppendReloadWarning(result.RecommendedFollowUp) };
             }
         }
