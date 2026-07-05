@@ -254,7 +254,7 @@ public class PageCrawler : IPageCrawler
         }
 
         if (result == null)
-            mLogger.LogWarning("Single-page fetch failed after {Attempts} attempts: {Url}", maxAttempts, url);
+            mLogger.LogError("Single-page fetch failed after {Attempts} attempts: {Url}", maxAttempts, url);
 
         return result;
     }
@@ -285,7 +285,7 @@ public class PageCrawler : IPageCrawler
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogError(ex, "Single-page fetch error for {Url}", url);
+            mLogger.LogWarning(ex, "Single-page fetch error for {Url}", url);
         }
         finally
         {
@@ -656,11 +656,11 @@ public class PageCrawler : IPageCrawler
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogError(ex,
-                             "Retry worker error processing {Url} (retry {Attempt})",
-                             entry.Url,
-                             entry.RetryAttemptIndex
-                            );
+            mLogger.LogWarning(ex,
+                               "Retry worker error processing {Url} (retry {Attempt})",
+                               entry.Url,
+                               entry.RetryAttemptIndex
+                              );
         }
         finally
         {
@@ -739,7 +739,7 @@ public class PageCrawler : IPageCrawler
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
-            mLogger.LogError(ex, "Worker error processing {Url}", entry.Url);
+            mLogger.LogWarning(ex, "Worker error processing {Url}", entry.Url);
         }
         finally
         {
@@ -886,7 +886,7 @@ public class PageCrawler : IPageCrawler
         {
             limiter.ReportTransientError();
             ctx.OnFetchError?.Invoke();
-            mLogger.LogError(ex, "Error fetching {Url}", url);
+            mLogger.LogWarning(ex, "Error fetching {Url}", url);
             bool exInScope = IsInRootScope(url, ctx.RootScope);
             bool exSameHost = !exInScope && IsSameHost(url, ctx.RootScope);
             int exDepth = exInScope  ? entry.InScopeDepth :
@@ -1120,6 +1120,8 @@ public class PageCrawler : IPageCrawler
         }
         catch(PlaywrightException)
         {
+            // Best-effort 403 diagnostics; missing headers just leave the
+            // fields empty in the warning below.
         }
 
         try
@@ -1130,6 +1132,8 @@ public class PageCrawler : IPageCrawler
         }
         catch(PlaywrightException)
         {
+            // Best-effort 403 diagnostics; an unreadable body just leaves the
+            // snippet empty in the warning below.
         }
 
         mLogger.LogWarning("Dropping in-scope {Url} after {Attempts} attempts (still 403). " +
@@ -1280,6 +1284,8 @@ public class PageCrawler : IPageCrawler
         }
         catch(PlaywrightException)
         {
+            // Unreadable headers → null, and the caller falls back to its
+            // default backoff delay.
         }
 
         return result;
@@ -1395,6 +1401,8 @@ public class PageCrawler : IPageCrawler
             }
             catch(PlaywrightException)
             {
+                // DOM probe failed (page navigating/closing) — fall back to
+                // the frame count Playwright already knows about.
                 result = page.Frames.Count > 1;
             }
         }
@@ -2048,6 +2056,8 @@ public class PageCrawler : IPageCrawler
         }
         catch(UriFormatException)
         {
+            // Unparseable URL → null per this method's contract; callers
+            // treat null as out-of-scope.
             result = null;
         }
 

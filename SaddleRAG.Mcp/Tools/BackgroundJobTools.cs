@@ -65,8 +65,14 @@ public static class BackgroundJobTools
                     parsedResult = JsonSerializer.Deserialize<JsonElement>(job.ResultJson, smJsonOptions);
                     boundaryHint = ComputeBoundaryHint(job.JobType, parsedResult);
                 }
-                catch(JsonException)
+                catch(JsonException ex)
                 {
+                    // Corrupt stored ResultJson is a data-integrity signal:
+                    // the caller gets Result=null, so leave a trace (issue #147).
+                    Serilog.Log.Warning(ex,
+                                        "get_job_status: stored ResultJson for job {JobId} is not valid JSON",
+                                        jobId
+                                       );
                     parsedResult = null;
                 }
             }

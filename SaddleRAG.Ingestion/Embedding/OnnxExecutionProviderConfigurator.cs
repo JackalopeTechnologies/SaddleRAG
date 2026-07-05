@@ -132,7 +132,7 @@ public static class OnnxExecutionProviderConfigurator
             catch(Exception ex) when(isRecoverable(ex))
             {
                 string warn = string.Format(GpuAppendFailedWarningFormat, provider, ex.Message);
-                logger.LogError(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
+                logger.LogWarning(ex, "OnnxExecutionProviderConfigurator: {Warning}", warn);
                 result = (OnnxExecutionProvider.Cpu, warn);
             }
         }

@@ -39,6 +39,7 @@ public partial class App : Application
     private const string InstallFailedPrefix = "Install failed: ";
     private const string UninstallFailedPrefix = "Uninstall failed: ";
     private const string StatusFailedPrefix = "Status failed: ";
+    private const string StatusFailedLogMessage = "Client-integration status query failed";
     private const string StatusTitle = "SaddleRAG — client status";
     private const string ActionFailedSuffix = " failed: ";
     private const string StartupFailedPrefix = "SaddleRAG tray failed to start: ";
@@ -281,6 +282,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
+            mLog?.LogError(ex, StatusFailedLogMessage);
             ShowBalloon($"{StatusFailedPrefix}{ex.Message}");
         }
     }
@@ -330,7 +332,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            mLog?.LogWarning(ex, ActionFailedLogMessage, workingMessage);
+            mLog?.LogError(ex, ActionFailedLogMessage, workingMessage);
             ShowBalloon($"{workingMessage}{ActionFailedSuffix}{ex.Message}");
         }
     }

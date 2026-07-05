@@ -7,6 +7,7 @@
 
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
+using MudBlazor;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Monitor.Services;
@@ -28,6 +29,9 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
 
     [Inject]
     protected IMonitorBroadcaster? Broadcaster { get; set; }
+
+    [Inject]
+    private ISnackbar? Snackbar { get; set; }
 
     protected List<JobTickSnapshot> ActiveJobSnapshots { get; } = [];
     protected List<LibrarySummaryItem> Libraries { get; } = [];
@@ -82,7 +86,10 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
     protected async Task CancelJob(string jobId)
     {
         ArgumentNullException.ThrowIfNull(WriteService);
-        await WriteService.CancelJobAsync(jobId);
+        ArgumentNullException.ThrowIfNull(Snackbar);
+        bool accepted = await WriteService.CancelJobAsync(jobId);
+        if (!accepted)
+            Snackbar.Add($"Cancel request for job {jobId} was rejected by the server.", Severity.Error);
     }
 
     private const string HubPath = "/monitor/hub";

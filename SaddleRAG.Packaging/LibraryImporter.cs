@@ -55,6 +55,16 @@ public sealed class LibraryImporter
     private const string FollowUpSeparator = "; ";
     private const int BytesPerFloat = 4;
     private const int EstimatedBytesPerPage = 50_000;
+    private const string PurgeFailedReasonFormat =
+        "Overwrite purge: failed to delete {0}; stale data from the previous copy of this version may remain.";
+    private const string PurgeTargetGridFsBlobFormat = "GridFS blob {0}";
+    private const string PurgeTargetBm25 = "BM25 shards";
+    private const string PurgeTargetChunks = "chunks";
+    private const string PurgeTargetPages = "pages";
+    private const string PurgeTargetExcludedSymbols = "excluded symbols";
+    private const string PurgeTargetIndex = "index";
+    private const string PurgeTargetProfile = "profile";
+    private const string PurgeTargetVersionRecord = "version record";
 
     #endregion
 
@@ -180,6 +190,7 @@ public sealed class LibraryImporter
                 {
                     var freed = await PurgeVersionAsync(manifest.Library.Id,
                                                         manifest.Versions.First(v => v.Version == conflictingVersion),
+                                                        partialFailures,
                                                         ct);
                     bytesFreed += freed;
                     overwroteVersions.Add(conflictingVersion);
@@ -262,6 +273,7 @@ public sealed class LibraryImporter
 
     private async Task<long> PurgeVersionAsync(string libraryId,
                                                BundleVersionEntry versionEntry,
+                                               ICollection<ImportPartialFailure> partialFailures,
                                                CancellationToken ct)
     {
         // Estimate bytes freed: embedding vectors + page content.
@@ -279,18 +291,42 @@ public sealed class LibraryImporter
                 gridFsIdsToDelete.Add(externalRef);
         }
 
+        // Unlike rollback, a swallowed purge failure would let the import
+        // report clean success over stale data — record every miss as a
+        // partial failure on the result (issue #147).
+        var failedTargets = new List<string>();
+
         // Delete each referenced GridFS blob before deleting the shard rows.
         foreach (var blobId in gridFsIdsToDelete)
-            await TryDeleteBm25BlobAsync(blobId, ct);
+        {
+            if (!await TryDeleteBm25BlobAsync(blobId, ct))
+                failedTargets.Add(string.Format(PurgeTargetGridFsBlobFormat, blobId));
+        }
 
         // Delete all data collections for this version.
-        await TryDeleteAsync(() => mBm25Repository.DeleteAsync(libraryId, versionEntry.Version, ct));
-        await TryDeleteAsync(() => mChunkRepository.DeleteChunksAsync(libraryId, versionEntry.Version, ct));
-        await TryDeleteAsync(() => mPageRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
-        await TryDeleteAsync(() => mExcludedSymbolsRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
-        await TryDeleteAsync(() => mIndexRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
-        await TryDeleteAsync(() => mProfileRepository.DeleteAsync(libraryId, versionEntry.Version, ct));
-        await TryDeleteVersionAsync(() => mLibraryRepository.DeleteVersionAsync(libraryId, versionEntry.Version, ct));
+        if (!await TryDeleteAsync(() => mBm25Repository.DeleteAsync(libraryId, versionEntry.Version, ct)))
+            failedTargets.Add(PurgeTargetBm25);
+        if (!await TryDeleteAsync(() => mChunkRepository.DeleteChunksAsync(libraryId, versionEntry.Version, ct)))
+            failedTargets.Add(PurgeTargetChunks);
+        if (!await TryDeleteAsync(() => mPageRepository.DeleteAsync(libraryId, versionEntry.Version, ct)))
+            failedTargets.Add(PurgeTargetPages);
+        if (!await TryDeleteAsync(() => mExcludedSymbolsRepository.DeleteAsync(libraryId, versionEntry.Version, ct)))
+            failedTargets.Add(PurgeTargetExcludedSymbols);
+        if (!await TryDeleteAsync(() => mIndexRepository.DeleteAsync(libraryId, versionEntry.Version, ct)))
+            failedTargets.Add(PurgeTargetIndex);
+        if (!await TryDeleteAsync(() => mProfileRepository.DeleteAsync(libraryId, versionEntry.Version, ct)))
+            failedTargets.Add(PurgeTargetProfile);
+        if (!await TryDeleteVersionAsync(() => mLibraryRepository.DeleteVersionAsync(libraryId, versionEntry.Version, ct)))
+            failedTargets.Add(PurgeTargetVersionRecord);
+
+        foreach (string target in failedTargets)
+        {
+            partialFailures.Add(new ImportPartialFailure
+                                    {
+                                        Version = versionEntry.Version,
+                                        Reason = string.Format(PurgeFailedReasonFormat, target)
+                                    });
+        }
 
         return estimated;
     }
@@ -610,40 +646,55 @@ public sealed class LibraryImporter
             await TryDeleteVersionAsync(() => mLibraryRepository.DeleteVersionAsync(libraryId, version, ct));
     }
 
-    private async Task TryDeleteBm25BlobAsync(string gridFsId, CancellationToken ct)
+    private async Task<bool> TryDeleteBm25BlobAsync(string gridFsId, CancellationToken ct)
     {
+        var res = true;
         try
         {
             await mBm25Repository.DeleteGridFsBlobAsync(gridFsId, ct);
         }
         catch
         {
-            // Best-effort; swallow so rollback completes as far as possible.
+            // Best-effort; swallow so rollback/purge completes as far as
+            // possible. Purge callers surface the miss via the return value.
+            res = false;
         }
+
+        return res;
     }
 
-    private static async Task TryDeleteAsync(Func<Task<long>> delete)
+    private static async Task<bool> TryDeleteAsync(Func<Task<long>> delete)
     {
+        var res = true;
         try
         {
             await delete();
         }
         catch
         {
-            // Best-effort; swallow so rollback completes as far as possible.
+            // Best-effort; swallow so rollback/purge completes as far as
+            // possible. Purge callers surface the miss via the return value.
+            res = false;
         }
+
+        return res;
     }
 
-    private static async Task TryDeleteVersionAsync(Func<Task<DeleteVersionResult>> delete)
+    private static async Task<bool> TryDeleteVersionAsync(Func<Task<DeleteVersionResult>> delete)
     {
+        var res = true;
         try
         {
             await delete();
         }
         catch
         {
-            // Best-effort; swallow so rollback completes as far as possible.
+            // Best-effort; swallow so rollback/purge completes as far as
+            // possible. Purge callers surface the miss via the return value.
+            res = false;
         }
+
+        return res;
     }
 
     private static async Task<T> ReadJsonAsync<T>(IBundleReader reader, string path, CancellationToken ct)

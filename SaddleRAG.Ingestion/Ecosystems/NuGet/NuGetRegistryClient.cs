@@ -86,7 +86,10 @@ public class NuGetRegistryClient : IPackageRegistryClient
         catch(Exception ex)
 
         {
-            mLogger.LogDebug(ex, "Failed to fetch NuGet metadata for {PackageId} {Version}", packageId, version);
+            // Null return makes DependencyIndexer report the package as
+            // Failed ("not found"), so a transport/parse failure must be
+            // visible in the log — it is not a confirmed 404 (issue #147).
+            mLogger.LogWarning(ex, "Failed to fetch NuGet metadata for {PackageId} {Version}", packageId, version);
         }
 
 
