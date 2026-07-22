@@ -95,34 +95,65 @@ public static class JobCleanupTools
                  "dryRun=false returns { JobId, Status: 'Queued' } immediately; poll " +
                  "get_job_status for the outcome."
                 )]
+    public static Task<string> CleanupJobsFromMcp(RepositoryFactory repositoryFactory,
+                                                  [FromKeyedServices(nameof(IBackgroundJobRunner))]
+                                                  IBackgroundJobRunner runner,
+                                                  [Description("Optional job type filter — enum name (e.g. Scrape, Rescrub, " +
+                                                               "Reembed, Rechunk) or legacy snake_case (rechunk, rename_library, …). " +
+                                                               "Omit to match every type."
+                                                              )]
+                                                  string? jobType = null,
+                                                  [Description("Optional explicit list of job ids. When set, " +
+                                                               "jobType/status/library/version are ignored. Each id is " +
+                                                               "looked up in the unified jobs collection."
+                                                              )]
+                                                  JsonElement? jobIds = null,
+                                                  [Description("Optional status filter: Queued, Running, " +
+                                                               "Completed, Failed, Cancelled."
+                                                              )]
+                                                  string? status = null,
+                                                  [Description("Optional library identifier")]
+                                                  string? library = null,
+                                                  [Description("Optional library version")]
+                                                  string? version = null,
+                                                  [Description("If true (default), also delete each affected " +
+                                                               "scrape job's ScrapeAuditLog rows. Ignored for non-scrape jobs."
+                                                              )]
+                                                  bool includeAudit = true,
+                                                  [Description("If true (default), preview without writing.")]
+                                                  bool dryRun = true,
+                                                  [Description("Optional database profile name")]
+                                                  string? profile = null,
+                                                  CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(runner);
+
+        string[]? parsedJobIds = McpStringArrayArgumentParser.Parse(jobIds, nameof(jobIds));
+        Task<string> result = CleanupJobs(repositoryFactory,
+                                          runner,
+                                          jobType,
+                                          parsedJobIds,
+                                          status,
+                                          library,
+                                          version,
+                                          includeAudit,
+                                          dryRun,
+                                          profile,
+                                          ct
+                                         );
+        return result;
+    }
+
     public static async Task<string> CleanupJobs(RepositoryFactory repositoryFactory,
-                                                 [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                  IBackgroundJobRunner runner,
-                                                 [Description("Optional job type filter — enum name (e.g. Scrape, Rescrub, " +
-                                                              "Reembed, Rechunk) or legacy snake_case (rechunk, rename_library, …). " +
-                                                              "Omit to match every type."
-                                                             )]
                                                  string? jobType = null,
-                                                 [Description("Optional explicit list of job ids. When set, " +
-                                                              "jobType/status/library/version are ignored. Each id is " +
-                                                              "looked up in the unified jobs collection."
-                                                             )]
                                                  string[]? jobIds = null,
-                                                 [Description("Optional status filter: Queued, Running, " +
-                                                              "Completed, Failed, Cancelled."
-                                                             )]
                                                  string? status = null,
-                                                 [Description("Optional library identifier")]
                                                  string? library = null,
-                                                 [Description("Optional library version")]
                                                  string? version = null,
-                                                 [Description("If true (default), also delete each affected " +
-                                                              "scrape job's ScrapeAuditLog rows. Ignored for non-scrape jobs."
-                                                             )]
                                                  bool includeAudit = true,
-                                                 [Description("If true (default), preview without writing.")]
                                                  bool dryRun = true,
-                                                 [Description("Optional database profile name")]
                                                  string? profile = null,
                                                  CancellationToken ct = default)
     {

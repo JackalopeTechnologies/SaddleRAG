@@ -45,4 +45,14 @@ public sealed class NormalizeUrlTests
         string? result = Invoke("https://example.com:443/docs/page");
         Assert.Equal("https://example.com/docs/page", result);
     }
+
+    [Fact]
+    public void KeepExtensionPreservesDocumentExtensionForFetch()
+    {
+        string? result = Invoke("https://www.advancedinstaller.com/user-guide/modules-project-tab.html",
+                                keepExtension: true
+                               );
+
+        Assert.Equal("https://www.advancedinstaller.com/user-guide/modules-project-tab.html", result);
+    }
 }

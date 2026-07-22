@@ -14,6 +14,7 @@ using SaddleRAG.Database;
 using SaddleRAG.Database.Migrations;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Classification;
+using SaddleRAG.Ingestion.Crawling;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -25,11 +26,14 @@ public sealed class McpWarmupService : BackgroundService
 
 {
     public McpWarmupService(IServiceProvider serviceProvider,
+                            IPlaywrightRuntimeProbe playwrightRuntimeProbe,
                             McpWarmupState warmupState,
                             ILogger<McpWarmupService> logger)
 
     {
         mServiceProvider = serviceProvider;
+
+        mPlaywrightRuntimeProbe = playwrightRuntimeProbe;
 
         mWarmupState = warmupState;
 
@@ -38,6 +42,8 @@ public sealed class McpWarmupService : BackgroundService
 
 
     private readonly ILogger<McpWarmupService> mLogger;
+
+    private readonly IPlaywrightRuntimeProbe mPlaywrightRuntimeProbe;
 
     private readonly IServiceProvider mServiceProvider;
 
@@ -60,6 +66,19 @@ public sealed class McpWarmupService : BackgroundService
         try
 
         {
+            stepSw.Restart();
+
+            await VerifyPlaywrightRuntimeAsync(mPlaywrightRuntimeProbe,
+                                                mWarmupState,
+                                                mLogger,
+                                                stoppingToken
+                                               );
+
+            mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - Playwright browser ready",
+                                   startupSw.Elapsed.TotalSeconds,
+                                   stepSw.ElapsedMilliseconds
+                                  );
+
             using var scope = mServiceProvider.CreateScope();
 
 
@@ -517,6 +536,28 @@ public sealed class McpWarmupService : BackgroundService
         return result;
     }
 
+    internal static async Task VerifyPlaywrightRuntimeAsync(IPlaywrightRuntimeProbe probe,
+                                                            McpWarmupState warmupState,
+                                                            ILogger<McpWarmupService> logger,
+                                                            CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        ArgumentNullException.ThrowIfNull(warmupState);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        try
+        {
+            await probe.VerifyAsync(ct);
+            warmupState.MarkPhase(PhasePlaywrightBrowserReady);
+        }
+        catch(Exception exception) when(exception is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            warmupState.MarkFailed(PhasePlaywrightBrowserUnavailable, exception.Message);
+            logger.LogError(exception, "[Warmup] Playwright browser preflight failed");
+            throw;
+        }
+    }
+
     /// <summary>
     ///     Drives one rerank inference at startup so the first user
     ///     search doesn't pay the cold-path cost. The ONNX cross-encoder
@@ -661,6 +702,8 @@ public sealed class McpWarmupService : BackgroundService
     private const string PhaseCanceled = "Canceled";
 
     private const string OnnxDownloadFailedLogTemplate = "[Warmup] T+{Sec:F1}s - ONNX model download failed; embedding/reranking will not be available until the operator resolves this. Check network, Onnx.ModelsDir permissions, and the configured RepoId/ModelFile values.";
+    internal const string PhasePlaywrightBrowserReady = "Playwright browser ready";
+    internal const string PhasePlaywrightBrowserUnavailable = "Playwright browser unavailable";
 
     private const string WarmupProbeText = "warmup";
 

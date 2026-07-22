@@ -83,20 +83,20 @@ public static class ScrapeDocsTools
                                                 bool force = false,
                                                 [Description("Optional URL patterns (regex) to allow. Defaults to the rootUrl host when omitted."
                                                             )]
-                                                string[]? allowedUrlPatterns = null,
+                                                JsonElement? allowedUrlPatterns = null,
                                                 [Description("Optional URL patterns (regex) to exclude.")]
-                                                string[]? excludedUrlPatterns = null,
+                                                JsonElement? excludedUrlPatterns = null,
                                                 [Description("Additional HTTP status codes to treat as rate-limit signals, on top of the built-in defaults (429, 503). " +
                                                              "Use for site-specific soft-limit responses: [502] for Infragistics and similar CDNs, " +
                                                              "[520, 521, 522] for Cloudflare rate walls.")]
-                                                int[]? additionalRateLimitStatusCodes = null,
+                                                JsonElement? additionalRateLimitStatusCodes = null,
                                                 [Description("Additional seed URLs added to the crawl queue alongside the root. Use for sites where " +
                                                              "the home page does not link to every section that needs indexing — e.g., on DocFX-style " +
                                                              "sites, pass [\"https://site/api/MyLib/index.htm\"] so the /api/ tree is reachable. Each seed " +
                                                              "is filtered through allowedUrlPatterns just like links discovered during the crawl, so " +
                                                              "out-of-scope seeds are dropped at the audit boundary."
                                                             )]
-                                                string[]? seedUrls = null,
+                                                JsonElement? seedUrls = null,
                                                 [Description("Resume the most recent scrape for this (library, version), reusing its url/patterns/seedUrls"
                                                             )]
                                                 bool resume = false,
@@ -132,6 +132,17 @@ public static class ScrapeDocsTools
             throw new ArgumentOutOfRangeException(nameof(spaWaitMs),
                                                   spaWaitMs,
                                                   "spaWaitMs must be non-negative");
+
+        string[]? parsedAllowedUrlPatterns = McpStringArrayArgumentParser.Parse(allowedUrlPatterns,
+                                                                                  nameof(allowedUrlPatterns)
+                                                                                 );
+        string[]? parsedExcludedUrlPatterns = McpStringArrayArgumentParser.Parse(excludedUrlPatterns,
+                                                                                   nameof(excludedUrlPatterns)
+                                                                                  );
+        string[]? parsedSeedUrls = McpStringArrayArgumentParser.Parse(seedUrls, nameof(seedUrls));
+        int[]? parsedAdditionalRateLimitStatusCodes = McpIntegerArrayArgumentParser.Parse(additionalRateLimitStatusCodes,
+                                                     nameof(additionalRateLimitStatusCodes)
+                                                    );
 
         if (!resume && string.IsNullOrEmpty(url))
             throw new ArgumentException("url is required when resume=false");
@@ -186,13 +197,13 @@ public static class ScrapeDocsTools
                                          LibraryId = resolvedLibrary,
                                          Version = version,
                                          LibraryHint = hint ?? previousJob.LibraryHint,
-                                         AllowedUrlPatterns = allowedUrlPatterns ?? previousJob.AllowedUrlPatterns,
-                                         ExcludedUrlPatterns = excludedUrlPatterns ?? previousJob.ExcludedUrlPatterns,
-                                         SeedUrls = seedUrls ?? previousJob.SeedUrls,
+                                         AllowedUrlPatterns = parsedAllowedUrlPatterns ?? previousJob.AllowedUrlPatterns,
+                                         ExcludedUrlPatterns = parsedExcludedUrlPatterns ?? previousJob.ExcludedUrlPatterns,
+                                         SeedUrls = parsedSeedUrls ?? previousJob.SeedUrls,
                                          MaxPages = maxPages,
                                          FetchDelayMs = fetchDelayMs,
                                          ForceClean = force,
-                                         AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes ?? previousJob.AdditionalRateLimitStatusCodes,
+                                         AdditionalRateLimitStatusCodes = parsedAdditionalRateLimitStatusCodes ?? previousJob.AdditionalRateLimitStatusCodes,
                                          WaitForSelector = waitForSelector ?? previousJob.WaitForSelector,
                                          SpaWaitMs = spaWaitMs ?? previousJob.SpaWaitMs
                                      };
@@ -225,10 +236,10 @@ public static class ScrapeDocsTools
                                               maxPages,
                                               fetchDelayMs,
                                               force,
-                                              allowedUrlPatterns,
-                                              excludedUrlPatterns,
-                                              additionalRateLimitStatusCodes,
-                                              seedUrls,
+                                              parsedAllowedUrlPatterns,
+                                              parsedExcludedUrlPatterns,
+                                              parsedAdditionalRateLimitStatusCodes,
+                                              parsedSeedUrls,
                                               waitForSelector,
                                               spaWaitMs ?? 0
                                              );

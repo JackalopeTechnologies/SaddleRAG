@@ -71,14 +71,14 @@ public static class IngestionTools
                                                               )]
                                                   string? rootUrl = null,
                                                   [Description("Allowed URL patterns (regex). Defaults to the url host.")]
-                                                  string[]? allowedUrlPatterns = null,
+                                                  JsonElement? allowedUrlPatterns = null,
                                                   [Description("Excluded URL patterns (regex)")]
-                                                  string[]? excludedUrlPatterns = null,
+                                                  JsonElement? excludedUrlPatterns = null,
                                                   [Description("Additional seed URLs added to the crawl queue alongside url. " +
                                                                "Same semantics as scrape_docs.seedUrls — use for sites where the home " +
                                                                "page does not link to every section that needs indexing."
                                                               )]
-                                                  string[]? seedUrls = null,
+                                                  JsonElement? seedUrls = null,
                                                   [Description("Max pages to fetch in dry run, 0 = unlimited")]
                                                   int maxPages = DefaultDryRunMaxPages,
                                                   [Description("Delay between fetches in ms")]
@@ -124,7 +124,14 @@ public static class IngestionTools
                                                   spaWaitMs,
                                                   "spaWaitMs must be non-negative");
 
-        var allowed = allowedUrlPatterns ?? [new Uri(resolvedUrl).Host];
+        string[]? parsedAllowedUrlPatterns = McpStringArrayArgumentParser.Parse(allowedUrlPatterns,
+                                                                                  nameof(allowedUrlPatterns)
+                                                                                 );
+        string[]? parsedExcludedUrlPatterns = McpStringArrayArgumentParser.Parse(excludedUrlPatterns,
+                                                                                   nameof(excludedUrlPatterns)
+                                                                                  );
+        string[]? parsedSeedUrls = McpStringArrayArgumentParser.Parse(seedUrls, nameof(seedUrls));
+        var allowed = parsedAllowedUrlPatterns ?? [new Uri(resolvedUrl).Host];
 
         var job = new ScrapeJob
                       {
@@ -133,8 +140,8 @@ public static class IngestionTools
                           Version = version,
                           LibraryHint = DryRunHint,
                           AllowedUrlPatterns = allowed,
-                          ExcludedUrlPatterns = excludedUrlPatterns ?? [],
-                          SeedUrls = seedUrls,
+                          ExcludedUrlPatterns = parsedExcludedUrlPatterns ?? [],
+                          SeedUrls = parsedSeedUrls,
                           MaxPages = maxPages,
                           FetchDelayMs = fetchDelayMs,
                           SameHostDepth = sameHostDepth,

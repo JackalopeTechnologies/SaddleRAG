@@ -192,6 +192,7 @@
             <File Source="PatchAppSettings.ps1" />
             <File Source="ConfigureCrashCapture.ps1" />
             <File Source="RemoveCrashCapture.ps1" />
+            <File Source="EnsurePlaywrightChromium.ps1" />
         </Component>
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
@@ -407,6 +408,24 @@
                       Return="ignore"
                       Impersonate="no" />
 
+           <!-- Install the Chromium revision pinned by the Playwright driver shipped
+               in this MSI. Runs as LocalSystem, the same identity as the service,
+               before prewarm and first service start. Return="check" prevents a
+               completed installation that cannot crawl; MCP startup independently
+               rechecks and repairs this prerequisite after later cache deletion or
+               a Playwright package upgrade. -->
+           <SetProperty Id="EnsurePlaywrightChromium"
+                     Before="EnsurePlaywrightChromium"
+                     Sequence="execute"
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]EnsurePlaywrightChromium.ps1&quot;" />
+
+           <CustomAction Id="EnsurePlaywrightChromium"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="check"
+                      Impersonate="no" />
+
         <!-- Remove the LocalDumps registry configuration on uninstall. Captured -->
         <!-- dumps are intentionally left on disk for post-uninstall forensics. -->
         <SetProperty Id="RemoveCrashCapture"
@@ -478,6 +497,7 @@
             <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="SetOllamaKeepAlive" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="ConfigureCrashCapture" After="SetOllamaKeepAlive" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="EnsurePlaywrightChromium" After="ConfigureCrashCapture" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RemoveCrashCapture" Before="UnsetOllamaKeepAlive" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="UnsetOllamaKeepAlive" Before="UnregisterAiClients" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="UnregisterAiClients" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
