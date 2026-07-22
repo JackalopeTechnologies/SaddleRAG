@@ -401,6 +401,7 @@ builder.Services.AddSingleton<GitHubRepoScraper>();
 
 builder.Services.AddSingleton<PageCrawler>();
 builder.Services.AddSingleton<IPageCrawler>(sp => sp.GetRequiredService<PageCrawler>());
+builder.Services.AddSingleton<IPlaywrightRuntimeProbe, PlaywrightRuntimeProbe>();
 
 builder.Services.AddSingleton<CategoryAwareChunker>();
 

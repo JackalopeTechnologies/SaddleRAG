@@ -41,19 +41,34 @@ public static class CompactCollectionsTools
                  "database. Defaults to dryRun=true — preview current sizes before " +
                  "passing dryRun=false to apply."
                 )]
+    public static Task<string> CompactCollectionsFromMcp(RepositoryFactory repositoryFactory,
+                                                         ICollectionCompactor compactor,
+                                                         [Description("Collections to compact. Defaults to the four " +
+                                                                      "hot collections (pages, chunks, " +
+                                                                      "scrape_audit_log, bm25Shards) where SaddleRAG " +
+                                                                      "churn produces meaningful reclaimable space."
+                                                                     )]
+                                                         JsonElement? collections = null,
+                                                         [Description("If true (default), preview current storage " +
+                                                                      "sizes without running compact."
+                                                                     )]
+                                                         bool dryRun = true,
+                                                         [Description("Optional database profile name")]
+                                                         string? profile = null,
+                                                         CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(compactor);
+
+        string[]? parsedCollections = McpStringArrayArgumentParser.Parse(collections, nameof(collections));
+        Task<string> result = CompactCollections(repositoryFactory, compactor, parsedCollections, dryRun, profile, ct);
+        return result;
+    }
+
     public static async Task<string> CompactCollections(RepositoryFactory repositoryFactory,
                                                         ICollectionCompactor compactor,
-                                                        [Description("Collections to compact. Defaults to the four " +
-                                                                     "hot collections (pages, chunks, " +
-                                                                     "scrape_audit_log, bm25Shards) where SaddleRAG " +
-                                                                     "churn produces meaningful reclaimable space."
-                                                                    )]
                                                         string[]? collections = null,
-                                                        [Description("If true (default), preview current storage " +
-                                                                     "sizes without running compact."
-                                                                    )]
                                                         bool dryRun = true,
-                                                        [Description("Optional database profile name")]
                                                         string? profile = null,
                                                         CancellationToken ct = default)
     {

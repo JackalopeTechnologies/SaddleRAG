@@ -81,6 +81,8 @@ public class PageCrawler : IPageCrawler
         public required IngestionPersistenceMode PersistMode { get; init; }
         public DryRunAccumulator? DryRunAcc { get; init; }
 
+        public required CrawlPageQuota PageQuota { get; init; }
+
         /// <summary>
         ///     URLs that 403'd in-scope on every retry attempt and were
         ///     ultimately dropped. Surfaced for diagnostics so the caller
@@ -427,6 +429,7 @@ public class PageCrawler : IPageCrawler
                           Navigator = escalation,
                           PersistMode = persistMode,
                           DryRunAcc = dryRunAcc,
+                          PageQuota = new CrawlPageQuota(job.MaxPages),
                       };
         ctxRef = ctx;
 
@@ -676,27 +679,8 @@ public class PageCrawler : IPageCrawler
     {
         try
         {
-            bool overLimit = ctx.Job.MaxPages > 0 && ctx.PageCount >= ctx.Job.MaxPages;
-            bool gated = !overLimit && ctx.IsGated(entry.Url);
-            bool firstVisit = !overLimit && !gated && ctx.Visited.TryAdd(entry.Url, value: 0);
-
-            if (overLimit)
-            {
-                string host = SafeGetHost(entry.Url);
-                bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
-                bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
-                int depth = inScope  ? entry.InScopeDepth :
-                            sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
-                mAuditWriter.RecordSkipped(ctx.AuditCtx,
-                                           entry.Url,
-                                           parentUrl: null,
-                                           host,
-                                           depth,
-                                           AuditSkipReason.QueueLimit,
-                                           detail: null
-                                          );
-                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.QueueLimit.ToString());
-            }
+            bool gated = ctx.IsGated(entry.Url);
+            bool firstVisit = !gated && ctx.Visited.TryAdd(entry.Url, value: 0);
 
             if (gated)
             {
@@ -716,7 +700,7 @@ public class PageCrawler : IPageCrawler
                 mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.HostGated.ToString());
             }
 
-            if (!overLimit && !gated && !firstVisit)
+            if (!gated && !firstVisit)
             {
                 string host = SafeGetHost(entry.Url);
                 bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
@@ -832,13 +816,27 @@ public class PageCrawler : IPageCrawler
             ctx.DryRunAcc?.RecordDepthLimitedSkip();
         }
         else
-            await FetchCrawlPageAsync(entry, inScope, ctx, page);
+        {
+            switch(ctx.PageQuota.TryReserve())
+            {
+                case true:
+                {
+                    bool fetched = await FetchCrawlPageAsync(entry, inScope, ctx, page);
+                    if (!fetched)
+                        ctx.PageQuota.Release();
+                    break;
+                }
+                default:
+                    RecordQueueLimitSkip(entry, ctx, inScope, sameHost);
+                    break;
+            }
+        }
     }
 
-    private async Task FetchCrawlPageAsync(CrawlEntry entry,
-                                           bool inScope,
-                                           CrawlContext ctx,
-                                           IPage page)
+    private async Task<bool> FetchCrawlPageAsync(CrawlEntry entry,
+                                                  bool inScope,
+                                                  CrawlContext ctx,
+                                                  IPage page)
     {
         string url = entry.Url;
         bool fetchSameHost = !inScope && IsSameHost(url, ctx.RootScope);
@@ -855,6 +853,7 @@ public class PageCrawler : IPageCrawler
 
         using var slot = await limiter.AcquireAsync(ctx.Token);
 
+        var fetched = false;
         try
         {
             IResponse? response;
@@ -870,17 +869,17 @@ public class PageCrawler : IPageCrawler
                                                                                 ctx.Token
                                                                                );
 
-            await DispatchFetchOutcomeAsync(response,
-                                            page,
-                                            fetchUrl,
-                                            entry,
-                                            ctx,
-                                            limiter,
-                                            url,
-                                            domCount,
-                                            loadCount,
-                                            skipPersist
-                                           );
+            fetched = await DispatchFetchOutcomeAsync(response,
+                                                      page,
+                                                      fetchUrl,
+                                                      entry,
+                                                      ctx,
+                                                      limiter,
+                                                      url,
+                                                      domCount,
+                                                      loadCount,
+                                                      skipPersist
+                                                     );
         }
         catch(Exception ex) when(ex is not OperationCanceledException)
         {
@@ -909,19 +908,22 @@ public class PageCrawler : IPageCrawler
                                                 });
             mBroadcaster.RecordError(ctx.AuditCtx.JobId, ex.Message, url);
         }
+
+        return fetched;
     }
 
-    private async Task DispatchFetchOutcomeAsync(IResponse? response,
-                                                 IPage page,
-                                                 string fetchUrl,
-                                                 CrawlEntry entry,
-                                                 CrawlContext ctx,
-                                                 HostRateLimiter limiter,
-                                                 string originalUrl,
-                                                 int domCount,
-                                                 int loadCount,
-                                                 bool skipPersist)
+    private async Task<bool> DispatchFetchOutcomeAsync(IResponse? response,
+                                                        IPage page,
+                                                        string fetchUrl,
+                                                        CrawlEntry entry,
+                                                        CrawlContext ctx,
+                                                        HostRateLimiter limiter,
+                                                        string originalUrl,
+                                                        int domCount,
+                                                        int loadCount,
+                                                        bool skipPersist)
     {
+        var fetched = false;
         if (response == null)
         {
             limiter.ReportTransientError();
@@ -949,36 +951,39 @@ public class PageCrawler : IPageCrawler
         }
         else
         {
-            await DispatchKnownResponseAsync(response,
-                                             page,
-                                             fetchUrl,
-                                             entry,
-                                             ctx,
-                                             limiter,
-                                             originalUrl,
-                                             domCount,
-                                             loadCount,
-                                             skipPersist
-                                            );
+            fetched = await DispatchKnownResponseAsync(response,
+                                                       page,
+                                                       fetchUrl,
+                                                       entry,
+                                                       ctx,
+                                                       limiter,
+                                                       originalUrl,
+                                                       domCount,
+                                                       loadCount,
+                                                       skipPersist
+                                                      );
         }
+
+        return fetched;
     }
 
-    private async Task DispatchKnownResponseAsync(IResponse response,
-                                                  IPage page,
-                                                  string fetchUrl,
-                                                  CrawlEntry entry,
-                                                  CrawlContext ctx,
-                                                  HostRateLimiter limiter,
-                                                  string originalUrl,
-                                                  int domCount,
-                                                  int loadCount,
-                                                  bool skipPersist)
+    private async Task<bool> DispatchKnownResponseAsync(IResponse response,
+                                                         IPage page,
+                                                         string fetchUrl,
+                                                         CrawlEntry entry,
+                                                         CrawlContext ctx,
+                                                         HostRateLimiter limiter,
+                                                         string originalUrl,
+                                                         int domCount,
+                                                         int loadCount,
+                                                         bool skipPersist)
     {
         bool inScope = IsInRootScope(originalUrl, ctx.RootScope);
         bool sameHost = !inScope && IsSameHost(originalUrl, ctx.RootScope);
         int dispatchDepth = inScope  ? entry.InScopeDepth :
                             sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
         string dispatchHost = SafeGetHost(originalUrl);
+        var fetched = false;
 
         switch(true)
         {
@@ -991,6 +996,7 @@ public class PageCrawler : IPageCrawler
             case true when response.Ok:
                 limiter.ReportSuccess();
                 await CompleteSuccessfulFetchAsync(page, fetchUrl, entry, ctx, domCount, loadCount);
+                fetched = true;
                 break;
             case true when HostRateLimiter.IsRateLimitStatus(response.Status, ctx.Job.AdditionalRateLimitStatusCodes):
             {
@@ -1044,6 +1050,24 @@ public class PageCrawler : IPageCrawler
                 break;
             }
         }
+
+        return fetched;
+    }
+
+    private void RecordQueueLimitSkip(CrawlEntry entry, CrawlContext ctx, bool inScope, bool sameHost)
+    {
+        string host = SafeGetHost(entry.Url);
+        int depth = inScope  ? entry.InScopeDepth :
+                    sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+        mAuditWriter.RecordSkipped(ctx.AuditCtx,
+                                   entry.Url,
+                                   parentUrl: null,
+                                   host,
+                                   depth,
+                                   AuditSkipReason.QueueLimit,
+                                   detail: null
+                                  );
+        mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, AuditSkipReason.QueueLimit.ToString());
     }
 
     /// <summary>
@@ -1256,7 +1280,6 @@ public class PageCrawler : IPageCrawler
                                ctx.RootScope,
                                entry,
                                ctx.EnqueueChild,
-                               ctx.ExtensionState.Value != null,
                                ctx.AuditCtx
                               );
 
@@ -1464,11 +1487,10 @@ public class PageCrawler : IPageCrawler
                                         RootScope rootScope,
                                         CrawlEntry parentEntry,
                                         Action<CrawlEntry, bool> enqueue,
-                                        bool keepExtension = false,
                                         AuditContext? auditCtx = null)
     {
         foreach(string normalized in links
-                                     .Select(u => NormalizeUrl(u, keepExtension))
+                                     .Select(u => NormalizeUrl(u, keepExtension: true))
                                      .OfType<string>()
                                      .Where(n => !isVisited(n)))
         {
