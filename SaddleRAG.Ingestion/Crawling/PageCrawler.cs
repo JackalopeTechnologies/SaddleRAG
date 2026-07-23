@@ -1967,9 +1967,9 @@ public class PageCrawler : IPageCrawler
         var (response, domCount, loadCount, skipPersist) =
             await NavigateAndPreparePageAsync(page, fetchUrl, controller, voter, ct);
 
-        if (response is { Status: HttpNotFound } && extensionState.Value == null)
+        if (extensionState.Value == null && response is { } rejected && ShouldRecoverWithExtension(rejected.Status))
             (response, fetchUrl, domCount, loadCount, skipPersist) =
-                await RetryWithExtensionsAsync(url, page, extensionState, controller, voter, ct);
+                await RetryWithExtensionsAsync(url, page, rejected.Status, extensionState, controller, voter, ct);
 
         return (response, fetchUrl, domCount, loadCount, skipPersist);
     }
@@ -2010,12 +2010,31 @@ public class PageCrawler : IPageCrawler
     }
 
     /// <summary>
-    ///     Try each known extension (.html, .htm, .aspx) on a 404 URL.
+    ///     Decide whether a failed fetch of an extension-stripped URL earns a retry with each
+    ///     known extension appended. The extensionless form is the crawler's own guess (see
+    ///     <see cref="NormalizeUrl" />), so any client-side rejection of it may mean the guess
+    ///     was wrong rather than that the page is missing: sites that route by file answer 404,
+    ///     but ones that only allow GET against the real file answer 405, and stricter front
+    ///     ends answer 403 or 410. Server errors and throttling are excluded — those describe
+    ///     the server's state, not the URL's shape, and re-probing three extensions against a
+    ///     struggling host only adds load. Auth challenges are excluded for the same reason.
+    ///     The probe runs at most once per site: the first success latches
+    ///     <see cref="SiteExtensionState" /> and every later URL is rewritten up front.
+    /// </summary>
+    private static bool ShouldRecoverWithExtension(int status) =>
+        status is >= HttpClientErrorMin and < HttpServerErrorMin
+        && status != HttpUnauthorized
+        && status != HttpProxyAuthRequired
+        && status != HttpTooManyRequests;
+
+    /// <summary>
+    ///     Try each known extension (.html, .htm, .aspx) on a URL the site rejected.
     ///     Returns updated page, response, and fetch URL.
     /// </summary>
     private async Task<(IResponse? Response, string FetchUrl, int DomCount, int LoadCount, bool SkipPersist)>
         RetryWithExtensionsAsync(string url,
                                  IPage page,
+                                 int rejectedStatus,
                                  SiteExtensionState extensionState,
                                  EscalationController controller,
                                  RenderModeVoter voter,
@@ -2032,7 +2051,12 @@ public class PageCrawler : IPageCrawler
         foreach(string ext in smExtensionsToStrip)
         {
             string retryUrl = url + ext;
-            mLogger.LogDebug("Got 404 for {Url}, retrying with {Ext}: {RetryUrl}", url, ext, retryUrl);
+            mLogger.LogDebug("Got {Status} for {Url}, retrying with {Ext}: {RetryUrl}",
+                             rejectedStatus,
+                             url,
+                             ext,
+                             retryUrl
+                            );
             (response, domCount, loadCount, skipPersist) =
                 await NavigateAndPreparePageAsync(page, retryUrl, controller, voter, ct);
 
@@ -2128,7 +2152,11 @@ public class PageCrawler : IPageCrawler
     private const int CollapsibleExpansionDelayMs = 200;
     private const int RegexTimeoutMs = 100;
     private const int ErrorMessageMaxLength = 200;
-    private const int HttpNotFound = 404;
+    private const int HttpClientErrorMin = 400;
+    private const int HttpUnauthorized = 401;
+    private const int HttpProxyAuthRequired = 407;
+    private const int HttpTooManyRequests = 429;
+    private const int HttpServerErrorMin = 500;
     private const string RetryAfterHeader = "retry-after";
     private const string DroppedUrlSeparator = ", ";
     private const string NoResponseError = "No response";
