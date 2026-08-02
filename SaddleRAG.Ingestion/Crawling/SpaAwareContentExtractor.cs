@@ -101,7 +101,41 @@ public static class SpaAwareContentExtractor
     {
         string result = string.Empty;
         foreach(string selector in smFrameworkSelectors.Where(_ => result == string.Empty))
-            result = await TrySelectorAsync(page, selector);
+        {
+            string text = await TrySelectorAsync(page, selector);
+            bool isAppRoot = !string.IsNullOrEmpty(text) &&
+                             !await IsEnclosedByStandardContainerAsync(page, selector);
+            if (isAppRoot)
+                result = text;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     True when <paramref name="selector" /> matches an element nested *inside* one of
+    ///     the SSR content containers. Containment is what separates the two cases the fast
+    ///     path cannot otherwise tell apart: a genuine SPA root encloses the page's content
+    ///     region, whereas a framework-rendered widget is enclosed by it. Static sites that
+    ///     mount a single small component — a rating box, a search field, a cookie banner —
+    ///     otherwise hijack the fast path and yield that widget's text as the entire page.
+    ///     Answering <see langword="false" /> on a page that cannot be evaluated keeps the
+    ///     framework hit, so the probe only ever demotes a match it positively identifies.
+    /// </summary>
+    private static async Task<bool> IsEnclosedByStandardContainerAsync(IPage page, string selector)
+    {
+        bool result = false;
+        try
+        {
+            result = await page.EvaluateAsync<bool>(EnclosedByStandardContainerScript,
+                                                    new { selector, containers = smStandardSelectors }
+                                                   );
+        }
+        catch(PlaywrightException)
+        {
+            // An un-evaluable page cannot disprove the fast path; let the match stand.
+        }
+
         return result;
     }
 
@@ -167,6 +201,18 @@ public static class SpaAwareContentExtractor
             SelectorIdContent,
             SelectorIdMainContent,
         ];
+
+    private const string EnclosedByStandardContainerScript =
+        """
+        (args) => {
+            const el = document.querySelector(args.selector);
+            if (!el) return false;
+            return args.containers.some(sel => {
+                const container = document.querySelector(sel);
+                return !!container && container !== el && container.contains(el);
+            });
+        }
+        """;
 
     private const string BiggestContainerScript =
         """

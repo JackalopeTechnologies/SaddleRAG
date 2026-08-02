@@ -6,6 +6,7 @@
 #region Usings
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -124,12 +125,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
             // chunks are immediately searchable via search_docs.
             await ReloadIndexForLibraryAsync(jobRecord.Profile, jobRecord.Job.LibraryId, jobRecord.Job.Version);
 
-            jobRecord.Status = ScrapeJobStatus.Completed;
-            jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
-            jobRecord.CompletedAt = DateTime.UtcNow;
-            await jobRepo.UpsertAsync(ProjectToUnified(jobRecord));
-
-            mLogger.LogInformation("Scrape job {JobId} completed successfully", jobRecord.Id);
+            await RecordTerminalOutcomeAsync(jobRecord, jobRepo);
         }
         catch(Exception) when(cts is { IsCancellationRequested: true })
         {
@@ -164,6 +160,47 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
             semaphore.Release();
         }
+    }
+
+    /// <summary>
+    ///     Set the job's terminal status from what the crawl actually harvested rather than
+    ///     from the mere absence of an exception. A crawl that indexed nothing, or whose page
+    ///     errors dwarf its indexed pages, reports <c>Failed</c>: reporting success there
+    ///     leaves a library that looks like a hit, answers every query from whatever scrap it
+    ///     captured, and suppresses the fallback to web search.
+    /// </summary>
+    private async Task RecordTerminalOutcomeAsync(ScrapeJobRecord jobRecord, IJobRepository jobRepo)
+    {
+        bool failedCrawl = CrawlOutcomeEvaluator.IndicatesFailedCrawl(jobRecord.PagesCompleted,
+                                                                      jobRecord.ErrorCount
+                                                                     );
+        var status = failedCrawl ? ScrapeJobStatus.Failed : ScrapeJobStatus.Completed;
+
+        jobRecord.Status = status;
+        jobRecord.PipelineState = status.ToString();
+        jobRecord.CompletedAt = DateTime.UtcNow;
+
+        if (failedCrawl)
+        {
+            jobRecord.ErrorMessage = string.Format(CultureInfo.InvariantCulture,
+                                                   FailedCrawlMessageFormat,
+                                                   jobRecord.PagesCompleted,
+                                                   jobRecord.ErrorCount
+                                                  );
+        }
+
+        await jobRepo.UpsertAsync(ProjectToUnified(jobRecord));
+
+        if (failedCrawl)
+        {
+            mLogger.LogError("Scrape job {JobId} harvested {Pages} page(s) with {Errors} page error(s); reporting Failed",
+                             jobRecord.Id,
+                             jobRecord.PagesCompleted,
+                             jobRecord.ErrorCount
+                            );
+        }
+        else
+            mLogger.LogInformation("Scrape job {JobId} completed successfully", jobRecord.Id);
     }
 
     private static void OnProgressTick(ScrapeJobRecord jobRecord, IJobRepository jobRepo, ScrapeJobRecord updatedRecord)
@@ -275,6 +312,9 @@ public class ScrapeJobRunner : IScrapeJobQueue
 
     private const string PipelineStateStarting = "Starting";
     private const string ItemsLabelPages = "pages";
+
+    private const string FailedCrawlMessageFormat =
+        "Crawl harvested {0} page(s) with {1} page error(s); the index is not usable.";
 
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> smJobLocks =
         new ConcurrentDictionary<string, SemaphoreSlim>();
