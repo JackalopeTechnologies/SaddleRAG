@@ -152,7 +152,7 @@ public sealed class McpWarmupService : BackgroundService
 
             if (ollamaBackendActive)
             {
-                await bootstrapper.BootstrapAsync(requiredModels.ToList(), stoppingToken);
+                await bootstrapper.BootstrapAsync(ollamaClassifierActive, requiredModels.ToList(), stoppingToken);
 
                 mWarmupState.MarkPhase(PhaseOllamaBootstrapFinished);
 

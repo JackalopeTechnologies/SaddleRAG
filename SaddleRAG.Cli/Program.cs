@@ -280,7 +280,9 @@ ingestCommand.SetAction(async (parseResult, ct) =>
 
                             // Bootstrap Ollama: install if missing, start if stopped, pull required models
                             var bootstrapper = provider.GetRequiredService<OllamaBootstrapper>();
-                            await bootstrapper.BootstrapAsync();
+                            await bootstrapper
+                                .BootstrapAsync(ClassifierBackendSwitch
+                                                    .IsOllamaActive(provider.GetRequiredService<ILlmClassifier>()));
 
                             var job = new ScrapeJob
                                           {
@@ -399,7 +401,11 @@ reclassifyCommand.SetAction(async (parseResult, ct) =>
                                 var libraryId = parseResult.GetValue(reclassifyLibOption);
                                 var allPages = parseResult.GetValue(reclassifyAllOption);
 
-                                await provider.GetRequiredService<OllamaBootstrapper>().BootstrapAsync();
+                                await provider
+                                      .GetRequiredService<OllamaBootstrapper>()
+                                      .BootstrapAsync(ClassifierBackendSwitch
+                                                          .IsOllamaActive(provider
+                                                              .GetRequiredService<ILlmClassifier>()));
 
                                 return await ReclassifyHandler.RunAsync(libraryId,
                                                                         allPages,

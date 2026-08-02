@@ -77,6 +77,23 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier
     public string ActiveBackendName => BackendName;
 
     /// <summary>
+    ///     True when <paramref name="classifier" /> is a backend switch currently
+    ///     serving classification from Ollama. Startup paths use this to decide
+    ///     whether Ollama work — pulling the classification model, warming it — is
+    ///     worth doing at all: on the default all-ONNX configuration it is not, and
+    ///     doing it anyway costs a multi-gigabyte download for a model nothing will
+    ///     consume. A non-switch classifier is never Ollama-backed, so the answer is
+    ///     <see langword="false" />. Lives here so every caller asks the same
+    ///     question the same way rather than re-deriving the test and drifting.
+    /// </summary>
+    public static bool IsOllamaActive(ILlmClassifier? classifier) =>
+        classifier is ClassifierBackendSwitch backendSwitch
+        && string.Equals(backendSwitch.ActiveBackendName,
+                         ClassifierBackendNames.Ollama,
+                         StringComparison.OrdinalIgnoreCase
+                        );
+
+    /// <summary>
     ///     Switch to the ONNX backend. Always succeeds immediately.
     /// </summary>
     public void UseOnnx()

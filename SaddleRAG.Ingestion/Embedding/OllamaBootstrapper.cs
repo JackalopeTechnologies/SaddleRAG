@@ -66,7 +66,17 @@ public class OllamaBootstrapper
     ///     SaddleRAG container would fall through to <see cref="EnsureInstalledAsync" />
     ///     and throw <see cref="PlatformNotSupportedException" /> on Linux.
     /// </summary>
-    public async Task BootstrapAsync(IReadOnlyList<string>? additionalModels = null,
+    /// <param name="ollamaClassifierActive">
+    ///     Whether Ollama is the backend actually serving classification. Pass
+    ///     <see cref="Classification.ClassifierBackendSwitch.IsOllamaActive" />'s answer.
+    ///     When false the classification model is left un-pulled, because this
+    ///     bootstrap also runs on the Ollama-embedding path where the classifier
+    ///     may be ONNX and the model would be a multi-gigabyte download nothing uses.
+    /// </param>
+    /// <param name="additionalModels">Extra model names to ensure, or null.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task BootstrapAsync(bool ollamaClassifierActive,
+                                     IReadOnlyList<string>? additionalModels = null,
                                      CancellationToken ct = default)
     {
         var reachable = await WaitForReachableAsync(IsReachableAsync,
@@ -83,7 +93,7 @@ public class OllamaBootstrapper
             await EnsureRunningAsync(ct);
         }
 
-        await EnsureModelsAsync(additionalModels, ct);
+        await EnsureModelsAsync(additionalModels, ollamaClassifierActive, ct);
         mLogger.LogInformation("Ollama bootstrap complete");
     }
 
@@ -626,11 +636,12 @@ public class OllamaBootstrapper
     #region Model management
 
     private async Task EnsureModelsAsync(IReadOnlyList<string>? additionalModels,
+                                         bool ollamaClassifierActive,
                                          CancellationToken ct)
     {
         var client = new OllamaApiClient(new Uri(mSettings.Endpoint));
 
-        var requiredModels = ResolveRequiredModels(mSettings, additionalModels);
+        var requiredModels = ResolveRequiredModels(mSettings, additionalModels, ollamaClassifierActive);
 
         var localModels = await client.ListLocalModelsAsync(ct);
         var availableNames = localModels
@@ -650,16 +661,25 @@ public class OllamaBootstrapper
     }
 
     /// <summary>
-    ///     Build the set of models to ensure-on-startup. Embedding and
-    ///     classification are always required; the reranker model depends
-    ///     on the configured ReRankerStrategy so we don't pull a 1.9GB
-    ///     cross-encoder when the strategy is Off (or vice versa, pull a
-    ///     legacy reranker model nobody will use). <c>internal static</c>
-    ///     so tests can drive the resolution against a settings object
-    ///     without standing up the rest of the bootstrapper.
+    ///     Build the set of models to ensure-on-startup. The embedding model is
+    ///     always required; the reranker model depends on the configured
+    ///     ReRankerStrategy so we don't pull a 1.9GB cross-encoder when the
+    ///     strategy is Off (or vice versa, pull a legacy reranker model nobody
+    ///     will use).
+    ///     <para>
+    ///         The classification model is included only when
+    ///         <paramref name="ollamaClassifierActive" /> — that is, when Ollama
+    ///         is the backend actually serving classification. This method also
+    ///         runs on the Ollama-embedding path, where the classifier may well
+    ///         be ONNX; pulling the Ollama classification model there downloads
+    ///         several gigabytes for a model nothing is going to consume.
+    ///     </para>
+    ///     <c>internal static</c> so tests can drive the resolution against a
+    ///     settings object without standing up the rest of the bootstrapper.
     /// </summary>
     internal static HashSet<string> ResolveRequiredModels(OllamaSettings settings,
-                                                          IReadOnlyList<string>? additionalModels)
+                                                          IReadOnlyList<string>? additionalModels,
+                                                          bool ollamaClassifierActive)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
@@ -668,9 +688,12 @@ public class OllamaBootstrapper
                                settings.EmbeddingModel
                            };
 
-        var classificationModelName = settings.GetActiveClassificationModel().Name;
-        if (!string.IsNullOrEmpty(classificationModelName))
-            required.Add(classificationModelName);
+        if (ollamaClassifierActive)
+        {
+            var classificationModelName = settings.GetActiveClassificationModel().Name;
+            if (!string.IsNullOrEmpty(classificationModelName))
+                required.Add(classificationModelName);
+        }
 
         if (additionalModels != null)
         {
