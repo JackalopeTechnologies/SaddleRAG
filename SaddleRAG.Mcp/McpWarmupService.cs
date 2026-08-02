@@ -203,22 +203,26 @@ public sealed class McpWarmupService : BackgroundService
 
             // Download the active classifier model folder (idempotent) and
             // warm the ONNX classifier so the first real classification isn't
-            // cold. Gated on Onnx.Enabled — when ONNX is off the classifier
-            // path is Ollama and this whole block is skipped. Non-fatal: a
-            // download or warm failure logs a warning but does NOT abort
+            // cold. Gated on Onnx.Enabled — when ONNX is off this whole block
+            // is skipped and the classifier cold-loads on first use. Non-fatal:
+            // a download or warm failure logs a warning but does NOT abort
             // warmup (mirrors the search-path warm's non-fatal pattern), so
             // the operator can still serve search while resolving the issue.
+            // The return value feeds the completed-vs-degraded decision below:
+            // on the default all-ONNX path this warm IS the active classifier.
+            bool onnxClassifierWarm = false;
+
             if (onnxSettings.Enabled)
             {
                 stepSw.Restart();
 
-                await EnsureAndWarmOnnxClassifierAsync(onnxDownloader,
-                                                       onnxSettings,
-                                                       classifier,
-                                                       startupSw,
-                                                       stepSw,
-                                                       stoppingToken
-                                                      );
+                onnxClassifierWarm = await EnsureAndWarmOnnxClassifierAsync(onnxDownloader,
+                                                                           onnxSettings,
+                                                                           classifier,
+                                                                           startupSw,
+                                                                           stepSw,
+                                                                           stoppingToken
+                                                                          );
             }
 
 
@@ -293,35 +297,47 @@ public sealed class McpWarmupService : BackgroundService
             }
 
 
-            // Classifier (Ollama generate) warm runs LAST and is best-effort: it must
-            // never abort the ONNX embed/rerank warm above, so the search path stays
-            // warm regardless. A failed/slow classifier warm only means the first
-            // reextract_library / dryrun_scrape call cold-loads the model; interactive
-            // search is unaffected. Surfaced via a WARNING + the completed phase note,
-            // not a Failed warmup state.
-            bool classifierWarm = false;
+            // Warm the ACTIVE classifier backend's generate path, best-effort;
+            // it must never abort the ONNX embed/rerank warm above, so the
+            // search path stays warm regardless. On the default all-ONNX path
+            // the ONNX classifier was already downloaded and warmed above and
+            // its outcome alone decides completed-vs-degraded. The Ollama
+            // generate warm below runs ONLY when the Ollama classifier backend
+            // is actually active — otherwise it would send a keep_alive=-1
+            // (permanent VRAM pin) request for the phi classification model to
+            // Ollama on every startup even though nothing consumes it, and would
+            // flip a healthy all-ONNX warmup to the degraded phase whenever
+            // Ollama isn't running. A failed classifier warm only means the
+            // first reextract_library / dryrun_scrape call cold-loads the model;
+            // interactive search is unaffected. Surfaced via a WARNING + the
+            // completed phase note, not a Failed warmup state.
+            bool ollamaWarmSucceeded = false;
 
-            stepSw.Restart();
-
-            try
-
+            if (ollamaClassifierActive)
             {
-                await bootstrapper.WarmModelsAsync(stoppingToken);
+                stepSw.Restart();
 
-                classifierWarm = true;
+                try
+                {
+                    await bootstrapper.WarmModelsAsync(stoppingToken);
 
-                mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - generate (classifier) models warm",
-                                       startupSw.Elapsed.TotalSeconds,
-                                       stepSw.ElapsedMilliseconds
-                                      );
+                    ollamaWarmSucceeded = true;
+
+                    mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - generate (classifier) models warm",
+                                           startupSw.Elapsed.TotalSeconds,
+                                           stepSw.ElapsedMilliseconds
+                                          );
+                }
+                catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Generate (classifier) model warm failed; search path is warm, classification will cold-load on first use", startupSw.Elapsed.TotalSeconds);
+                }
             }
 
-            catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
-
-            {
-                mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Generate (classifier) model warm failed; search path is warm, classification will cold-load on first use", startupSw.Elapsed.TotalSeconds);
-            }
-
+            bool classifierWarm = IsActiveClassifierWarm(ollamaClassifierActive,
+                                                         onnxClassifierWarm,
+                                                         ollamaWarmSucceeded
+                                                        );
 
             mWarmupState.MarkCompleted(classifierWarm ? nameof(ScrapeJobStatus.Completed) : PhaseClassifierDegraded);
 
@@ -559,6 +575,24 @@ public sealed class McpWarmupService : BackgroundService
     }
 
     /// <summary>
+    ///     Decide whether the <em>active</em> classifier backend finished warm,
+    ///     which drives warmup's completed-vs-degraded status. When the Ollama
+    ///     classifier backend is active, <paramref name="ollamaWarmSucceeded" />
+    ///     decides; otherwise the active backend is the ONNX classifier and
+    ///     <paramref name="onnxClassifierWarm" /> decides. The Ollama warm
+    ///     outcome is deliberately ignored on the ONNX path so a stray Ollama
+    ///     generate warm can neither rescue nor degrade a status it has no
+    ///     bearing on — the regression that let an unconditional Ollama phi
+    ///     warm drive the status (and pin phi in VRAM) even though nothing used
+    ///     it. Exposed as <c>internal</c> so SaddleRAG.Tests can lock in the
+    ///     contract without rebuilding the full warmup dependency graph.
+    /// </summary>
+    internal static bool IsActiveClassifierWarm(bool ollamaClassifierActive,
+                                                bool onnxClassifierWarm,
+                                                bool ollamaWarmSucceeded) =>
+        ollamaClassifierActive ? ollamaWarmSucceeded : onnxClassifierWarm;
+
+    /// <summary>
     ///     Drives one rerank inference at startup so the first user
     ///     search doesn't pay the cold-path cost. The ONNX cross-encoder
     ///     session triggers graph optimization, kernel selection, and
@@ -614,20 +648,25 @@ public sealed class McpWarmupService : BackgroundService
     /// <summary>
     ///     Downloads the active classifier model folder (idempotent) and warms
     ///     the ONNX classifier by classifying a tiny probe page, which triggers
-    ///     the generator's lazy GenAI-model load. Non-fatal: any failure logs a
-    ///     warning and marks <see cref="PhaseOnnxClassifierWarmSkipped" /> so
-    ///     warmup continues — search is unaffected and the first real
-    ///     classification will simply pay the cold-load cost. Resolves the
-    ///     active classifier variant against the configured execution provider
-    ///     so the directml/cuda/cpu folder downloaded matches the generator's.
+    ///     the generator's lazy GenAI-model load. Returns <see langword="true" />
+    ///     when the warm classify completed so the caller can treat the ONNX
+    ///     classifier as ready; returns <see langword="false" /> on any failure.
+    ///     Non-fatal: any failure logs a warning and marks
+    ///     <see cref="PhaseOnnxClassifierWarmSkipped" /> so warmup continues —
+    ///     search is unaffected and the first real classification will simply
+    ///     pay the cold-load cost. Resolves the active classifier variant
+    ///     against the configured execution provider so the directml/cuda/cpu
+    ///     folder downloaded matches the generator's.
     /// </summary>
-    private async Task EnsureAndWarmOnnxClassifierAsync(OnnxModelDownloader downloader,
-                                                        OnnxSettings onnxSettings,
-                                                        ILlmClassifier classifier,
-                                                        Stopwatch startupSw,
-                                                        Stopwatch stepSw,
-                                                        CancellationToken ct)
+    private async Task<bool> EnsureAndWarmOnnxClassifierAsync(OnnxModelDownloader downloader,
+                                                              OnnxSettings onnxSettings,
+                                                              ILlmClassifier classifier,
+                                                              Stopwatch startupSw,
+                                                              Stopwatch stepSw,
+                                                              CancellationToken ct)
     {
+        bool warmed = false;
+
         try
         {
             var entry = ClassifierEntryResolver.Resolve(onnxSettings, onnxSettings.ExecutionProvider);
@@ -651,6 +690,8 @@ public sealed class McpWarmupService : BackgroundService
                                    startupSw.Elapsed.TotalSeconds,
                                    stepSw.ElapsedMilliseconds
                                   );
+
+            warmed = true;
         }
         catch(Exception ex) when(ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -661,6 +702,8 @@ public sealed class McpWarmupService : BackgroundService
                                startupSw.Elapsed.TotalSeconds
                               );
         }
+
+        return warmed;
     }
 
 
