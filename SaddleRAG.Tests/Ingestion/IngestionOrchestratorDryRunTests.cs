@@ -167,7 +167,7 @@ public sealed class IngestionOrchestratorDryRunTests
                                      Arg.Any<CancellationToken>())
                          .Returns(call =>
                                   {
-                                      var texts = call.Arg<IReadOnlyList<string>>();
+                                      var texts = call.Arg<IReadOnlyList<string>>()!;
                                       var result = new float[texts.Count][];
                                       for(var i = 0; i < texts.Count; i++)
                                           result[i] = new float[VectorDim];

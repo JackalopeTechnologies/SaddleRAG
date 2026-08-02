@@ -91,7 +91,7 @@ public sealed class ClassifyStageTests
         Assert.Equal(DocCategory.HowTo, result.Category);
         Assert.Equal(0, errorCount);
         await pages.Received(1)
-                   .UpsertPageAsync(Arg.Is<PageRecord>(p => p.Category == DocCategory.HowTo),
+                   .UpsertPageAsync(Arg.Is<PageRecord>(p => p!.Category == DocCategory.HowTo),
                                     Arg.Any<CancellationToken>()
                                    );
     }
@@ -162,7 +162,7 @@ public sealed class ClassifyStageTests
         var forwarded = await output.Reader.ReadAsync(TestContext.Current.CancellationToken);
         Assert.Equal(DocCategory.HowTo, forwarded.Category);
         await pages.Received(1)
-                   .UpsertPageAsync(Arg.Is<PageRecord>(p => p.Category == DocCategory.HowTo),
+                   .UpsertPageAsync(Arg.Is<PageRecord>(p => p!.Category == DocCategory.HowTo),
                                     Arg.Any<CancellationToken>()
                                    );
         broadcaster.Received(1).RecordPageClassified("job-1");

@@ -20,7 +20,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryDryRunReportsOutcomeWithoutWriting()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         libraryRepo.GetLibraryAsync("old", Arg.Any<CancellationToken>())
                    .Returns(new LibraryRecord
@@ -56,7 +56,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryDryRunReportsNotFoundWhenMissing()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         libraryRepo.GetLibraryAsync("missing", Arg.Any<CancellationToken>())
                    .Returns((LibraryRecord?) null);
@@ -80,7 +80,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryApplyQueuesJobAndCallsRenameAsync()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         libraryRepo.RenameAsync("old", "new", Arg.Any<CancellationToken>())
                    .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
@@ -117,7 +117,7 @@ public sealed class MutationToolsTests
     public async Task RenameLibraryApplyQueuesJobEvenOnCollision()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         libraryRepo.RenameAsync("old", "new", Arg.Any<CancellationToken>())
                    .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Collision, Counts: null));
@@ -143,7 +143,7 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -188,7 +188,7 @@ public sealed class MutationToolsTests
         var indexRepo = Substitute.For<ILibraryIndexRepository>();
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -229,7 +229,7 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -273,7 +273,7 @@ public sealed class MutationToolsTests
         var indexRepo = Substitute.For<ILibraryIndexRepository>();
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -315,7 +315,7 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetLibraryRepository(profile: null).Returns(libraryRepo);
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
@@ -349,7 +349,7 @@ public sealed class MutationToolsTests
     public async Task RenameVersionApplyQueuesJobAndCallsRenameVersionAsync()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         factory.GetLibraryRepository(profile: null).Returns(libraryRepo);
         libraryRepo.RenameVersionAsync("scichart-wpf", "current", "v8", Arg.Any<CancellationToken>())
                    .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
@@ -381,7 +381,7 @@ public sealed class MutationToolsTests
     [InlineData(null, null, null)]
     public async Task RenameRejectsInvalidArgumentCombos(string? newId, string? version, string? newVersion)
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         var json = await MutationTools.RenameLibrary(factory, MakeNoopRunner(), "lib",
                                                      newId, version, newVersion,
@@ -425,9 +425,9 @@ public sealed class MutationToolsTests
                          )
               .Returns(async callInfo =>
                        {
-                           var record = callInfo.Arg<BackgroundJobRecord>();
+                           var record = callInfo.Arg<BackgroundJobRecord>()!;
                            var execute = callInfo
-                               .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>();
+                               .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>()!;
                            await execute(record, arg2: null, CancellationToken.None);
                            return record.Id;
                        }

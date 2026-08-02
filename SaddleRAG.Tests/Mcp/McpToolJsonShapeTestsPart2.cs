@@ -36,7 +36,7 @@ public sealed class McpToolJsonShapeTestsPart2
         IExcludedSymbolsRepository excludedRepo,
         IJobRepository jobRepo) MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         var profileRepo = Substitute.For<ILibraryProfileRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var jobRepo = Substitute.For<IJobRepository>();

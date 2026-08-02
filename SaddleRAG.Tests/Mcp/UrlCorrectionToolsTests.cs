@@ -172,7 +172,7 @@ public sealed class UrlCorrectionToolsTests
 
     private static TestHarness MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
@@ -196,12 +196,12 @@ public sealed class UrlCorrectionToolsTests
 
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
-        var runner = Substitute.ForPartsOf<ScrapeJobRunner>(null,
-                                                            null,
-                                                            null,
-                                                            null,
-                                                            null,
-                                                            null,
+        var runner = Substitute.ForPartsOf<ScrapeJobRunner>(null!,
+                                                            null!,
+                                                            null!,
+                                                            null!,
+                                                            null!,
+                                                            null!,
                                                             new JobCancellationRegistry(),
                                                             lifetime
                                                            );
@@ -248,9 +248,9 @@ public sealed class UrlCorrectionToolsTests
                          )
               .Returns(async callInfo =>
                        {
-                           var record = callInfo.Arg<BackgroundJobRecord>();
+                           var record = callInfo.Arg<BackgroundJobRecord>()!;
                            var execute = callInfo
-                               .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>();
+                               .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>()!;
                            await execute(record, arg2: null, CancellationToken.None);
                            return record.Id;
                        }

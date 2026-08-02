@@ -34,7 +34,7 @@ public sealed class McpToolJsonShapeTestsPart3
 {
     private static (RepositoryFactory factory, IJobRepository jobRepo) MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         var jobRepo = Substitute.For<IJobRepository>();
         factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         return (factory, jobRepo);

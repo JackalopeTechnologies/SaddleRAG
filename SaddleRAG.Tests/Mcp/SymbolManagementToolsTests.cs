@@ -79,7 +79,7 @@ public sealed class SymbolManagementToolsTests
         Assert.Contains("\"foo\"", json);
         Assert.Contains("RemovedFromStoplist", json);
         await profileRepo.Received(requiredNumberOfCalls: 1)
-                         .UpsertAsync(Arg.Is<LibraryProfile>(p => p.LikelySymbols.Contains("foo") &&
+                         .UpsertAsync(Arg.Is<LibraryProfile>(p => p!.LikelySymbols.Contains("foo") &&
                                                                   p.LikelySymbols.Contains("newone") &&
                                                                   p.LikelySymbols.Contains("existing") &&
                                                                   !p.Stoplist.Contains("foo") &&
@@ -109,7 +109,7 @@ public sealed class SymbolManagementToolsTests
         Assert.Contains("\"foo\"", json);
         Assert.Contains("RemovedFromLikelySymbols", json);
         await profileRepo.Received(requiredNumberOfCalls: 1)
-                         .UpsertAsync(Arg.Is<LibraryProfile>(p => p.Stoplist.Contains("foo") &&
+                         .UpsertAsync(Arg.Is<LibraryProfile>(p => p!.Stoplist.Contains("foo") &&
                                                                   p.Stoplist.Contains("newnoise") &&
                                                                   p.Stoplist.Contains("existing") &&
                                                                   !p.LikelySymbols.Contains("foo") &&
@@ -171,7 +171,7 @@ public sealed class SymbolManagementToolsTests
                                                  );
 
         await profileRepo.Received(requiredNumberOfCalls: 1)
-                         .UpsertAsync(Arg.Is<LibraryProfile>(p => !p.LikelySymbols.Contains("Foo")),
+                         .UpsertAsync(Arg.Is<LibraryProfile>(p => !p!.LikelySymbols.Contains("Foo")),
                                       Arg.Any<CancellationToken>()
                                      );
     }
@@ -181,7 +181,7 @@ public sealed class SymbolManagementToolsTests
     {
         var profileRepo = Substitute.For<ILibraryProfileRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(profileRepo);
         factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excludedRepo);
         return (factory, profileRepo, excludedRepo);

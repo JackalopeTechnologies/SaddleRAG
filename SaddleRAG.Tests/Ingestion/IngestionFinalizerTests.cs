@@ -141,7 +141,7 @@ public sealed class IngestionFinalizerTests
                                         Arg.Any<CancellationToken>()
                                        );
         await indexes.Received(1)
-                     .UpsertAsync(Arg.Is<LibraryIndex>(li => li.LibraryId == "lib" && li.Version == "v1"),
+                     .UpsertAsync(Arg.Is<LibraryIndex>(li => li!.LibraryId == "lib" && li.Version == "v1"),
                                   Arg.Any<CancellationToken>()
                                  );
     }
@@ -176,7 +176,7 @@ public sealed class IngestionFinalizerTests
         await finalizer.BuildBm25IndexAsync(NewJob(), TestContext.Current.CancellationToken);
 
         await indexes.Received(1)
-                     .UpsertAsync(Arg.Is<LibraryIndex>(li => li.CodeFenceSymbols.SequenceEqual(priorIndex.CodeFenceSymbols)
+                     .UpsertAsync(Arg.Is<LibraryIndex>(li => li!.CodeFenceSymbols.SequenceEqual(priorIndex.CodeFenceSymbols)
                                                           && li.Manifest == priorManifest),
                                   Arg.Any<CancellationToken>()
                                  );
@@ -199,7 +199,7 @@ public sealed class IngestionFinalizerTests
                                 );
 
         await libraries.Received(1)
-                       .UpsertLibraryAsync(Arg.Is<LibraryRecord>(r => r.Id == "newlib"
+                       .UpsertLibraryAsync(Arg.Is<LibraryRecord>(r => r!.Id == "newlib"
                                                                    && r.CurrentVersion == "v9"
                                                                    && r.AllVersions.Count == 1
                                                                    && r.AllVersions[0] == "v9"),
@@ -274,7 +274,7 @@ public sealed class IngestionFinalizerTests
                                 );
 
         await libraries.Received(1)
-                       .UpsertVersionAsync(Arg.Is<LibraryVersionRecord>(v => v.LibraryId == "lib"
+                       .UpsertVersionAsync(Arg.Is<LibraryVersionRecord>(v => v!.LibraryId == "lib"
                                                                           && v.Version == "v1"
                                                                           && v.PageCount == 11
                                                                           && v.ChunkCount == 47

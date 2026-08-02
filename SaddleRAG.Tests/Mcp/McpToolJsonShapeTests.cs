@@ -279,7 +279,7 @@ public sealed class McpToolJsonShapeTests
         IChunkRepository chunkRepo,
         IJobRepository jobRepo) MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var jobRepo = Substitute.For<IJobRepository>();

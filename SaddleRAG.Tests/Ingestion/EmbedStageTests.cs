@@ -61,7 +61,7 @@ public sealed class EmbedStageTests
         provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>())
                 .Returns(call =>
                          {
-                             var texts = call.Arg<IReadOnlyList<string>>();
+                             var texts = call.Arg<IReadOnlyList<string>>()!;
                              var result = new float[texts.Count][];
                              for(var i = 0; i < texts.Count; i++)
                                  result[i] = new float[dimensions];
@@ -97,7 +97,7 @@ public sealed class EmbedStageTests
         Assert.Equal(3, progress.ChunksEmbedded);
         broadcaster.Received(3).RecordChunkEmbedded("job-1");
         await chunks.Received(1)
-                    .UpsertChunksAsync(Arg.Is<DocChunk[]>(a => a.Length == 3), Arg.Any<CancellationToken>());
+                    .UpsertChunksAsync(Arg.Is<DocChunk[]>(a => a!.Length == 3), Arg.Any<CancellationToken>());
     }
 
     [Fact]

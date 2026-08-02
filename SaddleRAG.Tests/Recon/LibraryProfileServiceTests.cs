@@ -211,7 +211,7 @@ public sealed class LibraryProfileServiceTests
 
         Assert.Equal(["along", "data"], saved.Stoplist);
         await repo.Received(requiredNumberOfCalls: 1)
-                  .UpsertAsync(Arg.Is<LibraryProfile>(p => p.Stoplist.SequenceEqual(new[] { "along", "data" })),
+                  .UpsertAsync(Arg.Is<LibraryProfile>(p => p!.Stoplist.SequenceEqual(new[] { "along", "data" })),
                                Arg.Any<CancellationToken>()
                               );
     }

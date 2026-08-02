@@ -414,8 +414,8 @@ public sealed class DependencyIndexerTests
         mRegistryClient.FetchMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                        .Returns(callInfo => new PackageMetadata
                                                 {
-                                                    PackageId = (string) callInfo[index: 0],
-                                                    Version = (string) callInfo[index: 1],
+                                                    PackageId = (string) callInfo[index: 0]!,
+                                                    Version = (string) callInfo[index: 1]!,
                                                     EcosystemId = "nuget"
                                                 }
                                );

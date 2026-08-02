@@ -29,7 +29,7 @@ public sealed class JobCleanupToolsTests
     public async Task CleanupAuditLogDryRunReportsCountWithoutDeleting()
     {
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
         auditRepo.SummarizeAsync(JobIdAlpha, Arg.Any<CancellationToken>())
@@ -63,7 +63,7 @@ public sealed class JobCleanupToolsTests
     public async Task CleanupAuditLogApplyQueuesJobAndCallsDeleteByJobId()
     {
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
         auditRepo.DeleteByJobIdAsync(JobIdAlpha, Arg.Any<CancellationToken>()).Returns(returnThis: 7_400_000L);
@@ -85,7 +85,7 @@ public sealed class JobCleanupToolsTests
     [Fact]
     public async Task CleanupJobsRefusesWithoutFilterAndDoesNotQueueJob()
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         var runner = MakeNoopRunner();
 
         var json = await JobCleanupTools.CleanupJobs(factory,
@@ -408,7 +408,7 @@ public sealed class JobCleanupToolsTests
     private static RepositoryFactory MakeFactoryWithJobRepo(IJobRepository jobRepo,
                                                             IScrapeAuditRepository? auditRepo = null)
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         factory.GetScrapeAuditRepository(Arg.Any<string?>())
                .Returns(auditRepo ?? Substitute.For<IScrapeAuditRepository>());
@@ -486,9 +486,9 @@ public sealed class JobCleanupToolsTests
                          )
               .Returns(async callInfo =>
                        {
-                           var record = callInfo.Arg<BackgroundJobRecord>();
+                           var record = callInfo.Arg<BackgroundJobRecord>()!;
                            var execute = callInfo
-                               .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>();
+                               .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>()!;
                            await execute(record, arg2: null, CancellationToken.None);
                            return record.Id;
                        }

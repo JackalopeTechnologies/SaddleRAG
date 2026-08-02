@@ -293,18 +293,18 @@ public sealed class LibraryImporterTests
 
         // Version record was upserted.
         await importLibraryRepo.Received(1).UpsertVersionAsync(
-            Arg.Is<LibraryVersionRecord>(r => r.LibraryId == LibraryId && r.Version == Version),
+            Arg.Is<LibraryVersionRecord>(r => r!.LibraryId == LibraryId && r.Version == Version),
             Arg.Any<CancellationToken>());
 
         // Pages were inserted.
         await importPageRepo.Received(PageCount).UpsertPageAsync(
-            Arg.Is<PageRecord>(p => p.LibraryId == LibraryId && p.Version == Version),
+            Arg.Is<PageRecord>(p => p!.LibraryId == LibraryId && p.Version == Version),
             Arg.Any<CancellationToken>());
 
         // Chunks were inserted with non-null embeddings matching dimensions.
         await importChunkRepo.Received().InsertChunksAsync(
             Arg.Is<IReadOnlyList<DocChunk>>(cs =>
-                cs.Count == ChunkCount
+                cs!.Count == ChunkCount
                 && cs.All(c => c.Embedding != null && c.Embedding.Length == Dim)),
             Arg.Any<CancellationToken>());
     }
@@ -516,7 +516,7 @@ public sealed class LibraryImporterTests
             .UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                var stream = ci.Arg<Stream>();
+                var stream = ci.Arg<Stream>()!;
                 using var ms = new MemoryStream();
                 stream.CopyTo(ms);
                 capturedBytes = ms.ToArray();
@@ -545,7 +545,7 @@ public sealed class LibraryImporterTests
         // Shard was upserted with the rewritten GridFS ref.
         await importBm25Repo.Received(1)
                             .UpsertShardAsync(
-                                Arg.Is<Bm25Shard>(s => s.ShardGridFsRef == NewGridFsId),
+                                Arg.Is<Bm25Shard>(s => s!.ShardGridFsRef == NewGridFsId),
                                 Arg.Any<CancellationToken>());
     }
 
@@ -661,7 +661,7 @@ public sealed class LibraryImporterTests
         await importJobRepo.Received(1)
                            .UpsertAsync(
                                Arg.Is<JobRecord>(r =>
-                                   r.JobType == JobType.Reembed
+                                   r!.JobType == JobType.Reembed
                                    && r.LibraryId == LibraryId
                                    && r.Version == Version
                                    && r.Status == JobStatus.Queued),
@@ -827,10 +827,10 @@ public sealed class LibraryImporterTests
 
         // New version data was inserted after purge.
         await importPageRepo.Received(PageCount).UpsertPageAsync(
-            Arg.Is<PageRecord>(p => p.LibraryId == LibraryId && p.Version == Version),
+            Arg.Is<PageRecord>(p => p!.LibraryId == LibraryId && p.Version == Version),
             Arg.Any<CancellationToken>());
         await importChunkRepo.Received().InsertChunksAsync(
-            Arg.Is<IReadOnlyList<DocChunk>>(cs => cs.Count == ChunkCount),
+            Arg.Is<IReadOnlyList<DocChunk>>(cs => cs!.Count == ChunkCount),
             Arg.Any<CancellationToken>());
 
         // RecommendedFollowUp mentions compact_collections.

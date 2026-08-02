@@ -70,7 +70,7 @@ public sealed class EmbedStageTimingTests
         provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>())
                 .Returns(call =>
                          {
-                             var texts = call.Arg<IReadOnlyList<string>>();
+                             var texts = call.Arg<IReadOnlyList<string>>()!;
                              var result = new float[texts.Count][];
                              for(var i = 0; i < texts.Count; i++)
                                  result[i] = new float[4];

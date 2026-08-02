@@ -355,7 +355,7 @@ public sealed class OrphanCleanupToolsTests
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -415,10 +415,10 @@ public sealed class OrphanCleanupToolsTests
                          )
               .Returns(async callInfo =>
                        {
-                           var record = callInfo.Arg<BackgroundJobRecord>();
+                           var record = callInfo.Arg<BackgroundJobRecord>()!;
                            var execute =
                                callInfo
-                                   .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>();
+                                   .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>()!;
                            await execute(record, arg2: null, CancellationToken.None);
                            return record.Id;
                        }

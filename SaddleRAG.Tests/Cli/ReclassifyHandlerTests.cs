@@ -141,7 +141,7 @@ public sealed class ReclassifyHandlerTests
 
         // Only the Unclassified page should reach the classifier.
         await classifier.Received(1)
-                        .ClassifyAsync(Arg.Is<PageRecord>(p => p.Url == "b"),
+                        .ClassifyAsync(Arg.Is<PageRecord>(p => p!.Url == "b"),
                                        Arg.Any<string>(),
                                        Arg.Any<CancellationToken>()
                                       );
@@ -199,10 +199,10 @@ public sealed class ReclassifyHandlerTests
                        );
         var classifier = Substitute.For<ILlmClassifier>();
         classifier
-            .ClassifyAsync(Arg.Is<PageRecord>(p => p.Url == "a"), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ClassifyAsync(Arg.Is<PageRecord>(p => p!.Url == "a"), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult((DocCategory.HowTo, 0.9f)));
         classifier
-            .ClassifyAsync(Arg.Is<PageRecord>(p => p.Url == "b"), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ClassifyAsync(Arg.Is<PageRecord>(p => p!.Url == "b"), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult((DocCategory.Sample, 0f)));
 
         var output = new StringWriter();
@@ -245,7 +245,7 @@ public sealed class ReclassifyHandlerTests
                                         );
 
         await pageRepo.Received(1)
-                      .UpsertPageAsync(Arg.Is<PageRecord>(p => p.Category == DocCategory.HowTo),
+                      .UpsertPageAsync(Arg.Is<PageRecord>(p => p!.Category == DocCategory.HowTo),
                                        Arg.Any<CancellationToken>()
                                       );
         await chunkRepo.Received(1)
