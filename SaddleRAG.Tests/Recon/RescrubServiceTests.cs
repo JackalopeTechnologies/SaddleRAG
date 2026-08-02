@@ -115,7 +115,7 @@ public sealed class RescrubServiceTests
                                   );
 
         await indexRepo.Received(requiredNumberOfCalls: 1)
-                       .UpsertAsync(Arg.Is<LibraryIndex>(idx => idx.Manifest.LastParserVersion == PriorParserVersion &&
+                       .UpsertAsync(Arg.Is<LibraryIndex>(idx => idx!.Manifest.LastParserVersion == PriorParserVersion &&
                                                                 idx.Manifest.LastProfileHash == string.Empty &&
                                                                 idx.Manifest.LastClassifierVersion ==
                                                                 PriorClassifierVersion
@@ -156,7 +156,7 @@ public sealed class RescrubServiceTests
         // is never run on the no-profile path — writing Current would
         // make downstream stale-detection lie.
         await indexRepo.Received(requiredNumberOfCalls: 1)
-                       .UpsertAsync(Arg.Is<LibraryIndex>(idx => idx.Manifest.LastParserVersion == 0 &&
+                       .UpsertAsync(Arg.Is<LibraryIndex>(idx => idx!.Manifest.LastParserVersion == 0 &&
                                                                 idx.Manifest.LastProfileHash == string.Empty
                                                         ),
                                     Arg.Any<CancellationToken>()
@@ -277,7 +277,7 @@ public sealed class RescrubServiceTests
         Assert.True(result.IndexesBuilt);
 
         await chunkRepo.Received(requiredNumberOfCalls: 1)
-                       .UpsertChunksAsync(Arg.Is<IReadOnlyList<DocChunk>>(list => list.Count == 1 &&
+                       .UpsertChunksAsync(Arg.Is<IReadOnlyList<DocChunk>>(list => list!.Count == 1 &&
                                                                               list[0].ParserVersion ==
                                                                               ParserVersionInfo.Current &&
                                                                               list[0].Symbols.Count > 0
@@ -286,7 +286,7 @@ public sealed class RescrubServiceTests
                                          );
 
         await indexRepo.Received(requiredNumberOfCalls: 1)
-                       .UpsertAsync(Arg.Is<LibraryIndex>(idx => idx.Manifest.LastParserVersion ==
+                       .UpsertAsync(Arg.Is<LibraryIndex>(idx => idx!.Manifest.LastParserVersion ==
                                                                 ParserVersionInfo.Current
                                                         ),
                                     Arg.Any<CancellationToken>()

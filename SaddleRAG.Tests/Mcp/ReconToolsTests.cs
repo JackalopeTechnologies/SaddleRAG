@@ -53,7 +53,7 @@ public sealed class ReconToolsTests
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
         repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns([]);
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(repo);
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
 
@@ -85,7 +85,7 @@ public sealed class ReconToolsTests
 
         await repo.Received(requiredNumberOfCalls: 1)
                   .UpsertAsync(Arg.Is<LibraryProfile>(p =>
-                                                          p.CrawlHints.ExcludedUrlPatterns.Count == 2 &&
+                                                          p!.CrawlHints.ExcludedUrlPatterns.Count == 2 &&
                                                           p.CrawlHints.ExcludedUrlPatterns[0] == "/account/login" &&
                                                           p.CrawlHints.ExpectedHosts.Count == 1 &&
                                                           p.CrawlHints.Notes == "API ref auth-walled"
@@ -100,7 +100,7 @@ public sealed class ReconToolsTests
     {
         var repo = Substitute.For<ILibraryProfileRepository>();
         repo.ListAllAsync(Arg.Any<CancellationToken>()).Returns([]);
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(repo);
         var service = new LibraryProfileService(NullLogger<LibraryProfileService>.Instance);
 
@@ -127,7 +127,7 @@ public sealed class ReconToolsTests
 
         await repo.Received(requiredNumberOfCalls: 1)
                   .UpsertAsync(Arg.Is<LibraryProfile>(p =>
-                                                          p.CrawlHints.ExcludedUrlPatterns.Count == 0 &&
+                                                          p!.CrawlHints.ExcludedUrlPatterns.Count == 0 &&
                                                           p.CrawlHints.ExpectedHosts.Count == 0 &&
                                                           p.CrawlHints.Notes == string.Empty
                                                      ),

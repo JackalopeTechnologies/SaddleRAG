@@ -132,24 +132,24 @@ public sealed class ReembedServiceTests
         Assert.Equal("nomic-embed-text", result.PreviousEmbeddingModelName);
 
         await embeddingProvider.Received(requiredNumberOfCalls: 1)
-                               .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x.Count == 2),
+                               .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x!.Count == 2),
                                            Arg.Any<EmbedRole>(),
                                            Arg.Any<CancellationToken>()
                                           );
         await chunkRepo.Received(requiredNumberOfCalls: 1)
-                       .UpsertChunksAsync(Arg.Is<IReadOnlyList<DocChunk>>(x => x.Count == 2),
+                       .UpsertChunksAsync(Arg.Is<IReadOnlyList<DocChunk>>(x => x!.Count == 2),
                                           Arg.Any<CancellationToken>()
                                          );
         await vectorSearch.Received(requiredNumberOfCalls: 1)
                           .IndexChunksAsync(profile: null,
                                             "lib",
                                             "1.0",
-                                            Arg.Is<IReadOnlyList<DocChunk>>(x => x.Count == 2),
+                                            Arg.Is<IReadOnlyList<DocChunk>>(x => x!.Count == 2),
                                             Arg.Any<CancellationToken>()
                                            );
         await libraryRepo.Received(requiredNumberOfCalls: 1)
                          .UpsertVersionAsync(Arg.Is<LibraryVersionRecord>(v =>
-                                                                              v.EmbeddingProviderId == "tei" &&
+                                                                              v!.EmbeddingProviderId == "tei" &&
                                                                               v.EmbeddingModelName ==
                                                                               "nomic-ai/nomic-embed-text-v1.5"
                                                                          ),
@@ -185,7 +185,7 @@ public sealed class ReembedServiceTests
 
         Assert.Equal(expected: 2, result.Processed);
         await embeddingProvider.Received()
-                               .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x.Count == 2),
+                               .EmbedAsync(Arg.Is<IReadOnlyList<string>>(x => x!.Count == 2),
                                            Arg.Any<EmbedRole>(),
                                            Arg.Any<CancellationToken>()
                                           );
@@ -202,7 +202,7 @@ public sealed class ReembedServiceTests
         provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>())
                 .Returns(call =>
                 {
-                    var texts = call.Arg<IReadOnlyList<string>>();
+                    var texts = call.Arg<IReadOnlyList<string>>()!;
                     var vectors = new float[texts.Count][];
                     for(var i = 0; i < texts.Count; i++)
                         vectors[i] = [0.1f, 0.2f, 0.3f];

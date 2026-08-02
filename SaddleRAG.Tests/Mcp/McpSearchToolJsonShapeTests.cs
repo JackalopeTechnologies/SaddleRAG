@@ -66,7 +66,7 @@ public sealed class McpSearchToolJsonShapeTests
         provider.EmbedAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<EmbedRole>(), Arg.Any<CancellationToken>())
                 .Returns(call =>
                          {
-                             var texts = call.Arg<IReadOnlyList<string>>();
+                             var texts = call.Arg<IReadOnlyList<string>>()!;
                              var result = new float[texts.Count][];
                              for(var i = 0; i < texts.Count; i++)
                                  result[i] = [0.1f, 0.2f, 0.3f, 0.4f];
@@ -92,7 +92,7 @@ public sealed class McpSearchToolJsonShapeTests
         ILibraryProfileRepository libraryProfileRepo,
         IBm25ShardRepository bm25ShardRepo) MakeFactoryWithLibrary(string? library = "lib", string version = "v1")
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var libraryIndexRepo = Substitute.For<ILibraryIndexRepository>();

@@ -647,6 +647,13 @@ dotnet_diagnostic.STR0005.severity=suggestion
 dotnet_diagnostic.STR0010.severity=suggestion
 dotnet_diagnostic.STR0008.severity=suggestion
 dotnet_diagnostic.STR0009Error.severity=suggestion
+# STY0002 (null-forgiving operator): NSubstitute 6.0 annotated its public API for
+# nullability, so Arg.Is<T> takes Expression<Predicate<T?>>, CallInfo.Arg<T>()
+# returns T?, and CallInfo's indexer returns object?. Those are pessimistic
+# annotations covering matcher plumbing that never actually receives null on a
+# matched call, so test code asserts non-null with `!` rather than adding a null
+# branch to every matcher lambda. Production code keeps STY0002 at error.
+dotnet_diagnostic.STY0002.severity=suggestion
 dotnet_diagnostic.STY0004.severity=suggestion
 dotnet_diagnostic.STY0008.severity=suggestion
 dotnet_diagnostic.NUM0002.severity=suggestion

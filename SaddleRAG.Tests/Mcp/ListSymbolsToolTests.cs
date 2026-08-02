@@ -94,7 +94,7 @@ public sealed class ListSymbolsToolTests
 
     private static (RepositoryFactory factory, ILibraryRepository libraryRepo, IChunkRepository chunkRepo) MakeFactory()
     {
-        var factory = Substitute.For<RepositoryFactory>([null]);
+        var factory = Substitute.For<RepositoryFactory>([null!]);
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);

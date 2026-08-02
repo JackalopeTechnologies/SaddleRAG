@@ -204,7 +204,7 @@ public sealed class DryRunAuditTests
                                      Arg.Any<CancellationToken>())
                          .Returns(call =>
                                   {
-                                      var texts = call.Arg<IReadOnlyList<string>>();
+                                      var texts = call.Arg<IReadOnlyList<string>>()!;
                                       var emb = new float[texts.Count][];
                                       for(var i = 0; i < texts.Count; i++)
                                           emb[i] = new float[VectorDim];
