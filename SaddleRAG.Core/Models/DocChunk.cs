@@ -109,4 +109,19 @@ public record DocChunk
     ///     URL of the page that linked to the source page, or null for the root.
     /// </summary>
     public string? ParentUrl { get; init; }
+
+    /// <summary>
+    ///     Local-document citation metadata. Null for web chunks and records
+    ///     written before document ingestion was introduced.
+    /// </summary>
+    public DocumentProvenance? DocumentSource { get; init; }
+
+    /// <summary>
+    ///     Stable subject identifiers copied from the source page. Empty for
+    ///     legacy and subjectless chunks.
+    /// </summary>
+    public IReadOnlyList<string> SubjectIds { get; init; } = [];
+
+    /// <summary>Immutable taxonomy revision used to assign <see cref="SubjectIds" />.</summary>
+    public string? SubjectTaxonomyVersion { get; init; }
 }

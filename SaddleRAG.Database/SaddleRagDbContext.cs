@@ -46,6 +46,18 @@ public class SaddleRagDbContext
                                                      }
                                                     );
         }
+
+        if (!BsonClassMap.IsClassMapRegistered(typeof(DocumentRevisionRecord)))
+        {
+            BsonClassMap.RegisterClassMap<DocumentRevisionRecord>(cm =>
+                                                                   {
+                                                                       cm.AutoMap();
+                                                                       cm.MapMember(r => r.State)
+                                                                         .SetSerializer(
+                                                                             new EnumSerializer<DocumentRevisionState>(
+                                                                                 BsonType.String));
+                                                                   });
+        }
     }
 
     public SaddleRagDbContext(IOptions<SaddleRagDbSettings> settings)
@@ -98,6 +110,24 @@ public class SaddleRagDbContext
     public IMongoCollection<ScrapeAuditLogEntry> ScrapeAuditLog =>
         mDatabase.GetCollection<ScrapeAuditLogEntry>(CollectionScrapeAuditLog);
 
+    public IMongoCollection<DirectoryLibraryDefinition> DirectoryLibraries =>
+        mDatabase.GetCollection<DirectoryLibraryDefinition>(CollectionDirectoryLibraries);
+
+    public IMongoCollection<SourceDocumentRecord> SourceDocuments =>
+        mDatabase.GetCollection<SourceDocumentRecord>(CollectionSourceDocuments);
+
+    public IMongoCollection<DocumentRevisionRecord> DocumentRevisions =>
+        mDatabase.GetCollection<DocumentRevisionRecord>(CollectionDocumentRevisions);
+
+    public IMongoCollection<DocumentArtifactBlobRecord> DocumentArtifactBlobs =>
+        mDatabase.GetCollection<DocumentArtifactBlobRecord>(CollectionDocumentArtifactBlobs);
+
+    public IMongoCollection<SubjectCatalogRecord> SubjectCatalogs =>
+        mDatabase.GetCollection<SubjectCatalogRecord>(CollectionSubjectCatalogs);
+
+    public IMongoCollection<SubjectAssignmentRecord> SubjectAssignments =>
+        mDatabase.GetCollection<SubjectAssignmentRecord>(CollectionSubjectAssignments);
+
     /// <summary>
     ///     GridFS bucket for spilled BM25 payloads (per-term postings or
     ///     entire shards) that exceed the inline 16MB Mongo document
@@ -106,6 +136,13 @@ public class SaddleRagDbContext
     /// </summary>
     public IGridFSBucket Bm25Bucket =>
         new GridFSBucket(mDatabase, new GridFSBucketOptions { BucketName = Bm25BucketName });
+
+    /// <summary>
+    ///     Dedicated bucket for immutable source and extraction artifacts.
+    ///     The source-document repository owns all access and cleanup.
+    /// </summary>
+    public IGridFSBucket DocumentArtifactsBucket =>
+        new GridFSBucket(mDatabase, new GridFSBucketOptions { BucketName = DocumentArtifactsBucketName });
 
     /// <summary>
     ///     Underlying <see cref="IMongoDatabase" />. Exposed for maintenance
@@ -122,6 +159,69 @@ public class SaddleRagDbContext
     /// </summary>
     public async Task EnsureIndexesAsync(CancellationToken ct = default)
     {
+        var sourceDocumentKeys = Builders<SourceDocumentRecord>.IndexKeys;
+        await SourceDocuments.Indexes.CreateOneAsync(
+            new CreateIndexModel<SourceDocumentRecord>(
+                sourceDocumentKeys.Combine(sourceDocumentKeys.Ascending(d => d.LibraryId),
+                                           sourceDocumentKeys.Ascending(d => d.NormalizedRelativePath)),
+                new CreateIndexOptions { Unique = true }),
+            cancellationToken: ct);
+
+        var revisionKeys = Builders<DocumentRevisionRecord>.IndexKeys;
+        await DocumentRevisions.Indexes.CreateOneAsync(
+            new CreateIndexModel<DocumentRevisionRecord>(
+                revisionKeys.Combine(revisionKeys.Ascending(r => r.LibraryId),
+                                     revisionKeys.Ascending(r => r.Version),
+                                     revisionKeys.Ascending(r => r.DocumentId)),
+                new CreateIndexOptions { Unique = true }),
+            cancellationToken: ct);
+        await DocumentRevisions.Indexes.CreateOneAsync(
+            new CreateIndexModel<DocumentRevisionRecord>(revisionKeys.Ascending(r => r.OriginalArtifactHash)),
+            cancellationToken: ct);
+        await DocumentRevisions.Indexes.CreateOneAsync(
+            new CreateIndexModel<DocumentRevisionRecord>(revisionKeys.Ascending(r => r.ExtractionArtifactHash),
+                                                         new CreateIndexOptions { Sparse = true }),
+            cancellationToken: ct);
+        await DocumentRevisions.Indexes.CreateOneAsync(
+            new CreateIndexModel<DocumentRevisionRecord>(
+                revisionKeys.Combine(revisionKeys.Ascending(r => r.LibraryId),
+                                     revisionKeys.Ascending(r => r.ScanRunId),
+                                     revisionKeys.Ascending(r => r.State))),
+            cancellationToken: ct);
+
+        var catalogKeys = Builders<SubjectCatalogRecord>.IndexKeys;
+        await SubjectCatalogs.Indexes.CreateOneAsync(
+            new CreateIndexModel<SubjectCatalogRecord>(
+                catalogKeys.Combine(catalogKeys.Ascending(catalog => catalog.LibraryId),
+                                    catalogKeys.Ascending(catalog => catalog.Revision)),
+                new CreateIndexOptions { Unique = true }),
+            cancellationToken: ct);
+        await SubjectCatalogs.Indexes.CreateOneAsync(
+            new CreateIndexModel<SubjectCatalogRecord>(
+                catalogKeys.Combine(catalogKeys.Ascending(catalog => catalog.LibraryId),
+                                    catalogKeys.Ascending(catalog => catalog.TaxonomyVersion)),
+                new CreateIndexOptions { Unique = true }),
+            cancellationToken: ct);
+        await SubjectCatalogs.Indexes.CreateOneAsync(
+            new CreateIndexModel<SubjectCatalogRecord>(
+                catalogKeys.Combine(catalogKeys.Ascending(catalog => catalog.LibraryId),
+                                    catalogKeys.Ascending(catalog => catalog.ScanRunId))),
+            cancellationToken: ct);
+
+        var assignmentKeys = Builders<SubjectAssignmentRecord>.IndexKeys;
+        await SubjectAssignments.Indexes.CreateOneAsync(
+            new CreateIndexModel<SubjectAssignmentRecord>(
+                assignmentKeys.Combine(assignmentKeys.Ascending(assignment => assignment.LibraryId),
+                                       assignmentKeys.Ascending(assignment => assignment.Version),
+                                       assignmentKeys.Ascending(assignment => assignment.DocumentRevisionId)),
+                new CreateIndexOptions { Unique = true }),
+            cancellationToken: ct);
+        await SubjectAssignments.Indexes.CreateOneAsync(
+            new CreateIndexModel<SubjectAssignmentRecord>(
+                assignmentKeys.Combine(assignmentKeys.Ascending(assignment => assignment.LibraryId),
+                                       assignmentKeys.Ascending(assignment => assignment.ScanRunId))),
+            cancellationToken: ct);
+
         // Pages: compound unique index on LibraryId + Version + Url
         var pageKeys = Builders<PageRecord>.IndexKeys;
         await
@@ -150,6 +250,13 @@ public class SaddleRagDbContext
                                                                         ),
                                           cancellationToken: ct
                                          );
+
+        await Chunks.Indexes.CreateOneAsync(
+            new CreateIndexModel<DocChunk>(
+                chunkKeys.Combine(chunkKeys.Ascending(chunk => chunk.LibraryId),
+                                  chunkKeys.Ascending(chunk => chunk.Version),
+                                  chunkKeys.Ascending(chunk => chunk.SubjectIds))),
+            cancellationToken: ct);
 
         // Chunks: sparse index on QualifiedName for API reference lookups
         await Chunks.Indexes.CreateOneAsync(new CreateIndexModel<DocChunk>(chunkKeys.Ascending(c => c.QualifiedName),
@@ -313,7 +420,14 @@ public class SaddleRagDbContext
     private const string CollectionBm25Shards = "bm25Shards";
     private const string CollectionExcludedSymbols = "library_excluded_symbols";
     private const string CollectionScrapeAuditLog = "scrape_audit_log";
+    private const string CollectionDirectoryLibraries = "directoryLibraries";
+    private const string CollectionSourceDocuments = "sourceDocuments";
+    private const string CollectionDocumentRevisions = "documentRevisions";
+    private const string CollectionDocumentArtifactBlobs = "documentArtifactBlobs";
+    private const string CollectionSubjectCatalogs = "subjectCatalogs";
+    private const string CollectionSubjectAssignments = "subjectAssignments";
     private const string Bm25BucketName = "bm25";
+    private const string DocumentArtifactsBucketName = "documentArtifacts";
 
     private static readonly TimeSpan smJobRetention = TimeSpan.FromDays(JobRetentionDays);
 }

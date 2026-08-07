@@ -136,6 +136,32 @@ public class RepositoryFactory
     }
 
     /// <summary>
+    ///     Get the local source-document repository for the specified profile.
+    /// </summary>
+    public virtual ISourceDocumentRepository GetSourceDocumentRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new SourceDocumentRepository(context);
+        return result;
+    }
+
+    /// <summary>Get the immutable subject-catalog repository for the specified profile.</summary>
+    public virtual ISubjectCatalogRepository GetSubjectCatalogRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new SubjectCatalogRepository(context);
+        return result;
+    }
+
+    /// <summary>Get the document subject-assignment repository for the specified profile.</summary>
+    public virtual ISubjectAssignmentRepository GetSubjectAssignmentRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new SubjectAssignmentRepository(context);
+        return result;
+    }
+
+    /// <summary>
     ///     Get the raw <see cref="IMongoDatabase" /> for the specified
     ///     profile. Used by maintenance tools that issue admin commands
     ///     (e.g. <c>compact</c>) or enumerate collection stats. Typed CRUD

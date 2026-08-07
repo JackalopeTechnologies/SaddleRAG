@@ -19,6 +19,7 @@ public sealed class JobTypeCapabilitiesTests
     [InlineData(JobType.Rechunk)]
     [InlineData(JobType.Reembed)]
     [InlineData(JobType.Rescrub)]
+    [InlineData(JobType.DirectoryScan)]
     public void CancellableTypesReturnTrue(JobType type)
     {
         Assert.True(type.IsCancellable());
@@ -51,5 +52,5 @@ public sealed class JobTypeCapabilitiesTests
         Assert.Equal(ExpectedCancellableCount, cancellable);
     }
 
-    private const int ExpectedCancellableCount = 5;
+    private const int ExpectedCancellableCount = 6;
 }

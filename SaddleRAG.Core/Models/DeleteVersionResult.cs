@@ -8,8 +8,9 @@ namespace SaddleRAG.Core.Models;
 /// <summary>
 ///     Outcome of a single-version delete: how many version rows were
 ///     removed, whether the parent Library row was cascade-deleted
-///     (because no versions remained), and the new currentVersion if
-///     one had to be repointed.
+///     (because no Published versions remained), and the new currentVersion
+///     if one had to be repointed. Building and Failed version rows are
+///     diagnostic children and may remain after the parent is removed.
 /// </summary>
 public sealed record DeleteVersionResult(
     long VersionsDeleted,

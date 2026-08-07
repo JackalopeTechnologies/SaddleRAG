@@ -40,6 +40,9 @@ public sealed class LibraryImporter
     private readonly IPageRepository mPageRepository;
     private readonly IChunkRepository mChunkRepository;
     private readonly IBm25ShardRepository mBm25Repository;
+    private readonly ISourceDocumentRepository? mSourceDocumentRepository;
+    private readonly ISubjectCatalogRepository? mSubjectCatalogRepository;
+    private readonly ISubjectAssignmentRepository? mSubjectAssignmentRepository;
     private readonly ICollectionCompactor? mCompactor;
     private readonly Func<string?, IMongoDatabase>? mDatabaseResolver;
 
@@ -105,6 +108,42 @@ public sealed class LibraryImporter
         mDatabaseResolver = databaseResolver;
     }
 
+    public LibraryImporter(ILibraryRepository libraryRepository,
+                           IJobRepository jobRepository,
+                           IEmbeddingProvider embeddingProvider,
+                           ILibraryProfileRepository profileRepository,
+                           ILibraryIndexRepository indexRepository,
+                           IExcludedSymbolsRepository excludedSymbolsRepository,
+                           IDiffRepository diffRepository,
+                           IPageRepository pageRepository,
+                           IChunkRepository chunkRepository,
+                           IBm25ShardRepository bm25Repository,
+                           ISourceDocumentRepository sourceDocumentRepository,
+                           ISubjectCatalogRepository subjectCatalogRepository,
+                           ISubjectAssignmentRepository subjectAssignmentRepository,
+                           ICollectionCompactor? compactor = null,
+                           Func<string?, IMongoDatabase>? databaseResolver = null)
+        : this(libraryRepository,
+               jobRepository,
+               embeddingProvider,
+               profileRepository,
+               indexRepository,
+               excludedSymbolsRepository,
+               diffRepository,
+               pageRepository,
+               chunkRepository,
+               bm25Repository,
+               compactor,
+               databaseResolver)
+    {
+        ArgumentNullException.ThrowIfNull(sourceDocumentRepository);
+        ArgumentNullException.ThrowIfNull(subjectCatalogRepository);
+        ArgumentNullException.ThrowIfNull(subjectAssignmentRepository);
+        mSourceDocumentRepository = sourceDocumentRepository;
+        mSubjectCatalogRepository = subjectCatalogRepository;
+        mSubjectAssignmentRepository = subjectAssignmentRepository;
+    }
+
     #region Active encoder properties
 
     // ProviderId is surfaced directly from IEmbeddingProvider.
@@ -141,12 +180,26 @@ public sealed class LibraryImporter
         var overwroteVersions = new List<string>();
         long bytesFreed = 0;
         bool encoderMatches = true;
+        LibraryRecord? existingLibrary = null;
+        IReadOnlyDictionary<string, SourceDocumentRecord> packageSources =
+            (await ReadTopLevelJsonlAsync<SourceDocumentRecord>(reader,
+                                                               manifest,
+                                                               BundlePaths.SourcesFile,
+                                                               ct))
+            .ToDictionary(source => source.Id, StringComparer.Ordinal);
+        IReadOnlyDictionary<SubjectCatalogKey, SubjectCatalogRecord> packageCatalogs =
+            (await ReadTopLevelJsonlAsync<SubjectCatalogRecord>(reader,
+                                                               manifest,
+                                                               BundlePaths.SubjectCatalogsFile,
+                                                               ct))
+            .ToDictionary(catalog => new SubjectCatalogKey(catalog.LibraryId,
+                                                            catalog.TaxonomyVersion));
 
         bool hasVersions = manifest.Versions.Count > 0;
         if (hasVersions)
         {
             // Gate 1 — conflict scan.
-            var existingLibrary = await mLibraryRepository.GetLibraryAsync(manifest.Library.Id, ct);
+            existingLibrary = await mLibraryRepository.GetLibraryAsync(manifest.Library.Id, ct);
             var existingVersions = existingLibrary?.AllVersions ?? (IReadOnlyList<string>) Array.Empty<string>();
 
             var conflicting = manifest.Versions
@@ -197,6 +250,22 @@ public sealed class LibraryImporter
                 }
             }
 
+            if (manifest.Directory != null && mSourceDocumentRepository != null)
+            {
+                await mSourceDocumentRepository.UpsertDirectoryDefinitionAsync(
+                    new DirectoryLibraryDefinition
+                        {
+                            Id = manifest.Library.Id,
+                            RootPath = string.Empty,
+                            Recursive = manifest.Directory.Recursive,
+                            AllowedExtensions = manifest.Directory.AllowedExtensions.ToList(),
+                            ExclusionPatterns = manifest.Directory.ExclusionPatterns.ToList(),
+                            BindingStatus = DirectoryLibraryBindingStatus.Unbound,
+                            RegisteredAtUtc = DateTime.SpecifyKind(manifest.CreatedUtc, DateTimeKind.Utc)
+                        },
+                    ct);
+            }
+
             // Per-version write loop with rollback.
             for (int i = 0; i < manifest.Versions.Count; i++)
             {
@@ -212,7 +281,14 @@ public sealed class LibraryImporter
                 var log = new VersionWriteLog();
                 try
                 {
-                    await WriteVersionAsync(reader, manifest.Library.Id, versionEntry, encoderMatches, log, ct);
+                    await WriteVersionAsync(reader,
+                                            manifest.Library.Id,
+                                            versionEntry,
+                                            packageSources,
+                                            packageCatalogs,
+                                            encoderMatches,
+                                            log,
+                                            ct);
                     versionsImported.Add(versionEntry.Version);
                 }
                 catch (OperationCanceledException)
@@ -230,6 +306,19 @@ public sealed class LibraryImporter
                                             });
                     break;
                 }
+            }
+
+
+            if (versionsImported.Count == 0 &&
+                partialFailures.Count > 0 &&
+                existingLibrary == null &&
+                mSourceDocumentRepository != null)
+            {
+                await TryDeleteAsync(() => mSubjectAssignmentRepository?.DeleteLibraryAsync(manifest.Library.Id, ct)
+                                           ?? Task.FromResult(0L));
+                await TryDeleteAsync(() => mSubjectCatalogRepository?.DeleteLibraryAsync(manifest.Library.Id, ct)
+                                           ?? Task.FromResult(0L));
+                await TryDeleteAsync(() => mSourceDocumentRepository.DeleteLibraryAsync(manifest.Library.Id, ct));
             }
         }
 
@@ -367,6 +456,8 @@ public sealed class LibraryImporter
     private async Task WriteVersionAsync(IBundleReader reader,
                                          string libraryId,
                                          BundleVersionEntry versionEntry,
+                                         IReadOnlyDictionary<string, SourceDocumentRecord> packageSources,
+                                         IReadOnlyDictionary<SubjectCatalogKey, SubjectCatalogRecord> packageCatalogs,
                                          bool encoderMatches,
                                          VersionWriteLog log,
                                          CancellationToken ct)
@@ -378,6 +469,15 @@ public sealed class LibraryImporter
             reader, BundlePaths.VersionFilePath(version, BundlePaths.VersionFile), ct);
         await mLibraryRepository.UpsertVersionAsync(versionRecord, ct);
         log.VersionId = versionRecord.Id;
+
+        await WriteDocumentRecordsAsync(reader,
+                                        libraryId,
+                                        version,
+                                        versionEntry,
+                                        packageSources,
+                                        packageCatalogs,
+                                        log,
+                                        ct);
 
         // 2. Profile (optional).
         var profilePath = BundlePaths.VersionFilePath(version, BundlePaths.ProfileFile);
@@ -430,6 +530,92 @@ public sealed class LibraryImporter
 
         // 9. BM25 shards — re-upload GridFS blobs then insert shards with rewritten refs.
         await ImportBm25Async(reader, libraryId, version, versionEntry, log, ct);
+    }
+
+    private async Task WriteDocumentRecordsAsync(
+        IBundleReader reader,
+        string libraryId,
+        string version,
+        BundleVersionEntry versionEntry,
+        IReadOnlyDictionary<string, SourceDocumentRecord> packageSources,
+        IReadOnlyDictionary<SubjectCatalogKey, SubjectCatalogRecord> packageCatalogs,
+        VersionWriteLog log,
+        CancellationToken ct)
+    {
+        if (mSourceDocumentRepository != null &&
+            mSubjectCatalogRepository != null &&
+            mSubjectAssignmentRepository != null)
+        {
+            string revisionsPath = BundlePaths.VersionFilePath(version, BundlePaths.DocumentRevisionsFile);
+            string assignmentsPath = BundlePaths.VersionFilePath(version, BundlePaths.SubjectAssignmentsFile);
+            IReadOnlyList<DocumentRevisionRecord> revisions = versionEntry.Blobs.ContainsKey(revisionsPath)
+                                                                  ? await ReadJsonlAsync<DocumentRevisionRecord>(
+                                                                        reader,
+                                                                        revisionsPath,
+                                                                        ct)
+                                                                  : [];
+            IReadOnlyList<SubjectAssignmentRecord> assignments = versionEntry.Blobs.ContainsKey(assignmentsPath)
+                                                                      ? await ReadJsonlAsync<SubjectAssignmentRecord>(
+                                                                            reader,
+                                                                            assignmentsPath,
+                                                                            ct)
+                                                                      : [];
+            foreach(DocumentRevisionRecord revision in revisions)
+            {
+                if (!string.Equals(revision.LibraryId, libraryId, StringComparison.Ordinal) ||
+                    !string.Equals(revision.Version, version, StringComparison.Ordinal))
+                    throw new InvalidDataException("Document revision scope does not match its manifest version.");
+                if (!packageSources.TryGetValue(revision.DocumentId, out SourceDocumentRecord? source))
+                    throw new InvalidDataException($"Missing source document '{revision.DocumentId}'.");
+                await mSourceDocumentRepository.GetOrCreateDocumentAsync(source, ct);
+                byte[] original = await ReadEntryBytesAsync(reader,
+                                                            BundlePaths.DocumentArtifact(
+                                                                revision.OriginalArtifactHash),
+                                                            ct);
+                byte[]? extraction = string.IsNullOrWhiteSpace(revision.ExtractionArtifactHash)
+                                         ? null
+                                         : await ReadEntryBytesAsync(
+                                               reader,
+                                               BundlePaths.DocumentArtifact(revision.ExtractionArtifactHash),
+                                               ct);
+                await using var originalStream = new MemoryStream(original, writable: false);
+                await using var extractionStream = extraction == null
+                                                       ? null
+                                                       : new MemoryStream(extraction, writable: false);
+                await mSourceDocumentRepository.PersistRevisionAsync(revision,
+                                                                      originalStream,
+                                                                      extractionStream,
+                                                                      ct);
+                log.ScanRunIds.Add(revision.ScanRunId);
+            }
+
+            foreach(SubjectAssignmentRecord assignment in assignments)
+            {
+                var key = new SubjectCatalogKey(assignment.LibraryId, assignment.TaxonomyVersion);
+                if (!packageCatalogs.TryGetValue(key, out SubjectCatalogRecord? catalog))
+                    throw new InvalidDataException($"Missing subject catalog '{assignment.TaxonomyVersion}'.");
+                await EnsureSubjectCatalogAsync(mSubjectCatalogRepository, catalog, log, ct);
+                await mSubjectAssignmentRepository.PersistAsync(assignment, ct);
+                log.ScanRunIds.Add(assignment.ScanRunId);
+            }
+        }
+    }
+
+    private static async Task EnsureSubjectCatalogAsync(ISubjectCatalogRepository catalogs,
+                                                        SubjectCatalogRecord catalog,
+                                                        VersionWriteLog log,
+                                                        CancellationToken ct)
+    {
+        SubjectCatalogRecord? existing = await catalogs.GetAsync(catalog.LibraryId,
+                                                                  catalog.TaxonomyVersion,
+                                                                  ct);
+        if (existing == null)
+        {
+            if (string.IsNullOrWhiteSpace(catalog.ScanRunId))
+                throw new InvalidDataException("Manifest-v2 subject catalogs require scan ownership.");
+            await catalogs.InsertRevisionAsync(catalog, ct);
+            log.CatalogScanRunIds.Add(catalog.ScanRunId);
+        }
     }
 
     private async Task WriteExcludedSymbolsAsync(IBundleReader reader,
@@ -632,6 +818,24 @@ public sealed class LibraryImporter
         await TryDeleteAsync(() => mPageRepository.DeleteAsync(libraryId, version, ct));
         await TryDeleteAsync(() => mExcludedSymbolsRepository.DeleteAsync(libraryId, version, ct));
 
+        if (mSubjectAssignmentRepository != null)
+        {
+            foreach(string scanRunId in log.ScanRunIds)
+                await TryDeleteAsync(() => mSubjectAssignmentRepository.DeleteScanRunAsync(libraryId,
+                                                                                            scanRunId,
+                                                                                            ct));
+        }
+        if (mSubjectCatalogRepository != null)
+        {
+            foreach(string scanRunId in log.CatalogScanRunIds)
+                await TryDeleteAsync(() => mSubjectCatalogRepository.DeleteCandidateScanRunAsync(libraryId,
+                                                                                                  scanRunId,
+                                                                                                  version,
+                                                                                                  ct));
+        }
+        if (mSourceDocumentRepository != null)
+            await TryDeleteAsync(() => mSourceDocumentRepository.DeleteVersionAsync(libraryId, version, ct));
+
         // IDiffRepository has no delete method — diff is left as an orphan;
         // it has no foreign-key constraint and doesn't affect query behavior.
         _ = log.DiffWritten;
@@ -703,6 +907,36 @@ public sealed class LibraryImporter
         var result = await JsonSerializer.DeserializeAsync<T>(stream, BundleJsonOptions.Default, ct)
                      ?? throw new InvalidOperationException($"'{path}' deserialized to null");
         return result;
+    }
+
+    private static Task<IReadOnlyList<T>> ReadTopLevelJsonlAsync<T>(IBundleReader reader,
+                                                                    BundleManifest manifest,
+                                                                    string path,
+                                                                    CancellationToken ct) =>
+        manifest.Blobs.ContainsKey(path)
+            ? ReadJsonlAsync<T>(reader, path, ct)
+            : Task.FromResult<IReadOnlyList<T>>([]);
+
+    private static async Task<IReadOnlyList<T>> ReadJsonlAsync<T>(IBundleReader reader,
+                                                                  string path,
+                                                                  CancellationToken ct)
+    {
+        await using Stream stream = reader.OpenEntry(path);
+        var jsonl = new JsonlReader<T>(stream);
+        var result = new List<T>();
+        await foreach(T item in jsonl.ReadAllAsync(ct))
+            result.Add(item);
+        return result;
+    }
+
+    private static async Task<byte[]> ReadEntryBytesAsync(IBundleReader reader,
+                                                           string path,
+                                                           CancellationToken ct)
+    {
+        await using Stream stream = reader.OpenEntry(path);
+        using var result = new MemoryStream();
+        await stream.CopyToAsync(result, ct);
+        return result.ToArray();
     }
 
     private static async Task<BundleManifest> ReadManifestAsync(IBundleReader reader, CancellationToken ct)
@@ -805,6 +1039,8 @@ public sealed class LibraryImporter
         public List<string> ExcludedIds { get; } = new();
         public List<string> ShardIds { get; } = new();
         public List<string> GridFsIds { get; } = new();
+        public HashSet<string> ScanRunIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> CatalogScanRunIds { get; } = new(StringComparer.Ordinal);
     }
 
     #endregion

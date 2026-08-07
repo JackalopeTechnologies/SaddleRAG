@@ -21,6 +21,10 @@ param
     [AllowEmptyString()]
     [string]$OllamaEndpoint,
 
+    [Parameter(Mandatory = $false)]
+    [AllowEmptyString()]
+    [string]$DoclingEndpoint = '',
+
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
     [string]$ExecutionProvider,
@@ -35,7 +39,7 @@ param
 )
 
 # Rewrites the installed appsettings.json with the user's MongoDB / Ollama /
-# ONNX-execution-provider choices captured by the installer UI (or the
+# Docling / ONNX-execution-provider choices captured by the installer UI (or the
 # command line on a silent install). Mirrors the inline logic previously
 # embedded in Package.wxs SetProperty; extracted here so it is testable in
 # isolation and so future installer-driven config edits land in one place.
@@ -61,6 +65,7 @@ $ErrorActionPreference = 'Stop'
 $DefaultConnectionString = 'mongodb://localhost:27017'
 $DefaultDatabaseName     = 'SaddleRAG'
 $DefaultOllamaEndpoint   = 'http://localhost:11434'
+$DefaultDoclingEndpoint  = 'http://localhost:5001'
 
 # Resolve a config value with a three-tier fallback: the provided installer value
 # wins when non-blank; otherwise keep whatever the shipped template already holds;
@@ -126,6 +131,39 @@ try
     $json.MongoDB.Profiles.local.ConnectionString = Resolve-ConfigValue -Provided $ConnectionString -Existing ([string]$json.MongoDB.Profiles.local.ConnectionString) -Default $DefaultConnectionString
     $json.MongoDB.Profiles.local.DatabaseName     = Resolve-ConfigValue -Provided $DatabaseName     -Existing ([string]$json.MongoDB.Profiles.local.DatabaseName)     -Default $DefaultDatabaseName
     $json.Ollama.Endpoint                         = Resolve-ConfigValue -Provided $OllamaEndpoint    -Existing ([string]$json.Ollama.Endpoint)                         -Default $DefaultOllamaEndpoint
+
+    # Older installations predate the optional document-ingestion section. Add
+    # only the missing object hierarchy, leaving existing API keys, timeouts,
+    # and every unrelated setting untouched.
+    $documentIngestionProperty = $json.PSObject.Properties['DocumentIngestion']
+    if ($null -eq $documentIngestionProperty)
+    {
+        $json | Add-Member -MemberType NoteProperty -Name DocumentIngestion -Value ([pscustomobject]@{})
+    }
+    $doclingProperty = $json.DocumentIngestion.PSObject.Properties['Docling']
+    if ($null -eq $doclingProperty)
+    {
+        $json.DocumentIngestion | Add-Member -MemberType NoteProperty -Name Docling -Value ([pscustomobject]@{})
+    }
+
+    $endpointProperty = $json.DocumentIngestion.Docling.PSObject.Properties['Endpoint']
+    $existingDoclingEndpoint = if ($null -eq $endpointProperty)
+                               {
+                                   ''
+                               }
+                               else
+                               {
+                                   [string]$endpointProperty.Value
+                               }
+    $effectiveDoclingEndpoint = Resolve-ConfigValue -Provided $DoclingEndpoint -Existing $existingDoclingEndpoint -Default $DefaultDoclingEndpoint
+    if ($null -eq $endpointProperty)
+    {
+        $json.DocumentIngestion.Docling | Add-Member -MemberType NoteProperty -Name Endpoint -Value $effectiveDoclingEndpoint
+    }
+    else
+    {
+        $json.DocumentIngestion.Docling.Endpoint = $effectiveDoclingEndpoint
+    }
 
     $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider))
                          {

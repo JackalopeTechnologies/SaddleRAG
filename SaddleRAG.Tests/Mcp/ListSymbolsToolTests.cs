@@ -31,6 +31,8 @@ public sealed class ListSymbolsToolTests
                                     AllVersions = ["1.0"]
                                 }
                            );
+        libraryRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                   .Returns(PublishedVersion());
         chunkRepo.GetSymbolsAsync("foo", "1.0", SymbolKind.Type, filter: null, Arg.Any<CancellationToken>())
                  .Returns(["ClassA", "ClassB"]);
 
@@ -58,6 +60,8 @@ public sealed class ListSymbolsToolTests
                                     AllVersions = ["1.0"]
                                 }
                            );
+        libraryRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                   .Returns(PublishedVersion());
         chunkRepo.GetAllSymbolsAsync("foo", "1.0", filter: null, Arg.Any<CancellationToken>())
                  .Returns([
                                   new Symbol { Name = "ClassA", Kind = SymbolKind.Type },
@@ -101,4 +105,18 @@ public sealed class ListSymbolsToolTests
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         return (factory, libraryRepo, chunkRepo);
     }
+
+    private static LibraryVersionRecord PublishedVersion() => new()
+        {
+            Id = "foo/1.0",
+            LibraryId = "foo",
+            Version = "1.0",
+            ScrapedAt = DateTime.UtcNow,
+            PageCount = 0,
+            ChunkCount = 0,
+            EmbeddingProviderId = "test",
+            EmbeddingModelName = "test",
+            EmbeddingDimensions = 0,
+            PublicationState = VersionPublicationState.Published
+        };
 }

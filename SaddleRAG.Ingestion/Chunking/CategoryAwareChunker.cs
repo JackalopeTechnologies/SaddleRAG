@@ -225,7 +225,10 @@ public class CategoryAwareChunker : IChunker
                             SectionPath = sectionPath,
                             ParserVersion = ParserVersionInfo.Current,
                             Depth = page.Depth,
-                            ParentUrl = page.ParentUrl
+                            ParentUrl = page.ParentUrl,
+                            DocumentSource = page.DocumentSource,
+                            SubjectIds = page.SubjectIds.ToArray(),
+                            SubjectTaxonomyVersion = page.SubjectTaxonomyVersion
                         };
         return chunk;
     }

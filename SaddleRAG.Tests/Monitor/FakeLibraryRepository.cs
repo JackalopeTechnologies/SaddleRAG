@@ -5,6 +5,7 @@
 
 #region Usings
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 
@@ -63,11 +64,94 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
         return Task.FromResult<IReadOnlyList<LibraryVersionRecord>>(matches);
     }
 
+    public Task<IReadOnlyList<LibraryVersionRecord>> GetVersionsByPublicationStateAsync(
+        VersionPublicationState publicationState,
+        CancellationToken ct = default)
+    {
+        var matches = mVersions.Values.Where(v => v.PublicationState == publicationState).ToList();
+        return Task.FromResult<IReadOnlyList<LibraryVersionRecord>>(matches);
+    }
+
     public Task UpsertVersionAsync(LibraryVersionRecord versionRecord, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(versionRecord);
         mVersions[VersionKey(versionRecord.LibraryId, versionRecord.Version)] = versionRecord;
         return Task.CompletedTask;
+    }
+
+    public Task<DirectoryVersionClaimResult> TryClaimDirectoryVersionAsync(
+        LibraryVersionRecord buildingVersion,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(buildingVersion);
+        string key = VersionKey(buildingVersion.LibraryId, buildingVersion.Version);
+        DirectoryVersionClaimResult result;
+        if (!mVersions.TryGetValue(key, out LibraryVersionRecord? existing) ||
+            existing.PublicationState == VersionPublicationState.Failed)
+        {
+            mVersions[key] = buildingVersion;
+            result = new DirectoryVersionClaimResult(DirectoryVersionClaimStatus.Acquired,
+                                                     RequiresCleanup: existing != null);
+        }
+        else
+        {
+            DirectoryVersionClaimStatus status = existing.PublicationState == VersionPublicationState.Published
+                                                     ? DirectoryVersionClaimStatus.AlreadyPublished
+                                                     : DirectoryVersionClaimStatus.InProgress;
+            result = new DirectoryVersionClaimResult(status);
+        }
+
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryPublishDirectoryVersionAsync(LibraryVersionRecord publishedVersion,
+                                                      string scanRunId,
+                                                      CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(publishedVersion);
+        ArgumentException.ThrowIfNullOrEmpty(scanRunId);
+        string key = VersionKey(publishedVersion.LibraryId, publishedVersion.Version);
+        bool result = mVersions.TryGetValue(key, out LibraryVersionRecord? existing)
+                      && existing.PublicationState == VersionPublicationState.Building
+                      && scanRunId.Equals(existing.ScanRunId, StringComparison.Ordinal)
+                      && !existing.CleanupInProgress;
+        if (result)
+            mVersions[key] = publishedVersion;
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryBeginDirectoryVersionCleanupAsync(string libraryId,
+                                                           string version,
+                                                           string scanRunId,
+                                                           CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(scanRunId);
+        string key = VersionKey(libraryId, version);
+        bool result = mVersions.TryGetValue(key, out LibraryVersionRecord? existing)
+                      && scanRunId.Equals(existing.ScanRunId, StringComparison.Ordinal)
+                      && !existing.CleanupInProgress
+                      && existing.PublicationState is VersionPublicationState.Building
+                          or VersionPublicationState.Published;
+        if (result && existing != null)
+            mVersions[key] = existing with { CleanupInProgress = true };
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryRecordDirectoryVersionFailureAsync(LibraryVersionRecord failedVersion,
+                                                            string scanRunId,
+                                                            CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(failedVersion);
+        ArgumentException.ThrowIfNullOrEmpty(scanRunId);
+        string key = VersionKey(failedVersion.LibraryId, failedVersion.Version);
+        bool result = !mVersions.TryGetValue(key, out LibraryVersionRecord? existing)
+                      || scanRunId.Equals(existing.ScanRunId, StringComparison.Ordinal)
+                      && existing.CleanupInProgress;
+        if (result)
+            mVersions[key] = failedVersion;
+        return Task.FromResult(result);
     }
 
     public Task<DeleteVersionResult> DeleteVersionAsync(string libraryId,

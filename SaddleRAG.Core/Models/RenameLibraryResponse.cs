@@ -11,4 +11,5 @@ namespace SaddleRAG.Core.Models;
 /// </summary>
 public sealed record RenameLibraryResponse(
     RenameLibraryOutcome Outcome,
-    RenameLibraryResult? Counts);
+    RenameLibraryResult? Counts,
+    string? Warning = null);

@@ -123,18 +123,19 @@ public static class MonitorLibraryActionsEndpoints
         return result;
     }
 
-    private static async Task<IResult> DeleteVersionAsync(string libraryId,
-                                                          string version,
-                                                          ILibraryRepository libs,
-                                                          CancellationToken ct)
+    internal static async Task<IResult> DeleteVersionAsync(string libraryId,
+                                                           string version,
+                                                           ILibraryDeletionService deletionService,
+                                                           CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
-        var deleteResult = await libs.DeleteVersionAsync(libraryId, version, ct);
+        ArgumentNullException.ThrowIfNull(deletionService);
+        var deleteResult = await deletionService.DeleteVersionAsync(profile: null, libraryId, version, ct);
         return Results.Ok(new
                               {
-                                  deleteResult.VersionsDeleted,
-                                  deleteResult.LibraryRowDeleted,
+                                  VersionsDeleted = deleteResult.Versions,
+                                  LibraryRowDeleted = deleteResult.Libraries > 0,
                                   deleteResult.CurrentVersionRepointedTo
                               }
                          );

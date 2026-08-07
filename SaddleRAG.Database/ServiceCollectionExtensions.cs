@@ -52,6 +52,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IBm25ShardRepository, Bm25ShardRepository>();
         services.AddSingleton<IExcludedSymbolsRepository, ExcludedSymbolsRepository>();
         services.AddSingleton<IJobRepository, JobRepository>();
+        services.AddSingleton<ISourceDocumentRepository, SourceDocumentRepository>();
+        services.AddSingleton<ISubjectCatalogRepository, SubjectCatalogRepository>();
+        services.AddSingleton<ISubjectAssignmentRepository, SubjectAssignmentRepository>();
 
         return services;
     }

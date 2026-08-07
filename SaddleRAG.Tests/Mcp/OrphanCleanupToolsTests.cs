@@ -6,7 +6,9 @@
 #region Usings
 
 using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Mcp.Tools;
 
@@ -19,6 +21,7 @@ public sealed class OrphanCleanupToolsTests
     private sealed record Fixture(
         RepositoryFactory Factory,
         ILibraryRepository LibraryRepo,
+        IJobRepository JobRepo,
         IPageRepository PageRepo,
         IChunkRepository ChunkRepo,
         ILibraryProfileRepository ProfileRepo,
@@ -349,6 +352,7 @@ public sealed class OrphanCleanupToolsTests
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
+        var jobRepo = Substitute.For<IJobRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var profileRepo = Substitute.For<ILibraryProfileRepository>();
         var indexRepo = Substitute.For<ILibraryIndexRepository>();
@@ -358,6 +362,7 @@ public sealed class OrphanCleanupToolsTests
         var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
+        factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetLibraryProfileRepository(Arg.Any<string?>()).Returns(profileRepo);
@@ -382,9 +387,15 @@ public sealed class OrphanCleanupToolsTests
                     .Returns(EmptyKeys);
         auditRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
                  .Returns(EmptyKeys);
+        libraryRepo.GetVersionsByPublicationStateAsync(VersionPublicationState.Building,
+                                                       Arg.Any<CancellationToken>())
+                   .Returns(Array.Empty<LibraryVersionRecord>());
+        jobRepo.ListRunningAsync(JobType.Scrape, Arg.Any<CancellationToken>())
+               .Returns(Array.Empty<JobRecord>());
 
         return new Fixture(factory,
                            libraryRepo,
+                           jobRepo,
                            pageRepo,
                            chunkRepo,
                            profileRepo,

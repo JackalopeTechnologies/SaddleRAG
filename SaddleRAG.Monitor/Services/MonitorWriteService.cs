@@ -6,7 +6,9 @@
 #region Usings
 
 using System.Net.Http.Json;
+using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Ingestion.Scanning;
 
 #endregion
 
@@ -15,7 +17,7 @@ namespace SaddleRAG.Monitor.Services;
 /// <summary>
 ///     Client-side HTTP service for the /api/monitor endpoints.
 /// </summary>
-public sealed class MonitorWriteService
+public sealed class MonitorWriteService : IDirectoryLibraryMonitorCommands
 {
     /// <summary>
     ///     Initializes a new instance of <see cref="MonitorWriteService" />.
@@ -90,6 +92,63 @@ public sealed class MonitorWriteService
         return response.IsSuccessStatusCode;
     }
 
+    /// <summary>Tests a visible directory path without registering or scanning it.</summary>
+    public async Task<DirectoryAccessTestResult> TestDirectoryAccessAsync(
+        string rootPath,
+        bool recursive,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(rootPath);
+        var request = new DirectoryAccessTestRequest(rootPath, recursive);
+        using HttpResponseMessage response = await mHttp.PostAsJsonAsync(TestDirectoryAccessUrl, request, ct);
+        return await ReadRequiredResponseAsync<DirectoryAccessTestResult>(response, ct);
+    }
+
+    /// <summary>Registers a visible user-selected directory without starting a scan.</summary>
+    public async Task<DirectoryRegistrationResult> RegisterDirectoryLibraryAsync(
+        DirectoryRegistrationRequest request,
+        string? profile,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrEmpty(request.LibraryId);
+        ArgumentException.ThrowIfNullOrEmpty(request.RootPath);
+        ArgumentNullException.ThrowIfNull(request.ExclusionPatterns);
+        string url = AddProfile(RegisterDirectoryLibraryUrl, profile);
+        using HttpResponseMessage response = await mHttp.PostAsJsonAsync(url, request, ct);
+        return await ReadRequiredResponseAsync<DirectoryRegistrationResult>(response, ct);
+    }
+
+    /// <summary>Queues one scan only after the operator explicitly selects Scan.</summary>
+    public async Task<DirectoryScanQueueResult> ScanDirectoryLibraryAsync(
+        string libraryId,
+        string? profile,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        string url = AddProfile(string.Format(ScanDirectoryLibraryUrlTemplate, libraryId), profile);
+        using HttpResponseMessage response = await mHttp.PostAsync(url, content: null, ct);
+        return await ReadRequiredResponseAsync<DirectoryScanQueueResult>(response, ct);
+    }
+
+    Task<DirectoryAccessTestResult> IDirectoryLibraryMonitorCommands.TestAccessAsync(
+        string rootPath,
+        bool recursive,
+        CancellationToken ct) =>
+        TestDirectoryAccessAsync(rootPath, recursive, ct);
+
+    Task<DirectoryRegistrationResult> IDirectoryLibraryMonitorCommands.RegisterAsync(
+        DirectoryRegistrationRequest request,
+        string? profile,
+        CancellationToken ct) =>
+        RegisterDirectoryLibraryAsync(request, profile, ct);
+
+    Task<DirectoryScanQueueResult> IDirectoryLibraryMonitorCommands.ScanAsync(
+        string libraryId,
+        string? profile,
+        CancellationToken ct) =>
+        ScanDirectoryLibraryAsync(libraryId, profile, ct);
+
     private static async Task<string?> ExtractJobIdAsync(HttpResponseMessage response, CancellationToken ct)
     {
         string? result = null;
@@ -102,9 +161,30 @@ public sealed class MonitorWriteService
         return result;
     }
 
+    private static string AddProfile(string url, string? profile)
+    {
+        string result = string.IsNullOrWhiteSpace(profile)
+                            ? url
+                            : $"{url}?profile={Uri.EscapeDataString(profile)}";
+        return result;
+    }
+
+    private static async Task<T> ReadRequiredResponseAsync<T>(HttpResponseMessage response,
+                                                               CancellationToken ct)
+    {
+        response.EnsureSuccessStatusCode();
+        T? payload = await response.Content.ReadFromJsonAsync<T>(ct);
+        if (payload == null)
+            throw new InvalidDataException("The Monitor endpoint returned an empty response.");
+        return payload;
+    }
+
     private const string CancelJobUrlTemplate = "/api/monitor/jobs/{0}/cancel";
     private const string SnapshotUrlTemplate = "/api/monitor/jobs/{0}/snapshot";
     private const string RescrapeUrlTemplate = "/api/monitor/libraries/{0}/rescrape";
     private const string RescrubUrlTemplate = "/api/monitor/libraries/{0}/rescrub";
     private const string DeleteVersionUrlTemplate = "/api/monitor/libraries/{0}/versions/{1}";
+    private const string TestDirectoryAccessUrl = "/api/monitor/directory-libraries/test-access";
+    private const string RegisterDirectoryLibraryUrl = "/api/monitor/directory-libraries/register";
+    private const string ScanDirectoryLibraryUrlTemplate = "/api/monitor/directory-libraries/{0}/scan";
 }

@@ -137,6 +137,7 @@ public sealed class IngestionOrchestratorDryRunTests
         public required IngestionOrchestrator Orchestrator { get; init; }
         public required IPageRepository PageRepo { get; init; }
         public required IChunkRepository ChunkRepo { get; init; }
+        public required ILibraryRepository LibraryRepo { get; init; }
         public required IVectorSearchProvider VectorSearch { get; init; }
         public required IBm25ShardRepository Bm25ShardRepo { get; init; }
         public required IMonitorBroadcaster Broadcaster { get; init; }
@@ -207,6 +208,7 @@ public sealed class IngestionOrchestratorDryRunTests
                        Orchestrator = orchestrator,
                        PageRepo = pageRepo,
                        ChunkRepo = chunkRepo,
+                       LibraryRepo = libraryRepo,
                        VectorSearch = vectorSearch,
                        Bm25ShardRepo = bm25ShardRepo,
                        Broadcaster = resolvedBroadcaster
@@ -276,8 +278,13 @@ public sealed class IngestionOrchestratorDryRunTests
                      .ReplaceShardsAsync(Arg.Any<string>(),
                                          Arg.Any<string>(),
                                          Arg.Any<IReadOnlyList<Bm25Shard>>(),
-                                         Arg.Any<CancellationToken>()
-                                        );
+                                        Arg.Any<CancellationToken>()
+                                       );
+
+        await harness.LibraryRepo.DidNotReceiveWithAnyArgs()
+                     .UpsertVersionAsync(Arg.Any<LibraryVersionRecord>(), Arg.Any<CancellationToken>());
+        await harness.LibraryRepo.DidNotReceiveWithAnyArgs()
+                     .UpsertLibraryAsync(Arg.Any<LibraryRecord>(), Arg.Any<CancellationToken>());
 
         Assert.NotNull(report);
         Assert.NotNull(report.CategoryHistogram);

@@ -84,6 +84,7 @@ public sealed class IngestionFinalizerTests
                                                    IBm25ShardRepository? shards = null,
                                                    ILibraryIndexRepository? indexes = null,
                                                    ILibraryRepository? libraries = null,
+                                                   IVectorSearchProvider? vectorSearch = null,
                                                    IEmbeddingProvider? provider = null,
                                                    ILibraryProfileRepository? profiles = null,
                                                    SuspectDetector? suspect = null,
@@ -92,6 +93,7 @@ public sealed class IngestionFinalizerTests
             shards ?? Substitute.For<IBm25ShardRepository>(),
             indexes ?? Substitute.For<ILibraryIndexRepository>(),
             libraries ?? Substitute.For<ILibraryRepository>(),
+            vectorSearch ?? Substitute.For<IVectorSearchProvider>(),
             provider ?? StubProvider(),
             profiles ?? Substitute.For<ILibraryProfileRepository>(),
             suspect ?? new SuspectDetector(),
@@ -280,7 +282,9 @@ public sealed class IngestionFinalizerTests
                                                                           && v.ChunkCount == 47
                                                                           && v.EmbeddingProviderId == "provider-x"
                                                                           && v.EmbeddingModelName == "model-x-fp16"
-                                                                          && v.EmbeddingDimensions == 1024),
+                                                                          && v.EmbeddingDimensions == 1024
+                                                                          && v.PublicationState ==
+                                                                             VersionPublicationState.Published),
                                            Arg.Any<CancellationToken>()
                                           );
     }

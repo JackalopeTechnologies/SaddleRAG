@@ -15,7 +15,8 @@ namespace SaddleRAG.ClientIntegration.Skills;
 
 /// <summary>
 ///     The SaddleRAG skill documents (saddlerag-first, -query, -recon, -scrape,
-///     -scrape-strategy, -maintain) parsed from the embedded Resources. Exposed so a host
+///     -scrape-strategy, -maintain, -documents, and -docling-setup) parsed from the embedded
+///     Resources. Exposed so a host
 ///     that cannot install skill files — notably the MCP server surfacing them as prompts
 ///     to Claude Desktop and other MCP-only clients — can serve the same full content.
 ///     Skill-capable clients keep installing these as files via the client writers; this is

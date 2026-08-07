@@ -38,14 +38,44 @@ internal sealed class ClassifyStage
         ArgumentNullException.ThrowIfNull(pageRepository);
         ArgumentNullException.ThrowIfNull(broadcaster);
         ArgumentNullException.ThrowIfNull(logger);
-        mLlmClassifier = llmClassifier;
         mPageRepository = pageRepository;
         mBroadcaster = broadcaster;
         mLogger = logger;
+        mClassify = (page, hint, mode) => ClassifyLegacyAsync(llmClassifier, page, hint, mode);
+    }
+
+    internal ClassifyStage(IngestionPageProcessor processor,
+                           IPageRepository pageRepository,
+                           IMonitorBroadcaster broadcaster,
+                           ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(processor);
+        ArgumentNullException.ThrowIfNull(pageRepository);
+        ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(logger);
+        mPageRepository = pageRepository;
+        mBroadcaster = broadcaster;
+        mLogger = logger;
+        mClassify = async (page, hint, mode) =>
+                        {
+                            PageRecord classified = await processor.ClassifyAsync(
+                                                        page,
+                                                        hint,
+                                                        pageRepository,
+                                                        mode == IngestionPersistenceMode.Full
+                                                            ? PagePersistenceIntent.UpdateIfClassified
+                                                            : PagePersistenceIntent.None,
+                                                        CancellationToken.None);
+                            float confidence = classified.Category == DocCategory.Unclassified ? 0 : 1;
+                            return (classified, classified.Category, confidence);
+                        };
     }
 
     private readonly IMonitorBroadcaster mBroadcaster;
-    private readonly ILlmClassifier mLlmClassifier;
+    private readonly Func<PageRecord,
+        string,
+        IngestionPersistenceMode,
+        Task<(PageRecord Page, DocCategory Category, float Confidence)>> mClassify;
     private readonly ILogger mLogger;
     private readonly IPageRepository mPageRepository;
 
@@ -122,15 +152,7 @@ internal sealed class ClassifyStage
         PageRecord result;
         try
         {
-            (var category, float confidence) = await mLlmClassifier.ClassifyAsync(page, libraryHint);
-            if (category != DocCategory.Unclassified && confidence > 0)
-            {
-                result = page with { Category = category };
-                if (persistMode == IngestionPersistenceMode.Full)
-                    await mPageRepository.UpsertPageAsync(result);
-            }
-            else
-                result = page;
+            (result, DocCategory category, float confidence) = await mClassify(page, libraryHint, persistMode);
 
             long classifyMs = sw.ElapsedMilliseconds;
             dryRunAcc?.RecordClassified(result.Category, classifyMs);
@@ -153,5 +175,24 @@ internal sealed class ClassifyStage
         }
 
         return result;
+    }
+
+    private async Task<(PageRecord Page, DocCategory Category, float Confidence)> ClassifyLegacyAsync(
+        ILlmClassifier classifier,
+        PageRecord page,
+        string libraryHint,
+        IngestionPersistenceMode persistMode)
+    {
+        (DocCategory category, float confidence) = await classifier.ClassifyAsync(page, libraryHint);
+        PageRecord result;
+        if (category != DocCategory.Unclassified && confidence > 0)
+        {
+            result = page with { Category = category };
+            if (persistMode == IngestionPersistenceMode.Full)
+                await mPageRepository.UpsertPageAsync(result);
+        }
+        else
+            result = page;
+        return (result, category, confidence);
     }
 }

@@ -23,6 +23,7 @@ using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
 using SaddleRAG.Ingestion.Diagnostics;
+using SaddleRAG.Ingestion.Documents.Docling;
 using SaddleRAG.Ingestion.Ecosystems.Common;
 using SaddleRAG.Ingestion.Ecosystems.Npm;
 using SaddleRAG.Ingestion.Ecosystems.NuGet;
@@ -32,6 +33,7 @@ using SaddleRAG.Ingestion.Recon;
 using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Ingestion.Suspect;
 using SaddleRAG.Ingestion.Symbols;
+using SaddleRAG.Ingestion.Subjects;
 using SaddleRAG.Mcp;
 using SaddleRAG.Mcp.Api;
 using SaddleRAG.Mcp.Auth;
@@ -225,6 +227,9 @@ builder.Services.AddSingleton<LibraryImporter>(sp =>
         sp.GetRequiredService<IPageRepository>(),
         sp.GetRequiredService<IChunkRepository>(),
         sp.GetRequiredService<IBm25ShardRepository>(),
+        sp.GetRequiredService<ISourceDocumentRepository>(),
+        sp.GetRequiredService<ISubjectCatalogRepository>(),
+        sp.GetRequiredService<ISubjectAssignmentRepository>(),
         sp.GetRequiredService<ICollectionCompactor>(),
         profile => factory.GetDatabase(profile));
 });
@@ -232,6 +237,11 @@ builder.Services.AddSingleton<LibraryImporter>(sp =>
 // Ollama configuration
 
 builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(OllamaSettings.SectionName));
+
+// Optional user-operated Docling Serve endpoint. SaddleRAG only checks and uses
+// the configured HTTP boundary; it never installs, starts, stops, or restarts Docling.
+builder.Services.AddDoclingDocumentIngestion(builder.Configuration);
+builder.Services.AddSaddleRagDirectoryIngestion();
 
 // ONNX configuration (in-process embedding + reranking via Microsoft.ML.OnnxRuntime).
 // When Onnx.Enabled && Onnx.EmbeddingEnabled, the OnnxEmbeddingProvider is
@@ -361,6 +371,11 @@ builder.Services.AddSingleton<ClassifierBackendSwitch>(sp =>
                                )
 );
 builder.Services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
+builder.Services.AddSingleton<IClassifierTextGenerator>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
+builder.Services.AddSingleton<SubjectDescriptorBuilder>();
+builder.Services.AddSingleton<ISubjectIdGenerator, GuidSubjectIdGenerator>();
+builder.Services.AddSingleton<SubjectCatalogBuilder>();
+builder.Services.AddSingleton<ISubjectClassifier, SubjectClassifier>();
 
 // Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
 builder.Services.AddSingleton<LibraryProfileService>();
@@ -546,6 +561,15 @@ const string SaddleRagServerInstructions = """
       and get_library_health; if results are wrong, recon again and adjust patterns before
       re-scraping.
 
+    Local document directories are an explicit, manual workflow:
+    - register_directory_library requires the user's explicit local path and stores it without
+      scanning, watching, or scheduling the directory.
+    - scan_directory_library queues one manual scan of an already registered root; it cannot
+      replace or register a root.
+    - For PDF or DOCX capability problems, call get_document_ingestion_status for the observed
+      reason and get_docling_install_instructions for official recovery documentation.
+    - Docling is user-managed. SaddleRAG does not install, license, start, stop, or upgrade it.
+
     Do NOT use SaddleRAG for questions about the user's own working-directory code (use file
     tools) or for purely conceptual questions independent of a specific library.
     """;
@@ -596,6 +620,7 @@ builder.Services.AddHostedService<MonitorTickService>();
 builder.Services.AddHostedService<MonitorLifecycleRelay>();
 builder.Services.AddSingleton<IUnifiedJobView, UnifiedJobView>();
 builder.Services.AddSingleton<MonitorDataService>();
+builder.Services.AddSingleton<IDirectoryLibraryMonitorDataService, DirectoryLibraryMonitorDataService>();
 builder.Services.AddSingleton<MonitorJobService>();
 builder.Services.AddSingleton<IMonitorConfigSource, McpMonitorConfigSource>();
 
@@ -603,6 +628,8 @@ var monitorPort = builder.Configuration.GetValue<int?>(KestrelHttpPortKey) ?? De
 builder.Services.AddHttpClient<MonitorWriteService>(client =>
                                                         client.BaseAddress = new Uri($"http://localhost:{monitorPort}/")
                                                    );
+builder.Services.AddTransient<IDirectoryLibraryMonitorCommands>(provider =>
+    provider.GetRequiredService<MonitorWriteService>());
 
 builder.Services.AddAuthorization(opts =>
                                       opts.AddPolicy(DiagnosticsWriteRequirement.PolicyName,
@@ -736,23 +763,17 @@ else
 
     // Static files for Blazor framework script and Razor Class Library assets (e.g. MudBlazor)
     app.UseStaticFiles();
+    app.MapStaticAssets();
 
 
     // Health check
 
     app.MapGet(HealthEndpointPath,
-               (McpWarmupState warmupState) => Results.Ok(new
-
-                                                              {
-                                                                  Status = HealthyStatus,
-
-                                                                  WarmupStatus = warmupState.Status,
-
-                                                                  WarmupPhase = warmupState.CurrentPhase,
-
-                                                                  WarmupError = warmupState.LastError
-                                                              }
-                                                         )
+               (McpWarmupState warmupState,
+                IDoclingCapabilityService doclingCapability) =>
+                   Results.Ok(ServiceHealthResponseFactory.Create(HealthyStatus,
+                                                                  warmupState,
+                                                                  doclingCapability))
               );
 
 
@@ -776,6 +797,7 @@ else
     app.UseAntiforgery();
     MonitorApiEndpoints.Map(app);
     MonitorLibraryActionsEndpoints.Map(app);
+    MonitorDirectoryLibraryEndpoints.Map(app);
     MonitorSnapshotEndpoints.Map(app);
 
 

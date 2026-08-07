@@ -91,6 +91,20 @@ public sealed class McpToolJsonShapeTests
                                     AllVersions = ["1.0"]
                                 }
                            );
+        libraryRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                   .Returns(new LibraryVersionRecord
+                                {
+                                    Id = "foo/1.0",
+                                    LibraryId = "foo",
+                                    Version = "1.0",
+                                    ScrapedAt = DateTime.UtcNow,
+                                    PageCount = 0,
+                                    ChunkCount = 0,
+                                    EmbeddingProviderId = "test",
+                                    EmbeddingModelName = "test",
+                                    EmbeddingDimensions = 0,
+                                    PublicationState = VersionPublicationState.Published
+                                });
         chunkRepo.GetAllSymbolsAsync("foo", "1.0", filter: null, Arg.Any<CancellationToken>())
                  .Returns([
                                   new Symbol { Name = "ClassA", Kind = SymbolKind.Type },

@@ -1,0 +1,195 @@
+@* SaddleRAG.Monitor/Pages/DirectoryLibrariesPage.razor *@
+@page "/monitor/directory-libraries"
+@rendermode InteractiveServer
+@inherits DirectoryLibrariesPageBase
+
+<MudPaper Class="directory-library-hero pa-5 mb-5" Elevation="0">
+    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center"
+              Justify="Justify.SpaceBetween">
+        <div>
+            <MudText Typo="Typo.h4">Directory Libraries</MudText>
+            <MudText Typo="Typo.body1" Class="mt-1 directory-library-subtitle">
+                Keep documents in the folder you choose. Nothing is imported until you select Scan.
+            </MudText>
+        </div>
+        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined"
+                 Icon="@Icons.Material.Filled.TouchApp">Manual actions</MudChip>
+    </MudStack>
+</MudPaper>
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" lg="5">
+        <MudPaper Class="pa-5 directory-library-panel" Outlined="true">
+            <MudStack Spacing="3">
+                <div>
+                    <MudText Typo="Typo.h6">Library details</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        The root path stays visible and editable on this machine.
+                    </MudText>
+                </div>
+
+                <MudTextField Label="Root path" @bind-Value="EditModel.RootPath"
+                              Variant="Variant.Outlined" Immediate="true"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.FolderOpen"/>
+
+                <MudStack Row="true" Spacing="2" Class="directory-library-actions">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.FactCheck"
+                               Disabled="@IsBusy" OnClick="@TestAccessAsync">
+                        Test access
+                    </MudButton>
+                </MudStack>
+
+                <MudDivider/>
+
+                <MudTextField Label="Library ID" @bind-Value="EditModel.LibraryId"
+                              Variant="Variant.Outlined" Immediate="true"/>
+                <MudTextField Label="Name" @bind-Value="EditModel.Name"
+                              Variant="Variant.Outlined" Immediate="true"/>
+                <MudTextField Label="Hint" @bind-Value="EditModel.Hint"
+                              Variant="Variant.Outlined" Lines="2" Immediate="true"/>
+                <MudSwitch T="bool" Label="Recursive" @bind-Value="EditModel.Recursive"
+                           Color="Color.Primary"/>
+
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Supported extensions</MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                        @foreach(string extension in EditModel.AllowedExtensions)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                @extension
+                            </MudChip>
+                        }
+                    </MudStack>
+                </div>
+
+                <MudStack Row="true" Spacing="2" Class="directory-library-actions mt-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               Disabled="@IsBusy" OnClick="@RegisterAsync">
+                        Register
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               Disabled="@IsBusy" OnClick="@ScanAsync">
+                        Scan
+                    </MudButton>
+                </MudStack>
+
+                @if (AccessResult is not null)
+                {
+                    <MudAlert Severity="@(AccessResult.Succeeded ? Severity.Success : Severity.Warning)"
+                              Variant="Variant.Outlined" Dense="true">
+                        @AccessResult.Detail <strong>@AccessResult.ReasonCode</strong>
+                    </MudAlert>
+                }
+                @if (RegistrationResult is not null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        @RegistrationResult.Status · @RegistrationResult.LibraryId
+                    </MudAlert>
+                }
+                @if (ScanResult is not null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        @ScanResult.Status · version @ScanResult.Version
+                        @if (!string.IsNullOrWhiteSpace(QueuedJobId))
+                        {
+                            <span> · job @QueuedJobId</span>
+                        }
+                    </MudAlert>
+                }
+                @if (!string.IsNullOrWhiteSpace(FailureMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
+                        @FailureMessage
+                    </MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" lg="7">
+        <MudPaper Class="pa-5 directory-library-panel" Outlined="true">
+            <MudText Typo="Typo.h6">Registered folders</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                Select a row to edit its local binding or request its next dated version.
+            </MudText>
+
+            @if (Rows.Count == 0)
+            {
+                <MudPaper Class="directory-library-empty pa-6 mt-3 text-center" Elevation="0">
+                    <MudIcon Icon="@Icons.Material.Filled.CreateNewFolder" Size="Size.Large"
+                             Color="Color.Primary"/>
+                    <MudText Typo="Typo.subtitle1" Class="mt-2">No directory libraries registered</MudText>
+                    <MudText Typo="Typo.body2">
+                        Enter a folder and library ID, test access, then select Register.
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudTable T="DirectoryLibraryMonitorRow" Items="@Rows" Dense="true" Hover="true"
+                          Class="mt-3 directory-library-table">
+                    <HeaderContent>
+                        <MudTh>Library</MudTh>
+                        <MudTh>Last successful</MudTh>
+                        <MudTh>Progress</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="row">
+                        <MudTd DataLabel="Library">
+                            <MudText Typo="Typo.subtitle2">@row.Name</MudText>
+                            <MudText Typo="Typo.caption">@row.LibraryId</MudText>
+                            <MudText Typo="Typo.caption" Class="directory-library-root">
+                                @row.RootPath
+                            </MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Last successful">@FormatLastSuccessful(row)</MudTd>
+                        <MudTd DataLabel="Progress">
+                            <MudText Typo="Typo.body2">@FormatProgress(row)</MudText>
+                            @if (row.Progress is not null)
+                            {
+                                <MudProgressLinear Value="@ProgressPercent(row.Progress)"
+                                                   Color="Color.Primary" Rounded="true" Class="mt-1"/>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(row.LatestJobStatus))
+                            {
+                                <MudText Typo="Typo.caption">@row.LatestJobStatus</MudText>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Color="Color.Primary"
+                                           OnClick="@(() => SelectRow(row))"/>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            <MudDivider Class="my-5"/>
+            <MudText Typo="Typo.h6">File failures</MudText>
+            @if (SelectedFailures.Count > 0)
+            {
+                <MudList T="DirectoryScanFileFailure" Dense="true">
+                    @foreach(DirectoryScanFileFailure failure in SelectedFailures)
+                    {
+                        <MudListItem Value="@failure">
+                            <MudText Typo="Typo.subtitle2">@failure.RelativePath</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Error">
+                                @failure.ReasonCode · @failure.Detail
+                            </MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                    No file failures recorded for the selected library.
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SaddleRagTestReference)' != 'true'">
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <!--
+    The solution builds this helper directly as self-contained while the test
+    project references a framework-dependent instance.  Distinct output paths
+    keep those two valid MSBuild graph nodes from writing the same files in
+    parallel.
+  -->
+  <PropertyGroup Condition="'$(SaddleRagTestReference)' == 'true'">
+    <SelfContained>false</SelfContained>
+    <IntermediateOutputPath>obj\TestReference\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\</IntermediateOutputPath>
+    <OutputPath>bin\TestReference\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CodeStructure.Analyzers" Version="1.0.7" />
+  </ItemGroup>
+
+</Project>

@@ -25,7 +25,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     <see cref="IClassifierGenerator" /> so the branching here is unit-testable
 ///     with a fake generator.
 /// </summary>
-public class OnnxLlmClassifier : ILlmClassifier
+public class OnnxLlmClassifier : ILlmClassifier, IClassifierTextGenerator
 {
     public OnnxLlmClassifier(IClassifierGenerator generator,
                              ILogger<OnnxLlmClassifier> logger)
@@ -70,7 +70,7 @@ public class OnnxLlmClassifier : ILlmClassifier
 
         try
         {
-            var responseText = await mGenerator.GenerateAsync(prompt, ct);
+            var responseText = await GenerateAsync(prompt, ct);
 
             var parsed = OllamaLlmClassifier.ParseClassificationResponse(responseText.Trim());
             category = parsed.Category;
@@ -88,6 +88,13 @@ public class OnnxLlmClassifier : ILlmClassifier
         }
 
         return (category, confidence);
+    }
+
+    /// <inheritdoc />
+    public Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(prompt);
+        return mGenerator.GenerateAsync(prompt, ct);
     }
 
 }

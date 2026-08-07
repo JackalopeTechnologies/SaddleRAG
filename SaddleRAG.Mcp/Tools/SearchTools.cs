@@ -8,6 +8,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
@@ -18,6 +19,7 @@ using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Ingestion.Subjects;
 
 #endregion
 
@@ -37,6 +39,7 @@ public static class SearchTools
         public required DocChunk Chunk { get; init; }
         public required float VectorScore { get; init; }
         public required double Bm25Score { get; init; }
+        public double SubjectBoost { get; init; }
         public required double HybridScore { get; init; }
     }
 
@@ -76,6 +79,8 @@ public static class SearchTools
                                                 [Description("Filter to category: Overview, HowTo, Sample, ApiReference, ChangeLog"
                                                             )]
                                                 string? category = null,
+                                                [Description("Optional subject id, label, or alias for an explicit library-scoped filter")]
+                                                string? subject = null,
                                                 [Description("Specific version — defaults to current")]
                                                 string? version = null,
                                                 [Description("Maximum results (default 5)")]
@@ -101,24 +106,40 @@ public static class SearchTools
             json = LibraryNotFoundJson(library);
         else
         {
-            json = await metrics.TimeAsync(QueryMetricOperations.SearchDocs,
-                                           () => ExecuteSearchAsync(vectorSearch,
-                                                                    embeddingProvider,
-                                                                    reRanker,
-                                                                    repositoryFactory,
-                                                                    rankingOptions.Value,
-                                                                    metrics,
-                                                                    logger,
-                                                                    query,
-                                                                    library,
-                                                                    resolvedVersion,
-                                                                    category,
-                                                                    maxResults,
-                                                                    profile,
-                                                                    ct
-                                                                   ),
-                                           note: $"library={library ?? "*"}"
-                                          );
+            try
+            {
+                SubjectSearchContext subjectContext = await ResolveSubjectContextAsync(repositoryFactory,
+                                                                                        libraryRepository,
+                                                                                        library,
+                                                                                        resolvedVersion,
+                                                                                        subject,
+                                                                                        query,
+                                                                                        profile,
+                                                                                        ct);
+                json = await metrics.TimeAsync(QueryMetricOperations.SearchDocs,
+                                               () => ExecuteSearchAsync(vectorSearch,
+                                                                        embeddingProvider,
+                                                                        reRanker,
+                                                                        repositoryFactory,
+                                                                        rankingOptions.Value,
+                                                                        metrics,
+                                                                        logger,
+                                                                        query,
+                                                                        library,
+                                                                        resolvedVersion,
+                                                                        category,
+                                                                        subjectContext,
+                                                                        maxResults,
+                                                                        profile,
+                                                                        ct
+                                                                       ),
+                                               note: $"library={library ?? "*"}"
+                                              );
+            }
+            catch(InvalidDataException ex)
+            {
+                json = ErrorJson(ex.Message);
+            }
         }
 
         return json;
@@ -328,8 +349,18 @@ public static class SearchTools
             var allResults = new List<DocChunk>();
             foreach(var lib in libraries)
             {
-                var chunks = await chunkRepository.FindByQualifiedNameAsync(lib.Id, lib.CurrentVersion, className, ct);
-                allResults.AddRange(chunks);
+                var publishedVersion = await LibraryTools.ResolveVersionAsync(libraryRepository,
+                                                                               lib.Id,
+                                                                               version: null,
+                                                                               ct);
+                if (publishedVersion != null)
+                {
+                    var chunks = await chunkRepository.FindByQualifiedNameAsync(lib.Id,
+                                                                                 publishedVersion,
+                                                                                 className,
+                                                                                 ct);
+                    allResults.AddRange(chunks);
+                }
             }
 
             results = allResults;
@@ -360,6 +391,7 @@ public static class SearchTools
                                                          string? library,
                                                          string? resolvedVersion,
                                                          string? category,
+                                                         SubjectSearchContext subjectContext,
                                                          int maxResults,
                                                          string? profile,
                                                          CancellationToken ct)
@@ -379,22 +411,20 @@ public static class SearchTools
                                                 );
         embedSw.Stop();
 
-        var filter = new VectorSearchFilter
-                         {
-                             Profile = profile,
-                             LibraryId = library,
-                             Version = resolvedVersion,
-                             Category = categoryFilter
-                         };
-
         var vectorSw = Stopwatch.StartNew();
         var candidateCount = ResolveVectorCandidateCount(maxResults, rankingSettings);
+        var libraryRepository = repositoryFactory.GetLibraryRepository(profile);
         var searchResults = await metrics.TimeAsync(QueryMetricOperations.VectorSearch,
-                                                    () => vectorSearch.SearchAsync(embeddings[0],
-                                                             filter,
+                                                    () => SearchPublishedVectorsAsync(vectorSearch,
+                                                             libraryRepository,
+                                                             embeddings[0],
+                                                             library,
+                                                             resolvedVersion,
+                                                             categoryFilter,
+                                                             subjectContext.ExplicitSubjectId,
                                                              candidateCount,
-                                                             ct
-                                                        ),
+                                                             profile,
+                                                             ct),
                                                     r => r.Count,
                                                     $"library={library ?? "*"}"
                                                    );
@@ -410,7 +440,10 @@ public static class SearchTools
                                                  );
         bm25Sw.Stop();
 
-        var hybrid = BlendVectorAndBm25(searchResults, bm25Scores, rankingSettings.Bm25Weight);
+        var hybrid = BlendVectorAndBm25(searchResults,
+                                        bm25Scores,
+                                        rankingSettings.Bm25Weight,
+                                        subjectContext.InferredSubjectId);
 
         // Identifier-shape fast path is an enhancement over the hybrid
         // pool — skipped on cross-library queries to avoid noisy
@@ -426,6 +459,7 @@ public static class SearchTools
                                                                   resolvedVersion,
                                                                   logger,
                                                                   metrics,
+                                                                  subjectContext.ExplicitSubjectId,
                                                                   ct
                                                                  );
         }
@@ -444,6 +478,16 @@ public static class SearchTools
                                                            ct
                                                           );
         rerankSw.Stop();
+
+        IReadOnlyDictionary<string, SubjectSearchMetadata> subjectMetadata = smEmptySubjectMetadata;
+        if (ranked.Any(result => result.Chunk.DocumentSource != null &&
+                                result.Chunk.SubjectTaxonomyVersion != null))
+        {
+            var subjectEnricher = new SubjectSearchEnricher(
+                repositoryFactory.GetSubjectAssignmentRepository(profile),
+                repositoryFactory.GetSubjectCatalogRepository(profile));
+            subjectMetadata = await subjectEnricher.EnrichAsync(ranked.Select(result => result.Chunk).ToList(), ct);
+        }
         totalSw.Stop();
 
         var json = SerializeSearchResponse(ranked,
@@ -457,9 +501,185 @@ public static class SearchTools
                                            rerankActive,
                                            queryIsIdentifierShape,
                                            categoryFilter,
+                                           subjectContext,
+                                           subjectMetadata,
                                            rankingSettings
                                           );
         return json;
+    }
+
+    private static async Task<IReadOnlyList<VectorSearchResult>> SearchPublishedVectorsAsync(
+        IVectorSearchProvider vectorSearch,
+        ILibraryRepository libraryRepository,
+        float[] queryEmbedding,
+        string? library,
+        string? resolvedVersion,
+        DocCategory? category,
+        string? explicitSubjectId,
+        int candidateCount,
+        string? profile,
+        CancellationToken ct)
+    {
+        IReadOnlyList<VectorSearchResult> result;
+        if (library != null)
+        {
+            if (resolvedVersion == null)
+                result = [];
+            else
+            {
+                var exactFilter = new VectorSearchFilter
+                                      {
+                                          Profile = profile,
+                                          LibraryId = library,
+                                          Version = resolvedVersion,
+                                          Category = category,
+                                          SubjectId = explicitSubjectId
+                                      };
+                result = await vectorSearch.SearchAsync(queryEmbedding, exactFilter, candidateCount, ct);
+            }
+        }
+        else
+        {
+            var libraries = await libraryRepository.GetAllLibrariesAsync(ct);
+            var combined = new List<VectorSearchResult>();
+            foreach(var currentLibrary in libraries)
+            {
+                var publishedVersion = await LibraryTools.ResolveVersionAsync(libraryRepository,
+                                                                               currentLibrary.Id,
+                                                                               currentLibrary.CurrentVersion,
+                                                                               ct);
+                if (publishedVersion != null)
+                {
+                    var filter = new VectorSearchFilter
+                                     {
+                                         Profile = profile,
+                                         LibraryId = currentLibrary.Id,
+                                         Version = publishedVersion,
+                                         Category = category,
+                                         SubjectId = explicitSubjectId
+                                     };
+                    var results = await vectorSearch.SearchAsync(queryEmbedding, filter, candidateCount, ct);
+                    combined.AddRange(results.Where(r => r.Chunk.LibraryId == currentLibrary.Id &&
+                                                         r.Chunk.Version == publishedVersion));
+                }
+            }
+
+            result = combined.OrderByDescending(r => r.Score).Take(candidateCount).ToList();
+        }
+
+        return result;
+    }
+
+    private static async Task<SubjectSearchContext> ResolveSubjectContextAsync(
+        RepositoryFactory repositoryFactory,
+        ILibraryRepository libraryRepository,
+        string? library,
+        string? resolvedVersion,
+        string? explicitSubject,
+        string query,
+        string? profile,
+        CancellationToken ct)
+    {
+        var result = new SubjectSearchContext();
+        if (library == null)
+            EnsureNoCrossLibrarySubjectFilter(explicitSubject);
+        else
+            result = await ResolveScopedSubjectContextAsync(repositoryFactory,
+                                                            libraryRepository,
+                                                            library,
+                                                            resolvedVersion,
+                                                            explicitSubject,
+                                                            query,
+                                                            profile,
+                                                            ct);
+
+        return result;
+    }
+
+    private static async Task<SubjectSearchContext> ResolveScopedSubjectContextAsync(
+        RepositoryFactory repositoryFactory,
+        ILibraryRepository libraryRepository,
+        string library,
+        string? resolvedVersion,
+        string? explicitSubject,
+        string query,
+        string? profile,
+        CancellationToken ct)
+    {
+        var result = new SubjectSearchContext();
+        if (resolvedVersion != null)
+        {
+            LibraryVersionRecord? version = await libraryRepository.GetVersionAsync(library, resolvedVersion, ct);
+            if (string.IsNullOrEmpty(version?.SubjectTaxonomyVersion))
+                EnsureSubjectIsOptional(explicitSubject,
+                                        $"Library '{library}' version '{resolvedVersion}' has no subject catalog.");
+            else
+                result = await ResolveCatalogSubjectContextAsync(repositoryFactory,
+                                                                 library,
+                                                                 version.SubjectTaxonomyVersion,
+                                                                 explicitSubject,
+                                                                 query,
+                                                                 profile,
+                                                                 ct);
+        }
+
+        return result;
+    }
+
+    private static async Task<SubjectSearchContext> ResolveCatalogSubjectContextAsync(
+        RepositoryFactory repositoryFactory,
+        string library,
+        string taxonomyVersion,
+        string? explicitSubject,
+        string query,
+        string? profile,
+        CancellationToken ct)
+    {
+        var catalogRepository = repositoryFactory.GetSubjectCatalogRepository(profile);
+        SubjectCatalogRecord? catalog = await catalogRepository.GetAsync(library, taxonomyVersion, ct);
+        var result = new SubjectSearchContext();
+        if (catalog == null)
+            EnsureSubjectIsOptional(explicitSubject,
+                                    $"Subject catalog '{taxonomyVersion}' is unavailable for library '{library}'.");
+        else
+            result = BuildSubjectSearchContext(catalog, explicitSubject, query, library);
+        return result;
+    }
+
+    private static SubjectSearchContext BuildSubjectSearchContext(SubjectCatalogRecord catalog,
+                                                                  string? explicitSubject,
+                                                                  string query,
+                                                                  string library)
+    {
+        string? explicitSubjectId = null;
+        string? inferredSubjectId = null;
+        if (!string.IsNullOrWhiteSpace(explicitSubject))
+        {
+            explicitSubjectId = SubjectSearchPolicy.ResolveExplicit(catalog, explicitSubject);
+            if (explicitSubjectId == null)
+                throw new InvalidDataException($"Subject '{explicitSubject}' was not found in library '{library}'.");
+        }
+        else
+            inferredSubjectId = SubjectSearchPolicy.Infer(catalog, query);
+
+        return new SubjectSearchContext
+                   {
+                       ExplicitSubjectId = explicitSubjectId,
+                       InferredSubjectId = inferredSubjectId,
+                       Catalog = catalog
+                   };
+    }
+
+    private static void EnsureNoCrossLibrarySubjectFilter(string? explicitSubject)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitSubject))
+            throw new InvalidDataException("An explicit subject filter requires a library because subject catalogs are library-scoped.");
+    }
+
+    private static void EnsureSubjectIsOptional(string? explicitSubject, string error)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitSubject))
+            throw new InvalidDataException(error);
     }
 
     private static async Task<IReadOnlyDictionary<string, double>> GetBm25ScoresAsync(
@@ -489,13 +709,19 @@ public static class SearchTools
 
     private static IReadOnlyList<HybridCandidate> BlendVectorAndBm25(IReadOnlyList<VectorSearchResult> vectorResults,
                                                                      IReadOnlyDictionary<string, double> bm25Scores,
-                                                                     float bm25Weight)
+                                                                     float bm25Weight,
+                                                                     string? inferredSubjectId)
     {
         var maxBm25 = bm25Scores.Count > 0 ? bm25Scores.Values.Max() : 0.0;
         var vectorWeight = 1.0f - bm25Weight;
 
         var blended = vectorResults
-                      .Select(vr => BuildHybridCandidate(vr, bm25Scores, maxBm25, bm25Weight, vectorWeight))
+                      .Select(vr => BuildHybridCandidate(vr,
+                                                         bm25Scores,
+                                                         maxBm25,
+                                                         bm25Weight,
+                                                         vectorWeight,
+                                                         inferredSubjectId))
                       .OrderByDescending(c => c.HybridScore)
                       .ToList();
         return blended;
@@ -505,16 +731,19 @@ public static class SearchTools
                                                         IReadOnlyDictionary<string, double> bm25Scores,
                                                         double maxBm25,
                                                         float bm25Weight,
-                                                        float vectorWeight)
+                                                        float vectorWeight,
+                                                        string? inferredSubjectId)
     {
         var bm25 = bm25Scores.TryGetValue(vr.Chunk.Id, out var s) ? s : 0.0;
         var bm25Norm = maxBm25 > 0 ? bm25 / maxBm25 : 0.0;
-        var hybrid = (vectorWeight * vr.Score) + (bm25Weight * bm25Norm);
+        double subjectBoost = SubjectSearchPolicy.GetBoost(vr.Chunk, inferredSubjectId);
+        var hybrid = (vectorWeight * vr.Score) + (bm25Weight * bm25Norm) + subjectBoost;
         var result = new HybridCandidate
                          {
                              Chunk = vr.Chunk,
                              VectorScore = vr.Score,
                              Bm25Score = bm25Norm,
+                             SubjectBoost = subjectBoost,
                              HybridScore = hybrid
                          };
         return result;
@@ -665,50 +894,81 @@ public static class SearchTools
                                                   bool rerankActive,
                                                   bool queryIsIdentifierShape,
                                                   DocCategory? categoryFilter,
+                                                  SubjectSearchContext subjectContext,
+                                                  IReadOnlyDictionary<string, SubjectSearchMetadata> subjectMetadata,
                                                   RankingSettings rankingSettings)
     {
-        var results = ranked.Select(r => new
-                                             {
-                                                 r.Chunk.LibraryId,
-                                                 r.Chunk.Category,
-                                                 r.Chunk.PageTitle,
-                                                 r.Chunk.SectionPath,
-                                                 r.Chunk.PageUrl,
-                                                 r.Chunk.Content,
-                                                 r.Chunk.QualifiedName,
-                                                 r.Chunk.CodeLanguage,
-                                                 RelevanceScore = r.FinalScore,
-                                                 r.VectorScore,
-                                                 r.Bm25Score,
-                                                 r.RerankScore
-                                             }
-                                   );
+        var results = new JsonArray();
+        foreach(RankedResult rankedResult in ranked)
+        {
+            JsonNode serializedResult = JsonSerializer.SerializeToNode(new
+                                                                           {
+                                                                               rankedResult.Chunk.LibraryId,
+                                                                               rankedResult.Chunk.Category,
+                                                                               rankedResult.Chunk.PageTitle,
+                                                                               rankedResult.Chunk.SectionPath,
+                                                                               rankedResult.Chunk.PageUrl,
+                                                                               rankedResult.Chunk.Content,
+                                                                               rankedResult.Chunk.QualifiedName,
+                                                                               rankedResult.Chunk.CodeLanguage,
+                                                                               RelevanceScore = rankedResult.FinalScore,
+                                                                               rankedResult.VectorScore,
+                                                                               rankedResult.Bm25Score,
+                                                                               rankedResult.RerankScore
+                                                                           },
+                                                                       smJsonOptions)
+                                        ?? throw new InvalidOperationException("Search result serialization returned no JSON value.");
+            JsonObject result = serializedResult.AsObject();
+            if (subjectMetadata.TryGetValue(rankedResult.Chunk.Id, out SubjectSearchMetadata? metadata))
+            {
+                result[nameof(DocChunk.SubjectTaxonomyVersion)] = metadata.TaxonomyVersion;
+                result[nameof(SubjectSearchMetadata.NeedsReview)] = metadata.NeedsReview;
+                result[nameof(SubjectSearchMetadata.Subjects)] = JsonSerializer.SerializeToNode(metadata.Subjects,
+                                                                                                 smJsonOptions);
+            }
 
-        var response = new
+            if (rankedResult.Chunk.DocumentSource != null)
+            {
+                result[nameof(DocChunk.DocumentSource)] =
+                    JsonSerializer.SerializeToNode(rankedResult.Chunk.DocumentSource, smJsonOptions);
+            }
+
+            results.Add(result);
+        }
+
+        JsonNode serializedStrategy = JsonSerializer.SerializeToNode(new
+                                                                         {
+                                                                             ReRankerStrategy = rankingSettings.ReRankerStrategy.ToString(),
+                                                                             RerankActive = rerankActive,
+                                                                             QueryIsIdentifierShape = queryIsIdentifierShape,
+                                                                             Category = categoryFilter?.ToString(),
+                                                                             rankingSettings.Bm25Weight
+                                                                         },
+                                                                     smJsonOptions)
+                                      ?? throw new InvalidOperationException("Search strategy serialization returned no JSON value.");
+        JsonObject strategy = serializedStrategy.AsObject();
+        if (subjectContext.ExplicitSubjectId != null)
+            strategy[nameof(SubjectSearchContext.ExplicitSubjectId)] = subjectContext.ExplicitSubjectId;
+        if (subjectContext.InferredSubjectId != null)
+            strategy[nameof(SubjectSearchContext.InferredSubjectId)] = subjectContext.InferredSubjectId;
+
+        var response = new JsonObject
                            {
-                               Results = results,
-                               Timing = new
-                                            {
-                                                EmbedMs = embedSw.ElapsedMilliseconds,
-                                                VectorSearchMs = vectorSw.ElapsedMilliseconds,
-                                                Bm25Ms = bm25Sw.ElapsedMilliseconds,
-                                                ReRankMs = rerankSw.ElapsedMilliseconds,
-                                                TotalMs = totalSw.ElapsedMilliseconds,
-                                                CandidateCount = candidateCount,
-                                                ReRankCandidateCount = reRankCandidateCount
-                                            },
-                               Strategy = new
-                                              {
-                                                  ReRankerStrategy = rankingSettings.ReRankerStrategy.ToString(),
-                                                  RerankActive = rerankActive,
-                                                  QueryIsIdentifierShape = queryIsIdentifierShape,
-                                                  Category = categoryFilter?.ToString(),
-                                                  rankingSettings.Bm25Weight
-                                              }
+                               ["Results"] = results,
+                               ["Timing"] = JsonSerializer.SerializeToNode(new
+                                                                               {
+                                                                                   EmbedMs = embedSw.ElapsedMilliseconds,
+                                                                                   VectorSearchMs = vectorSw.ElapsedMilliseconds,
+                                                                                   Bm25Ms = bm25Sw.ElapsedMilliseconds,
+                                                                                   ReRankMs = rerankSw.ElapsedMilliseconds,
+                                                                                   TotalMs = totalSw.ElapsedMilliseconds,
+                                                                                   CandidateCount = candidateCount,
+                                                                                   ReRankCandidateCount = reRankCandidateCount
+                                                                               },
+                                                                           smJsonOptions),
+                               ["Strategy"] = strategy
                            };
-
-        var json = JsonSerializer.Serialize(response, smJsonOptions);
-        return json;
+        return response.ToJsonString(smJsonOptions);
     }
 
     private static string LibraryNotFoundJson(string library)
@@ -720,6 +980,12 @@ public static class SearchTools
                         };
         var result = JsonSerializer.Serialize(error, smJsonOptions);
         return result;
+    }
+
+    private static string ErrorJson(string message)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(message);
+        return JsonSerializer.Serialize(new { Error = message }, smJsonOptions);
     }
 
     /// <summary>
@@ -742,6 +1008,26 @@ public static class SearchTools
         string version,
         ILogger<SearchToolsLog> logger,
         IQueryMetrics metrics,
+        CancellationToken ct) =>
+        await InjectIdentifierMatchesOrFallbackAsync(hybrid,
+                                                     chunkRepository,
+                                                     query,
+                                                     library,
+                                                     version,
+                                                     logger,
+                                                     metrics,
+                                                     explicitSubjectId: null,
+                                                     ct: ct);
+
+    internal static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesOrFallbackAsync(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IChunkRepository chunkRepository,
+        string query,
+        string library,
+        string version,
+        ILogger<SearchToolsLog> logger,
+        IQueryMetrics metrics,
+        string? explicitSubjectId,
         CancellationToken ct)
     {
         IReadOnlyList<HybridCandidate> result;
@@ -749,7 +1035,13 @@ public static class SearchTools
 
         try
         {
-            result = await InjectIdentifierMatchesAsync(hybrid, chunkRepository, query, library, version, ct);
+            result = await InjectIdentifierMatchesAsync(hybrid,
+                                                        chunkRepository,
+                                                        query,
+                                                        library,
+                                                        version,
+                                                        explicitSubjectId,
+                                                        ct);
             sw.Stop();
             // Injected-count = result count minus pre-existing hybrid count.
             // Zero is a valid success (no QualifiedName match for any token).
@@ -788,6 +1080,22 @@ public static class SearchTools
         string query,
         string library,
         string version,
+        CancellationToken ct) =>
+        await InjectIdentifierMatchesAsync(hybrid,
+                                           chunkRepository,
+                                           query,
+                                           library,
+                                           version,
+                                           explicitSubjectId: null,
+                                           ct: ct);
+
+    internal static async Task<IReadOnlyList<HybridCandidate>> InjectIdentifierMatchesAsync(
+        IReadOnlyList<HybridCandidate> hybrid,
+        IChunkRepository chunkRepository,
+        string query,
+        string library,
+        string version,
+        string? explicitSubjectId,
         CancellationToken ct)
     {
         var tokens = IdentifierTokenizer.ExtractDistinct(query, MinIdentifierTokenLength);
@@ -799,6 +1107,10 @@ public static class SearchTools
             foreach(var chunk in chunks.Where(c => IsExactCaseInsensitiveQualifiedNameMatch(c, token)))
                 matches.Add(chunk);
         }
+
+        if (explicitSubjectId != null)
+            matches = matches.Where(chunk => chunk.SubjectIds.Contains(explicitSubjectId,
+                                                                        StringComparer.Ordinal)).ToList();
 
         var result = InjectIdentifierMatches(hybrid, matches);
         return result;
@@ -881,6 +1193,9 @@ public static class SearchTools
     private const int MaxInjectedIdentifierMatches = 5;
     private static readonly IReadOnlyDictionary<string, double> smEmptyBm25Scores =
         new Dictionary<string, double>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlyDictionary<string, SubjectSearchMetadata> smEmptySubjectMetadata =
+        new Dictionary<string, SubjectSearchMetadata>(StringComparer.Ordinal);
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

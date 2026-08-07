@@ -50,6 +50,34 @@ public sealed class LibraryExporter
         mBm25Repository = bm25Repository;
     }
 
+    public LibraryExporter(ILibraryRepository libraryRepository,
+                           ILibraryProfileRepository profileRepository,
+                           ILibraryIndexRepository indexRepository,
+                           IExcludedSymbolsRepository excludedSymbolsRepository,
+                           IDiffRepository diffRepository,
+                           IPageRepository pageRepository,
+                           IChunkRepository chunkRepository,
+                           IBm25ShardRepository bm25Repository,
+                           ISourceDocumentRepository sourceDocumentRepository,
+                           ISubjectCatalogRepository subjectCatalogRepository,
+                           ISubjectAssignmentRepository subjectAssignmentRepository)
+        : this(libraryRepository,
+               profileRepository,
+               indexRepository,
+               excludedSymbolsRepository,
+               diffRepository,
+               pageRepository,
+               chunkRepository,
+               bm25Repository)
+    {
+        ArgumentNullException.ThrowIfNull(sourceDocumentRepository);
+        ArgumentNullException.ThrowIfNull(subjectCatalogRepository);
+        ArgumentNullException.ThrowIfNull(subjectAssignmentRepository);
+        mSourceDocumentRepository = sourceDocumentRepository;
+        mSubjectCatalogRepository = subjectCatalogRepository;
+        mSubjectAssignmentRepository = subjectAssignmentRepository;
+    }
+
     private const string TempSuffix = ".tmp";
 
     private const int ExcludedSymbolsLimit = int.MaxValue;
@@ -69,6 +97,9 @@ public sealed class LibraryExporter
     private readonly IPageRepository mPageRepository;
     private readonly IChunkRepository mChunkRepository;
     private readonly IBm25ShardRepository mBm25Repository;
+    private readonly ISourceDocumentRepository? mSourceDocumentRepository;
+    private readonly ISubjectCatalogRepository? mSubjectCatalogRepository;
+    private readonly ISubjectAssignmentRepository? mSubjectAssignmentRepository;
 
     public async Task<ExportResult> ExportAsync(ExportRequest request,
                                                 IProgress<ExportProgress>? progress,
@@ -162,6 +193,22 @@ public sealed class LibraryExporter
     {
         await WriteLibraryJsonAsync(writer, library, manifestBuilder, ct);
 
+        DirectoryLibraryDefinition? definition = mSourceDocumentRepository == null
+                                                     ? null
+                                                     : await mSourceDocumentRepository
+                                                         .GetDirectoryDefinitionAsync(library.Id, ct);
+        BundleDirectoryInfo? directory = definition == null
+                                             ? null
+                                             : new BundleDirectoryInfo
+                                                   {
+                                                       Recursive = definition.Recursive,
+                                                       AllowedExtensions = definition.AllowedExtensions.ToList(),
+                                                       ExclusionPatterns = definition.ExclusionPatterns.ToList()
+                                                   };
+        var sources = new Dictionary<string, SourceDocumentRecord>(StringComparer.Ordinal);
+        var catalogs = new Dictionary<SubjectCatalogKey, SubjectCatalogRecord>();
+        var artifacts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
         var versionEntries = new List<BundleVersionEntry>();
         for (int i = 0; i < targetVersions.Count; i++)
         {
@@ -172,11 +219,36 @@ public sealed class LibraryExporter
                                      VersionIndex = i,
                                      TotalVersions = targetVersions.Count
                                  });
-            var entry = await WriteVersionAsync(writer, library, targetVersions[i], manifestBuilder, ct);
+            var entry = await WriteVersionAsync(writer,
+                                                library,
+                                                targetVersions[i],
+                                                manifestBuilder,
+                                                sources,
+                                                catalogs,
+                                                artifacts,
+                                                ct);
             versionEntries.Add(entry);
         }
 
-        await WriteManifestAsync(writer, library, versionEntries, manifestBuilder, ct);
+        if (mSourceDocumentRepository != null)
+        {
+            await WriteJsonlAsync(writer,
+                                  manifestBuilder,
+                                  BundlePaths.SourcesFile,
+                                  sources.Values.OrderBy(source => source.Id, StringComparer.Ordinal),
+                                  ct);
+            await WriteJsonlAsync(writer,
+                                  manifestBuilder,
+                                  BundlePaths.SubjectCatalogsFile,
+                                  catalogs.Values.OrderBy(catalog => catalog.LibraryId, StringComparer.Ordinal)
+                                          .ThenBy(catalog => catalog.Revision),
+                                  ct);
+            foreach((string hash, long length) in artifacts.OrderBy(item => item.Key,
+                                                                     StringComparer.OrdinalIgnoreCase))
+                await WriteArtifactAsync(writer, manifestBuilder, hash, length, ct);
+        }
+
+        await WriteManifestAsync(writer, library, directory, versionEntries, manifestBuilder, ct);
     }
 
     private async Task WriteLibraryJsonAsync(IBundleWriter writer,
@@ -191,6 +263,9 @@ public sealed class LibraryExporter
                                                              LibraryRecord library,
                                                              string version,
                                                              ManifestBuilder manifestBuilder,
+                                                             IDictionary<string, SourceDocumentRecord> sources,
+                                                             IDictionary<SubjectCatalogKey, SubjectCatalogRecord> catalogs,
+                                                             IDictionary<string, long> artifacts,
                                                              CancellationToken ct)
     {
         var versionRecord = await mLibraryRepository.GetVersionAsync(library.Id, version, ct)
@@ -232,6 +307,16 @@ public sealed class LibraryExporter
         var pagesPath = BundlePaths.VersionFilePath(version, BundlePaths.PagesFile);
         await WriteJsonlAsync(writer, manifestBuilder, pagesPath, pages, ct);
 
+        (int sourceDocumentCount, int documentRevisionCount, int subjectAssignmentCount) =
+            await WriteDocumentVersionAsync(writer,
+                                            manifestBuilder,
+                                            library.Id,
+                                            version,
+                                            sources,
+                                            catalogs,
+                                            artifacts,
+                                            ct);
+
         await StreamChunksAsync(writer, manifestBuilder, library.Id, version, versionRecord.EmbeddingDimensions, ct);
 
         var bm25HasGridFs = await StreamBm25Async(writer, manifestBuilder, library.Id, version, ct);
@@ -250,6 +335,9 @@ public sealed class LibraryExporter
                        EmbeddingDimensions = versionRecord.EmbeddingDimensions,
                        PageCount = versionRecord.PageCount,
                        ChunkCount = versionRecord.ChunkCount,
+                       SourceDocumentCount = sourceDocumentCount,
+                       DocumentRevisionCount = documentRevisionCount,
+                       SubjectAssignmentCount = subjectAssignmentCount,
                        Bm25HasGridFs = bm25HasGridFs,
                        Blobs = versionBlobs
                    };
@@ -257,6 +345,7 @@ public sealed class LibraryExporter
 
     private async Task WriteManifestAsync(IBundleWriter writer,
                                           LibraryRecord library,
+                                          BundleDirectoryInfo? directory,
                                           IReadOnlyList<BundleVersionEntry> versions,
                                           ManifestBuilder manifestBuilder,
                                           CancellationToken ct)
@@ -278,10 +367,119 @@ public sealed class LibraryExporter
                                                  Hint = library.Hint
                                              },
                                Blobs = topLevelBlobs,
+                               Directory = directory,
                                Versions = versions
                            };
         await using var entry = writer.OpenEntry(BundlePaths.ManifestFile);
         await JsonSerializer.SerializeAsync(entry, manifest, BundleJsonOptions.Default, ct);
+    }
+
+    private async Task<(int SourceDocuments, int Revisions, int Assignments)> WriteDocumentVersionAsync(
+        IBundleWriter writer,
+        ManifestBuilder manifestBuilder,
+        string libraryId,
+        string version,
+        IDictionary<string, SourceDocumentRecord> sources,
+        IDictionary<SubjectCatalogKey, SubjectCatalogRecord> catalogs,
+        IDictionary<string, long> artifacts,
+        CancellationToken ct)
+    {
+        (int SourceDocuments, int Revisions, int Assignments) result = (0, 0, 0);
+        if (mSourceDocumentRepository != null &&
+            mSubjectCatalogRepository != null &&
+            mSubjectAssignmentRepository != null)
+        {
+            IReadOnlyList<DocumentRevisionRecord> revisions = await mSourceDocumentRepository
+                .GetRevisionsAsync(libraryId, version, ct);
+            string revisionsPath = BundlePaths.VersionFilePath(version, BundlePaths.DocumentRevisionsFile);
+            await WriteJsonlAsync(writer, manifestBuilder, revisionsPath, revisions, ct);
+            IReadOnlyList<string> revisionIds = revisions.Select(revision => revision.Id).ToList();
+            IReadOnlyList<SubjectAssignmentRecord> assignments = await mSubjectAssignmentRepository
+                .GetByDocumentRevisionIdsAsync(revisionIds, ct);
+            string assignmentsPath = BundlePaths.VersionFilePath(version, BundlePaths.SubjectAssignmentsFile);
+            await WriteJsonlAsync(writer, manifestBuilder, assignmentsPath, assignments, ct);
+
+            foreach(DocumentRevisionRecord revision in revisions)
+            {
+                SourceDocumentRecord source = await mSourceDocumentRepository.GetDocumentAsync(revision.DocumentId,
+                                                                                                  ct)
+                                              ?? throw new InvalidOperationException(
+                                                  $"Missing source document '{revision.DocumentId}'.");
+                sources[source.Id] = source;
+                AddRevisionArtifacts(artifacts, revision);
+            }
+
+            IReadOnlyList<SubjectCatalogKey> catalogKeys = assignments
+                                                           .Select(assignment => new SubjectCatalogKey(
+                                                                       assignment.LibraryId,
+                                                                       assignment.TaxonomyVersion))
+                                                           .Distinct()
+                                                           .ToList();
+            IReadOnlyList<SubjectCatalogRecord> resolvedCatalogs = await mSubjectCatalogRepository
+                .GetManyAsync(catalogKeys, ct);
+            foreach(SubjectCatalogRecord catalog in resolvedCatalogs)
+                catalogs[new SubjectCatalogKey(catalog.LibraryId, catalog.TaxonomyVersion)] = catalog;
+            if (resolvedCatalogs.Count != catalogKeys.Count)
+                throw new InvalidOperationException(
+                    "One or more subject catalogs referenced by assignments are missing.");
+
+            result = (revisions.Select(revision => revision.DocumentId)
+                               .Distinct(StringComparer.Ordinal)
+                               .Count(),
+                      revisions.Count,
+                      assignments.Count);
+        }
+
+        return result;
+    }
+
+    private static void AddRevisionArtifacts(IDictionary<string, long> artifacts,
+                                             DocumentRevisionRecord revision)
+    {
+        AddArtifact(artifacts, revision.OriginalArtifactHash, revision.OriginalByteLength);
+        if (!string.IsNullOrWhiteSpace(revision.ExtractionArtifactHash))
+        {
+            if (revision.ExtractionByteLength == null)
+                throw new InvalidOperationException(
+                    $"Revision '{revision.Id}' has an extraction hash without a byte length.");
+            AddArtifact(artifacts,
+                        revision.ExtractionArtifactHash,
+                        revision.ExtractionByteLength.Value);
+        }
+    }
+
+    private async Task WriteArtifactAsync(IBundleWriter writer,
+                                          ManifestBuilder manifestBuilder,
+                                          string hash,
+                                          long expectedLength,
+                                          CancellationToken ct)
+    {
+        if (mSourceDocumentRepository != null)
+        {
+            string path = BundlePaths.DocumentArtifact(hash);
+            await using (var entry = writer.OpenEntry(path))
+            await using (var hashSink = manifestBuilder.OpenBlob(path))
+            {
+                using var tee = new TeeStream(entry, hashSink, leaveOpen: true);
+                await using Stream source = await mSourceDocumentRepository.OpenArtifactAsync(hash, ct);
+                await source.CopyToAsync(tee, ct);
+            }
+
+            BlobInfo blob = manifestBuilder.GetBlob(path);
+            if (!string.Equals(blob.Sha256, hash, StringComparison.OrdinalIgnoreCase) ||
+                blob.Bytes != expectedLength)
+            {
+                throw new InvalidDataException(
+                    $"Artifact '{hash}' bytes do not match its recorded hash and length.");
+            }
+        }
+    }
+
+    private static void AddArtifact(IDictionary<string, long> artifacts, string hash, long length)
+    {
+        if (artifacts.TryGetValue(hash, out long existingLength) && existingLength != length)
+            throw new InvalidDataException($"Artifact '{hash}' has conflicting recorded lengths.");
+        artifacts[hash] = length;
     }
 
     private async Task WriteJsonAsync<T>(IBundleWriter writer,

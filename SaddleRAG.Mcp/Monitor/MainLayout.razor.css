@@ -1,0 +1,11 @@
+.monitor-top-navigation {
+    align-items: center;
+    display: flex;
+    white-space: nowrap;
+}
+
+@media (max-width: 959.98px) {
+    .monitor-top-navigation {
+        display: none;
+    }
+}

@@ -16,6 +16,8 @@ internal static class SkillManifest
     internal const string ScrapeStrategyFolderName = "saddlerag-scrape-strategy";
     internal const string MaintainFolderName       = "saddlerag-maintain";
     internal const string QueryFolderName          = "saddlerag-query";
+    internal const string DocumentsFolderName      = "saddlerag-documents";
+    internal const string DoclingSetupFolderName   = "saddlerag-docling-setup";
 
     private const string FirstResource          = ResourcePrefix + FirstFolderName          + MdExtension;
     private const string ReconResource          = ResourcePrefix + ReconFolderName          + MdExtension;
@@ -23,6 +25,8 @@ internal static class SkillManifest
     private const string ScrapeStrategyResource = ResourcePrefix + ScrapeStrategyFolderName + MdExtension;
     private const string MaintainResource       = ResourcePrefix + MaintainFolderName       + MdExtension;
     private const string QueryResource          = ResourcePrefix + QueryFolderName          + MdExtension;
+    private const string DocumentsResource      = ResourcePrefix + DocumentsFolderName      + MdExtension;
+    private const string DoclingSetupResource   = ResourcePrefix + DoclingSetupFolderName   + MdExtension;
 
     internal static readonly SkillDescriptor[] pmAll =
         [
@@ -32,5 +36,7 @@ internal static class SkillManifest
             new(ScrapeStrategyResource, ScrapeStrategyFolderName),
             new(MaintainResource,       MaintainFolderName),
             new(QueryResource,          QueryFolderName),
+            new(DocumentsResource,      DocumentsFolderName),
+            new(DoclingSetupResource,   DoclingSetupFolderName),
         ];
 }

@@ -42,4 +42,19 @@ public interface IVectorSearchProvider
                                                         VectorSearchFilter filter,
                                                         int maxResults = 5,
                                                         CancellationToken ct = default);
+
+    /// <summary>
+    ///     Remove one exact library-version index.
+    /// </summary>
+    Task RemoveIndexAsync(string? profile,
+                          string libraryId,
+                          string version,
+                          CancellationToken ct = default);
+
+    /// <summary>
+    ///     Remove every index for one library in the selected profile.
+    /// </summary>
+    Task RemoveLibraryIndexesAsync(string? profile,
+                                   string libraryId,
+                                   CancellationToken ct = default);
 }

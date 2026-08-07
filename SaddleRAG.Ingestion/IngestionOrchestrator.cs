@@ -41,29 +41,44 @@ public class IngestionOrchestrator
                                  SuspectDetector suspectDetector,
                                  IScrapeAuditWriter auditWriter,
                                  IMonitorBroadcaster broadcaster,
-                                 ILogger<IngestionOrchestrator> logger)
+                                 ILogger<IngestionOrchestrator> logger,
+                                 ISourceDocumentRepository? sourceDocumentRepository = null)
     {
         mCrawler = crawler;
         mChunker = chunker;
         mEmbeddingProvider = embeddingProvider;
         mPageRepository = pageRepository;
         mChunkRepository = chunkRepository;
+        mBm25ShardRepository = bm25ShardRepository;
+        mLibraryIndexRepository = libraryIndexRepository;
+        mLibraryRepository = libraryRepository;
+        mVectorSearch = vectorSearch;
+        mSourceDocumentRepository = sourceDocumentRepository;
         mBroadcaster = broadcaster;
         mLogger = logger;
+        mPageProcessor = new IngestionPageProcessor(llmClassifier,
+                                                    chunker,
+                                                    embeddingProvider,
+                                                    vectorSearch,
+                                                    logger,
+                                                    sharedLoggerCategory: true);
         mCrawlStage = new CrawlStage(crawler, logger);
-        mClassifyStage = new ClassifyStage(llmClassifier, pageRepository, broadcaster, logger);
-        mChunkStage = new ChunkStage(chunker, broadcaster, logger);
-        mEmbedStage = new EmbedStage(embeddingProvider, chunkRepository, broadcaster, logger);
+        mClassifyStage = new ClassifyStage(mPageProcessor, pageRepository, broadcaster, logger);
+        mChunkStage = new ChunkStage(mPageProcessor, broadcaster, logger);
+        mEmbedStage = new EmbedStage(mPageProcessor, chunkRepository, broadcaster, logger);
         mIndexStage = new IndexStage(vectorSearch, auditWriter, broadcaster, logger, llmClassifier);
         mFinalizer = new IngestionFinalizer(chunkRepository,
                                             bm25ShardRepository,
                                             libraryIndexRepository,
                                             libraryRepository,
+                                            vectorSearch,
                                             embeddingProvider,
                                             libraryProfileRepository,
                                             suspectDetector,
                                             llmClassifier,
-                                            logger
+                                            mPageProcessor,
+                                            logger,
+                                            sourceDocumentRepository
                                            );
     }
 
@@ -81,7 +96,13 @@ public class IngestionOrchestrator
     private readonly IngestionFinalizer mFinalizer;
     private readonly IndexStage mIndexStage;
     private readonly ILogger<IngestionOrchestrator> mLogger;
+    private readonly IngestionPageProcessor mPageProcessor;
+    private readonly IBm25ShardRepository mBm25ShardRepository;
+    private readonly ILibraryIndexRepository mLibraryIndexRepository;
+    private readonly ILibraryRepository mLibraryRepository;
     private readonly IPageRepository mPageRepository;
+    private readonly ISourceDocumentRepository? mSourceDocumentRepository;
+    private readonly IVectorSearchProvider mVectorSearch;
 
     /// <summary>
     ///     Run the streaming ingestion pipeline for a scrape job.
@@ -94,7 +115,53 @@ public class IngestionOrchestrator
                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(job);
+        await EnsurePublishedVersionDoesNotExistAsync(job, ct);
+        await WriteBuildingVersionAsync(job, ct);
+        var progress = jobRecord ??
+                       new ScrapeJobRecord
+                           {
+                               Id = Guid.NewGuid().ToString(),
+                               Job = job,
+                               Profile = profile
+                           };
 
+        try
+        {
+            await IngestCandidateAsync(job, profile, forceClean, onProgress, progress, ct);
+        }
+        catch(OperationCanceledException ex)
+        {
+            await MarkCandidateFailedPreservingOriginalAsync(job,
+                                                             profile,
+                                                             PublicationCancelledMessage,
+                                                             ex);
+            throw;
+        }
+        catch(Exception ex)
+        {
+            await MarkCandidateFailedPreservingOriginalAsync(job, profile, ex.Message, ex);
+            throw;
+        }
+    }
+
+    private async Task EnsurePublishedVersionDoesNotExistAsync(ScrapeJob job, CancellationToken ct)
+    {
+        var existing = await mLibraryRepository.GetVersionAsync(job.LibraryId, job.Version, ct);
+        if (existing?.PublicationState == VersionPublicationState.Published)
+        {
+            throw new InvalidOperationException(
+                $"Library '{job.LibraryId}' version '{job.Version}' is already Published and cannot be overwritten. " +
+                PublishedVersionReuseInstruction);
+        }
+    }
+
+    private async Task IngestCandidateAsync(ScrapeJob job,
+                                            string? profile,
+                                            bool forceClean,
+                                            Action<ScrapeJobRecord>? onProgress,
+                                            ScrapeJobRecord progress,
+                                            CancellationToken ct)
+    {
         mLogger.LogInformation("Starting streaming ingestion for {LibraryId} v{Version}", job.LibraryId, job.Version);
 
         // Build resume URL set from existing pages in DB. SeedFromStoredPages
@@ -157,14 +224,6 @@ public class IngestionOrchestrator
                                                                  { FullMode = BoundedChannelFullMode.Wait }
                                                             );
 
-        // Shared progress record
-        var progress = jobRecord ??
-                       new ScrapeJobRecord
-                           {
-                               Id = Guid.NewGuid().ToString(),
-                               Job = job,
-                               Profile = profile
-                           };
         progress.PipelineState = nameof(ScrapeJobStatus.Running);
 
         var auditCtx = new AuditContext
@@ -224,7 +283,8 @@ public class IngestionOrchestrator
             throw;
         }
 
-        await mFinalizer.RunAsync(job, progress, ct);
+        ValidateCandidateCompleteness(progress);
+        await mFinalizer.RunAsync(job, progress, profile, ct);
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
         onProgress?.Invoke(progress);
@@ -238,8 +298,147 @@ public class IngestionOrchestrator
                               );
     }
 
+    private async Task WriteBuildingVersionAsync(ScrapeJob job, CancellationToken ct)
+    {
+        var version = CreateLifecycleVersion(job, VersionPublicationState.Building, publicationError: null);
+        await mLibraryRepository.UpsertVersionAsync(version, ct);
+    }
+
+    private async Task MarkCandidateFailedAsync(ScrapeJob job,
+                                                string? profile,
+                                                string publicationError)
+    {
+        var failures = new List<Exception>();
+        var failed = CreateLifecycleVersion(job, VersionPublicationState.Failed, publicationError);
+        await TryCandidateCleanupStepAsync(
+            () => mLibraryRepository.UpsertVersionAsync(failed, CancellationToken.None),
+            FailedDiagnosticsCleanupDescription,
+            failures);
+        await TryCandidateCleanupStepAsync(
+            () => DeleteCandidateBm25Async(job),
+            Bm25CleanupDescription,
+            failures);
+        await TryCandidateCleanupStepAsync(
+            () => DeleteCandidateLibraryIndexAsync(job),
+            LibraryIndexCleanupDescription,
+            failures);
+        await TryCandidateCleanupStepAsync(
+            () => mVectorSearch.RemoveIndexAsync(profile, job.LibraryId, job.Version, CancellationToken.None),
+            VectorIndexCleanupDescription,
+            failures);
+        ISourceDocumentRepository? sourceDocumentRepository = mSourceDocumentRepository;
+        if (sourceDocumentRepository != null)
+        {
+            await TryCandidateCleanupStepAsync(
+                () => DeleteCandidateSourceVersionAsync(sourceDocumentRepository, job),
+                SourceDocumentCleanupDescription,
+                failures);
+        }
+
+        if (failures.Count > 0)
+            throw new AggregateException(CandidateCleanupFailureMessage, failures);
+    }
+
+    private async Task MarkCandidateFailedPreservingOriginalAsync(ScrapeJob job,
+                                                                   string? profile,
+                                                                   string publicationError,
+                                                                   Exception originalException)
+    {
+        try
+        {
+            await MarkCandidateFailedAsync(job, profile, publicationError);
+        }
+        catch(Exception cleanupException)
+        {
+            originalException.Data[CandidateCleanupFailureDataKey] = cleanupException.ToString();
+            mLogger.LogError(cleanupException,
+                             "Candidate cleanup failed for {LibraryId} v{Version}; preserving the original ingestion failure: {OriginalFailure}",
+                             job.LibraryId,
+                             job.Version,
+                             originalException.Message);
+        }
+    }
+
+    private async Task DeleteCandidateBm25Async(ScrapeJob job)
+    {
+        await mBm25ShardRepository.DeleteAsync(job.LibraryId, job.Version, CancellationToken.None);
+    }
+
+    private async Task DeleteCandidateLibraryIndexAsync(ScrapeJob job)
+    {
+        await mLibraryIndexRepository.DeleteAsync(job.LibraryId, job.Version, CancellationToken.None);
+    }
+
+    private static async Task DeleteCandidateSourceVersionAsync(ISourceDocumentRepository sourceDocumentRepository,
+                                                                ScrapeJob job)
+    {
+        await sourceDocumentRepository.DeleteVersionAsync(job.LibraryId,
+                                                           job.Version,
+                                                           CancellationToken.None);
+    }
+
+    private static async Task TryCandidateCleanupStepAsync(Func<Task> cleanupStep,
+                                                           string description,
+                                                           List<Exception> failures)
+    {
+        try
+        {
+            await cleanupStep();
+        }
+        catch(Exception ex)
+        {
+            failures.Add(new InvalidOperationException($"{description}: {ex.Message}", ex));
+        }
+    }
+
+    private LibraryVersionRecord CreateLifecycleVersion(ScrapeJob job,
+                                                        VersionPublicationState state,
+                                                        string? publicationError) =>
+        new()
+            {
+                Id = $"{job.LibraryId}/{job.Version}",
+                LibraryId = job.LibraryId,
+                Version = job.Version,
+                ScrapedAt = DateTime.UtcNow,
+                PageCount = 0,
+                ChunkCount = 0,
+                EmbeddingProviderId = mEmbeddingProvider.ProviderId,
+                EmbeddingModelName = mEmbeddingProvider.ModelName,
+                EmbeddingDimensions = mEmbeddingProvider.Dimensions,
+                PublicationState = state,
+                PublicationError = publicationError
+            };
+
+    private static void ValidateCandidateCompleteness(ScrapeJobRecord progress)
+    {
+        if (CrawlOutcomeEvaluator.IndicatesFailedCrawl(progress.PagesCompleted, progress.ErrorCount))
+        {
+            throw new InvalidOperationException(
+                $"Crawl harvested {progress.PagesCompleted} page(s) with {progress.ErrorCount} page error(s); " +
+                CandidateCannotBePublishedMessage);
+        }
+
+        if (progress.ChunksGenerated != progress.ChunksEmbedded ||
+            progress.ChunksEmbedded != progress.ChunksCompleted)
+        {
+            throw new InvalidOperationException(
+                $"Candidate chunk pipeline is incomplete: generated={progress.ChunksGenerated}, " +
+                $"embedded={progress.ChunksEmbedded}, indexed={progress.ChunksCompleted}.");
+        }
+    }
+
     private const int PageChannelCapacity = 50;
     private const int ChunkChannelCapacity = 20;
+    private const string PublicationCancelledMessage = "Publication cancelled.";
+    private const string CandidateCannotBePublishedMessage = "the candidate cannot be published.";
+    private const string CandidateCleanupFailureMessage = "One or more candidate cleanup operations failed.";
+    private const string CandidateCleanupFailureDataKey = "SaddleRAG.CandidateCleanupFailure";
+    private const string PublishedVersionReuseInstruction = "Use a new version identifier for the next manual scan.";
+    private const string FailedDiagnosticsCleanupDescription = "record Failed publication diagnostics";
+    private const string Bm25CleanupDescription = "delete candidate BM25 shards";
+    private const string LibraryIndexCleanupDescription = "delete candidate library index";
+    private const string VectorIndexCleanupDescription = "remove candidate vector index";
+    private const string SourceDocumentCleanupDescription = "delete candidate source-document version";
 
     private const string SinglePageStatusIndexed = "Indexed";
     private const string SinglePageStatusEmpty = "Empty";

@@ -38,6 +38,9 @@
         <Property Id="MONGOCONNECTION" Value="mongodb://localhost:27017" />
         <Property Id="MONGODATABASE" Value="SaddleRAG" />
         <Property Id="OLLAMAENDPOINT" Value="http://localhost:11434" />
+        <Property Id="DOCLINGENDPOINT" Value="http://localhost:5001" />
+        <Property Id="DOCLINGHEALTHURL" Value="http://localhost:5001/health" Secure="yes" />
+        <Property Id="DOCLINGSTATUS" Value="Not tested. PDF and DOCX ingestion will remain unavailable until the user-managed endpoint is ready." Secure="yes" />
         <Property Id="MONGOSTATUS" Secure="yes" />
         <Property Id="MONGOTEST_PASS" Value="0" Secure="yes" />
         <Property Id="OLLAMASTATUS" Secure="yes" />
@@ -75,7 +78,7 @@
         <Property Id="GPU_DETECTION_REASON" Secure="yes" />
         <Property Id="ONNX_EXECUTION_PROVIDER" Secure="yes" />
 
-        <!-- Escaped variants of the four PatchAppSettings inputs, written by  -->
+        <!-- Escaped variants of the five PatchAppSettings inputs, written by  -->
         <!-- EscapeAppSettingsProperties so a literal " in a Mongo password or -->
         <!-- Ollama URL doesn't break the powershell.exe argv parse before    -->
         <!-- the .ps1 can record the failure. See EscapeAppSettingsProperties.js -->
@@ -83,6 +86,7 @@
         <Property Id="MONGOCONNECTION_ESCAPED" Secure="yes" />
         <Property Id="MONGODATABASE_ESCAPED" Secure="yes" />
         <Property Id="OLLAMAENDPOINT_ESCAPED" Secure="yes" />
+        <Property Id="DOCLINGENDPOINT_ESCAPED" Secure="yes" />
         <Property Id="ONNX_EXECUTION_PROVIDER_ESCAPED" Secure="yes" />
 
         <!-- Set by EscapeAppSettingsProperties.js when a per-property escape  -->
@@ -99,11 +103,16 @@
 
         <!-- Published files -->
         <ComponentGroup Id="PublishOutput" Directory="MCPFOLDER">
-            <Files Include="$(var.PublishDir)\**" />
+            <Files Include="$(var.PublishDir)\**"
+                   Exclude="$(var.PublishDir)\SaddleRAG.Mcp.exe" />
         </ComponentGroup>
 
-        <!-- Windows service -->
+        <!-- The executable is excluded from wildcard harvesting so it can be the -->
+        <!-- key path of the component that owns MSI service registration.         -->
         <Component Id="ServiceComponent" Directory="MCPFOLDER" Guid="E697864C-7E01-457A-A2BA-0F0C655D64F2">
+            <File Id="SaddleRagMcpExecutable"
+                  Source="$(var.PublishDir)\SaddleRAG.Mcp.exe"
+                  KeyPath="yes" />
             <ServiceInstall Id="SaddleRAGMcpService"
                             Type="ownProcess"
                             Name="SaddleRAGMcp"
@@ -112,28 +121,9 @@
                             Start="auto"
                             ErrorControl="normal"
                             Account="LocalSystem" />
-            <!--
-                The per-user service-control ACL grant (so the non-elevated tray can
-                start/stop the service without UAC) is applied by start-and-monitor.ps1
-                (Add-UsersServiceControlAce), NOT by a util:PermissionEx here.
-
-                Why: in practice MSI's standard InstallServices (seq 5800) does not
-                create this service - ServiceComponent has no keypath exe (the binary is
-                harvested into PublishOutput), so InstallServices emits no create op.
-                start-and-monitor.ps1 registers the service via New-Service at the
-                StartAndMonitorService CA (seq 5899). A util:PermissionEx compiles to
-                Wix4ExecSecureObjects (seq 5801), which runs ~94 slots BEFORE the
-                service exists and fails fatally with 0x80070424
-                ERROR_SERVICE_DOES_NOT_EXIST, rolling the whole install back. Granting
-                in the PS1 - immediately after New-Service - keeps the ACE
-                (A;;RPWPLORC;;;BU) in lockstep with service creation. -->
-
             <!-- ServiceControl drives stop-on-install/uninstall and removal on uninstall. -->
-            <!-- Our StartAndMonitorService CA (which also registers the service via New-Service) -->
-            <!-- runs BEFORE MSI's standard StartServices, drives the service to Running with -->
-            <!-- retries (since cold .NET startup can trip SCM's 30s pre-dispatcher gate), and -->
-            <!-- gates install success on a /health 200. By the time MSI's StartServices fires, -->
-            <!-- the service is already Running, so it's a no-op pass. -->
+            <!-- StartAndMonitorService runs after InstallServices, retries startup, and gates -->
+            <!-- install success on /health. By StartServices the service is already running. -->
             <ServiceControl Id="StartSaddleRAGMcp"
                             Name="SaddleRAGMcp"
                             Start="install"
@@ -236,6 +226,33 @@
                       Execute="immediate"
                       Return="ignore" />
 
+        <!-- Docling is an optional, user-operated prerequisite. These immediate -->
+        <!-- actions only open official documentation or probe the configured     -->
+        <!-- endpoint. They never install or control the external process.         -->
+        <CustomAction Id="TestDoclingConnection"
+                      Script="jscript"
+                      ScriptSourceFile="TestDoclingConnection.js"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <CustomAction Id="OpenDoclingInstallInstructions"
+                      Script="jscript"
+                      ScriptSourceFile="OpenDoclingInstallInstructions.js"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <CustomAction Id="OpenDoclingReleases"
+                      Script="jscript"
+                      ScriptSourceFile="OpenDoclingReleases.js"
+                      Execute="immediate"
+                      Return="ignore" />
+
+        <CustomAction Id="OpenDoclingApiDocumentation"
+                      Script="jscript"
+                      ScriptSourceFile="OpenDoclingApiDocumentation.js"
+                      Execute="immediate"
+                      Return="ignore" />
+
         <!-- UI-time CA: read system OLLAMA_KEEP_ALIVE so the Ollama dialog can -->
         <!-- decide whether to show the "we will set OLLAMA_KEEP_ALIVE=-1" notice. -->
         <!-- Sets properties OLLAMA_KEEPALIVE_EXISTING and OLLAMA_KEEPALIVE_WILL_SET. -->
@@ -256,7 +273,7 @@
                       Execute="immediate"
                       Return="ignore" />
 
-        <!-- Pre-escape the four PatchAppSettings inputs so a literal " in any   -->
+        <!-- Pre-escape the five PatchAppSettings inputs so a literal " in any   -->
         <!-- value (Mongo password with a quote, Ollama URL containing one) doesn't -->
         <!-- terminate the powershell.exe argv parse before the .ps1's try/catch  -->
         <!-- can record the failure. Runs in the Execute sequence right before     -->
@@ -278,7 +295,7 @@
         <SetProperty Id="PatchAppSettings"
                      Before="PatchAppSettings"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]PatchAppSettings.ps1&quot; -AppSettingsPath &quot;[MCPFOLDER]appsettings.json&quot; -ConnectionString &quot;[MONGOCONNECTION_ESCAPED]&quot; -DatabaseName &quot;[MONGODATABASE_ESCAPED]&quot; -OllamaEndpoint &quot;[OLLAMAENDPOINT_ESCAPED]&quot; -ExecutionProvider &quot;[ONNX_EXECUTION_PROVIDER_ESCAPED]&quot; -EscapeFailed &quot;[ESCAPE_FAILED]&quot;" />
+                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]PatchAppSettings.ps1&quot; -AppSettingsPath &quot;[MCPFOLDER]appsettings.json&quot; -ConnectionString &quot;[MONGOCONNECTION_ESCAPED]&quot; -DatabaseName &quot;[MONGODATABASE_ESCAPED]&quot; -OllamaEndpoint &quot;[OLLAMAENDPOINT_ESCAPED]&quot; -DoclingEndpoint &quot;[DOCLINGENDPOINT_ESCAPED]&quot; -ExecutionProvider &quot;[ONNX_EXECUTION_PROVIDER_ESCAPED]&quot; -EscapeFailed &quot;[ESCAPE_FAILED]&quot;" />
 
         <CustomAction Id="PatchAppSettings"
                       BinaryRef="Wix4UtilCA_X86"
@@ -456,17 +473,14 @@
                       Return="check"
                       Impersonate="no" />
 
-        <!-- Replacement for MSI's standard StartServices action: drives the start ourselves -->
-        <!-- with a retry+health-poll loop, since SCM's pre-dispatcher 30s gate (ServicesPipeTimeout) -->
-        <!-- can be tripped by cold .NET startup of the 215 MB self-contained service. We can't extend -->
-        <!-- that gate from inside .NET (it's per-process and fires before our managed code can pump -->
-        <!-- SetServiceStatus), so we accept that the FIRST start may fail and retry. The CA returns -->
-        <!-- non-zero on persistent failure so MSI rolls back cleanly rather than committing a -->
-        <!-- half-installed product where the service never actually runs. -->
+        <!-- Replacement for MSI's standard StartServices action: a dedicated self-contained -->
+        <!-- helper drives registration, retries, and the health poll without requiring a shell -->
+        <!-- host on the target machine. The helper controls only SaddleRAGMcp and keeps native -->
+        <!-- stdout/stderr separate. Persistent failure remains fatal so MSI rolls back cleanly. -->
         <SetProperty Id="StartAndMonitorService"
                      Before="StartAndMonitorService"
                      Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]start-and-monitor.ps1&quot; -ServiceName SaddleRAGMcp -HealthUrl http://localhost:6100/health -BinaryPath &quot;[MCPFOLDER]SaddleRAG.Mcp.exe&quot; -TotalTimeoutSec 300" />
+                     Value="&quot;[MCPFOLDER]SaddleRAG.Installer.Helper.exe&quot; start-and-monitor --service-name SaddleRAGMcp --health-url http://localhost:6100/health --binary-path &quot;[MCPFOLDER]SaddleRAG.Mcp.exe&quot; --total-timeout-seconds 300 --poll-interval-seconds 2 --health-timeout-seconds 5 --max-start-attempts 5" />
 
         <CustomAction Id="StartAndMonitorService"
                       BinaryRef="Wix4UtilCA_X86"
@@ -666,6 +680,61 @@
                     <Publish Event="NewDialog" Value="MongoDbDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                    <Publish Event="NewDialog" Value="DoclingDlg" />
+                </Control>
+                <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+            </Dialog>
+
+            <!-- Optional Docling prerequisite dialog. SaddleRAG records and probes -->
+            <!-- the endpoint but never installs, starts, stops, or schedules it.     -->
+            <Dialog Id="DoclingDlg" Width="370" Height="270" Title="Optional Document Ingestion">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+                <Control Id="Title" Type="Text" X="20" Y="10" Width="290" Height="14"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="{\WixUI_Font_Title}Docling PDF and DOCX Support" />
+
+                <Control Id="Description" Type="Text" X="25" Y="53" Width="320" Height="40"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="Docling is optional, separately installed, and user-managed. You decide whether to install it and accept its license. SaddleRAG only saves and tests this endpoint." />
+
+                <Control Id="EndpointLabel" Type="Text" X="25" Y="96" Width="320" Height="12"
+                         Text="Docling Serve endpoint:" />
+                <Control Id="EndpointEdit" Type="Edit" X="25" Y="109" Width="320" Height="18"
+                         Property="DOCLINGENDPOINT" />
+
+                <Control Id="HealthUrl" Type="Text" X="25" Y="131" Width="320" Height="12"
+                         Transparent="yes" NoPrefix="yes" Text="Health test: [DOCLINGHEALTHURL]" />
+
+                <Control Id="OpenInstallInstructions" Type="PushButton" X="25" Y="149" Width="83" Height="17"
+                         Text="Install Guide">
+                    <Publish Event="DoAction" Value="OpenDoclingInstallInstructions" />
+                </Control>
+                <Control Id="OpenReleases" Type="PushButton" X="111" Y="149" Width="68" Height="17"
+                         Text="Releases">
+                    <Publish Event="DoAction" Value="OpenDoclingReleases" />
+                </Control>
+                <Control Id="OpenApiDocumentation" Type="PushButton" X="182" Y="149" Width="73" Height="17"
+                         Text="API Docs">
+                    <Publish Event="DoAction" Value="OpenDoclingApiDocumentation" />
+                </Control>
+                <Control Id="TestDocling" Type="PushButton" X="258" Y="149" Width="87" Height="17"
+                         Text="Test Docling">
+                    <Publish Property="DOCLINGSTATUS" Value="Testing health, model readiness, and the SaddleRAG-owned conversion probe..." Order="1" />
+                    <Publish Event="DoAction" Value="TestDoclingConnection" Order="2" />
+                </Control>
+
+                <Control Id="StatusText" Type="Text" X="25" Y="172" Width="320" Height="48"
+                         Transparent="yes" NoPrefix="yes" Text="[DOCLINGSTATUS]" />
+
+                <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
+                    <Publish Event="NewDialog" Value="OllamaDlg" />
+                </Control>
+                <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="ExecutionModeDlg" />
                 </Control>
                 <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
@@ -712,7 +781,7 @@
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
-                    <Publish Event="NewDialog" Value="OllamaDlg" />
+                    <Publish Event="NewDialog" Value="DoclingDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="AiClientsDlg" />

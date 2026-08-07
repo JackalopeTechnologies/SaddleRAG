@@ -32,13 +32,25 @@ internal sealed class ChunkStage
         ArgumentNullException.ThrowIfNull(chunker);
         ArgumentNullException.ThrowIfNull(broadcaster);
         ArgumentNullException.ThrowIfNull(logger);
-        mChunker = chunker;
+        mChunk = page => chunker.Chunk(page);
+        mBroadcaster = broadcaster;
+        mLogger = logger;
+    }
+
+    internal ChunkStage(IngestionPageProcessor processor,
+                        IMonitorBroadcaster broadcaster,
+                        ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(processor);
+        ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(logger);
+        mChunk = processor.Chunk;
         mBroadcaster = broadcaster;
         mLogger = logger;
     }
 
     private readonly IMonitorBroadcaster mBroadcaster;
-    private readonly IChunker mChunker;
+    private readonly Func<PageRecord, IReadOnlyList<DocChunk>> mChunk;
     private readonly ILogger mLogger;
 
     /// <summary>
@@ -90,7 +102,7 @@ internal sealed class ChunkStage
         var sw = Stopwatch.StartNew();
         try
         {
-            var chunks = mChunker.Chunk(page);
+            IReadOnlyList<DocChunk> chunks = mChunk(page);
             if (chunks.Count > 0)
             {
                 await output.WriteAsync(chunks.ToArray(), ct);

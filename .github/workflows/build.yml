@@ -144,6 +144,9 @@ jobs:
       - name: Publish Tray
         run: dotnet publish SaddleRAG.Tray/SaddleRAG.Tray.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
 
+      - name: Publish installer helper
+        run: dotnet publish SaddleRAG.Installer.Helper/SaddleRAG.Installer.Helper.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
+
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
 

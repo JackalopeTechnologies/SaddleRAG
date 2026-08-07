@@ -224,6 +224,78 @@ public sealed class OrphanCleanupIntegrationTests : IAsyncLifetime
         await repo.DeleteByLibraryVersionAsync(lib, "2.0", TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task LibraryRepositoryReturnsBuildingVersionAsValidParent()
+    {
+        var repo = new LibraryRepository(mContext);
+        var library = $"int-building-{Guid.NewGuid():N}";
+        var building = new LibraryVersionRecord
+                           {
+                               Id = $"{library}/candidate",
+                               LibraryId = library,
+                               Version = "candidate",
+                               ScrapedAt = DateTime.UtcNow,
+                               PageCount = 0,
+                               ChunkCount = 0,
+                               EmbeddingProviderId = "test",
+                               EmbeddingModelName = "test",
+                               EmbeddingDimensions = 2,
+                               PublicationState = VersionPublicationState.Building
+                           };
+        await repo.UpsertVersionAsync(building, TestContext.Current.CancellationToken);
+
+        var versions = await repo.GetVersionsByPublicationStateAsync(VersionPublicationState.Building,
+                                                                     TestContext.Current.CancellationToken);
+
+        Assert.Contains(versions, v => v.Id == building.Id);
+        await repo.DeleteVersionAsync(library, "candidate", TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task DeletingLastPublishedVersionRemovesParentAndRetainsDiagnosticVersions()
+    {
+        var repo = new LibraryRepository(mContext);
+        var libraryId = $"int-delete-last-published-{Guid.NewGuid():N}";
+        var published = MakeVersion(libraryId, "published", VersionPublicationState.Published);
+        var building = MakeVersion(libraryId, "building", VersionPublicationState.Building);
+        var failed = MakeVersion(libraryId, "failed", VersionPublicationState.Failed);
+        await repo.UpsertLibraryAsync(new LibraryRecord
+                                          {
+                                              Id = libraryId,
+                                              Name = libraryId,
+                                              Hint = "integration test",
+                                              CurrentVersion = published.Version,
+                                              AllVersions = [published.Version]
+                                          },
+                                      TestContext.Current.CancellationToken);
+        await repo.UpsertVersionAsync(published, TestContext.Current.CancellationToken);
+        await repo.UpsertVersionAsync(building, TestContext.Current.CancellationToken);
+        await repo.UpsertVersionAsync(failed, TestContext.Current.CancellationToken);
+
+        var result = await repo.DeleteVersionAsync(libraryId,
+                                                   published.Version,
+                                                   TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, result.VersionsDeleted);
+        Assert.True(result.LibraryRowDeleted);
+        Assert.Null(result.CurrentVersionRepointedTo);
+        Assert.Null(await repo.GetLibraryAsync(libraryId, TestContext.Current.CancellationToken));
+        Assert.Null(await repo.GetVersionAsync(libraryId,
+                                               published.Version,
+                                               TestContext.Current.CancellationToken));
+        Assert.Equal(VersionPublicationState.Building,
+                     (await repo.GetVersionAsync(libraryId,
+                                                 building.Version,
+                                                 TestContext.Current.CancellationToken))?.PublicationState);
+        Assert.Equal(VersionPublicationState.Failed,
+                     (await repo.GetVersionAsync(libraryId,
+                                                 failed.Version,
+                                                 TestContext.Current.CancellationToken))?.PublicationState);
+
+        await repo.DeleteVersionAsync(libraryId, building.Version, TestContext.Current.CancellationToken);
+        await repo.DeleteVersionAsync(libraryId, failed.Version, TestContext.Current.CancellationToken);
+    }
+
     private static PageRecord MakePage(string libraryId, string version, string url) =>
         new PageRecord
             {
@@ -237,6 +309,23 @@ public sealed class OrphanCleanupIntegrationTests : IAsyncLifetime
                 FetchedAt = DateTime.UtcNow,
                 ContentHash = "h",
                 Depth = 0
+            };
+
+    private static LibraryVersionRecord MakeVersion(string libraryId,
+                                                    string version,
+                                                    VersionPublicationState publicationState) =>
+        new()
+            {
+                Id = $"{libraryId}/{version}",
+                LibraryId = libraryId,
+                Version = version,
+                ScrapedAt = DateTime.UtcNow,
+                PageCount = 0,
+                ChunkCount = 0,
+                EmbeddingProviderId = "test",
+                EmbeddingModelName = "test",
+                EmbeddingDimensions = 2,
+                PublicationState = publicationState
             };
 
     private static DocChunk MakeChunk(string libraryId, string version) =>

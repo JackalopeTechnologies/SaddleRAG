@@ -42,6 +42,9 @@ public sealed record BundleManifest
     [JsonPropertyName("blobs")]
     public required IReadOnlyDictionary<string, BlobInfo> Blobs { get; init; }
 
+    [JsonPropertyName("directory")]
+    public BundleDirectoryInfo? Directory { get; init; }
+
     [JsonPropertyName("versions")]
     public required IReadOnlyList<BundleVersionEntry> Versions { get; init; }
 }

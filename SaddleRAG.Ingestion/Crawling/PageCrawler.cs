@@ -36,7 +36,8 @@ public class PageCrawler : IPageCrawler
         int SameHostDepth,
         int OffSiteDepth,
         int RetryAttemptIndex = 0,
-        string? ParentUrl = null);
+        string? ParentUrl = null,
+        bool AllowExtensionRecovery = true);
 
     private record RootScope(string Scheme, string Host, string PathPrefix);
 
@@ -187,14 +188,22 @@ public class PageCrawler : IPageCrawler
                        IScrapeAuditWriter auditWriter,
                        IMonitorBroadcaster broadcaster,
                        ILogger<PageCrawler> logger,
-                       ILoggerFactory loggerFactory)
+                       ILoggerFactory loggerFactory,
+                       WebDocumentPageProducer? documentPageProducer = null)
     {
+        ArgumentNullException.ThrowIfNull(pageRepository);
+        ArgumentNullException.ThrowIfNull(gitHubScraper);
+        ArgumentNullException.ThrowIfNull(auditWriter);
+        ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
         mPageRepository = pageRepository;
         mGitHubScraper = gitHubScraper;
         mAuditWriter = auditWriter;
         mBroadcaster = broadcaster;
         mLogger = logger;
         mLoggerFactory = loggerFactory;
+        mDocumentPageProducer = documentPageProducer;
     }
 
     private readonly IScrapeAuditWriter mAuditWriter;
@@ -202,6 +211,7 @@ public class PageCrawler : IPageCrawler
     private readonly GitHubRepoScraper mGitHubScraper;
     private readonly ILogger<PageCrawler> mLogger;
     private readonly ILoggerFactory mLoggerFactory;
+    private readonly WebDocumentPageProducer? mDocumentPageProducer;
 
     private readonly IPageRepository mPageRepository;
 
@@ -348,9 +358,12 @@ public class PageCrawler : IPageCrawler
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(output);
 
+        string effectiveJobId = string.IsNullOrWhiteSpace(jobId)
+                                    ? Guid.NewGuid().ToString("N")
+                                    : jobId;
         var auditCtx = new AuditContext
                            {
-                               JobId = jobId,
+                               JobId = effectiveJobId,
                                LibraryId = job.LibraryId,
                                Version = job.Version
                            };
@@ -392,7 +405,8 @@ public class PageCrawler : IPageCrawler
                         var requeue = new CrawlEntry(u,
                                                      InScopeDepth: 0,
                                                      SameHostDepth: 0,
-                                                     OffSiteDepth: 0
+                                                     OffSiteDepth: 0,
+                                                     AllowExtensionRecovery: false
                                                     );
                         c.IncrementInFlight();
                         if (!c.InScopeEntries.Writer.TryWrite(requeue))
@@ -467,27 +481,40 @@ public class PageCrawler : IPageCrawler
             mLogger.LogInformation("Seeded crawl queue with {Count} stored URLs (in addition to RootUrl)", seedCount);
         }
 
-        int workerCount = Math.Max(val1: 1, MaxParallelWorkers);
-        await RunWorkerPoolAsync(ctx, browser, workerCount, ct);
-
-        if (ctx.DroppedInScopeUrls.Count > 0)
+        try
         {
-            mLogger.LogWarning("Dropped {Count} in-scope URLs after exhausting retries: {Urls}",
-                               ctx.DroppedInScopeUrls.Count,
-                               string.Join(DroppedUrlSeparator, ctx.DroppedInScopeUrls)
-                              );
+            int workerCount = Math.Max(val1: 1, MaxParallelWorkers);
+            await RunWorkerPoolAsync(ctx, browser, workerCount, ct);
+
+            if (ctx.DroppedInScopeUrls.Count > 0)
+            {
+                mLogger.LogWarning("Dropped {Count} in-scope URLs after exhausting retries: {Urls}",
+                                   ctx.DroppedInScopeUrls.Count,
+                                   string.Join(DroppedUrlSeparator, ctx.DroppedInScopeUrls)
+                                  );
+            }
+
+            dryRunAcc?.RecordRenderMode(ctx.Voter.RenderMode, ctx.Voter.MedianDelta, ctx.Voter.IsLoadWaitNeeded);
+
+            mLogger.LogInformation("Crawl complete for {LibraryId} v{Version}: {Count} pages, {Hosts} hosts, {Dropped} dropped",
+                                   job.LibraryId,
+                                   job.Version,
+                                   ctx.PageCount,
+                                   ctx.Budget.HostCount,
+                                   ctx.DroppedInScopeUrls.Count
+                                  );
+            output.TryComplete();
         }
-
-        dryRunAcc?.RecordRenderMode(ctx.Voter.RenderMode, ctx.Voter.MedianDelta, ctx.Voter.IsLoadWaitNeeded);
-
-        mLogger.LogInformation("Crawl complete for {LibraryId} v{Version}: {Count} pages, {Hosts} hosts, {Dropped} dropped",
-                               job.LibraryId,
-                               job.Version,
-                               ctx.PageCount,
-                               ctx.Budget.HostCount,
-                               ctx.DroppedInScopeUrls.Count
-                              );
-        output.Complete();
+        catch(OperationCanceledException)
+        {
+            output.TryComplete();
+            throw;
+        }
+        catch(Exception ex)
+        {
+            output.TryComplete(ex);
+            throw;
+        }
     }
 
     /// <summary>
@@ -657,7 +684,8 @@ public class PageCrawler : IPageCrawler
         {
             await ProcessCrawlEntryAsync(entry, ctx, page);
         }
-        catch(Exception ex) when(ex is not OperationCanceledException)
+        catch(Exception ex) when(ex is not OperationCanceledException
+                                      and not SupportedDocumentIngestionException)
         {
             mLogger.LogWarning(ex,
                                "Retry worker error processing {Url} (retry {Attempt})",
@@ -721,7 +749,8 @@ public class PageCrawler : IPageCrawler
             if (firstVisit && !ctx.Token.IsCancellationRequested)
                 await ProcessCrawlEntryAsync(entry, ctx, page);
         }
-        catch(Exception ex) when(ex is not OperationCanceledException)
+        catch(Exception ex) when(ex is not OperationCanceledException
+                                      and not SupportedDocumentIngestionException)
         {
             mLogger.LogWarning(ex, "Worker error processing {Url}", entry.Url);
         }
@@ -861,27 +890,33 @@ public class PageCrawler : IPageCrawler
             int domCount;
             int loadCount;
             bool skipPersist;
-            (response, fetchUrl, domCount, loadCount, skipPersist) = await FetchWithExtensionRecoveryAsync(url,
-                                                                                page,
-                                                                                ctx.ExtensionState,
-                                                                                ctx.Navigator,
-                                                                                ctx.Voter,
-                                                                                ctx.Token
-                                                                               );
+            fetched = await TryCompleteDocumentFetchAsync(entry, ctx, page);
+            if (!fetched)
+            {
+                (response, fetchUrl, domCount, loadCount, skipPersist) =
+                    await FetchWithExtensionRecoveryAsync(url,
+                                                          page,
+                                                          ctx.ExtensionState,
+                                                          ctx.Navigator,
+                                                          ctx.Voter,
+                                                          entry.AllowExtensionRecovery,
+                                                          ctx.Token);
 
-            fetched = await DispatchFetchOutcomeAsync(response,
-                                                      page,
-                                                      fetchUrl,
-                                                      entry,
-                                                      ctx,
-                                                      limiter,
-                                                      url,
-                                                      domCount,
-                                                      loadCount,
-                                                      skipPersist
-                                                     );
+                fetched = await DispatchFetchOutcomeAsync(response,
+                                                          page,
+                                                          fetchUrl,
+                                                          entry,
+                                                          ctx,
+                                                          limiter,
+                                                          url,
+                                                          domCount,
+                                                          loadCount,
+                                                          skipPersist
+                                                         );
+            }
         }
-        catch(Exception ex) when(ex is not OperationCanceledException)
+        catch(Exception ex) when(ex is not OperationCanceledException
+                                      and not SupportedDocumentIngestionException)
         {
             limiter.ReportTransientError();
             ctx.OnFetchError?.Invoke();
@@ -910,6 +945,132 @@ public class PageCrawler : IPageCrawler
         }
 
         return fetched;
+    }
+
+    private async Task<bool> TryCompleteDocumentFetchAsync(CrawlEntry entry,
+                                                            CrawlContext ctx,
+                                                            IPage page)
+    {
+        var result = false;
+        WebDocumentPageProducer? producer = mDocumentPageProducer;
+        if (producer != null && ShouldProbeForDocument(entry.Url))
+        {
+            FetchedWebResponse? response = await TryFetchResponseSnapshotAsync(entry.Url, page, ctx.Token);
+            if (response != null)
+            {
+                DocumentResponseKind kind = DocumentResponseClassifier.Classify(response);
+                bool supportedDocument = kind is DocumentResponseKind.Pdf or DocumentResponseKind.Docx;
+                if (supportedDocument)
+                {
+                    await CompleteDocumentFetchAsync(producer, entry, ctx, response, kind);
+                    result = true;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private async Task CompleteDocumentFetchAsync(WebDocumentPageProducer producer,
+                                                   CrawlEntry entry,
+                                                   CrawlContext ctx,
+                                                   FetchedWebResponse response,
+                                                   DocumentResponseKind kind)
+    {
+        var sw = Stopwatch.StartNew();
+        bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+        bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+        int depth = inScope  ? entry.InScopeDepth :
+                    sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+        IReadOnlyList<PageRecord> pages = await producer.ProduceAsync(ctx.Job,
+                                                                      ctx.AuditCtx.JobId,
+                                                                      response,
+                                                                      kind,
+                                                                      depth,
+                                                                      entry.ParentUrl,
+                                                                      ctx.PersistMode,
+                                                                      ctx.Token);
+        foreach (PageRecord documentPage in pages)
+        {
+            if (ctx.PersistMode == IngestionPersistenceMode.Full)
+                await mPageRepository.UpsertPageAsync(documentPage, ctx.Token);
+            await ctx.PageOutput.WriteAsync(documentPage, ctx.Token);
+        }
+
+        int newCount = ctx.IncrementPageCount();
+        long fetchMs = sw.ElapsedMilliseconds;
+        string hostKey = CrawlBudget.BuildHostKey(new Uri(response.FinalUrl));
+        int contentLength = pages.Sum(item => item.RawContent.Length);
+        ctx.DryRunAcc?.RecordFetchMs(fetchMs);
+        ctx.DryRunAcc?.RecordTotalPage(hostKey, depth, inScope);
+        ctx.DryRunAcc?.RecordSamplePage(new DryRunPageEntry
+                                            {
+                                                Url = response.FinalUrl,
+                                                OutOfScopeDepth = depth,
+                                                InScope = inScope,
+                                                ContentBytes = contentLength,
+                                                LinksFound = 0,
+                                                ContentNodesAtDom = -1,
+                                                ContentNodesAtLoad = -1
+                                            });
+        mAuditWriter.RecordFetched(ctx.AuditCtx,
+                                   response.FinalUrl,
+                                   entry.ParentUrl,
+                                   SafeGetHost(response.FinalUrl),
+                                   depth);
+        mBroadcaster.RecordFetch(ctx.AuditCtx.JobId, response.FinalUrl);
+        ctx.OnPageFetched?.Invoke(newCount);
+        mLogger.LogInformation("Fetched document {Url} in {FetchMs}ms ({ContentBytes} extracted characters, {SectionCount} sections)",
+                               response.FinalUrl,
+                               fetchMs,
+                               contentLength,
+                               pages.Count);
+        if (ctx.Job.FetchDelayMs > 0)
+            await Task.Delay(ctx.Job.FetchDelayMs, ctx.Token);
+    }
+
+    private async Task<FetchedWebResponse?> TryFetchResponseSnapshotAsync(string url,
+                                                                           IPage page,
+                                                                           CancellationToken ct)
+    {
+        FetchedWebResponse? result = null;
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            IAPIResponse response = await page.APIRequest.GetAsync(url).WaitAsync(ct);
+            if (response.Ok)
+            {
+                byte[] body = await response.BodyAsync().WaitAsync(ct);
+                result = new FetchedWebResponse(OriginalUrl: url,
+                                                AttemptedUrl: url,
+                                                FinalUrl: response.Url,
+                                                StatusCode: response.Status,
+                                                Headers: response.Headers,
+                                                Body: body);
+            }
+        }
+        catch(Exception ex) when(ex is PlaywrightException or InvalidOperationException or TimeoutException)
+        {
+            mLogger.LogDebug(ex,
+                             "Response-byte probe was unavailable for {Url}; continuing through the existing browser path",
+                             url);
+        }
+
+        return result;
+    }
+
+    private static bool ShouldProbeForDocument(string url)
+    {
+        var result = false;
+        if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+            && (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+        {
+            string extension = Path.GetExtension(uri.AbsolutePath);
+            result = !smExtensionsToStrip.Contains(extension, StringComparer.OrdinalIgnoreCase);
+        }
+
+        return result;
     }
 
     private async Task<bool> DispatchFetchOutcomeAsync(IResponse? response,
@@ -1525,20 +1686,23 @@ public class PageCrawler : IPageCrawler
                                                parentEntry.InScopeDepth + 1,
                                                SameHostDepth: 0,
                                                OffSiteDepth: 0,
-                                               ParentUrl: parentEntry.Url
+                                               ParentUrl: parentEntry.Url,
+                                               AllowExtensionRecovery: false
                                               ),
                         false => linkSameHost
                                      ? new CrawlEntry(normalized,
                                                       parentEntry.InScopeDepth,
                                                       parentEntry.SameHostDepth + 1,
                                                       parentEntry.OffSiteDepth,
-                                                      ParentUrl: parentEntry.Url
+                                                      ParentUrl: parentEntry.Url,
+                                                      AllowExtensionRecovery: false
                                                      )
                                      : new CrawlEntry(normalized,
                                                       parentEntry.InScopeDepth,
                                                       parentEntry.SameHostDepth,
                                                       parentEntry.OffSiteDepth + 1,
-                                                      ParentUrl: parentEntry.Url
+                                                      ParentUrl: parentEntry.Url,
+                                                      AllowExtensionRecovery: false
                                                      )
                     };
 
@@ -1888,13 +2052,14 @@ public class PageCrawler : IPageCrawler
     ///     Returns null when the URL is allowed, or a (reason, detail) pair
     ///     describing the first rejection that applies.
     /// </summary>
-    private static (AuditSkipReason Reason, string? Detail)? IsAllowed(string url, ScrapeJob job)
+    private (AuditSkipReason Reason, string? Detail)? IsAllowed(string url, ScrapeJob job)
     {
         var regexTimeout = TimeSpan.FromMilliseconds(RegexTimeoutMs);
 
         bool isBinary = smBinaryExtensionPatterns.Any(pattern =>
                                                           SafeRegexIsMatch(url, pattern, regexTimeout)
-                                                     );
+                                                     )
+                        || mDocumentPageProducer == null && HasSupportedDocumentSuffix(url);
 
         (AuditSkipReason Reason, string? Detail)? result = null;
 
@@ -1920,6 +2085,18 @@ public class PageCrawler : IPageCrawler
                                                                             );
             if (excludedPattern != null)
                 result = (AuditSkipReason.PatternExclude, excludedPattern);
+        }
+
+        return result;
+    }
+
+    private static bool HasSupportedDocumentSuffix(string url)
+    {
+        var result = false;
+        if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri))
+        {
+            string extension = Path.GetExtension(uri.AbsolutePath);
+            result = extension is ".pdf" or ".docx";
         }
 
         return result;
@@ -1961,13 +2138,19 @@ public class PageCrawler : IPageCrawler
                                         SiteExtensionState extensionState,
                                         EscalationController controller,
                                         RenderModeVoter voter,
+                                        bool allowExtensionRecovery,
                                         CancellationToken ct)
     {
-        string fetchUrl = MaybeApplyKnownExtension(url, extensionState.Value);
+        string fetchUrl = allowExtensionRecovery
+                              ? MaybeApplyKnownExtension(url, extensionState.Value)
+                              : url;
         var (response, domCount, loadCount, skipPersist) =
             await NavigateAndPreparePageAsync(page, fetchUrl, controller, voter, ct);
 
-        if (extensionState.Value == null && response is { } rejected && ShouldRecoverWithExtension(rejected.Status))
+        if (allowExtensionRecovery
+            && extensionState.Value == null
+            && response is { } rejected
+            && ShouldRecoverWithExtension(rejected.Status))
             (response, fetchUrl, domCount, loadCount, skipPersist) =
                 await RetryWithExtensionsAsync(url, page, rejected.Status, extensionState, controller, voter, ct);
 
@@ -2216,7 +2399,7 @@ public class PageCrawler : IPageCrawler
     /// </summary>
     private static readonly string[] smBinaryExtensionPatterns =
         [
-            @"\.pdf(\?|$)", @"\.zip(\?|$)", @"\.tar(\?|$)", @"\.gz(\?|$)", @"\.7z(\?|$)",
+            @"\.zip(\?|$)", @"\.tar(\?|$)", @"\.gz(\?|$)", @"\.7z(\?|$)",
             @"\.exe(\?|$)", @"\.dmg(\?|$)", @"\.msi(\?|$)",
             @"\.png(\?|$)", @"\.jpg(\?|$)", @"\.jpeg(\?|$)", @"\.gif(\?|$)",
             @"\.svg(\?|$)", @"\.webp(\?|$)", @"\.ico(\?|$)", @"\.bmp(\?|$)",

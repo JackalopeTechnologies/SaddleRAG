@@ -43,6 +43,17 @@ If the library isn't in SaddleRAG yet, two skills cover the ingestion workflow:
 
 These two skills cross-reference each other — use recon when uncertain, scrape when ready.
 
+## Local document directories
+
+Local document ingestion is an explicit, manual workflow:
+
+- `register_directory_library` requires the user's explicit local path and stores it without scanning, watching, or scheduling the directory.
+- `scan_directory_library` queues one manual scan of an already registered root. It cannot register or replace the root path.
+- For a PDF or DOCX capability problem, call `get_document_ingestion_status` for the observed reason and `get_docling_install_instructions` for official recovery documentation.
+- Docling is user-managed. SaddleRAG does not install, license, start, stop, or upgrade it.
+
+Use `saddlerag:documents` for the complete registration, manual scan, monitoring, search, and citation workflow. Use `saddlerag:docling-setup` only when the user asks for help installing or recovering the user-managed Docling Serve prerequisite or its optional official MCP server.
+
 ## Querying effectively
 
 - **`saddlerag:query`** — which tool to use for which question, how to chain search_docs / get_class_reference / get_library_overview, category filtering caveats, what to do when results are thin or wrong.
@@ -56,6 +67,8 @@ These two skills cross-reference each other — use recon when uncertain, scrape
 ```
 fresh session → get_dashboard_index() [saddlerag:maintain]
 library missing → saddlerag:recon → saddlerag:scrape
+local document directory → saddlerag:documents
+PDF/DOCX prerequisite help → saddlerag:docling-setup
 library present → saddlerag:query
 results disappointing → saddlerag:maintain → saddlerag:recon / saddlerag:scrape
 ```

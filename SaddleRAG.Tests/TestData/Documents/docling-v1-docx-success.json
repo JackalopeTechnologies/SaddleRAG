@@ -1,0 +1,63 @@
+{
+  "document": {
+    "filename": "saddlerag-docling-probe.docx",
+    "md_content": "# SaddleRAG Docling Probe\n\n## Verification\n\nSADDLERAG_DOCLING_PROBE_2026_08_04\n\nThis document verifies local DOCX conversion.",
+    "text_content": "SaddleRAG Docling Probe\nVerification\nSADDLERAG_DOCLING_PROBE_2026_08_04\nThis document verifies local DOCX conversion.",
+    "json_content": {
+      "schema_name": "DoclingDocument",
+      "version": "1.7.0",
+      "name": "saddlerag-docling-probe",
+      "body": {
+        "self_ref": "#/body",
+        "children": [
+          { "$ref": "#/texts/0" },
+          { "$ref": "#/texts/1" },
+          { "$ref": "#/texts/2" }
+        ],
+        "name": "_root_",
+        "label": "unspecified"
+      },
+      "groups": [],
+      "texts": [
+        {
+          "self_ref": "#/texts/0",
+          "parent": { "$ref": "#/body" },
+          "children": [],
+          "label": "title",
+          "level": 1,
+          "prov": [],
+          "orig": "SaddleRAG Docling Probe",
+          "text": "SaddleRAG Docling Probe"
+        },
+        {
+          "self_ref": "#/texts/1",
+          "parent": { "$ref": "#/body" },
+          "children": [],
+          "label": "section_header",
+          "level": 2,
+          "prov": [],
+          "orig": "Verification",
+          "text": "Verification"
+        },
+        {
+          "self_ref": "#/texts/2",
+          "parent": { "$ref": "#/body" },
+          "children": [],
+          "label": "text",
+          "prov": [],
+          "orig": "SADDLERAG_DOCLING_PROBE_2026_08_04 This document verifies local DOCX conversion.",
+          "text": "SADDLERAG_DOCLING_PROBE_2026_08_04 This document verifies local DOCX conversion."
+        }
+      ],
+      "tables": [],
+      "pictures": [],
+      "key_value_items": [],
+      "form_items": [],
+      "pages": {}
+    }
+  },
+  "status": "success",
+  "processing_time": 0.41,
+  "timings": {},
+  "errors": []
+}
