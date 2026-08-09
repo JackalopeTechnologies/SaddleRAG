@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.Runtime.InteropServices;
 using System.Text;
 using SaddleRAG.Ingestion.Scanning;
 
@@ -73,16 +74,119 @@ public sealed class PhysicalDirectoryScanFileSystemIdentityTests
         Assert.Throws<DirectoryNotFoundException>(() => enumeration.Entries.ToArray());
     }
 
+    [Fact]
+    public void SymbolicLinkRootRetainsReparsePointClassification()
+    {
+        using var fixture = new PhysicalIdentityFixture();
+        string linkPath = Path.Combine(fixture.ContainerPath, "linked-root");
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(linkPath, fixture.RootPath);
+            }
+            catch(Exception error) when (error is IOException
+                                         or UnauthorizedAccessException
+                                         or PlatformNotSupportedException)
+            {
+                Assert.Skip($"Directory symbolic links are unavailable: {error.GetType().Name}.");
+            }
+
+            var fileSystem = new PhysicalDirectoryScanFileSystem();
+            DirectoryEntrySnapshot snapshot = Inspect(fileSystem, linkPath);
+
+            Assert.True(snapshot.Attributes.HasFlag(FileAttributes.ReparsePoint));
+        }
+        finally
+        {
+            if (Directory.Exists(linkPath))
+                Directory.Delete(linkPath, recursive: false);
+        }
+    }
+
+    [Fact]
+    public void SymbolicLinkAncestorRetainsReparsePointClassification()
+    {
+        using var fixture = new PhysicalIdentityFixture();
+        string linkPath = Path.Combine(fixture.ContainerPath, "linked-container");
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(linkPath, fixture.ContainerPath);
+            }
+            catch(Exception error) when (error is IOException
+                                         or UnauthorizedAccessException
+                                         or PlatformNotSupportedException)
+            {
+                Assert.Skip($"Directory symbolic links are unavailable: {error.GetType().Name}.");
+            }
+
+            string requestedRoot = Path.Combine(linkPath, "root");
+            var fileSystem = new PhysicalDirectoryScanFileSystem();
+            DirectoryEntrySnapshot snapshot = Inspect(fileSystem, requestedRoot);
+
+            Assert.True(snapshot.Attributes.HasFlag(FileAttributes.ReparsePoint));
+        }
+        finally
+        {
+            if (Directory.Exists(linkPath))
+                Directory.Delete(linkPath, recursive: false);
+        }
+    }
+
+    [Fact]
+    public void WindowsShortPathAliasIsNotClassifiedAsReparsePoint()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows short paths are only available on Windows.");
+        using var fixture = new PhysicalIdentityFixture();
+        string shortPath = GetWindowsShortPath(fixture.RootPath);
+        Assert.SkipUnless(!shortPath.Equals(fixture.RootPath, StringComparison.OrdinalIgnoreCase),
+                          "The test volume did not provide a distinct 8.3 path alias.");
+        var fileSystem = new PhysicalDirectoryScanFileSystem();
+
+        DirectoryEntrySnapshot snapshot = Inspect(fileSystem, shortPath);
+
+        Assert.False(snapshot.Attributes.HasFlag(FileAttributes.ReparsePoint));
+    }
+
     private static DirectoryEntrySnapshot Inspect(PhysicalDirectoryScanFileSystem fileSystem,
                                                    string fullPath)
     {
         DirectoryPathResult inspection = fileSystem.InspectPath(fullPath);
-        Assert.True(inspection.Succeeded);
+        Assert.True(inspection.Succeeded,
+                    $"{inspection.ReasonCode}: {inspection.Error}");
         DirectoryEntrySnapshot snapshot = Assert.IsType<DirectoryEntrySnapshot>(inspection.Snapshot);
         Assert.True(snapshot.Identity.HasValue);
         Assert.False(string.IsNullOrWhiteSpace(snapshot.ResolvedPath));
         return snapshot;
     }
+
+    private static string GetWindowsShortPath(string fullPath)
+    {
+        var buffer = new StringBuilder(InitialWindowsPathCapacity);
+        uint length = GetShortPathName(fullPath, buffer, (uint)buffer.Capacity);
+        Assert.SkipUnless(length > 0,
+                          $"Windows short-path aliases are unavailable: {Marshal.GetLastWin32Error()}.");
+        if (length >= buffer.Capacity)
+        {
+            buffer = new StringBuilder(checked((int)length + 1));
+            length = GetShortPathName(fullPath, buffer, (uint)buffer.Capacity);
+            Assert.SkipUnless(length > 0 && length < buffer.Capacity,
+                              $"Windows short-path aliases are unavailable: {Marshal.GetLastWin32Error()}.");
+        }
+
+        return buffer.ToString();
+    }
+
+    [DllImport("kernel32.dll",
+               EntryPoint = "GetShortPathNameW",
+               CharSet = CharSet.Unicode,
+               ExactSpelling = true,
+               SetLastError = true)]
+    private static extern uint GetShortPathName(string longPath,
+                                                StringBuilder shortPath,
+                                                uint shortPathLength);
 
     private sealed class PhysicalIdentityFixture : IDisposable
     {
@@ -113,4 +217,6 @@ public sealed class PhysicalDirectoryScanFileSystemIdentityTests
             }
         }
     }
+
+    private const int InitialWindowsPathCapacity = 512;
 }

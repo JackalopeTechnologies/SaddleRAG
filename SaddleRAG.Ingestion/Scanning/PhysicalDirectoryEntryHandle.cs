@@ -15,27 +15,85 @@ internal static class PhysicalDirectoryEntryHandle
     internal static SafeFileHandle OpenMetadata(string fullPath)
     {
         ArgumentException.ThrowIfNullOrEmpty(fullPath);
-        SafeFileHandle result;
-        if (OperatingSystem.IsWindows())
-        {
-            result = CreateFile(fullPath,
-                                WindowsFileAccess.ReadAttributes,
-                                FileShare.Read | FileShare.Write,
-                                IntPtr.Zero,
-                                FileMode.Open,
-                                WindowsFileFlags.BackupSemantics | WindowsFileFlags.OpenReparsePoint,
-                                IntPtr.Zero);
-            ThrowIfInvalid(result);
-        }
-        else
-        {
-            result = File.OpenHandle(fullPath,
+        SafeFileHandle result = (OperatingSystem.IsWindows(),
+                                 OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()) switch
+            {
+                (true, _) => OpenWindowsMetadata(fullPath),
+                (_, true) => OpenUnixMetadata(fullPath),
+                _ => File.OpenHandle(fullPath,
                                      FileMode.Open,
                                      FileAccess.Read,
-                                     FileShare.Read | FileShare.Write);
-        }
+                                     FileShare.Read | FileShare.Write)
+            };
 
         return result;
+    }
+
+    private static SafeFileHandle OpenWindowsMetadata(string fullPath)
+    {
+        SafeFileHandle result = CreateFile(fullPath,
+                                           WindowsFileAccess.ReadAttributes,
+                                           FileShare.Read | FileShare.Write,
+                                           IntPtr.Zero,
+                                           FileMode.Open,
+                                           WindowsFileFlags.BackupSemantics
+                                           | WindowsFileFlags.OpenReparsePoint,
+                                           IntPtr.Zero);
+        ThrowIfInvalid(result);
+        return result;
+    }
+
+    private static SafeFileHandle OpenUnixMetadata(string fullPath)
+    {
+        int flags = OperatingSystem.IsLinux()
+            ? LinuxCloseOnExecOpenFlag
+            : MacCloseOnExecOpenFlag;
+        int descriptor = OpenUnixDescriptor(fullPath, flags);
+        if (descriptor == 0)
+            descriptor = DuplicateZeroDescriptor(descriptor);
+
+        return new SafeFileHandle(new IntPtr(descriptor), ownsHandle: true);
+    }
+
+    private static int OpenUnixDescriptor(string fullPath, int flags)
+    {
+        int descriptor;
+        int nativeError;
+        do
+        {
+            descriptor = Open(fullPath, flags);
+            nativeError = descriptor < 0 ? Marshal.GetLastPInvokeError() : 0;
+        } while(descriptor < 0 && nativeError == UnixInterruptedError);
+
+        if (descriptor < 0)
+            throw UnixOpenException(nativeError);
+        return descriptor;
+    }
+
+    private static int DuplicateZeroDescriptor(int descriptor)
+    {
+        int command = OperatingSystem.IsLinux()
+            ? LinuxDuplicateCloseOnExecCommand
+            : MacDuplicateCloseOnExecCommand;
+        int duplicate;
+        int nativeError;
+        do
+        {
+            duplicate = Fcntl(descriptor, command, MinimumOwnedUnixDescriptor);
+            nativeError = duplicate < 0 ? Marshal.GetLastPInvokeError() : 0;
+        } while(duplicate < 0 && nativeError == UnixInterruptedError);
+
+        int closeResult = Close(descriptor);
+        if (duplicate < 0)
+            throw UnixOpenException(nativeError);
+        if (closeResult != 0)
+        {
+            int closeError = Marshal.GetLastPInvokeError();
+            new SafeFileHandle(new IntPtr(duplicate), ownsHandle: true).Dispose();
+            throw UnixIOException(EntryCloseFailureMessage, closeError);
+        }
+
+        return duplicate;
     }
 
     internal static SafeFileHandle OpenRead(string fullPath)
@@ -55,7 +113,7 @@ internal static class PhysicalDirectoryEntryHandle
         string canonicalPath = Path.GetFullPath(fullPath);
         string resolvedPath = ResolvePath(handle);
         FileAttributes attributes = File.GetAttributes(handle);
-        if (!PathsEqual(canonicalPath, resolvedPath))
+        if (PathsResolveDifferently(canonicalPath, resolvedPath))
             attributes |= FileAttributes.ReparsePoint;
         bool isDirectory = attributes.HasFlag(FileAttributes.Directory);
         long byteLength = isDirectory ? 0 : RandomAccess.GetLength(handle);
@@ -67,6 +125,40 @@ internal static class PhysicalDirectoryEntryHandle
                                           lastWriteTimeUtc,
                                           identity,
                                           resolvedPath);
+    }
+
+    private static bool PathsResolveDifferently(string canonicalPath, string resolvedPath)
+    {
+        bool result = !PathsEqual(canonicalPath, resolvedPath);
+        if (result && OperatingSystem.IsWindows())
+            result = !WindowsPathsAreAliases(canonicalPath, resolvedPath);
+        return result;
+    }
+
+    private static bool WindowsPathsAreAliases(string requestedPath, string resolvedPath)
+    {
+        bool requestedConverted = TryGetWindowsShortPath(requestedPath, out string requestedShortPath);
+        bool resolvedConverted = TryGetWindowsShortPath(resolvedPath, out string resolvedShortPath);
+        return requestedConverted
+               && resolvedConverted
+               && PathsEqual(NormalizeWindowsDevicePath(requestedShortPath),
+                             NormalizeWindowsDevicePath(resolvedShortPath));
+    }
+
+    private static bool TryGetWindowsShortPath(string fullPath, out string shortPath)
+    {
+        var buffer = new StringBuilder(InitialWindowsPathCapacity);
+        uint length = GetShortPathName(fullPath, buffer, (uint)buffer.Capacity);
+        bool succeeded = length > 0;
+        if (succeeded && length >= buffer.Capacity)
+        {
+            buffer = new StringBuilder(checked((int)length + 1));
+            length = GetShortPathName(fullPath, buffer, (uint)buffer.Capacity);
+            succeeded = length > 0 && length < buffer.Capacity;
+        }
+
+        shortPath = succeeded ? buffer.ToString() : string.Empty;
+        return succeeded;
     }
 
     internal static bool MatchesExpected(DirectoryEntrySnapshot expected,
@@ -252,8 +344,19 @@ internal static class PhysicalDirectoryEntryHandle
     private static IOException LastUnixIOException(string message)
     {
         int nativeError = Marshal.GetLastPInvokeError();
-        return new IOException(message, unchecked((int)(WindowsHResultPrefix | (uint)nativeError)));
+        return UnixIOException(message, nativeError);
     }
+
+    private static Exception UnixOpenException(int nativeError)
+    {
+        IOException error = UnixIOException(EntryOpenFailureMessage, nativeError);
+        return nativeError is UnixOperationNotPermittedError or UnixAccessDeniedError
+            ? new UnauthorizedAccessException(EntryOpenFailureMessage, error)
+            : error;
+    }
+
+    private static IOException UnixIOException(string message, int nativeError) =>
+        new(message, unchecked((int)(WindowsHResultPrefix | (uint)nativeError)));
 
     [DllImport(WindowsKernelLibrary,
                EntryPoint = "CreateFileW",
@@ -284,11 +387,29 @@ internal static class PhysicalDirectoryEntryHandle
                                                         uint filePathLength,
                                                         WindowsFinalPathFlags flags);
 
+    [DllImport(WindowsKernelLibrary,
+               EntryPoint = "GetShortPathNameW",
+               CharSet = CharSet.Unicode,
+               ExactSpelling = true,
+               SetLastError = true)]
+    private static extern uint GetShortPathName(string longPath,
+                                                StringBuilder shortPath,
+                                                uint shortPathLength);
+
     [DllImport(UnixCLibrary, EntryPoint = "fstat", ExactSpelling = true, SetLastError = true)]
     private static extern int FStat(SafeFileHandle file, IntPtr buffer);
 
+    [DllImport(UnixCLibrary, EntryPoint = "open", ExactSpelling = true, SetLastError = true)]
+    private static extern int Open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
+
+    [DllImport(UnixCLibrary, EntryPoint = "close", ExactSpelling = true, SetLastError = true)]
+    private static extern int Close(int file);
+
     [DllImport(UnixCLibrary, EntryPoint = "fcntl", ExactSpelling = true, SetLastError = true)]
     private static extern int Fcntl(SafeFileHandle file, int command, IntPtr buffer);
+
+    [DllImport(UnixCLibrary, EntryPoint = "fcntl", ExactSpelling = true, SetLastError = true)]
+    private static extern int Fcntl(int file, int command, int value);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WindowsFileInformation
@@ -344,6 +465,7 @@ internal static class PhysicalDirectoryEntryHandle
     private const string PathResolutionFailureMessage =
         "The opened filesystem path could not be resolved.";
     private const string EntryOpenFailureMessage = "The filesystem entry could not be opened.";
+    private const string EntryCloseFailureMessage = "The filesystem entry handle could not be closed.";
     private const string WindowsDevicePrefix = "\\\\?\\";
     private const string WindowsUncPrefix = "\\\\?\\UNC\\";
     private const int BitsPerUInt32 = 32;
@@ -351,6 +473,14 @@ internal static class PhysicalDirectoryEntryHandle
     private const int UnixStatBufferSize = 512;
     private const int UnixDeviceOffset = 0;
     private const int UnixFileIdOffset = 8;
+    private const int UnixOperationNotPermittedError = 1;
+    private const int UnixInterruptedError = 4;
+    private const int UnixAccessDeniedError = 13;
+    private const int LinuxCloseOnExecOpenFlag = 0x00080000;
+    private const int MacCloseOnExecOpenFlag = 0x01000000;
+    private const int LinuxDuplicateCloseOnExecCommand = 1030;
+    private const int MacDuplicateCloseOnExecCommand = 67;
+    private const int MinimumOwnedUnixDescriptor = 3;
     private const int MacGetPathCommand = 50;
     private const int MacPathBufferSize = 4096;
     private const uint WindowsHResultPrefix = 0x80070000;

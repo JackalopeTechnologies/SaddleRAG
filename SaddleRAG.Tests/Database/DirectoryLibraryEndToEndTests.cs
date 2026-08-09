@@ -94,7 +94,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task ManualSnapshotsAreSearchableAndReuseCompatibleUnchangedDocuments()
     {
-        DirectoryRegistrationResult registration = await RegisterAsync();
+        DirectoryRegistrationResult registration = await RegisterRequiredAsync();
 
         DirectoryIngestionResult first = await ScanAsync(FirstVersion, "scan-first");
 
@@ -181,7 +181,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task ChangedEmbeddingManifestReusesExtractionButReembedsUnchangedDocuments()
     {
-        await RegisterAsync();
+        await RegisterRequiredAsync();
         DirectoryIngestionResult first = await ScanAsync(FirstVersion, "scan-first");
         Assert.Equal(DirectoryIngestionStatuses.Completed, first.Status);
         int firstDoclingConversions = mDocling.ConversionCount;
@@ -205,7 +205,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task FailedSupportedDocumentOnNextDatePublishesNothingAndPriorSnapshotStaysSearchable()
     {
-        await RegisterAsync();
+        await RegisterRequiredAsync();
         DirectoryIngestionResult first = await ScanAsync(FirstVersion, "scan-first");
         Assert.Equal(DirectoryIngestionStatuses.Completed, first.Status);
         mClock.UtcNow = SecondQueuedAt;
@@ -249,7 +249,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
                                                    .GetForProfile(ProfileName);
         await profileContext.EnsureIndexesAsync(TestContext.Current.CancellationToken);
 
-        DirectoryRegistrationResult registration = await RegisterAsync(ProfileName);
+        DirectoryRegistrationResult registration = await RegisterRequiredAsync(ProfileName);
         DirectoryIngestionResult ingestion = await ScanAsync(FirstVersion, "scan-profile", ProfileName);
 
         Assert.Equal(DirectoryRegistrationStatuses.Registered, registration.Status);
@@ -537,6 +537,15 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
                                          ExclusionPatterns: []),
         profile,
         TestContext.Current.CancellationToken);
+
+    private async Task<DirectoryRegistrationResult> RegisterRequiredAsync(string? profile = null)
+    {
+        DirectoryRegistrationResult result = await RegisterAsync(profile);
+        Assert.True(result.Status.Equals(DirectoryRegistrationStatuses.Registered,
+                                         StringComparison.Ordinal),
+                    $"{result.ReasonCode}: {result.Detail}");
+        return result;
+    }
 
     private async Task<DirectoryIngestionResult> ScanAsync(string version,
                                                            string scanRunId,
