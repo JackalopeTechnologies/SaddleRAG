@@ -87,7 +87,31 @@ public sealed class PatchAppSettingsDoclingTests
         Assert.Contains("$DoclingEndpoint", script, StringComparison.Ordinal);
     }
 
-    private static JsonObject Settings(string endpoint) => new()
+    [Fact]
+    public void LegacySixHundredSecondBudgetIsRaisedAndStallSeeded()
+    {
+        JsonObject settings = Settings("http://localhost:5001", conversionTimeoutSeconds: 600);
+
+        JsonObject patched = PatchAppSettingsTestDriver.Run(settings, doclingEndpoint: "");
+
+        JsonObject docling = patched["DocumentIngestion"]!["Docling"]!.AsObject();
+        Assert.Equal(expected: 14400, docling["ConversionTimeoutSeconds"]!.GetValue<int>());
+        Assert.Equal(expected: 300, docling["ConversionStallTimeoutSeconds"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void DeliberateCustomBudgetSurvivesUpgrade()
+    {
+        JsonObject settings = Settings("http://localhost:5001", conversionTimeoutSeconds: 7200);
+
+        JsonObject patched = PatchAppSettingsTestDriver.Run(settings, doclingEndpoint: "");
+
+        JsonObject docling = patched["DocumentIngestion"]!["Docling"]!.AsObject();
+        Assert.Equal(expected: 7200, docling["ConversionTimeoutSeconds"]!.GetValue<int>());
+        Assert.Equal(expected: 300, docling["ConversionStallTimeoutSeconds"]!.GetValue<int>());
+    }
+
+    private static JsonObject Settings(string endpoint, int conversionTimeoutSeconds = 14400) => new()
         {
             ["MongoDB"] = new JsonObject
                               {
@@ -111,7 +135,7 @@ public sealed class PatchAppSettingsDoclingTests
                                                                   ["StartupGracePeriodSeconds"] = 120,
                                                                   ["HealthTimeoutSeconds"] = 10,
                                                                   ["ReadinessTimeoutSeconds"] = 30,
-                                                                  ["ConversionTimeoutSeconds"] = 600,
+                                                                  ["ConversionTimeoutSeconds"] = conversionTimeoutSeconds,
                                                                   ["StartupPollIntervalMilliseconds"] = 1000
                                                               }
                                         },
