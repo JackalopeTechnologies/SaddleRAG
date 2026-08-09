@@ -42,7 +42,7 @@ public sealed class DirectoryScannerTests
     }
 
     [Fact]
-    public async Task RecursivePreviewNormalizesAndOrdinallySortsSupportedPaths()
+    public async Task RecursivePreviewPreservesUnicodeIdentityAndOrdinallySortsSupportedPaths()
     {
         var fileSystem = RootedFileSystem();
         var nestedDirectory = DirectoryAt(RootPath, "e\u0301");
@@ -63,17 +63,31 @@ public sealed class DirectoryScannerTests
         var intake = SuccessfulIntake();
         var repository = CandidateRepository();
         var scanner = MakeScanner(fileSystem, intake, repository);
+        DirectoryPathIdentity identity = DirectoryPathIdentity.Platform;
 
         var report = await scanner.ScanAsync(Request(recursive: true), TestContext.Current.CancellationToken);
 
-        Assert.Equal([".hidden.txt", "alpha.html", "zeta.txt", "é/guide.markdown"],
+        IReadOnlyList<string> expected = new[]
+                                          {
+                                              ".Hidden.txt",
+                                              "alpha.HTML",
+                                              "Zeta.TXT",
+                                              "e\u0301/Guide.Markdown"
+                                          }
+                                         .Select(identity.NormalizeRelativePath)
+                                         .OrderBy(path => path, StringComparer.Ordinal)
+                                         .ToList();
+        Assert.Equal(expected,
                      report.Entries.Select(entry => entry.RelativePath));
+        Assert.DoesNotContain(identity.NormalizeRelativePath("é/Guide.Markdown"),
+                              report.Entries.Select(entry => entry.RelativePath));
         Assert.Equal(4, report.ExtractedCount);
         Assert.Equal(4, intake.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDocumentIntake.ReadAsync)));
         await repository.Received()
                         .GetOrCreateDocumentAsync(Arg.Is<SourceDocumentRecord>(document => document != null
-                                                                                 && document.NormalizedRelativePath
-                                                                                     == "zeta.txt"
+                                                                                  && document.NormalizedRelativePath
+                                                                                      == identity.NormalizeRelativePath(
+                                                                                          "Zeta.TXT")
                                                                                  && document.DisplayRelativePath
                                                                                      == "Zeta.TXT"),
                                                   Arg.Any<CancellationToken>());
@@ -180,6 +194,62 @@ public sealed class DirectoryScannerTests
         var report = await scanner.ScanAsync(Request(recursive: false), TestContext.Current.CancellationToken);
 
         Assert.Equal(DirectoryScanReasonCodes.FileChangedDuringScan, Assert.Single(report.Entries).ReasonCode);
+        Assert.Empty(intake.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task OpenedFileIdentityMismatchIsReportedAsChangedEvenWhenSizeAndTimestampMatch()
+    {
+        var fileSystem = RootedFileSystem();
+        var file = FileAt(RootPath, "replaced.txt", "first");
+        var discovered = file.Snapshot with
+                             {
+                                 Identity = new DirectoryEntryIdentity(VolumeId: 7,
+                                                                       FileIdHigh: 0,
+                                                                       FileIdLow: 11)
+                             };
+        var replacement = discovered with
+                              {
+                                  Identity = new DirectoryEntryIdentity(VolumeId: 7,
+                                                                        FileIdHigh: 0,
+                                                                        FileIdLow: 12)
+                              };
+        fileSystem.SetEnumeration(RootPath, Enumeration(discovered));
+        fileSystem.SetRead(discovered.FullPath,
+                           new StableFileReadResult(file.Read.Content,
+                                                    replacement,
+                                                    replacement,
+                                                    string.Empty,
+                                                    null));
+        var intake = SuccessfulIntake();
+        var scanner = MakeScanner(fileSystem, intake, CandidateRepository());
+
+        var report = await scanner.ScanAsync(Request(recursive: false), TestContext.Current.CancellationToken);
+
+        Assert.Equal(DirectoryScanReasonCodes.FileChangedDuringScan, Assert.Single(report.Entries).ReasonCode);
+        Assert.Empty(intake.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task HandleResolvedPathOutsideRootIsSkippedBeforeTheFileIsOpened()
+    {
+        var fileSystem = RootedFileSystem();
+        var file = FileAt(RootPath, "redirected.txt", "unsafe");
+        var redirected = file.Snapshot with
+                             {
+                                 Identity = new DirectoryEntryIdentity(VolumeId: 7,
+                                                                       FileIdHigh: 0,
+                                                                       FileIdLow: 21),
+                                 ResolvedPath = "C:\\outside\\redirected.txt"
+                             };
+        fileSystem.SetEnumeration(RootPath, Enumeration(redirected));
+        var intake = SuccessfulIntake();
+        var scanner = MakeScanner(fileSystem, intake, CandidateRepository());
+
+        var report = await scanner.ScanAsync(Request(recursive: false), TestContext.Current.CancellationToken);
+
+        Assert.Equal(DirectoryScanReasonCodes.PathOutsideRoot, Assert.Single(report.Entries).ReasonCode);
+        Assert.Empty(fileSystem.ReadPaths);
         Assert.Empty(intake.ReceivedCalls());
     }
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
-using System.Text.Encodings.Web;
+using System.Globalization;
 using System.Text.Json;
 
 namespace SaddleRAG.Ingestion.Subjects;
@@ -11,20 +11,37 @@ internal static class SubjectJson
 {
     public static T Deserialize<T>(string value)
     {
-        ArgumentException.ThrowIfNullOrEmpty(value);
-        string cleaned = RemoveCodeFence(value);
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.Length == 0)
+            throw new InvalidDataException(string.Format(CultureInfo.InvariantCulture,
+                                                         EmptyJsonFormat,
+                                                         value.Length));
+
         T? parsed = default;
         try
         {
-            parsed = JsonSerializer.Deserialize<T>(cleaned, smOptions);
+            string cleaned = NormalizeFraming(value);
+            using JsonDocument document = JsonDocument.Parse(cleaned);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                throw new JsonException(RootObjectMessage);
+            parsed = document.RootElement.Deserialize<T>(smOptions);
         }
-        catch(JsonException ex)
+        catch (JsonException ex)
         {
-            throw new InvalidDataException("The subject classifier returned invalid JSON.", ex);
+            long lineNumber = ex.LineNumber ?? UnknownJsonPosition;
+            long bytePosition = ex.BytePositionInLine ?? UnknownJsonPosition;
+            string message = string.Format(CultureInfo.InvariantCulture,
+                                           InvalidJsonFormat,
+                                           value.Length,
+                                           lineNumber,
+                                           bytePosition);
+            throw new InvalidDataException(message);
         }
 
         if (parsed is null)
-            throw new InvalidDataException("The subject classifier returned an empty JSON value.");
+            throw new InvalidDataException(string.Format(CultureInfo.InvariantCulture,
+                                                         EmptyJsonFormat,
+                                                         value.Length));
         return parsed;
     }
 
@@ -34,26 +51,61 @@ internal static class SubjectJson
         return JsonSerializer.Serialize(value, smOptions);
     }
 
-    private static string RemoveCodeFence(string value)
+    private static string NormalizeFraming(string value)
     {
         string result = value.Trim();
-        if (result.StartsWith(CodeFence, StringComparison.Ordinal))
+        result = result switch
         {
-            int firstLineEnd = result.IndexOf('\n');
-            if (firstLineEnd >= 0)
-                result = result[(firstLineEnd + 1)..];
-            if (result.EndsWith(CodeFence, StringComparison.Ordinal))
-                result = result[..^CodeFence.Length];
-        }
+            var fenced when fenced.StartsWith(CodeFence, StringComparison.Ordinal) =>
+                RemoveCodeFence(fenced),
+            var wrapped when wrapped.StartsWith(JsonWrapperOpen, StringComparison.OrdinalIgnoreCase) =>
+                RemoveJsonWrapper(wrapped),
+            _ => result
+        };
 
         return result.Trim();
     }
 
+    private static string RemoveCodeFence(string value)
+    {
+        int firstLineEnd = value.IndexOf('\n');
+        string opening = firstLineEnd >= 0 ? value[..firstLineEnd].Trim() : string.Empty;
+        bool supportedOpening = string.Equals(opening, CodeFence, StringComparison.Ordinal) ||
+                                string.Equals(opening, JsonCodeFence, StringComparison.OrdinalIgnoreCase);
+        bool hasClosing = firstLineEnd >= 0 && value.EndsWith(CodeFence, StringComparison.Ordinal);
+        if (!supportedOpening || !hasClosing)
+            throw new JsonException(FramingMessage);
+
+        int contentStart = firstLineEnd + 1;
+        int contentLength = value.Length - contentStart - CodeFence.Length;
+        string result = value.Substring(contentStart, contentLength);
+        return result;
+    }
+
+    private static string RemoveJsonWrapper(string value)
+    {
+        if (!value.EndsWith(JsonWrapperClose, StringComparison.OrdinalIgnoreCase))
+            throw new JsonException(FramingMessage);
+
+        int contentLength = value.Length - JsonWrapperOpen.Length - JsonWrapperClose.Length;
+        string result = value.Substring(JsonWrapperOpen.Length, contentLength);
+        return result;
+    }
+
     private const string CodeFence = "```";
+    private const string JsonCodeFence = "```json";
+    private const string JsonWrapperOpen = "<json>";
+    private const string JsonWrapperClose = "</json>";
+    private const string RootObjectMessage = "The response root must be a JSON object.";
+    private const string FramingMessage = "The response has incomplete or unsupported JSON framing.";
+    private const string InvalidJsonFormat =
+        "The subject classifier returned invalid JSON (characters={0}, line={1}, byte={2}).";
+    private const string EmptyJsonFormat =
+        "The subject classifier returned an empty response (characters={0}).";
+    private const long UnknownJsonPosition = -1;
 
     private static readonly JsonSerializerOptions smOptions = new()
                                                                   {
-                                                                      Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
                                                                       PropertyNameCaseInsensitive = true,
                                                                       PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                                                                   };

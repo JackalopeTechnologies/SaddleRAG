@@ -22,6 +22,7 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
     private SourceDocumentRepository mSources = null!;
     private PageRepository mPages = null!;
     private ChunkRepository mChunks = null!;
+    private LibraryRenameDataRepository mRenameData = null!;
 
     public async ValueTask InitializeAsync()
     {
@@ -36,6 +37,7 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         mSources = new SourceDocumentRepository(mContext);
         mPages = new PageRepository(mContext);
         mChunks = new ChunkRepository(mContext);
+        mRenameData = new LibraryRenameDataRepository(mContext);
     }
 
     public async ValueTask DisposeAsync()
@@ -50,11 +52,21 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         string oldRevisionId = RevisionId(OldLibraryId, Version);
         string newRevisionId = RevisionId(NewLibraryId, Version);
 
-        RenameLibraryResponse response = await mLibraries.RenameAsync(OldLibraryId,
-                                                                       NewLibraryId,
-                                                                       TestContext.Current.CancellationToken);
+        LibraryRenameOperationRecord operation = await PrepareRenameAsync(
+                                                     LibraryRenameOperationKind.Library,
+                                                     OldLibraryId,
+                                                     NewLibraryId,
+                                                     sourceVersion: null,
+                                                     targetVersion: null,
+                                                     "whole-library-operation");
+        RenameLibraryResult counts = await mRenameData.ApplyLibraryRenameAsync(
+                                               operation,
+                                               TestContext.Current.CancellationToken);
+        await mRenameData.FinalizeDirectoryDefinitionsAsync(
+            operation with { State = LibraryRenameOperationState.VectorCommitted },
+            TestContext.Current.CancellationToken);
 
-        Assert.Equal(RenameLibraryOutcome.Renamed, response.Outcome);
+        Assert.Equal(1, counts.Libraries);
         Assert.Null(await mLibraries.GetLibraryAsync(OldLibraryId,
                                                       TestContext.Current.CancellationToken));
         Assert.NotNull(await mLibraries.GetLibraryAsync(NewLibraryId,
@@ -88,8 +100,7 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         Assert.Equal(Hash(OriginalBytes), revision.OriginalArtifactHash);
         Assert.Equal(Hash(ExtractionBytes), revision.ExtractionArtifactHash);
         Assert.Equivalent(ExtractionProvenance(), revision.ExtractionProvenance, strict: true);
-        Assert.Equal(OriginalBytes, await ReadArtifactAsync(revision.OriginalArtifactHash));
-        Assert.Equal(ExtractionBytes, await ReadArtifactAsync(revision.ExtractionArtifactHash!));
+        await AssertArtifactOwnershipSurvivesRecoveryAsync(oldRevisionId, newRevisionId);
 
         SubjectCatalogRecord catalog = Assert.Single(await mContext.SubjectCatalogs
                                                                      .Find(item => item.LibraryId == NewLibraryId)
@@ -129,6 +140,7 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         Assert.Empty(await mChunks.GetChunksAsync(OldLibraryId,
                                                    Version,
                                                    TestContext.Current.CancellationToken));
+        await DeleteRevisionAndAssertArtifactOwnershipReleasedAsync(newRevisionId);
     }
 
     [Fact]
@@ -138,12 +150,32 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         string oldRevisionId = RevisionId(OldLibraryId, OldVersion);
         string newRevisionId = RevisionId(OldLibraryId, NewVersion);
 
-        RenameLibraryResponse response = await mLibraries.RenameVersionAsync(OldLibraryId,
-                                                                              OldVersion,
-                                                                              NewVersion,
-                                                                              TestContext.Current.CancellationToken);
+        LibraryRenameOperationRecord operation = await PrepareRenameAsync(
+                                                     LibraryRenameOperationKind.Version,
+                                                     OldLibraryId,
+                                                     OldLibraryId,
+                                                     OldVersion,
+                                                     NewVersion,
+                                                     "version-operation");
+        RenameLibraryResult counts = await mRenameData.ApplyVersionRenameAsync(
+                                               operation,
+                                               TestContext.Current.CancellationToken);
+        SourceDocumentRecord mongoCommittedSource = Assert.IsType<SourceDocumentRecord>(
+            await mSources.GetDocumentAsync(DocumentId, TestContext.Current.CancellationToken));
+        Assert.Equal(DocumentId, mongoCommittedSource.Id);
+        Assert.Equal(NewVersion, mongoCommittedSource.FirstSeenVersion);
+        Assert.Equal(NewVersion, mongoCommittedSource.LastSeenVersion);
+        DirectoryLibraryDefinition pendingDefinition = Assert.IsType<DirectoryLibraryDefinition>(
+            await mSources.GetDirectoryDefinitionAsync(OldLibraryId,
+                                                        TestContext.Current.CancellationToken));
+        Assert.Equal(OldVersion, pendingDefinition.LastPublishedVersion);
+        Assert.Equal(operation.OperationId, pendingDefinition.PendingRenameOperationId);
+        await AssertArtifactOwnershipSurvivesRecoveryAsync(oldRevisionId, newRevisionId);
+        await mRenameData.FinalizeDirectoryDefinitionsAsync(
+            operation with { State = LibraryRenameOperationState.VectorCommitted },
+            TestContext.Current.CancellationToken);
 
-        Assert.Equal(RenameLibraryOutcome.Renamed, response.Outcome);
+        Assert.Equal(1, counts.Versions);
         LibraryRecord library = Assert.IsType<LibraryRecord>(await mLibraries.GetLibraryAsync(
                                                                   OldLibraryId,
                                                                   TestContext.Current.CancellationToken));
@@ -156,11 +188,15 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         Assert.Equal(DocumentId, source.Id);
         Assert.Equal(OldLibraryId, source.LibraryId);
         Assert.Equal(SourceUri(OldLibraryId), source.SourceUri);
+        Assert.Equal(NewVersion, source.FirstSeenVersion);
+        Assert.Equal(NewVersion, source.LastSeenVersion);
         DirectoryLibraryDefinition definition = Assert.IsType<DirectoryLibraryDefinition>(
             await mSources.GetDirectoryDefinitionAsync(OldLibraryId,
                                                         TestContext.Current.CancellationToken));
         Assert.Equal(RootPath, definition.RootPath);
         Assert.Equal(DirectoryLibraryBindingStatus.Bound, definition.BindingStatus);
+        Assert.Equal(NewVersion, definition.LastPublishedVersion);
+        Assert.Null(definition.PendingRenameOperationId);
 
         Assert.Null(await mSources.GetRevisionAsync(oldRevisionId,
                                                      TestContext.Current.CancellationToken));
@@ -171,8 +207,6 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         Assert.Equal(NewVersion, revision.Version);
         Assert.Equal(Hash(OriginalBytes), revision.OriginalArtifactHash);
         Assert.Equal(Hash(ExtractionBytes), revision.ExtractionArtifactHash);
-        Assert.Equal(OriginalBytes, await ReadArtifactAsync(revision.OriginalArtifactHash));
-        Assert.Equal(ExtractionBytes, await ReadArtifactAsync(revision.ExtractionArtifactHash!));
 
         SubjectCatalogRecord catalog = Assert.Single(await mContext.SubjectCatalogs
                                                                      .Find(item => item.LibraryId == OldLibraryId)
@@ -206,6 +240,58 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
         Assert.Empty(await mChunks.GetChunksAsync(OldLibraryId,
                                                    OldVersion,
                                                    TestContext.Current.CancellationToken));
+        await DeleteRevisionAndAssertArtifactOwnershipReleasedAsync(newRevisionId);
+    }
+
+    private async Task AssertArtifactOwnershipSurvivesRecoveryAsync(string oldRevisionId,
+                                                                     string newRevisionId)
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        IReadOnlyList<string> hashes = [Hash(OriginalBytes), Hash(ExtractionBytes)];
+        IReadOnlyList<DocumentArtifactBlobRecord> artifacts = await mContext.DocumentArtifactBlobs
+                                                                            .Find(artifact => hashes.Contains(
+                                                                                      artifact.Id))
+                                                                            .ToListAsync(ct);
+        Assert.Equal(hashes.Count, artifacts.Count);
+        foreach(DocumentArtifactBlobRecord artifact in artifacts)
+        {
+            DocumentArtifactClaimRecord claim = Assert.Single(artifact.Claims);
+            Assert.Equal(newRevisionId, claim.RevisionId);
+            Assert.DoesNotContain(artifact.Claims,
+                                  candidate => string.Equals(candidate.RevisionId,
+                                                             oldRevisionId,
+                                                             StringComparison.Ordinal));
+        }
+
+        DocumentArtifactRecoveryResult recovery = await mSources.RecoverArtifactClaimsAsync(
+                                                       RecordedAt.AddYears(1),
+                                                       ct);
+        Assert.Equal(new DocumentArtifactRecoveryResult(ClaimsFinalized: 0,
+                                                        ClaimsReleased: 0,
+                                                        ArtifactDeletionsCompleted: 0),
+                     recovery);
+        Assert.Equal(OriginalBytes, await ReadArtifactAsync(Hash(OriginalBytes)));
+        Assert.Equal(ExtractionBytes, await ReadArtifactAsync(Hash(ExtractionBytes)));
+    }
+
+    private async Task DeleteRevisionAndAssertArtifactOwnershipReleasedAsync(string revisionId)
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        Assert.True(await mSources.DeleteRevisionAsync(revisionId, ct));
+        await Assert.ThrowsAsync<FileNotFoundException>(() => mSources.OpenArtifactAsync(Hash(OriginalBytes), ct));
+        await Assert.ThrowsAsync<FileNotFoundException>(() => mSources.OpenArtifactAsync(Hash(ExtractionBytes), ct));
+        Assert.Empty(await mContext.DocumentArtifactBlobs
+                                   .Find(artifact => artifact.Id == Hash(OriginalBytes) ||
+                                                     artifact.Id == Hash(ExtractionBytes))
+                                   .ToListAsync(ct));
+
+        DocumentArtifactRecoveryResult recovery = await mSources.RecoverArtifactClaimsAsync(
+                                                       RecordedAt.AddYears(1),
+                                                       ct);
+        Assert.Equal(new DocumentArtifactRecoveryResult(ClaimsFinalized: 0,
+                                                        ClaimsReleased: 0,
+                                                        ArtifactDeletionsCompleted: 0),
+                     recovery);
     }
 
     private async Task SeedDirectoryVersionAsync(string libraryId, string version)
@@ -353,6 +439,93 @@ public sealed class DirectoryRenameLifecycleIntegrationTests : IAsyncLifetime
                                                 }
                                         ],
                                         ct);
+    }
+
+    private async Task<LibraryRenameOperationRecord> PrepareRenameAsync(
+        LibraryRenameOperationKind kind,
+        string sourceLibraryId,
+        string targetLibraryId,
+        string? sourceVersion,
+        string? targetVersion,
+        string operationId)
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        DirectoryLibraryDefinition definition = Assert.IsType<DirectoryLibraryDefinition>(
+            await mSources.GetDirectoryDefinitionAsync(sourceLibraryId, ct));
+        string targetIncarnation = $"target-{operationId}";
+        DirectoryLibraryDefinition targetSnapshot = kind == LibraryRenameOperationKind.Library
+            ? definition with
+                {
+                    Id = targetLibraryId,
+                    RegistrationRevision = checked(definition.RegistrationRevision + 1),
+                    RegistrationIncarnationId = targetIncarnation,
+                    PublicationLeaseScanRunId = null,
+                    PublicationLeaseRegistrationRevision = null,
+                    PublicationLeaseExpiresAtUtc = null,
+                    PendingRenameOperationId = operationId
+                }
+            : definition with
+                {
+                    LastPublishedVersion = definition.LastPublishedVersion == sourceVersion
+                                               ? targetVersion
+                                               : definition.LastPublishedVersion,
+                    RegistrationRevision = checked(definition.RegistrationRevision + 1),
+                    RegistrationIncarnationId = targetIncarnation,
+                    PublicationLeaseScanRunId = null,
+                    PublicationLeaseRegistrationRevision = null,
+                    PublicationLeaseExpiresAtUtc = null,
+                    PendingRenameOperationId = null
+                };
+        var operation = new LibraryRenameOperationRecord
+                            {
+                                Id = sourceLibraryId,
+                                OperationId = operationId,
+                                Kind = kind,
+                                State = LibraryRenameOperationState.Applying,
+                                Mode = LibraryIngestionMode.Directory,
+                                SourceLibraryId = sourceLibraryId,
+                                TargetLibraryId = targetLibraryId,
+                                SourceOwnershipReservedAtUtc = RecordedAt,
+                                TargetOwnershipReservedAtUtc = RecordedAt,
+                                SourceVersion = sourceVersion,
+                                TargetVersion = targetVersion,
+                                SourceRegistrationRevision = definition.RegistrationRevision,
+                                SourceRegistrationIncarnationId = definition.RegistrationIncarnationId,
+                                SourceLastPublishedVersion = definition.LastPublishedVersion,
+                                TargetRegistrationIncarnationId = targetIncarnation,
+                                SourceDirectorySnapshot = definition,
+                                TargetDirectorySnapshot = targetSnapshot,
+                                StartedAtUtc = RecordedAt,
+                                UpdatedAtUtc = RecordedAt
+                            };
+        IEnumerable<string> ids = kind == LibraryRenameOperationKind.Library
+                                      ? [sourceLibraryId, targetLibraryId]
+                                      : [sourceLibraryId];
+        foreach(string libraryId in ids)
+        {
+            await mContext.LibraryIngestionModes.ReplaceOneAsync(
+                item => item.Id == libraryId,
+                new LibraryIngestionModeRecord
+                    {
+                        Id = libraryId,
+                        Mode = LibraryIngestionMode.Directory,
+                        OwnershipState = libraryId == targetLibraryId &&
+                                         kind == LibraryRenameOperationKind.Library
+                                             ? LibraryIngestionOwnershipState.Reserved
+                                             : LibraryIngestionOwnershipState.Committed,
+                        LeaseOwnerToken = $"owner-{operationId}",
+                        LeaseExpiresAtUtc = RecordedAt.AddMinutes(5),
+                        PendingRenameOperationId = operationId,
+                        ReservedAtUtc = RecordedAt,
+                        CommittedAtUtc = RecordedAt,
+                        UpdatedAtUtc = RecordedAt
+                    },
+                new ReplaceOptions { IsUpsert = true },
+                ct);
+        }
+
+        await mRenameData.PrepareDirectoryDefinitionsAsync(operation, ct);
+        return operation;
     }
 
     private async Task<byte[]> ReadArtifactAsync(string hash)

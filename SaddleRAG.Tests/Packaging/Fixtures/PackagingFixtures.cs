@@ -42,7 +42,7 @@ internal static class PackagingFixtures
     {
         return new LibraryVersionRecord
                    {
-                       Id = $"{libraryId}-{version}",
+                       Id = $"{libraryId}/{version}",
                        LibraryId = libraryId,
                        Version = version,
                        ScrapedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
@@ -62,7 +62,7 @@ internal static class PackagingFixtures
         for (int i = 0; i < count; i++)
             result.Add(new PageRecord
                            {
-                               Id = $"{libraryId}-{version}-p{i}",
+                               Id = $"{libraryId}/{version}/p{i}",
                                LibraryId = libraryId,
                                Version = version,
                                Url = $"https://example.test/p{i}",
@@ -85,7 +85,7 @@ internal static class PackagingFixtures
         for (int i = 0; i < count; i++)
             result.Add(new DocChunk
                            {
-                               Id = $"{libraryId}-{version}-c{i}",
+                               Id = $"{libraryId}/{version}/c{i}",
                                LibraryId = libraryId,
                                Version = version,
                                PageUrl = $"https://example.test/p{i % 2}",

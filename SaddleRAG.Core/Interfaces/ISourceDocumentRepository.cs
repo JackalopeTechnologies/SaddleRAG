@@ -28,12 +28,36 @@ public interface ISourceDocumentRepository
     Task<IReadOnlyList<DirectoryLibraryDefinition>> GetDirectoryDefinitionsAsync(
         CancellationToken ct = default);
 
-    Task<bool> TryUpdateDirectoryPublicationAsync(string libraryId,
-                                                  long registrationRevision,
+    Task<IDirectoryPublicationLease?> TryAcquireDirectoryPublicationLeaseAsync(
+        string libraryId,
+        long registrationRevision,
+        string? registrationIncarnationId,
+        string scanRunId,
+        string? expectedPublishedVersion,
+        CancellationToken ct = default);
+
+    Task<bool> TryUpdateDirectoryPublicationAsync(IDirectoryPublicationLease lease,
                                                   string? expectedPublishedVersion,
                                                   DateTime? publishedAtUtc,
                                                   string? publishedVersion,
                                                   CancellationToken ct = default);
+
+    Task<bool> TryApplyDirectoryPackagePublicationAsync(
+        IDirectoryPublicationLease lease,
+        string? expectedPublishedVersion,
+        DirectoryLibraryDefinition packageDefinition,
+        DateTime publishedAtUtc,
+        string publishedVersion,
+        CancellationToken ct = default);
+
+    Task<bool> TryRestoreDirectoryPublicationAsync(IDirectoryPublicationLease lease,
+                                                   string failedPublishedVersion,
+                                                   DateTime? restoredPublishedAtUtc,
+                                                   string? restoredPublishedVersion,
+                                                   CancellationToken ct = default);
+
+    Task<bool> TryDeleteLeasedDirectoryDefinitionAsync(IDirectoryPublicationLease lease,
+                                                        CancellationToken ct = default);
 
     Task<SourceDocumentRecord> GetOrCreateDocumentAsync(SourceDocumentRecord candidate,
                                                          CancellationToken ct = default);
@@ -64,6 +88,9 @@ public interface ISourceDocumentRepository
     Task<Stream> OpenArtifactAsync(string sha256, CancellationToken ct = default);
 
     Task<bool> DeleteRevisionAsync(string revisionId, CancellationToken ct = default);
+
+    Task<DocumentArtifactRecoveryResult> RecoverArtifactClaimsAsync(DateTime utcNow,
+                                                                     CancellationToken ct = default);
 
     Task<long> DeleteCandidateScanRunAsync(string libraryId,
                                            string scanRunId,

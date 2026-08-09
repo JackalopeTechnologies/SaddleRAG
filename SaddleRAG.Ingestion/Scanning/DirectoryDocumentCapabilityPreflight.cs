@@ -55,26 +55,54 @@ public sealed class DirectoryDocumentCapabilityPreflight : IDirectoryDocumentCap
         var pending = new Stack<string>();
         pending.Push(definition.RootPath);
         var result = false;
+        long directoryCount = 0;
+        long entryCount = 0;
         while (pending.Count > 0 && !result)
         {
             cancellationToken.ThrowIfCancellationRequested();
             string directory = pending.Pop();
+            directoryCount++;
+            EnsureWithinLimit(directoryCount,
+                              DirectoryScanLimits.DefaultMaxDirectoryCount,
+                              DirectoryScanReasonCodes.DirectoryCountLimitExceeded,
+                              DirectoryCountLimitExceededDetail);
             DirectoryEnumerationResult enumeration = mFileSystem.EnumerateDirectory(directory);
             if (enumeration.Succeeded)
-                result = InspectEntries(definition, enumeration.Entries, pending);
+            {
+                try
+                {
+                    result = InspectEntries(definition,
+                                            enumeration.Entries,
+                                            pending,
+                                            cancellationToken,
+                                            ref entryCount);
+                }
+                catch(Exception error) when (IsExpectedEnumerationFailure(error))
+                {
+                    // A directory that disappears or becomes inaccessible is ignored by capability preflight.
+                }
+            }
         }
 
         return result;
     }
 
     private static bool InspectEntries(DirectoryLibraryDefinition definition,
-                                       IReadOnlyList<DirectoryEntrySnapshot> entries,
-                                       Stack<string> pending)
+                                       IEnumerable<DirectoryEntrySnapshot> entries,
+                                       Stack<string> pending,
+                                       CancellationToken cancellationToken,
+                                       ref long entryCount)
     {
         var result = false;
         foreach (DirectoryEntrySnapshot entry in entries)
         {
-            if (!result && IsIncluded(definition, entry))
+            cancellationToken.ThrowIfCancellationRequested();
+            entryCount++;
+            EnsureWithinLimit(entryCount,
+                              DirectoryScanLimits.DefaultMaxEntryCount,
+                              DirectoryScanReasonCodes.EntryCountLimitExceeded,
+                              EntryCountLimitExceededDetail);
+            if (IsIncluded(definition, entry))
             {
                 bool directory = entry.Attributes.HasFlag(FileAttributes.Directory);
                 if (directory && definition.Recursive)
@@ -82,10 +110,27 @@ public sealed class DirectoryDocumentCapabilityPreflight : IDirectoryDocumentCap
                 if (!directory)
                     result = RequiresDocling(definition, entry.FullPath);
             }
+
+            if (result)
+                break;
         }
 
         return result;
     }
+
+    private static void EnsureWithinLimit(long actual,
+                                          long maximum,
+                                          string reasonCode,
+                                          string detail)
+    {
+        if (actual > maximum)
+            throw new DirectoryIngestionException(reasonCode, detail);
+    }
+
+    private static bool IsExpectedEnumerationFailure(Exception error) =>
+        error is UnauthorizedAccessException
+            or System.Security.SecurityException
+            or IOException;
 
     private static bool IsIncluded(DirectoryLibraryDefinition definition, DirectoryEntrySnapshot entry)
     {
@@ -118,4 +163,9 @@ public sealed class DirectoryDocumentCapabilityPreflight : IDirectoryDocumentCap
         string trimmed = extension.Trim();
         return trimmed.StartsWith('.') ? trimmed : $".{trimmed}";
     }
+
+    private const string DirectoryCountLimitExceededDetail =
+        "The directory capability preflight exceeds its configured directory-count limit.";
+    private const string EntryCountLimitExceededDetail =
+        "The directory capability preflight exceeds its configured entry-count limit.";
 }

@@ -51,9 +51,9 @@ public sealed class DirectoryPackageV2Tests : IAsyncLifetime
         Assert.Equal(2, manifest["manifestVersion"]!.GetValue<int>());
         JsonObject directory = manifest["directory"]!.AsObject();
         Assert.True(directory["recursive"]!.GetValue<bool>());
-        Assert.Equal([".pdf", ".docx", ".txt"],
+        Assert.Equal([".docx", ".pdf", ".txt"],
                      directory["allowedExtensions"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.Equal(["**/bin/**", "**/.git/**"],
+        Assert.Equal(["**/.git/**", "**/bin/**"],
                      directory["exclusionPatterns"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.Null(directory["rootPath"]);
 
@@ -325,6 +325,19 @@ public sealed class DirectoryPackageV2Tests : IAsyncLifetime
         var assignments = Substitute.For<ISubjectAssignmentRepository>();
         libraries.GetLibraryAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                  .Returns((LibraryRecord?) null);
+        libraries.TryClaimImportVersionAsync(Arg.Any<LibraryVersionRecord>(),
+                                             Arg.Any<string>(),
+                                             Arg.Any<CancellationToken>())
+                 .Returns(true);
+        libraries.TryPublishImportVersionAsync(Arg.Any<LibraryVersionRecord>(),
+                                               Arg.Any<string>(),
+                                               Arg.Any<CancellationToken>())
+                 .Returns(true);
+        catalogs.TryPublishImportCandidateAsync(Arg.Any<string>(),
+                                                 Arg.Any<string>(),
+                                                 Arg.Any<string>(),
+                                                 Arg.Any<CancellationToken>())
+                .Returns(true);
         jobs.ListActiveAsync(Arg.Any<string>(),
                              Arg.Any<string?>(),
                              Arg.Any<JobType?>(),
@@ -333,6 +346,8 @@ public sealed class DirectoryPackageV2Tests : IAsyncLifetime
         embedding.ProviderId.Returns(DirectoryPackagingFixtures.EmbeddingProviderId);
         embedding.ModelName.Returns(DirectoryPackagingFixtures.EmbeddingModelName);
         embedding.Dimensions.Returns(DirectoryPackagingFixtures.EmbeddingDimensions);
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(libraries,
+            profiles, indexes, excluded, diffs, pages, chunks, bm25);
         var importer = new LibraryImporter(libraries,
                                            jobs,
                                            embedding,
@@ -345,7 +360,10 @@ public sealed class DirectoryPackageV2Tests : IAsyncLifetime
                                            bm25,
                                            sources,
                                            catalogs,
-                                           assignments);
+                                           assignments,
+                                           deletionService: lifecycle.DeletionService,
+                                           modeLeaseManager: lifecycle.ModeLeaseManager,
+                                           modeRepository: lifecycle.ModeRepository);
         return new ImportFixture(importer, pages, chunks, sources, catalogs, assignments);
     }
 

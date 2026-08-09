@@ -65,7 +65,9 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
         LibraryVersionRecord? priorManifest = previousVersion == null
             ? null
             : await libraries.GetVersionAsync(request.LibraryId, previousVersion, ct);
-        DirectoryPublishingSink sink = await mPageProducer.CreateSinkAsync(request, previousVersion, ct);
+        await using DirectoryPublishingSink sink = await mPageProducer.CreateSinkAsync(request,
+                                                                                        previousVersion,
+                                                                                        ct);
         var scanRequest = new DirectoryScanRequest
                               {
                                   LibraryId = request.LibraryId,
@@ -81,14 +83,14 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
         EnsureComplete(report);
         string libraryHint = string.IsNullOrWhiteSpace(library?.Hint) ? request.LibraryId : library.Hint;
         PipelineDocuments processed = await ProcessDocumentsAsync(request,
-                                                                  sink.Documents,
+                                                                  sink,
                                                                   priorManifest,
                                                                   libraryHint,
                                                                   ct);
-        await PersistIndexesAsync(request, processed.Chunks, ct);
-        return new DirectoryIngestionPipelineResult(sink.Documents.Count,
-                                                    processed.Pages.Count,
-                                                    processed.Chunks.Count,
+        await PersistIndexesAsync(request, processed.ChunkCount, ct);
+        return new DirectoryIngestionPipelineResult(sink.DocumentCount,
+                                                    processed.PageCount,
+                                                    processed.ChunkCount,
                                                     mPageProcessor.EmbeddingProviderId,
                                                     mPageProcessor.EmbeddingModelName,
                                                     mPageProcessor.EmbeddingDimensions,
@@ -99,22 +101,26 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
 
     private async Task<PipelineDocuments> ProcessDocumentsAsync(
         DirectoryIngestionRequest request,
-        IReadOnlyList<PendingDirectoryDocument> documents,
+        DirectoryPublishingSink sink,
         LibraryVersionRecord? priorManifest,
         string libraryHint,
         CancellationToken ct)
     {
         PipelineDocuments result;
-        if (documents.Count == 0)
-            result = new PipelineDocuments([], [], TaxonomyVersion: null);
+        if (sink.DocumentCount == 0)
+            result = new PipelineDocuments(0, 0, TaxonomyVersion: null);
         else
         {
-            IReadOnlyList<SubjectDescriptor> descriptors = documents.Select(document =>
-                                                                                  mDescriptorBuilder.Build(
-                                                                                      document.Source,
-                                                                                      document.Revision,
-                                                                                      document.Intake))
-                                                                          .ToList();
+            var descriptors = new List<SubjectDescriptor>(sink.DocumentCount);
+            await foreach(PendingDirectoryDocument document in sink.ReadDocumentsAsync(ct))
+            {
+                descriptors.Add(mDescriptorBuilder.Build(document.Source,
+                                                         document.Revision,
+                                                         document.Intake));
+            }
+
+            if (descriptors.Count != sink.DocumentCount)
+                throw new InvalidDataException("The pending-document spool count changed during ingestion.");
             ISubjectCatalogRepository catalogRepository =
                 mRepositories.GetSubjectCatalogRepository(request.Profile);
             ISubjectAssignmentRepository assignmentRepository =
@@ -124,15 +130,15 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
                                                                                  request.ScanRunId,
                                                                                  descriptors,
                                                                                  ct);
-            var pages = new List<PageRecord>();
-            var chunks = new List<DocChunk>();
+            var pageCount = 0;
+            var chunkBudget = new DirectoryChunkBudget(DirectoryScanLimits.DefaultMaxChunkCount);
             IPageRepository pageRepository = mRepositories.GetPageRepository(request.Profile);
             IChunkRepository chunkRepository = mRepositories.GetChunkRepository(request.Profile);
             bool reuseEmbeddings = IsCompatibleProcessingManifest(priorManifest);
-            for(var index = 0; index < documents.Count; index++)
+            var index = 0;
+            await foreach(PendingDirectoryDocument document in sink.ReadDocumentsAsync(ct))
             {
                 ct.ThrowIfCancellationRequested();
-                PendingDirectoryDocument document = documents[index];
                 SubjectAssignmentRecord assignment = await mSubjectClassifier.ClassifyAsync(assignmentRepository,
                                                                                              descriptors[index],
                                                                                              catalog,
@@ -151,12 +157,16 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
                                                       chunkRepository,
                                                       PagePersistenceIntent.UpsertAlways,
                                                       reuse,
+                                                      count => chunkBudget.Add(count,
+                                                                               document.Source.DisplayRelativePath),
                                                       ct);
-                pages.AddRange(batch.Pages);
-                chunks.AddRange(batch.Chunks);
+                pageCount += batch.Pages.Count;
+                index++;
             }
 
-            result = new PipelineDocuments(pages, chunks, catalog.TaxonomyVersion);
+            if (index != descriptors.Count)
+                throw new InvalidDataException("The pending-document spool changed between processing passes.");
+            result = new PipelineDocuments(pageCount, chunkBudget.ChunkCount, catalog.TaxonomyVersion);
         }
 
         return result;
@@ -181,9 +191,26 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
     }
 
     private async Task PersistIndexesAsync(DirectoryIngestionRequest request,
-                                           IReadOnlyList<DocChunk> chunks,
+                                           int expectedChunkCount,
                                            CancellationToken ct)
     {
+        IChunkRepository chunkRepository = mRepositories.GetChunkRepository(request.Profile);
+        int persistedChunkCount = await chunkRepository.GetChunkCountAsync(request.LibraryId,
+                                                                            request.Version,
+                                                                            ct);
+        if (persistedChunkCount != expectedChunkCount)
+            throw new InvalidDataException("The persisted chunk count does not match the processed candidate.");
+        if (persistedChunkCount > DirectoryScanLimits.DefaultMaxChunkCount)
+        {
+            throw new DirectoryIngestionException(
+                DirectoryScanReasonCodes.ChunkCountLimitExceeded,
+                "The persisted chunks exceed the configured aggregate library limit.");
+        }
+        IReadOnlyList<DocChunk> chunks = await chunkRepository.GetChunksAsync(request.LibraryId,
+                                                                               request.Version,
+                                                                               ct);
+        if (chunks.Count != persistedChunkCount)
+            throw new InvalidDataException("The persisted chunk set changed while indexes were prepared.");
         IBm25ShardRepository shards = mRepositories.GetBm25ShardRepository(request.Profile);
         ILibraryIndexRepository indexes = mRepositories.GetLibraryIndexRepository(request.Profile);
         await mPageProcessor.PrepareSearchIndexesAsync(request.Profile,
@@ -257,8 +284,8 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
             throw new ArgumentException("The captured directory definition must be bound.", nameof(request));
     }
 
-    private sealed record PipelineDocuments(IReadOnlyList<PageRecord> Pages,
-                                            IReadOnlyList<DocChunk> Chunks,
+    private sealed record PipelineDocuments(int PageCount,
+                                            int ChunkCount,
                                             string? TaxonomyVersion);
 
 }

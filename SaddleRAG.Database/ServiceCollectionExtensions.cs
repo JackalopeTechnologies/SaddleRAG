@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISourceDocumentRepository, SourceDocumentRepository>();
         services.AddSingleton<ISubjectCatalogRepository, SubjectCatalogRepository>();
         services.AddSingleton<ISubjectAssignmentRepository, SubjectAssignmentRepository>();
+        services.AddSingleton<ILibraryIngestionModeRepository, LibraryIngestionModeRepository>();
 
         return services;
     }

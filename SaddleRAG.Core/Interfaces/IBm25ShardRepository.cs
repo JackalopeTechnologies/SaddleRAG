@@ -99,6 +99,15 @@ public interface IBm25ShardRepository
     Task<string> UploadGridFsBlobAsync(Stream content, CancellationToken ct = default);
 
     /// <summary>
+    ///     Upload a binary stream under a caller-supplied receiver-local
+    ///     ObjectId. Importers use this overload so rollback knows the exact
+    ///     id even when the upload succeeds durably and then throws.
+    /// </summary>
+    Task UploadGridFsBlobAsync(string gridFsId,
+                               Stream content,
+                               CancellationToken ct = default);
+
+    /// <summary>
     ///     Insert or replace a single shard document by its <see cref="Bm25Shard.Id" />.
     ///     Used by the importer to write pre-prepared shards (GridFS refs
     ///     already rewritten to receiver-local ids) one at a time.

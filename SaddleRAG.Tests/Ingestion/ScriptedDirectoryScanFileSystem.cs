@@ -9,12 +9,17 @@ namespace SaddleRAG.Tests.Ingestion;
 
 internal sealed class ScriptedDirectoryScanFileSystem : IDirectoryScanFileSystem
 {
-    private readonly Dictionary<string, DirectoryEnumerationResult> mEnumerations =
-        new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, DirectoryPathResult> mInspections =
-        new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, StableFileReadResult> mReads =
-        new(StringComparer.OrdinalIgnoreCase);
+    internal ScriptedDirectoryScanFileSystem(StringComparer? pathComparer = null)
+    {
+        StringComparer comparer = pathComparer ?? StringComparer.OrdinalIgnoreCase;
+        mEnumerations = new Dictionary<string, DirectoryEnumerationResult>(comparer);
+        mInspections = new Dictionary<string, DirectoryPathResult>(comparer);
+        mReads = new Dictionary<string, StableFileReadResult>(comparer);
+    }
+
+    private readonly Dictionary<string, DirectoryEnumerationResult> mEnumerations;
+    private readonly Dictionary<string, DirectoryPathResult> mInspections;
+    private readonly Dictionary<string, StableFileReadResult> mReads;
 
     public List<string> EnumeratedPaths { get; } = [];
 
@@ -43,8 +48,10 @@ internal sealed class ScriptedDirectoryScanFileSystem : IDirectoryScanFileSystem
         return result;
     }
 
-    public DirectoryEnumerationResult EnumerateDirectory(string fullPath)
+    public DirectoryEnumerationResult EnumerateDirectory(string fullPath,
+                                                          DirectoryEntrySnapshot? expectedSnapshot = null)
     {
+        _ = expectedSnapshot;
         EnumeratedPaths.Add(fullPath);
         var result = mEnumerations.TryGetValue(fullPath, out var configured)
             ? configured
@@ -54,8 +61,10 @@ internal sealed class ScriptedDirectoryScanFileSystem : IDirectoryScanFileSystem
 
     public Task<StableFileReadResult> ReadStableFileAsync(string fullPath,
                                                           long maxFileBytes,
-                                                          CancellationToken cancellationToken = default)
+                                                          CancellationToken cancellationToken = default,
+                                                          DirectoryEntrySnapshot? expectedSnapshot = null)
     {
+        _ = expectedSnapshot;
         cancellationToken.ThrowIfCancellationRequested();
         ReadPaths.Add(fullPath);
         var result = mReads.TryGetValue(fullPath, out var configured)

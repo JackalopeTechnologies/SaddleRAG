@@ -21,6 +21,8 @@ public sealed class DoclingSettingsTests
         Assert.Equal("http://localhost:5001", settings.Endpoint);
         Assert.Equal(expected: 120, settings.StartupGracePeriodSeconds);
         Assert.Equal(expected: 600, settings.ConversionTimeoutSeconds);
+        Assert.Equal(expected: 5000, settings.ConversionPollIntervalMilliseconds);
+        Assert.Equal(expected: 2000, settings.ConversionResultRetryBaseMilliseconds);
         Assert.Empty(settings.ApiKey);
         Assert.True(settings.Validate().IsValid);
     }
@@ -52,16 +54,22 @@ public sealed class DoclingSettingsTests
     }
 
     [Theory]
-    [InlineData(0, 10, 30, 600, 1000)]
-    [InlineData(120, 0, 30, 600, 1000)]
-    [InlineData(120, 10, 0, 600, 1000)]
-    [InlineData(120, 10, 30, 0, 1000)]
-    [InlineData(120, 10, 30, 600, 0)]
+    [InlineData(0, 10, 30, 600, 1000, 5000, 2000)]
+    [InlineData(120, 0, 30, 600, 1000, 5000, 2000)]
+    [InlineData(120, 10, 0, 600, 1000, 5000, 2000)]
+    [InlineData(120, 10, 30, 0, 1000, 5000, 2000)]
+    [InlineData(120, 10, 30, 600, 0, 5000, 2000)]
+    [InlineData(120, 10, 30, 600, 1000, 0, 2000)]
+    [InlineData(120, 10, 30, 600, 1000, 5000, 0)]
+    [InlineData(120, 10, 30, 600, 1000, 60001, 2000)]
+    [InlineData(120, 10, 30, 600, 1000, 5000, 60001)]
     public void InvalidTimeoutConfigurationIsRejected(int grace,
                                                       int health,
                                                       int readiness,
                                                       int conversion,
-                                                      int poll)
+                                                      int startupPoll,
+                                                      int conversionPoll,
+                                                      int resultRetry)
     {
         var settings = new DoclingSettings
                        {
@@ -69,7 +77,9 @@ public sealed class DoclingSettingsTests
                            HealthTimeoutSeconds = health,
                            ReadinessTimeoutSeconds = readiness,
                            ConversionTimeoutSeconds = conversion,
-                           StartupPollIntervalMilliseconds = poll
+                           StartupPollIntervalMilliseconds = startupPoll,
+                           ConversionPollIntervalMilliseconds = conversionPoll,
+                           ConversionResultRetryBaseMilliseconds = resultRetry
                        };
 
         var validation = settings.Validate();

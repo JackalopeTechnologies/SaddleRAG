@@ -143,22 +143,16 @@ public sealed class DoclingClient : IDoclingClient
                                                                     string inputFormat,
                                                                     CancellationToken cancellationToken)
     {
-        DoclingConversionResult result;
         var endpoint = validation.Endpoint
                        ?? throw new InvalidOperationException(ValidatedEndpointMissingDetail);
-        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(endpoint, ConversionPath));
-        request.Content = BuildMultipartContent(file, inputFormat);
-        AddApiKey(request);
         using var timeout = CreateTimeout(mSettings.ConversionTimeoutSeconds, cancellationToken);
+        DoclingConversionResult result;
         try
         {
-            using var response = await mHttpClient.SendAsync(request,
-                                                            HttpCompletionOption.ResponseHeadersRead,
-                                                            timeout.Token);
-            var body = Sanitize(await response.Content.ReadAsStringAsync(timeout.Token));
-            result = response.IsSuccessStatusCode
-                ? mMapper.Map(body)
-                : MapConversionFailure(response.StatusCode, body);
+            result = await RunConversionAsync(endpoint,
+                                              file,
+                                              inputFormat,
+                                              timeout.Token);
         }
         catch(OperationCanceledException) when(cancellationToken.IsCancellationRequested)
         {
@@ -173,6 +167,304 @@ public sealed class DoclingClient : IDoclingClient
         {
             result = DoclingConversionResult.Failure(DoclingReasonCodes.EndpointUnreachable,
                                                      Sanitize($"{EndpointFailurePrefix} {ex.Message}"));
+        }
+
+        return result;
+    }
+
+    private async Task<DoclingConversionResult> RunConversionAsync(Uri endpoint,
+                                                                   DoclingFile file,
+                                                                   string inputFormat,
+                                                                   CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(endpoint, AsyncConversionPath));
+        request.Content = BuildMultipartContent(file, inputFormat);
+        AddApiKey(request);
+        var submission = await SendAsync(request, cancellationToken);
+        DoclingConversionResult result;
+        if (!submission.Succeeded)
+        {
+            result = MapConversionFailure(submission.StatusCode, submission.Body);
+        }
+        else
+        {
+            var statusResult = ReadTaskStatus(submission.Body, expectedTaskId: null);
+            result = await FollowTaskAsync(endpoint, statusResult, cancellationToken);
+        }
+
+        return result;
+    }
+
+    private async Task<DoclingConversionResult> FollowTaskAsync(Uri endpoint,
+                                                                DoclingTaskStatusResult statusResult,
+                                                                CancellationToken cancellationToken)
+    {
+        DoclingConversionResult result;
+        if (statusResult.Failure != null)
+        {
+            result = statusResult.Failure;
+        }
+        else
+        {
+            var taskStatus = statusResult.Status
+                             ?? throw new InvalidOperationException(TaskStatusMissingDetail);
+            while (IsInProgress(taskStatus.Status))
+            {
+                await Task.Delay(mSettings.ConversionPollIntervalMilliseconds, cancellationToken);
+                statusResult = await PollTaskAsync(endpoint, taskStatus.TaskId, cancellationToken);
+                if (statusResult.Failure != null)
+                    break;
+                taskStatus = statusResult.Status
+                             ?? throw new InvalidOperationException(TaskStatusMissingDetail);
+            }
+
+            result = statusResult.Failure
+                     ?? await CompleteTaskAsync(endpoint, taskStatus, cancellationToken);
+        }
+
+        return result;
+    }
+
+    private async Task<DoclingTaskStatusResult> PollTaskAsync(Uri endpoint,
+                                                              string taskId,
+                                                              CancellationToken cancellationToken)
+    {
+        var escapedTaskId = Uri.EscapeDataString(taskId);
+        var path = $"{PollPathPrefix}{escapedTaskId}?{PollWaitParameter}={PollWaitSeconds}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(endpoint, path));
+        AddApiKey(request);
+        var response = await SendAsync(request, cancellationToken);
+        var result = response switch
+        {
+            { StatusCode: HttpStatusCode.NotFound } =>
+                DoclingTaskStatusResult.FromStatus(new DoclingTaskStatus(taskId,
+                                                                         SuccessTaskStatus,
+                                                                         response.Body)),
+            { Succeeded: false } =>
+                DoclingTaskStatusResult.FromFailure(
+                    MapConversionFailure(response.StatusCode, response.Body)
+                ),
+            _ => ReadTaskStatus(response.Body, taskId)
+        };
+
+        return result;
+    }
+
+    private async Task<DoclingConversionResult> CompleteTaskAsync(Uri endpoint,
+                                                                  DoclingTaskStatus taskStatus,
+                                                                  CancellationToken cancellationToken)
+    {
+        DoclingConversionResult result;
+        if (taskStatus.Status is FailureTaskStatus or SkippedTaskStatus)
+        {
+            result = MapTaskFailure(taskStatus);
+        }
+        else
+        {
+            result = await ReadTaskResultAsync(endpoint, taskStatus.TaskId, cancellationToken);
+        }
+
+        return result;
+    }
+
+    private async Task<DoclingConversionResult> ReadTaskResultAsync(Uri endpoint,
+                                                                    string taskId,
+                                                                    CancellationToken cancellationToken)
+    {
+        var attempt = 0;
+        DoclingConversionResult? result = null;
+        while (result == null)
+        {
+            var response = await RequestTaskResultAsync(endpoint, taskId, cancellationToken);
+            var retry = response.StatusCode == HttpStatusCode.NotFound
+                        && attempt < ResultRetryCount;
+            if (retry)
+            {
+                var multiplier = 1 << attempt;
+                var delay = checked(mSettings.ConversionResultRetryBaseMilliseconds * multiplier);
+                await Task.Delay(delay, cancellationToken);
+                attempt++;
+            }
+            else
+            {
+                result = response.Succeeded
+                    ? MapResultResponse(response.Body)
+                    : MapConversionFailure(response.StatusCode, response.Body);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<DoclingHttpResponse> RequestTaskResultAsync(Uri endpoint,
+                                                                   string taskId,
+                                                                   CancellationToken cancellationToken)
+    {
+        var escapedTaskId = Uri.EscapeDataString(taskId);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+                                                   new Uri(endpoint, $"{ResultPathPrefix}{escapedTaskId}"));
+        AddApiKey(request);
+        return await SendAsync(request, cancellationToken);
+    }
+
+    private DoclingConversionResult MapResultResponse(string body)
+    {
+        DoclingConversionResult result;
+        if (IsTaskFailureResult(body))
+        {
+            result = MapTaskFailure(new DoclingTaskStatus(string.Empty,
+                                                          FailureTaskStatus,
+                                                          body));
+        }
+        else
+        {
+            result = mMapper.Map(body);
+        }
+
+        return result;
+    }
+
+    private static bool IsTaskFailureResult(string body)
+    {
+        var result = false;
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            var kind = ReadRequiredString(json.RootElement, KindProperty);
+            result = string.Equals(kind, TaskFailureResultKind, StringComparison.Ordinal);
+        }
+        catch(JsonException)
+        {
+            result = false;
+        }
+
+        return result;
+    }
+
+    private async Task<DoclingHttpResponse> SendAsync(HttpRequestMessage request,
+                                                       CancellationToken cancellationToken)
+    {
+        using var response = await mHttpClient.SendAsync(request,
+                                                        HttpCompletionOption.ResponseHeadersRead,
+                                                        cancellationToken);
+        var body = Sanitize(await response.Content.ReadAsStringAsync(cancellationToken));
+        return new DoclingHttpResponse(response.IsSuccessStatusCode, response.StatusCode, body);
+    }
+
+    private DoclingTaskStatusResult ReadTaskStatus(string body, string? expectedTaskId)
+    {
+        DoclingTaskStatusResult result;
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            var root = json.RootElement;
+            var taskId = ReadRequiredString(root, TaskIdProperty);
+            var taskType = ReadRequiredString(root, TaskTypeProperty);
+            var taskStatus = ReadRequiredString(root, TaskStatusProperty);
+            var knownTaskType = string.Equals(taskType, ConvertTaskType, StringComparison.Ordinal);
+            var knownStatus = taskStatus is PendingTaskStatus
+                or StartedTaskStatus
+                or FailureTaskStatus
+                or SuccessTaskStatus
+                or PartialSuccessTaskStatus
+                or SkippedTaskStatus;
+            var matchesExpectedId = expectedTaskId == null
+                                    || string.Equals(taskId, expectedTaskId, StringComparison.Ordinal);
+            if (root.ValueKind != JsonValueKind.Object
+                || string.IsNullOrEmpty(taskId)
+                || string.IsNullOrEmpty(taskType)
+                || string.IsNullOrEmpty(taskStatus)
+                || !knownTaskType
+                || !knownStatus
+                || !matchesExpectedId)
+            {
+                result = DoclingTaskStatusResult.FromFailure(
+                    DoclingConversionResult.Failure(DoclingReasonCodes.ApiIncompatible,
+                                                    InvalidTaskStatusDetail,
+                                                    body)
+                );
+            }
+            else
+            {
+                result = DoclingTaskStatusResult.FromStatus(new DoclingTaskStatus(taskId,
+                                                                                  taskStatus,
+                                                                                  body));
+            }
+        }
+        catch(JsonException ex)
+        {
+            result = DoclingTaskStatusResult.FromFailure(
+                DoclingConversionResult.Failure(DoclingReasonCodes.ApiIncompatible,
+                                                Sanitize($"{MalformedTaskStatusPrefix} {ex.Message}"),
+                                                body)
+            );
+        }
+
+        return result;
+    }
+
+    private DoclingConversionResult MapTaskFailure(DoclingTaskStatus taskStatus)
+    {
+        var fallback = taskStatus.Status == SkippedTaskStatus
+            ? TaskSkippedDetail
+            : TaskFailureDetail;
+        var detail = ReadTaskFailureDetail(taskStatus.ResponseJson, fallback);
+        var reasonCode = detail.Contains(ArtifactTerm, StringComparison.OrdinalIgnoreCase)
+            ? DoclingReasonCodes.ArtifactsUnavailable
+            : detail.Contains(ModelTerm, StringComparison.OrdinalIgnoreCase)
+                ? DoclingReasonCodes.ModelsUnavailable
+                : DoclingReasonCodes.ConversionFailed;
+        return DoclingConversionResult.Failure(reasonCode, detail, taskStatus.ResponseJson);
+    }
+
+    private string ReadTaskFailureDetail(string body, string fallback)
+    {
+        var result = fallback;
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            var root = json.RootElement;
+            var errorMessage = ReadRequiredString(root, ErrorMessageProperty);
+            var failureMessage = ReadFailureMessage(root);
+            result = !string.IsNullOrEmpty(errorMessage)
+                ? errorMessage
+                : !string.IsNullOrEmpty(failureMessage)
+                    ? failureMessage
+                    : fallback;
+        }
+        catch(JsonException)
+        {
+            result = fallback;
+        }
+
+        return NormalizeDetail(result);
+    }
+
+    private static string ReadFailureMessage(JsonElement root)
+    {
+        var result = string.Empty;
+        if (root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty(FailureProperty, out var failure))
+        {
+            result = failure.ValueKind == JsonValueKind.String
+                ? failure.GetString() ?? string.Empty
+                : ReadRequiredString(failure, MessageProperty);
+        }
+
+        return result;
+    }
+
+    private static bool IsInProgress(string taskStatus) =>
+        taskStatus is PendingTaskStatus or StartedTaskStatus;
+
+    private static string ReadRequiredString(JsonElement element, string propertyName)
+    {
+        var result = string.Empty;
+        if (element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var property)
+            && property.ValueKind == JsonValueKind.String)
+        {
+            result = property.GetString() ?? string.Empty;
         }
 
         return result;
@@ -308,7 +600,12 @@ public sealed class DoclingClient : IDoclingClient
 
         if (string.IsNullOrWhiteSpace(result))
             result = EmptyResponseDetail;
-        result = Sanitize(result);
+        return NormalizeDetail(result);
+    }
+
+    private string NormalizeDetail(string detail)
+    {
+        var result = Sanitize(detail);
         if (result.Length > DetailLengthLimit)
             result = result[..DetailLengthLimit] + TruncatedSuffix;
         return result;
@@ -324,11 +621,29 @@ public sealed class DoclingClient : IDoclingClient
 
     private const string HealthPath = "/health";
     private const string ReadinessPath = "/ready";
-    private const string ConversionPath = "/v1/convert/file";
+    private const string AsyncConversionPath = "/v1/convert/file/async";
+    private const string PollPathPrefix = "/v1/status/poll/";
+    private const string ResultPathPrefix = "/v1/result/";
+    private const string PollWaitParameter = "wait";
     private const string ApiKeyHeader = "X-Api-Key";
     private const string StatusProperty = "status";
     private const string DetailProperty = "detail";
+    private const string TaskIdProperty = "task_id";
+    private const string TaskTypeProperty = "task_type";
+    private const string TaskStatusProperty = "task_status";
+    private const string ErrorMessageProperty = "error_message";
+    private const string FailureProperty = "failure";
+    private const string MessageProperty = "message";
+    private const string KindProperty = "kind";
     private const string OkStatus = "ok";
+    private const string ConvertTaskType = "convert";
+    private const string TaskFailureResultKind = "TaskFailureResult";
+    private const string PendingTaskStatus = "pending";
+    private const string StartedTaskStatus = "started";
+    private const string FailureTaskStatus = "failure";
+    private const string SuccessTaskStatus = "success";
+    private const string PartialSuccessTaskStatus = "partial_success";
+    private const string SkippedTaskStatus = "skipped";
     private const string PdfExtension = ".pdf";
     private const string DocxExtension = ".docx";
     private const string PdfFormat = "pdf";
@@ -358,6 +673,8 @@ public sealed class DoclingClient : IDoclingClient
     private const string RedactedValue = "[REDACTED]";
     private const string TruncatedSuffix = "...";
     private const int DetailLengthLimit = 1024;
+    private const int PollWaitSeconds = 5;
+    private const int ResultRetryCount = 3;
     private const string EmptyFileDetail = "The document submitted to Docling is empty.";
     private const string UnsupportedFormatDetail = "The Docling adapter currently accepts PDF and DOCX files only.";
     private const string ValidatedEndpointMissingDetail = "Validated Docling settings did not contain an endpoint.";
@@ -365,10 +682,34 @@ public sealed class DoclingClient : IDoclingClient
     private const string HealthRequestTimeoutDetail = "The Docling health request timed out.";
     private const string ReadinessTimeoutDetail = "The Docling model-readiness request timed out.";
     private const string ConversionTimeoutDetail = "The Docling conversion request timed out.";
+    private const string TaskStatusMissingDetail = "A validated Docling task status was unavailable.";
+    private const string InvalidTaskStatusDetail = "Docling returned an invalid asynchronous task status.";
+    private const string MalformedTaskStatusPrefix = "Docling returned malformed asynchronous task JSON:";
+    private const string TaskFailureDetail = "Docling reported a conversion task failure.";
+    private const string TaskSkippedDetail = "Docling skipped the conversion task.";
     private const string HealthOkDetail = "Docling process health is OK.";
     private const string ReadinessOkDetail = "Docling models report ready.";
     private const string HealthInvalidDetail = "Docling /health returned HTTP success without status ok.";
     private const string ReadinessInvalidDetail = "Docling /ready returned HTTP success without status ok.";
     private const string MalformedStatusPrefix = "Docling returned malformed status JSON:";
     private const string EmptyResponseDetail = "Docling returned an empty error response.";
+
+    private sealed record DoclingTaskStatus(string TaskId, string Status, string ResponseJson);
+
+    private sealed record DoclingTaskStatusResult(DoclingTaskStatus? Status, DoclingConversionResult? Failure)
+    {
+        public static DoclingTaskStatusResult FromStatus(DoclingTaskStatus status)
+        {
+            ArgumentNullException.ThrowIfNull(status);
+            return new DoclingTaskStatusResult(status, null);
+        }
+
+        public static DoclingTaskStatusResult FromFailure(DoclingConversionResult failure)
+        {
+            ArgumentNullException.ThrowIfNull(failure);
+            return new DoclingTaskStatusResult(null, failure);
+        }
+    }
+
+    private readonly record struct DoclingHttpResponse(bool Succeeded, HttpStatusCode StatusCode, string Body);
 }

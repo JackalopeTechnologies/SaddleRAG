@@ -58,6 +58,47 @@ public class SaddleRagDbContext
                                                                                  BsonType.String));
                                                                    });
         }
+
+        if (!BsonClassMap.IsClassMapRegistered(typeof(LibraryIngestionModeRecord)))
+        {
+            BsonClassMap.RegisterClassMap<LibraryIngestionModeRecord>(cm =>
+                                                                       {
+                                                                           cm.AutoMap();
+                                                                           cm.MapMember(record => record.Mode)
+                                                                             .SetSerializer(
+                                                                                 new EnumSerializer<
+                                                                                     LibraryIngestionMode>(
+                                                                                     BsonType.String));
+                                                                           cm.MapMember(record => record.OwnershipState)
+                                                                             .SetSerializer(
+                                                                                 new EnumSerializer<
+                                                                                     LibraryIngestionOwnershipState>(
+                                                                                     BsonType.String));
+                                                                       });
+        }
+
+        if (!BsonClassMap.IsClassMapRegistered(typeof(LibraryRenameOperationRecord)))
+        {
+            BsonClassMap.RegisterClassMap<LibraryRenameOperationRecord>(cm =>
+                                                                         {
+                                                                             cm.AutoMap();
+                                                                             cm.MapMember(record => record.Kind)
+                                                                               .SetSerializer(
+                                                                                   new EnumSerializer<
+                                                                                       LibraryRenameOperationKind>(
+                                                                                       BsonType.String));
+                                                                             cm.MapMember(record => record.State)
+                                                                               .SetSerializer(
+                                                                                   new EnumSerializer<
+                                                                                       LibraryRenameOperationState>(
+                                                                                       BsonType.String));
+                                                                             cm.MapMember(record => record.Mode)
+                                                                               .SetSerializer(
+                                                                                   new EnumSerializer<
+                                                                                       LibraryIngestionMode>(
+                                                                                       BsonType.String));
+                                                                         });
+        }
     }
 
     public SaddleRagDbContext(IOptions<SaddleRagDbSettings> settings)
@@ -127,6 +168,12 @@ public class SaddleRagDbContext
 
     public IMongoCollection<SubjectAssignmentRecord> SubjectAssignments =>
         mDatabase.GetCollection<SubjectAssignmentRecord>(CollectionSubjectAssignments);
+
+    public IMongoCollection<LibraryIngestionModeRecord> LibraryIngestionModes =>
+        mDatabase.GetCollection<LibraryIngestionModeRecord>(CollectionLibraryIngestionModes);
+
+    public IMongoCollection<LibraryRenameOperationRecord> LibraryRenameOperations =>
+        mDatabase.GetCollection<LibraryRenameOperationRecord>(CollectionLibraryRenameOperations);
 
     /// <summary>
     ///     GridFS bucket for spilled BM25 payloads (per-term postings or
@@ -404,6 +451,12 @@ public class SaddleRagDbContext
                                                                          ),
                                           cancellationToken: ct
                                          );
+        await Jobs.Indexes.CreateOneAsync(
+            new CreateIndexModel<JobRecord>(jobKeys.Combine(jobKeys.Ascending(job => job.JobType),
+                                                            jobKeys.Ascending(job => job.Status),
+                                                            jobKeys.Ascending(job => job.Profile),
+                                                            jobKeys.Ascending(job => job.CreatedAt))),
+            cancellationToken: ct);
     }
 
     private const int JobRetentionDays = 30;
@@ -426,6 +479,8 @@ public class SaddleRagDbContext
     private const string CollectionDocumentArtifactBlobs = "documentArtifactBlobs";
     private const string CollectionSubjectCatalogs = "subjectCatalogs";
     private const string CollectionSubjectAssignments = "subjectAssignments";
+    private const string CollectionLibraryIngestionModes = "libraryIngestionModes";
+    private const string CollectionLibraryRenameOperations = "libraryRenameOperations";
     private const string Bm25BucketName = "bm25";
     private const string DocumentArtifactsBucketName = "documentArtifacts";
 

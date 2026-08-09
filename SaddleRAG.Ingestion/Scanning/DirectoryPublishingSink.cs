@@ -11,7 +11,7 @@ using SaddleRAG.Ingestion.Documents.Intake;
 namespace SaddleRAG.Ingestion.Scanning;
 
 /// <summary>Publishing sink with exact-artifact and prior-extraction reuse.</summary>
-internal sealed class DirectoryPublishingSink : IDirectoryScanSink, IDirectoryScanReuseSink
+internal sealed class DirectoryPublishingSink : IDirectoryScanSink, IDirectoryScanReuseSink, IAsyncDisposable
 {
     public DirectoryPublishingSink(ISourceDocumentRepository sourceDocuments,
                                    DirectoryIngestionRequest request,
@@ -26,23 +26,28 @@ internal sealed class DirectoryPublishingSink : IDirectoryScanSink, IDirectorySc
         mRequest = request;
         mPrior = prior;
         mTimeProvider = timeProvider;
+        mStore = new DirectoryPendingDocumentStore(DirectoryScanLimits.DefaultMaxDocumentCount,
+                                                   DirectoryScanLimits.DefaultMaxSpoolBytes);
     }
 
-    private readonly List<PendingDirectoryDocument> mDocuments = [];
     private readonly DirectoryPriorSnapshot mPrior;
     private readonly DirectoryIngestionRequest mRequest;
     private readonly ISourceDocumentRepository mSourceDocuments;
+    private readonly DirectoryPendingDocumentStore mStore;
     private readonly TimeProvider mTimeProvider;
 
-    public IReadOnlyList<PendingDirectoryDocument> Documents => mDocuments;
+    internal int DocumentCount => mStore.DocumentCount;
+
+    internal IAsyncEnumerable<PendingDirectoryDocument> ReadDocumentsAsync(CancellationToken ct = default) =>
+        mStore.ReadAllAsync(ct);
 
     public async Task AcceptAsync(DirectoryAcquiredDocument document, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(document);
         IReadOnlyList<DocChunk> priorChunks = [];
         bool reusedExtraction = false;
-        if (mPrior.Documents.TryGetValue(document.Source.NormalizedRelativePath,
-                                        out PriorDirectoryDocument? prior) &&
+        if (mPrior.TryGet(document.Source.NormalizedRelativePath,
+                          out PriorDirectoryDocument? prior) &&
             prior != null &&
             CanReuseFreshExtraction(document, prior))
         {
@@ -55,31 +60,46 @@ internal sealed class DirectoryPublishingSink : IDirectoryScanSink, IDirectorySc
                                                               priorChunks,
                                                               reusedExtraction,
                                                               ct);
-        mDocuments.Add(pending);
+        await mStore.AddAsync(pending, ct);
+        mPrior.Remove(document.Source.NormalizedRelativePath);
     }
 
-    public async Task<int?> TryAcceptUnchangedAsync(DirectoryStableDocument document,
-                                                    CancellationToken ct = default)
+    public PreparedDirectoryDocumentReuse? TryPrepareUnchanged(DirectoryStableDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        int? result = null;
-        if (mPrior.Documents.TryGetValue(document.NormalizedRelativePath,
-                                        out PriorDirectoryDocument? prior) &&
-            CanReuseExtraction(document, prior))
-        {
-            byte[] extractionBytes = await ReadExtractionArtifactAsync(prior.Revision, ct);
-            DocumentIntakeResult intake = RecreateIntake(prior, extractionBytes);
-            PendingDirectoryDocument pending = await PersistAsync(document,
-                                                                  intake,
-                                                                  prior.Chunks,
-                                                                  reusedExtraction: true,
-                                                                  ct);
-            mDocuments.Add(pending);
-            result = intake.Sections.Count;
-        }
+        var result = mPrior.TryGet(document.NormalizedRelativePath,
+                                   out PriorDirectoryDocument? prior) &&
+                     prior != null &&
+                     CanReuseExtraction(document, prior)
+            ? new PreparedDirectoryDocumentReuse(document, prior)
+            : null;
 
         return result;
     }
+
+    public async Task AcceptPreparedUnchangedAsync(PreparedDirectoryDocumentReuse prepared,
+                                                   CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(prepared);
+        if (!mPrior.TryGet(prepared.Document.NormalizedRelativePath,
+                           out PriorDirectoryDocument? current) ||
+            !ReferenceEquals(current, prepared.Prior))
+        {
+            throw new InvalidOperationException("The prepared unchanged document is no longer current.");
+        }
+
+        byte[] extractionBytes = await ReadExtractionArtifactAsync(prepared.Prior.Revision, ct);
+        DocumentIntakeResult intake = RecreateIntake(prepared.Prior, extractionBytes);
+        PendingDirectoryDocument pending = await PersistAsync(prepared.Document,
+                                                              intake,
+                                                              prepared.Prior.Chunks,
+                                                              reusedExtraction: true,
+                                                              ct);
+        await mStore.AddAsync(pending, ct);
+        mPrior.Remove(prepared.Document.NormalizedRelativePath);
+    }
+
+    public ValueTask DisposeAsync() => mStore.DisposeAsync();
 
     private async Task<PendingDirectoryDocument> PersistAsync(DirectoryStableDocument stable,
                                                               DocumentIntakeResult intake,
@@ -100,9 +120,7 @@ internal sealed class DirectoryPublishingSink : IDirectoryScanSink, IDirectorySc
                                 SourceUri = $"saddlerag://library/{mRequest.LibraryId}/documents/{documentId}",
                                 MediaType = stable.MediaType,
                                 FirstSeenVersion = mRequest.Version,
-                                LastSeenVersion = mRequest.Version,
-                                CreatedAtUtc = acquiredAtUtc,
-                                UpdatedAtUtc = acquiredAtUtc
+                                CreatedAtUtc = acquiredAtUtc
                             };
         SourceDocumentRecord source = await mSourceDocuments.GetOrCreateDocumentAsync(candidate, ct);
         byte[] originalBytes = stable.Content.ToArray();

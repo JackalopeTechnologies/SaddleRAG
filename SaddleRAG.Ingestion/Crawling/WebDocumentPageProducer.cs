@@ -24,7 +24,8 @@ public sealed class WebDocumentPageProducer
     public WebDocumentPageProducer(ISourceDocumentRepository sourceDocuments,
                                    IDocumentIntake documentIntake,
                                    TimeProvider timeProvider,
-                                   ILogger<WebDocumentPageProducer> logger)
+                                   ILogger<WebDocumentPageProducer> logger,
+                                   RepositoryFactory? repositoryFactory = null)
     {
         ArgumentNullException.ThrowIfNull(sourceDocuments);
         ArgumentNullException.ThrowIfNull(documentIntake);
@@ -34,12 +35,14 @@ public sealed class WebDocumentPageProducer
         mDocumentIntake = documentIntake;
         mTimeProvider = timeProvider;
         mLogger = logger;
+        mRepositoryFactory = repositoryFactory;
     }
 
     private readonly IDocumentIntake mDocumentIntake;
     private readonly ILogger<WebDocumentPageProducer> mLogger;
     private readonly ISourceDocumentRepository mSourceDocuments;
     private readonly TimeProvider mTimeProvider;
+    private readonly RepositoryFactory? mRepositoryFactory;
 
     public async Task<IReadOnlyList<PageRecord>> ProduceAsync(ScrapeJob job,
                                                               string scanRunId,
@@ -85,9 +88,10 @@ public sealed class WebDocumentPageProducer
                                 CreatedAtUtc = acquiredAtUtc,
                                 UpdatedAtUtc = acquiredAtUtc
                             };
+        ISourceDocumentRepository sourceDocuments = ResolveSourceDocuments(job.DatabaseProfile);
         SourceDocumentRecord source = candidate;
         if (persistMode == IngestionPersistenceMode.Full)
-            source = await mSourceDocuments.GetOrCreateDocumentAsync(candidate, ct);
+            source = await sourceDocuments.GetOrCreateDocumentAsync(candidate, ct);
 
         string revisionId = SourceDocumentRepository.MakeRevisionId(job.LibraryId,
                                                                       job.Version,
@@ -119,7 +123,7 @@ public sealed class WebDocumentPageProducer
                            };
 
         if (persistMode == IngestionPersistenceMode.Full)
-            await PersistRevisionAsync(revision, originalBytes, extractionBytes, ct);
+            await PersistRevisionAsync(sourceDocuments, revision, originalBytes, extractionBytes, ct);
 
         IReadOnlyList<PageRecord> result = ProjectPages(job,
                                                         source,
@@ -132,14 +136,23 @@ public sealed class WebDocumentPageProducer
         return result;
     }
 
-    private async Task PersistRevisionAsync(DocumentRevisionRecord revision,
+    private async Task PersistRevisionAsync(ISourceDocumentRepository sourceDocuments,
+                                            DocumentRevisionRecord revision,
                                             byte[] originalBytes,
                                             byte[] extractionBytes,
                                             CancellationToken ct)
     {
         await using var originalStream = new MemoryStream(originalBytes, writable: false);
         await using var extractionStream = new MemoryStream(extractionBytes, writable: false);
-        await mSourceDocuments.PersistRevisionAsync(revision, originalStream, extractionStream, ct);
+        await sourceDocuments.PersistRevisionAsync(revision, originalStream, extractionStream, ct);
+    }
+
+    private ISourceDocumentRepository ResolveSourceDocuments(string? profile)
+    {
+        ISourceDocumentRepository result = string.IsNullOrEmpty(profile) || mRepositoryFactory == null
+                                               ? mSourceDocuments
+                                               : mRepositoryFactory.GetSourceDocumentRepository(profile);
+        return result;
     }
 
     private static IReadOnlyList<PageRecord> ProjectPages(ScrapeJob job,

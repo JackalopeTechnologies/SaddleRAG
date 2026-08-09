@@ -17,6 +17,7 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Database.Repositories;
 
 #endregion
 
@@ -79,6 +80,7 @@ public class PageCrawler : IPageCrawler
         public required Action? OnFetchError { get; init; }
         public required CancellationToken Token { get; init; }
         public required AuditContext AuditCtx { get; init; }
+        public required IPageRepository PageRepository { get; init; }
         public required IngestionPersistenceMode PersistMode { get; init; }
         public DryRunAccumulator? DryRunAcc { get; init; }
 
@@ -189,7 +191,8 @@ public class PageCrawler : IPageCrawler
                        IMonitorBroadcaster broadcaster,
                        ILogger<PageCrawler> logger,
                        ILoggerFactory loggerFactory,
-                       WebDocumentPageProducer? documentPageProducer = null)
+                       WebDocumentPageProducer? documentPageProducer = null,
+                       RepositoryFactory? repositoryFactory = null)
     {
         ArgumentNullException.ThrowIfNull(pageRepository);
         ArgumentNullException.ThrowIfNull(gitHubScraper);
@@ -204,6 +207,7 @@ public class PageCrawler : IPageCrawler
         mLogger = logger;
         mLoggerFactory = loggerFactory;
         mDocumentPageProducer = documentPageProducer;
+        mRepositoryFactory = repositoryFactory;
     }
 
     private readonly IScrapeAuditWriter mAuditWriter;
@@ -214,6 +218,15 @@ public class PageCrawler : IPageCrawler
     private readonly WebDocumentPageProducer? mDocumentPageProducer;
 
     private readonly IPageRepository mPageRepository;
+    private readonly RepositoryFactory? mRepositoryFactory;
+
+    private IPageRepository ResolvePageRepository(string? profile)
+    {
+        IPageRepository result = string.IsNullOrEmpty(profile) || mRepositoryFactory == null
+                                     ? mPageRepository
+                                     : mRepositoryFactory.GetPageRepository(profile);
+        return result;
+    }
 
     /// <summary>
     ///     Fetch a single URL into a <see cref="PageRecord" /> without
@@ -223,10 +236,22 @@ public class PageCrawler : IPageCrawler
     ///     of the site in. Persists the page record on success and
     ///     returns it; returns null when retries are exhausted.
     /// </summary>
-    public async Task<PageRecord?> FetchSinglePageAsync(string libraryId,
-                                                        string version,
-                                                        string url,
-                                                        CancellationToken ct = default)
+    public Task<PageRecord?> FetchSinglePageAsync(string libraryId,
+                                                   string version,
+                                                   string url,
+                                                   CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(url);
+        return FetchSinglePageForProfileAsync(libraryId, version, url, profile: null, ct);
+    }
+
+    public async Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+                                                                  string version,
+                                                                  string url,
+                                                                  string? profile,
+                                                                  CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
@@ -261,7 +286,12 @@ public class PageCrawler : IPageCrawler
                 await Task.Delay(delay, ct);
             }
 
-            result = await TryFetchSingleOnceAsync(browser, libraryId, version, url, ct);
+            result = await TryFetchSingleOnceAsync(browser,
+                                                   libraryId,
+                                                   version,
+                                                   url,
+                                                   ResolvePageRepository(profile),
+                                                   ct);
             attempt++;
         }
 
@@ -275,6 +305,7 @@ public class PageCrawler : IPageCrawler
                                                             string libraryId,
                                                             string version,
                                                             string url,
+                                                            IPageRepository pageRepository,
                                                             CancellationToken ct)
     {
         PageRecord? result = null;
@@ -287,7 +318,12 @@ public class PageCrawler : IPageCrawler
             if (response is { Ok: true })
             {
                 await WaitForPageAndFramesAsync(page, url, ct);
-                result = await BuildAndPersistPageRecordAsync(page, libraryId, version, url, ct);
+                result = await BuildAndPersistPageRecordAsync(page,
+                                                              libraryId,
+                                                              version,
+                                                              url,
+                                                              pageRepository,
+                                                              ct);
             }
             else
             {
@@ -311,6 +347,7 @@ public class PageCrawler : IPageCrawler
                                                                   string libraryId,
                                                                   string version,
                                                                   string url,
+                                                                  IPageRepository pageRepository,
                                                                   CancellationToken ct)
     {
         string title = await page.TitleAsync();
@@ -333,7 +370,7 @@ public class PageCrawler : IPageCrawler
                              ContentHash = contentHash
                          };
 
-        await mPageRepository.UpsertPageAsync(record, ct);
+        await pageRepository.UpsertPageAsync(record, ct);
         return record;
     }
 
@@ -365,7 +402,8 @@ public class PageCrawler : IPageCrawler
                            {
                                JobId = effectiveJobId,
                                LibraryId = job.LibraryId,
-                               Version = job.Version
+                               Version = job.Version,
+                               Profile = job.DatabaseProfile
                            };
 
         using var playwright = await Playwright.CreateAsync();
@@ -439,6 +477,7 @@ public class PageCrawler : IPageCrawler
                           OnFetchError = onFetchError,
                           Token = ct,
                           AuditCtx = auditCtx,
+                          PageRepository = ResolvePageRepository(job.DatabaseProfile),
                           Voter = new RenderModeVoter(),
                           Navigator = escalation,
                           PersistMode = persistMode,
@@ -993,7 +1032,7 @@ public class PageCrawler : IPageCrawler
         foreach (PageRecord documentPage in pages)
         {
             if (ctx.PersistMode == IngestionPersistenceMode.Full)
-                await mPageRepository.UpsertPageAsync(documentPage, ctx.Token);
+                await ctx.PageRepository.UpsertPageAsync(documentPage, ctx.Token);
             await ctx.PageOutput.WriteAsync(documentPage, ctx.Token);
         }
 
@@ -1410,7 +1449,7 @@ public class PageCrawler : IPageCrawler
                              };
 
         if (ctx.PersistMode == IngestionPersistenceMode.Full)
-            await mPageRepository.UpsertPageAsync(pageRecord, ctx.Token);
+            await ctx.PageRepository.UpsertPageAsync(pageRecord, ctx.Token);
         int newCount = ctx.IncrementPageCount();
         long fetchMs = sw.ElapsedMilliseconds;
         await ctx.PageOutput.WriteAsync(pageRecord, ctx.Token);

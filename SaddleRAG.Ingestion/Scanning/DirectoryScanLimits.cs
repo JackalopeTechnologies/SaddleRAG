@@ -8,7 +8,14 @@ namespace SaddleRAG.Ingestion.Scanning;
 /// <summary>Named safety bounds for directory previews.</summary>
 public static class DirectoryScanLimits
 {
+    public const int DefaultMaxDocumentCount = 10000;
+    public const int DefaultMaxDirectoryCount = 10000;
+    public const int DefaultMaxEntryCount = 100000;
     public const long DefaultMaxFileBytes = 64L * 1024L * 1024L;
+    public const int DefaultMaxSectionCount = 100000;
+    public const long DefaultMaxSpoolBytes = 1024L * 1024L * 1024L;
+    public const long DefaultMaxTotalBytes = 1024L * 1024L * 1024L;
+    public const int DefaultMaxChunkCount = 100000;
     public const string DocxExtension = ".docx";
     public const string HtmExtension = ".htm";
     public const string HtmlExtension = ".html";

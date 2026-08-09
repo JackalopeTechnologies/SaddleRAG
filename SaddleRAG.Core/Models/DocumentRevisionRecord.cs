@@ -62,4 +62,11 @@ public record DocumentRevisionRecord
     public DateTime? PublishedAtUtc { get; init; }
 
     public string? FailureDetail { get; init; }
+
+    /// <summary>
+    ///     Exact managed-artifact ownership committed by the local repository.
+    ///     Empty on legacy/imported revisions whose blobs must remain
+    ///     deletion-ineligible.
+    /// </summary>
+    public IReadOnlyList<DocumentRevisionArtifactClaim> ArtifactClaims { get; init; } = [];
 }

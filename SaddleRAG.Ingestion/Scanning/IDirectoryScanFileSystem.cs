@@ -12,9 +12,11 @@ public interface IDirectoryScanFileSystem
 {
     DirectoryPathResult InspectPath(string fullPath);
 
-    DirectoryEnumerationResult EnumerateDirectory(string fullPath);
+    DirectoryEnumerationResult EnumerateDirectory(string fullPath,
+                                                   DirectoryEntrySnapshot? expectedSnapshot = null);
 
     Task<StableFileReadResult> ReadStableFileAsync(string fullPath,
                                                    long maxFileBytes,
-                                                   CancellationToken cancellationToken = default);
+                                                   CancellationToken cancellationToken = default,
+                                                   DirectoryEntrySnapshot? expectedSnapshot = null);
 }

@@ -243,7 +243,10 @@ public sealed class DoclingDocumentMapper
             if (groups.TryGetValue(reference, out var group))
                 AppendChildren(group, items, groups, visited, blocks);
             if (items.TryGetValue(reference, out var item))
+            {
                 blocks.Add(MapBlock(item, reference, blocks.Count));
+                AppendChildren(item, items, groups, visited, blocks);
+            }
         }
     }
 

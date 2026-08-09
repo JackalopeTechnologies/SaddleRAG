@@ -54,6 +54,19 @@ public sealed class SubjectAssignmentRepository : ISubjectAssignmentRepository
         return DeleteScanRunCoreAsync(libraryId, scanRunId, ct);
     }
 
+    public async Task<long> DeleteVersionAsync(string libraryId,
+                                                string version,
+                                                CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        DeleteResult result = await mContext.SubjectAssignments.DeleteManyAsync(
+                                  assignment => assignment.LibraryId == libraryId &&
+                                                assignment.Version == version,
+                                  ct);
+        return result.DeletedCount;
+    }
+
     public async Task<long> DeleteLibraryAsync(string libraryId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(libraryId);

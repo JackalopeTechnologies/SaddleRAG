@@ -117,6 +117,97 @@ public sealed class SourceDocumentCandidateCleanupTests : IAsyncLifetime
                          cancellationToken: TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task PromotionStampsRevisionAndSourcePublicationProvenance()
+    {
+        const string version = "2026-08-08";
+        var bytes = "promoted"u8.ToArray();
+        SourceDocumentRecord document = Document(WorkspaceLibraryId, "promoted.pdf", "promoted") with
+                                            {
+                                                FirstSeenVersion = version,
+                                                LastSeenVersion = null,
+                                                UpdatedAtUtc = null
+                                            };
+        await mRepository.GetOrCreateDocumentAsync(document, TestContext.Current.CancellationToken);
+        DocumentRevisionRecord candidate = Revision(document,
+                                                    TargetScanRunId,
+                                                    bytes,
+                                                    DocumentRevisionState.Candidate) with
+                                               {
+                                                   Id = SourceDocumentRepository.MakeRevisionId(document.LibraryId,
+                                                       version,
+                                                       document.Id),
+                                                   Version = version
+                                               };
+        await PersistAsync(candidate, bytes);
+
+        long promoted = await mRepository.PublishCandidateScanRunAsync(WorkspaceLibraryId,
+                                                                        version,
+                                                                        TargetScanRunId,
+                                                                        TestContext.Current.CancellationToken);
+
+        DocumentRevisionRecord storedRevision = Assert.IsType<DocumentRevisionRecord>(
+            await mRepository.GetRevisionAsync(candidate.Id, TestContext.Current.CancellationToken));
+        SourceDocumentRecord storedDocument = Assert.IsType<SourceDocumentRecord>(
+            await mRepository.GetDocumentAsync(document.Id, TestContext.Current.CancellationToken));
+        Assert.Equal(1, promoted);
+        Assert.Equal(DocumentRevisionState.Published, storedRevision.State);
+        Assert.NotNull(storedRevision.PublishedAtUtc);
+        Assert.Equal(version, storedDocument.LastSeenVersion);
+        Assert.Equal(storedRevision.PublishedAtUtc, storedDocument.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public async Task DeletingLatestVersionRestoresSourceProvenanceFromSurvivingPublication()
+    {
+        const string firstVersion = "2026-08-07";
+        const string latestVersion = "2026-08-08";
+        var firstBytes = "first"u8.ToArray();
+        var latestBytes = "latest"u8.ToArray();
+        SourceDocumentRecord document = Document(WorkspaceLibraryId, "retained.pdf", "retained") with
+                                            {
+                                                FirstSeenVersion = firstVersion,
+                                                LastSeenVersion = latestVersion,
+                                                UpdatedAtUtc = SourceTime.AddDays(1)
+                                            };
+        await mRepository.GetOrCreateDocumentAsync(document, TestContext.Current.CancellationToken);
+        DocumentRevisionRecord first = Revision(document,
+                                                "first-run",
+                                                firstBytes,
+                                                DocumentRevisionState.Published) with
+                                           {
+                                               Id = SourceDocumentRepository.MakeRevisionId(document.LibraryId,
+                                                   firstVersion,
+                                                   document.Id),
+                                               Version = firstVersion,
+                                               PublishedAtUtc = SourceTime
+                                           };
+        DocumentRevisionRecord latest = Revision(document,
+                                                 "latest-run",
+                                                 latestBytes,
+                                                 DocumentRevisionState.Published) with
+                                            {
+                                                Id = SourceDocumentRepository.MakeRevisionId(document.LibraryId,
+                                                    latestVersion,
+                                                    document.Id),
+                                                Version = latestVersion,
+                                                AcquiredAtUtc = SourceTime.AddDays(1),
+                                                PublishedAtUtc = SourceTime.AddDays(1)
+                                            };
+        await PersistAsync(first, firstBytes);
+        await PersistAsync(latest, latestBytes);
+
+        long deleted = await mRepository.DeleteVersionAsync(WorkspaceLibraryId,
+                                                              latestVersion,
+                                                              TestContext.Current.CancellationToken);
+
+        SourceDocumentRecord stored = Assert.IsType<SourceDocumentRecord>(
+            await mRepository.GetDocumentAsync(document.Id, TestContext.Current.CancellationToken));
+        Assert.Equal(1, deleted);
+        Assert.Equal(firstVersion, stored.LastSeenVersion);
+        Assert.Equal(SourceTime, stored.UpdatedAtUtc);
+    }
+
     private async Task PersistAsync(DocumentRevisionRecord revision, byte[] bytes)
     {
         await using var stream = new MemoryStream(bytes, writable: false);

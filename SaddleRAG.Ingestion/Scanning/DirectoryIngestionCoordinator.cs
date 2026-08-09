@@ -17,20 +17,24 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
     public DirectoryIngestionCoordinator(RepositoryFactory repositoryFactory,
                                          IDirectoryIngestionPipeline pipeline,
                                          ILibraryDeletionService deletionService,
-                                         ILogger<DirectoryIngestionCoordinator> logger)
+                                         ILogger<DirectoryIngestionCoordinator> logger,
+                                         ILibraryIngestionModeLeaseManager modeLeaseManager)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(pipeline);
         ArgumentNullException.ThrowIfNull(deletionService);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(modeLeaseManager);
         mRepositoryFactory = repositoryFactory;
         mPipeline = pipeline;
         mDeletionService = deletionService;
         mLogger = logger;
+        mModeLeaseManager = modeLeaseManager;
     }
 
     private readonly ILibraryDeletionService mDeletionService;
     private readonly ILogger<DirectoryIngestionCoordinator> mLogger;
+    private readonly ILibraryIngestionModeLeaseManager mModeLeaseManager;
     private readonly IDirectoryIngestionPipeline mPipeline;
     private readonly RepositoryFactory mRepositoryFactory;
 
@@ -50,27 +54,167 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
         }
         else
         {
-            ILibraryRepository libraries = mRepositoryFactory.GetLibraryRepository(request.Profile);
-            ISourceDocumentRepository sources = mRepositoryFactory.GetSourceDocumentRepository(request.Profile);
-            LibraryRecord? library = await libraries.GetLibraryAsync(request.LibraryId, ct);
-            string? previousVersion = CurrentVersion(library);
-            LibraryVersionRecord buildingVersion = CreateVersion(request,
-                                                                  previousVersion,
-                                                                  VersionPublicationState.Building,
-                                                                  publicationError: null,
-                                                                  pipelineResult: null);
-            DirectoryVersionClaimResult claim = await libraries.TryClaimDirectoryVersionAsync(buildingVersion, ct);
-            result = claim.Status == DirectoryVersionClaimStatus.Acquired
-                         ? await RunCandidateAsync(request,
-                                                   definition,
-                                                   library,
-                                                   buildingVersion,
-                                                   claim.RequiresCleanup,
-                                                   libraries,
-                                                   sources,
-                                                   onProgress,
-                                                   ct)
-                         : ResolveClaim(request, claim.Status);
+            result = await RunBoundAsync(request, definition, onProgress, ct);
+        }
+
+        return result;
+    }
+
+    private async Task<DirectoryIngestionResult> RunBoundAsync(
+        DirectoryIngestionRequest request,
+        DirectoryLibraryDefinition definition,
+        Action<DirectoryScanProgress>? onProgress,
+        CancellationToken ct)
+    {
+        ILibraryRepository libraries = mRepositoryFactory.GetLibraryRepository(request.Profile);
+        ISourceDocumentRepository sources = mRepositoryFactory.GetSourceDocumentRepository(request.Profile);
+        ILibraryIngestionModeLease? modeLease = await mModeLeaseManager.TryAcquireAsync(
+                                                    request.Profile,
+                                                    definition.Id,
+                                                    LibraryIngestionMode.Directory,
+                                                    ct);
+        DirectoryIngestionResult result;
+        if (modeLease == null)
+        {
+            result = Failed(request, DirectoryScanReasonCodes.ScanFailed, ModeLeaseBusyDetail);
+        }
+        else
+        {
+            await using(modeLease)
+            {
+                using CancellationTokenSource operation =
+                    CancellationTokenSource.CreateLinkedTokenSource(ct, modeLease.OwnershipLostToken);
+                result = await RunUnderModeFenceAsync(request,
+                                                      definition,
+                                                      libraries,
+                                                      sources,
+                                                      modeLease,
+                                                      onProgress,
+                                                      operation.Token);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<DirectoryIngestionResult> RunUnderModeFenceAsync(
+        DirectoryIngestionRequest request,
+        DirectoryLibraryDefinition definition,
+        ILibraryRepository libraries,
+        ISourceDocumentRepository sources,
+        ILibraryIngestionModeLease modeLease,
+        Action<DirectoryScanProgress>? onProgress,
+        CancellationToken ct)
+    {
+        DirectoryLibraryDefinition? persistedDefinition =
+            await sources.GetDirectoryDefinitionAsync(definition.Id, ct);
+        DirectoryIngestionResult result;
+        if (persistedDefinition == null)
+        {
+            await modeLease.TryAbandonReservationAsync(CancellationToken.None);
+            result = Failed(request, DirectoryScanReasonCodes.LibraryNotRegistered, LibraryNotRegisteredDetail);
+        }
+        else
+        {
+            bool committed = await modeLease.TryCommitAsync(ct);
+            if (!committed)
+            {
+                result = Failed(request, DirectoryScanReasonCodes.ScanFailed, ModeLeaseLostDetail);
+            }
+            else
+            {
+                result = await AcquirePublicationLeaseAndRunAsync(request,
+                                                                  definition,
+                                                                  libraries,
+                                                                  sources,
+                                                                  modeLease,
+                                                                  onProgress,
+                                                                  ct);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<DirectoryIngestionResult> AcquirePublicationLeaseAndRunAsync(
+        DirectoryIngestionRequest request,
+        DirectoryLibraryDefinition definition,
+        ILibraryRepository libraries,
+        ISourceDocumentRepository sources,
+        ILibraryIngestionModeLease modeLease,
+        Action<DirectoryScanProgress>? onProgress,
+        CancellationToken ct)
+    {
+        IDirectoryPublicationLease? publicationLease =
+            await sources.TryAcquireDirectoryPublicationLeaseAsync(definition.Id,
+                                                                    definition.RegistrationRevision,
+                                                                    definition.RegistrationIncarnationId,
+                                                                    request.ScanRunId,
+                                                                    definition.LastPublishedVersion,
+                                                                    ct);
+        DirectoryIngestionResult result;
+        if (publicationLease == null)
+        {
+            result = Failed(request, DirectoryScanReasonCodes.ScanFailed, PublicationLeaseBusyDetail);
+        }
+        else
+        {
+            await using(publicationLease)
+            {
+                result = await RunUnderLeaseAsync(request,
+                                                  definition,
+                                                  libraries,
+                                                  sources,
+                                                  modeLease,
+                                                  publicationLease,
+                                                  onProgress,
+                                                  ct);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<DirectoryIngestionResult> RunUnderLeaseAsync(
+        DirectoryIngestionRequest request,
+        DirectoryLibraryDefinition definition,
+        ILibraryRepository libraries,
+        ISourceDocumentRepository sources,
+        ILibraryIngestionModeLease modeLease,
+        IDirectoryPublicationLease publicationLease,
+        Action<DirectoryScanProgress>? onProgress,
+        CancellationToken ct)
+    {
+        using CancellationTokenSource operation =
+            CancellationTokenSource.CreateLinkedTokenSource(ct, publicationLease.OwnershipLostToken);
+        await RequireActivePublicationLeaseAsync(publicationLease, operation.Token);
+        LibraryRecord? library = await libraries.GetLibraryAsync(request.LibraryId, operation.Token);
+        string? previousVersion = CurrentVersion(library);
+        LibraryVersionRecord buildingVersion = CreateVersion(request,
+                                                              previousVersion,
+                                                              VersionPublicationState.Building,
+                                                              publicationError: null,
+                                                              pipelineResult: null);
+        DirectoryVersionClaimResult claim = await libraries.TryClaimDirectoryVersionAsync(buildingVersion,
+                                                                                            operation.Token);
+        DirectoryIngestionResult result;
+        if (claim.Status == DirectoryVersionClaimStatus.Acquired)
+        {
+            result = await RunCandidateAsync(request,
+                                             definition,
+                                             library,
+                                             buildingVersion,
+                                             claim.RequiresCleanup,
+                                             libraries,
+                                             sources,
+                                             modeLease,
+                                             publicationLease,
+                                             onProgress,
+                                             operation.Token);
+        }
+        else
+        {
+            result = ResolveClaim(request, claim.Status);
         }
 
         return result;
@@ -83,13 +227,15 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
                                                                    bool requiresCleanup,
                                                                    ILibraryRepository libraries,
                                                                    ISourceDocumentRepository sources,
+                                                                   ILibraryIngestionModeLease modeLease,
+                                                                   IDirectoryPublicationLease publicationLease,
                                                                    Action<DirectoryScanProgress>? onProgress,
                                                                    CancellationToken ct)
     {
         string? previousVersion = CurrentVersion(library);
         var priorVersions = library?.AllVersions.ToList() ?? [];
         DirectoryIngestionPipelineResult? pipelineResult = null;
-        bool publicationMetadataWritten = false;
+        var publicationMetadataState = PublicationMetadataWriteState.NotAttempted;
         bool cleanupAlreadyBegun = false;
         bool executePipeline = true;
         DirectoryIngestionResult result = ResolveClaim(request, DirectoryVersionClaimStatus.InProgress);
@@ -106,10 +252,12 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
 
             if (requiresCleanup && executePipeline)
             {
-                await mDeletionService.DeleteVersionAsync(request.Profile,
-                                                          request.LibraryId,
-                                                          request.Version,
-                                                          ct);
+                await mDeletionService.DeleteScanCandidateUnderLeaseAsync(request.Profile,
+                                                                           request.LibraryId,
+                                                                           request.Version,
+                                                                           publicationLease,
+                                                                           modeLease,
+                                                                           ct);
                 cleanupAlreadyBegun = false;
                 DirectoryVersionClaimResult retryClaim =
                     await libraries.TryClaimDirectoryVersionAsync(buildingVersion, ct);
@@ -121,10 +269,17 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
             if (executePipeline)
             {
                 pipelineResult = await mPipeline.ExecuteAsync(request, onProgress, ct);
+                await RequireActivePublicationLeaseAsync(publicationLease, ct);
                 await sources.PublishCandidateScanRunAsync(request.LibraryId,
                                                            request.Version,
                                                            request.ScanRunId,
                                                            ct);
+                await PublishSubjectCatalogAsync(request,
+                                                 pipelineResult.SubjectTaxonomyVersion,
+                                                 publicationLease,
+                                                 ct);
+
+                await RequireActivePublicationLeaseAsync(publicationLease, ct);
                 LibraryVersionRecord publishedVersion = CreateVersion(request,
                                                                        previousVersion,
                                                                        VersionPublicationState.Published,
@@ -136,13 +291,21 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
                 if (!versionPublished)
                     throw new InvalidOperationException(PublicationLeaseLostDetail);
 
-                publicationMetadataWritten = await sources.TryUpdateDirectoryPublicationAsync(
-                                                 definition.Id,
-                                                 definition.RegistrationRevision,
-                                                 definition.LastPublishedVersion,
-                                                 request.QueuedAt.UtcDateTime,
-                                                 request.Version,
-                                                 ct);
+                await RequireActivePublicationLeaseAsync(publicationLease, ct);
+                publicationMetadataState = PublicationMetadataWriteState.Ambiguous;
+                bool publicationMetadataWritten = await sources.TryUpdateDirectoryPublicationAsync(
+                                                      publicationLease,
+                                                      definition.LastPublishedVersion,
+                                                      request.QueuedAt.UtcDateTime,
+                                                      request.Version,
+                                                      ct);
+                publicationMetadataState = publicationMetadataWritten
+                    ? PublicationMetadataWriteState.Written
+                    : PublicationMetadataWriteState.NotWritten;
+                if (!publicationMetadataWritten)
+                    throw new InvalidOperationException(PublicationLeaseLostDetail);
+
+                await RequireActivePublicationLeaseAsync(publicationLease, ct);
                 library ??= CreateLibrary(definition);
                 PublishLibraryPointer(library, request.Version);
                 await libraries.UpsertLibraryAsync(library, ct);
@@ -152,17 +315,30 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
         catch(OperationCanceledException ex)
         {
             RestoreLibraryPointer(library, previousVersion, priorVersions);
-            string detail = SanitizeDetail(ex.Message, definition.RootPath);
-            await MarkFailedPreservingOriginalAsync(request,
-                                                    definition,
-                                                    publicationMetadataWritten,
-                                                    cleanupAlreadyBegun,
-                                                    libraries,
-                                                    previousVersion,
-                                                    pipelineResult,
-                                                    detail,
-                                                    ex);
-            throw;
+            switch(modeLease.OwnershipLostToken.IsCancellationRequested,
+                   publicationLease.OwnershipLostToken.IsCancellationRequested)
+            {
+                case (true, _):
+                    result = Failed(request, DirectoryScanReasonCodes.ScanFailed, ModeLeaseLostDetail);
+                    break;
+                case (false, true):
+                    result = Failed(request, DirectoryScanReasonCodes.ScanFailed, PublicationLeaseLostDetail);
+                    break;
+                default:
+                    string detail = SanitizeDetail(ex.Message, definition.RootPath);
+                    await MarkFailedPreservingOriginalAsync(request,
+                                                             definition,
+                                                             modeLease,
+                                                             publicationLease,
+                                                             publicationMetadataState,
+                                                             cleanupAlreadyBegun,
+                                                             libraries,
+                                                             previousVersion,
+                                                             pipelineResult,
+                                                             detail,
+                                                             ex);
+                    throw;
+            }
         }
         catch(DirectoryIngestionException ex)
         {
@@ -171,7 +347,9 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
             string publicationError = $"{ex.ReasonCode}: {detail}";
             await MarkFailedPreservingOriginalAsync(request,
                                                     definition,
-                                                    publicationMetadataWritten,
+                                                    modeLease,
+                                                    publicationLease,
+                                                    publicationMetadataState,
                                                     cleanupAlreadyBegun,
                                                     libraries,
                                                     previousVersion,
@@ -186,7 +364,9 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
             string detail = SanitizeDetail(ex.Message, definition.RootPath);
             await MarkFailedPreservingOriginalAsync(request,
                                                     definition,
-                                                    publicationMetadataWritten,
+                                                    modeLease,
+                                                    publicationLease,
+                                                    publicationMetadataState,
                                                     cleanupAlreadyBegun,
                                                     libraries,
                                                     previousVersion,
@@ -195,46 +375,74 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
                                                     ex);
             result = Failed(request, DirectoryScanReasonCodes.ScanFailed, detail);
         }
-
         return result;
     }
 
+    private async Task PublishSubjectCatalogAsync(DirectoryIngestionRequest request,
+                                                   string? taxonomyVersion,
+                                                   IDirectoryPublicationLease publicationLease,
+                                                   CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(taxonomyVersion))
+        {
+            await RequireActivePublicationLeaseAsync(publicationLease, ct);
+            ISubjectCatalogRepository catalogs = mRepositoryFactory.GetSubjectCatalogRepository(request.Profile);
+            bool catalogPublished = await catalogs.TryPublishCandidateAsync(request.LibraryId,
+                                                                             taxonomyVersion,
+                                                                             request.ScanRunId,
+                                                                             ct);
+            if (!catalogPublished)
+                throw new InvalidOperationException(PublicationLeaseLostDetail);
+        }
+    }
+
+    private static async Task RequireActivePublicationLeaseAsync(IDirectoryPublicationLease publicationLease,
+                                                                  CancellationToken ct)
+    {
+        bool renewed = await publicationLease.TryRenewAsync(ct);
+        if (!renewed)
+            throw new InvalidOperationException(PublicationLeaseLostDetail);
+    }
+
     private async Task MarkFailedPreservingOriginalAsync(DirectoryIngestionRequest request,
-                                                          DirectoryLibraryDefinition definition,
-                                                          bool publicationMetadataWritten,
-                                                          bool cleanupAlreadyBegun,
-                                                          ILibraryRepository libraries,
-                                                          string? previousVersion,
-                                                          DirectoryIngestionPipelineResult? pipelineResult,
-                                                          string publicationError,
-                                                          Exception originalException)
+                                                           DirectoryLibraryDefinition definition,
+                                                           ILibraryIngestionModeLease modeLease,
+                                                           IDirectoryPublicationLease publicationLease,
+                                                           PublicationMetadataWriteState publicationMetadataState,
+                                                           bool cleanupAlreadyBegun,
+                                                           ILibraryRepository libraries,
+                                                           string? previousVersion,
+                                                           DirectoryIngestionPipelineResult? pipelineResult,
+                                                           string publicationError,
+                                                           Exception originalException)
     {
         var failures = new List<Exception>();
+        using CancellationTokenSource ownership = CancellationTokenSource.CreateLinkedTokenSource(
+                                                      modeLease.OwnershipLostToken,
+                                                      publicationLease.OwnershipLostToken);
         ISourceDocumentRepository sources = mRepositoryFactory.GetSourceDocumentRepository(request.Profile);
-        if (publicationMetadataWritten)
-        {
-            await TryFailureStepAsync(async () =>
-                                      {
-                                          await sources.TryUpdateDirectoryPublicationAsync(
-                                              definition.Id,
-                                              definition.RegistrationRevision,
-                                              request.Version,
-                                              definition.LastPublishedAtUtc,
-                                              definition.LastPublishedVersion,
-                                              CancellationToken.None);
-                                      },
-                                      failures);
-        }
+        bool restoreRequired = publicationMetadataState is PublicationMetadataWriteState.Written
+            or PublicationMetadataWriteState.Ambiguous;
+        bool metadataSafeForCleanup = !restoreRequired ||
+                                      await TryRestorePublicationMetadataAsync(
+                                          sources,
+                                          request,
+                                          definition,
+                                          publicationLease,
+                                          allowExactPriorObservation: publicationMetadataState ==
+                                                                      PublicationMetadataWriteState.Ambiguous,
+                                          ownership.Token,
+                                          failures);
 
-        bool cleanupOwned = cleanupAlreadyBegun;
-        if (!cleanupOwned)
+        bool cleanupOwned = cleanupAlreadyBegun && metadataSafeForCleanup;
+        if (metadataSafeForCleanup && !cleanupOwned)
         {
             try
             {
                 cleanupOwned = await libraries.TryBeginDirectoryVersionCleanupAsync(request.LibraryId,
                                                                                      request.Version,
                                                                                      request.ScanRunId,
-                                                                                     CancellationToken.None);
+                                                                                     ownership.Token);
             }
             catch(Exception ex)
             {
@@ -242,14 +450,21 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
             }
         }
 
-        if (cleanupOwned && !cleanupAlreadyBegun)
+        if (cleanupOwned)
         {
+            await TryRollbackSubjectCatalogAsync(request,
+                                                 pipelineResult,
+                                                 ownership.Token,
+                                                 failures);
             await TryFailureStepAsync(async () =>
                                       {
-                                          await mDeletionService.DeleteVersionAsync(request.Profile,
-                                                                                     request.LibraryId,
-                                                                                     request.Version,
-                                                                                     CancellationToken.None);
+                                          await mDeletionService.DeleteScanCandidateUnderLeaseAsync(
+                                              request.Profile,
+                                              request.LibraryId,
+                                              request.Version,
+                                              publicationLease,
+                                              modeLease,
+                                              ownership.Token);
                                       },
                                       failures);
         }
@@ -264,9 +479,9 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
             await TryFailureStepAsync(async () =>
                                       {
                                           await libraries.TryRecordDirectoryVersionFailureAsync(
-                                              failed,
-                                              request.ScanRunId,
-                                              CancellationToken.None);
+                                               failed,
+                                               request.ScanRunId,
+                                               ownership.Token);
                                       },
                                       failures);
         }
@@ -282,6 +497,111 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
                              publicationError);
         }
     }
+
+    private async Task TryRollbackSubjectCatalogAsync(DirectoryIngestionRequest request,
+                                                       DirectoryIngestionPipelineResult? pipelineResult,
+                                                       CancellationToken ct,
+                                                       List<Exception> failures)
+    {
+        string? taxonomyVersion = pipelineResult?.SubjectTaxonomyVersion;
+        if (!string.IsNullOrEmpty(taxonomyVersion))
+        {
+            await TryFailureStepAsync(async () =>
+                                      {
+                                          ISubjectCatalogRepository catalogs =
+                                              mRepositoryFactory.GetSubjectCatalogRepository(request.Profile);
+                                          await catalogs.TryRollbackCandidatePublicationAsync(
+                                              request.LibraryId,
+                                              taxonomyVersion,
+                                              request.ScanRunId,
+                                              ct);
+                                      },
+                                      failures);
+        }
+    }
+
+    private static async Task<bool> TryRestorePublicationMetadataAsync(
+        ISourceDocumentRepository sources,
+        DirectoryIngestionRequest request,
+        DirectoryLibraryDefinition definition,
+        IDirectoryPublicationLease publicationLease,
+        bool allowExactPriorObservation,
+        CancellationToken ct,
+        List<Exception> failures)
+    {
+        bool result = false;
+        Exception? restoreFailure = null;
+        Exception? observationFailure = null;
+        try
+        {
+            result = await sources.TryRestoreDirectoryPublicationAsync(
+                         publicationLease,
+                         request.Version,
+                         definition.LastPublishedAtUtc,
+                         definition.LastPublishedVersion,
+                         ct);
+        }
+        catch(Exception ex)
+        {
+            restoreFailure = ex;
+        }
+
+        if (allowExactPriorObservation)
+        {
+            result = false;
+            try
+            {
+                result = await ConfirmExactPriorPublicationAsync(sources,
+                                                                  definition,
+                                                                  publicationLease,
+                                                                  ct);
+            }
+            catch(Exception ex)
+            {
+                observationFailure = ex;
+            }
+        }
+
+        if (restoreFailure != null)
+            failures.Add(restoreFailure);
+        if (observationFailure != null)
+            failures.Add(observationFailure);
+        if (!result && restoreFailure == null && observationFailure == null)
+            failures.Add(new InvalidOperationException(PublicationMetadataRestoreFailureMessage));
+
+        return result;
+    }
+
+    private static async Task<bool> ConfirmExactPriorPublicationAsync(
+        ISourceDocumentRepository sources,
+        DirectoryLibraryDefinition definition,
+        IDirectoryPublicationLease publicationLease,
+        CancellationToken ct)
+    {
+        await RequireActivePublicationLeaseAsync(publicationLease, ct);
+        DirectoryLibraryDefinition? current = await sources.GetDirectoryDefinitionAsync(definition.Id, ct);
+        return current != null && IsExactPriorPublicationUnderLease(current,
+                                                                     definition,
+                                                                     publicationLease);
+    }
+
+    private static bool IsExactPriorPublicationUnderLease(DirectoryLibraryDefinition current,
+                                                           DirectoryLibraryDefinition prior,
+                                                           IDirectoryPublicationLease publicationLease) =>
+        string.Equals(current.Id, prior.Id, StringComparison.Ordinal) &&
+        current.RegistrationRevision == publicationLease.RegistrationRevision &&
+        string.Equals(current.RegistrationIncarnationId,
+                      publicationLease.RegistrationIncarnationId,
+                      StringComparison.Ordinal) &&
+        string.Equals(current.PublicationLeaseScanRunId,
+                      publicationLease.ScanRunId,
+                      StringComparison.Ordinal) &&
+        current.PublicationLeaseRegistrationRevision == publicationLease.RegistrationRevision &&
+        current.PendingRenameOperationId == null &&
+        string.Equals(current.LastPublishedVersion,
+                      prior.LastPublishedVersion,
+                      StringComparison.Ordinal) &&
+        current.LastPublishedAtUtc == prior.LastPublishedAtUtc;
 
     private static async Task TryFailureStepAsync(Func<Task> operation, List<Exception> failures)
     {
@@ -318,6 +638,7 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
                 PublicationState = state,
                 PublicationError = publicationError,
                 ScanRunId = request.ScanRunId,
+                RegistrationRevision = request.Definition.RegistrationRevision,
                 CleanupInProgress = false
             };
 
@@ -442,6 +763,22 @@ public sealed class DirectoryIngestionCoordinator : IDirectoryIngestionCoordinat
     private const string CandidateCleanupFailureMessage = "One or more directory candidate cleanup steps failed.";
     private const string DirectoryLibraryHint = "Documents from a manually registered local directory.";
     private const string LibraryNotBoundDetail = "The directory library is not bound to a directory on this machine.";
+    private const string LibraryNotRegisteredDetail = "Register the directory library before scanning it.";
+    private const string ModeLeaseBusyDetail =
+        "The library identifier is owned by web ingestion or another directory lifecycle operation.";
+    private const string ModeLeaseLostDetail = "The directory scan no longer owns its ingestion-mode lease.";
+    private const string PublicationLeaseBusyDetail =
+        "The directory library is currently being scanned or deleted. Try again after that operation finishes.";
     private const string PublicationLeaseLostDetail = "The directory scan no longer owns its publication lease.";
+    private const string PublicationMetadataRestoreFailureMessage =
+        "Directory publication metadata still references the failed candidate; candidate cleanup was stopped.";
     private const string RegisteredRootReplacement = "<registered-root>";
+
+    private enum PublicationMetadataWriteState
+    {
+        NotAttempted,
+        NotWritten,
+        Written,
+        Ambiguous
+    }
 }

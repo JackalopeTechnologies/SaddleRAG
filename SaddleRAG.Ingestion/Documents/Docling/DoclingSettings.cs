@@ -31,6 +31,12 @@ public sealed class DoclingSettings
     /// <summary>Delay between bounded cold-start observations.</summary>
     public int StartupPollIntervalMilliseconds { get; set; } = DefaultStartupPollIntervalMilliseconds;
 
+    /// <summary>Delay between asynchronous conversion-status observations.</summary>
+    public int ConversionPollIntervalMilliseconds { get; set; } = DefaultConversionPollIntervalMilliseconds;
+
+    /// <summary>Base delay for bounded retries while a completed task result becomes available.</summary>
+    public int ConversionResultRetryBaseMilliseconds { get; set; } = DefaultConversionResultRetryBaseMilliseconds;
+
     /// <summary>Validates configuration without contacting or controlling Docling.</summary>
     public DoclingSettingsValidation Validate()
     {
@@ -57,7 +63,9 @@ public sealed class DoclingSettings
                                 && HealthTimeoutSeconds > 0
                                 && ReadinessTimeoutSeconds > 0
                                 && ConversionTimeoutSeconds > 0
-                                && StartupPollIntervalMilliseconds > 0;
+                                && StartupPollIntervalMilliseconds > 0
+                                && ConversionPollIntervalMilliseconds is > 0 and <= MaximumPollIntervalMilliseconds
+                                && ConversionResultRetryBaseMilliseconds is > 0 and <= MaximumPollIntervalMilliseconds;
             var valid = credentialsAreSeparate && timeoutsValid;
             var detail = valid
                 ? ValidDetail
@@ -80,10 +88,14 @@ public sealed class DoclingSettings
     public const int DefaultReadinessTimeoutSeconds = 30;
     public const int DefaultConversionTimeoutSeconds = 600;
     public const int DefaultStartupPollIntervalMilliseconds = 1000;
+    public const int DefaultConversionPollIntervalMilliseconds = 5000;
+    public const int DefaultConversionResultRetryBaseMilliseconds = 2000;
+    public const int MaximumPollIntervalMilliseconds = 60000;
 
     private const string NotConfiguredDetail = "No Docling endpoint is configured.";
     private const string InvalidEndpointDetail =
         "The Docling endpoint must be an absolute HTTP or HTTPS URL without embedded credentials, query, or fragment.";
-    private const string InvalidTimeoutDetail = "Docling grace, request timeouts, and poll interval must be greater than zero.";
+    private const string InvalidTimeoutDetail =
+        "Docling grace and request timeouts must be greater than zero; poll intervals must be between 1 and 60000 milliseconds.";
     private const string ValidDetail = "Docling configuration is valid.";
 }

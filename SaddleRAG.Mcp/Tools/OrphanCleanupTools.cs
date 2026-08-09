@@ -13,6 +13,8 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Ingestion.Services;
 
 #endregion
 
@@ -38,6 +40,7 @@ public static class OrphanCleanupTools
         IReadOnlyList<LibraryVersionKey> Bm25Shards,
         IReadOnlyList<LibraryVersionKey> ExcludedSymbols,
         IReadOnlyList<LibraryVersionKey> AuditLog,
+        IReadOnlyList<LibraryVersionKey> Diffs,
         DirectoryOrphanReport Documents);
 
     private sealed record DirectoryOrphanReport(
@@ -57,6 +60,7 @@ public static class OrphanCleanupTools
         long Bm25Shards,
         long ExcludedSymbols,
         long AuditEntries,
+        long Diffs,
         long DirectoryLibraries,
         long SourceDocuments,
         long DocumentRevisions,
@@ -78,6 +82,7 @@ public static class OrphanCleanupTools
     public static async Task<string> CleanupOrphans(RepositoryFactory repositoryFactory,
                                                     [FromKeyedServices(nameof(IBackgroundJobRunner))]
                                                     IBackgroundJobRunner runner,
+                                                    ILibraryDeletionService deletionService,
                                                     [Description("Optional library identifier to scope the scan.")]
                                                     string? library = null,
                                                     [Description("Optional library version to scope the scan. " +
@@ -93,6 +98,7 @@ public static class OrphanCleanupTools
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(runner);
+        ArgumentNullException.ThrowIfNull(deletionService);
 
         string result;
         if (dryRun)
@@ -101,6 +107,7 @@ public static class OrphanCleanupTools
         {
             result = await QueueApplyJobAsync(repositoryFactory,
                                               runner,
+                                              deletionService,
                                               profile,
                                               library,
                                               version,
@@ -141,6 +148,7 @@ public static class OrphanCleanupTools
 
     private static async Task<string> QueueApplyJobAsync(RepositoryFactory factory,
                                                          IBackgroundJobRunner runner,
+                                                         ILibraryDeletionService deletionService,
                                                          string? profile,
                                                          string? library,
                                                          string? version,
@@ -170,7 +178,10 @@ public static class OrphanCleanupTools
                                                                        jobCt
                                                                   );
                                                 var deleted =
-                                                    await DeleteOrphansAsync(factory, profile, orphans, jobCt);
+                                                    await DeleteOrphansAsync(deletionService,
+                                                                             profile,
+                                                                             orphans,
+                                                                             jobCt);
                                                 record.ResultJson = JsonSerializer.Serialize(new
                                                              {
                                                                  DryRun = false,
@@ -239,6 +250,7 @@ public static class OrphanCleanupTools
         var bm25Repo = factory.GetBm25ShardRepository(profile);
         var excludedRepo = factory.GetExcludedSymbolsRepository(profile);
         var auditRepo = factory.GetScrapeAuditRepository(profile);
+        var diffRepo = factory.GetDiffRepository(profile);
         var sourceRepo = factory.GetSourceDocumentRepository(profile);
 
         var pagePairs = await pageRepo.GetDistinctLibraryVersionPairsAsync(ct);
@@ -248,6 +260,7 @@ public static class OrphanCleanupTools
         var shardPairs = await bm25Repo.GetDistinctLibraryVersionPairsAsync(ct);
         var excludedPairs = await excludedRepo.GetDistinctLibraryVersionPairsAsync(ct);
         var auditPairs = await auditRepo.GetDistinctLibraryVersionPairsAsync(ct);
+        var diffPairs = await diffRepo.GetDistinctLibraryVersionPairsAsync(ct);
         var documentRevisionPairs = await sourceRepo.GetDistinctLibraryVersionPairsAsync(ct);
 
         IReadOnlyList<LibraryVersionKey> orphanPages = FilterOrphans(pagePairs, parents, library, version);
@@ -257,6 +270,7 @@ public static class OrphanCleanupTools
         IReadOnlyList<LibraryVersionKey> orphanShards = FilterOrphans(shardPairs, parents, library, version);
         IReadOnlyList<LibraryVersionKey> orphanExcluded = FilterOrphans(excludedPairs, parents, library, version);
         IReadOnlyList<LibraryVersionKey> orphanAudit = FilterOrphans(auditPairs, parents, library, version);
+        IReadOnlyList<LibraryVersionKey> orphanDiffs = FilterOrphans(diffPairs, parents, library, version);
         IReadOnlyList<LibraryVersionKey> orphanPairs = orphanPages
                                                        .Concat(orphanChunks)
                                                        .Concat(orphanProfiles)
@@ -264,6 +278,7 @@ public static class OrphanCleanupTools
                                                        .Concat(orphanShards)
                                                        .Concat(orphanExcluded)
                                                        .Concat(orphanAudit)
+                                                       .Concat(orphanDiffs)
                                                        .Concat(FilterOrphans(documentRevisionPairs,
                                                                              parents,
                                                                              library,
@@ -281,6 +296,7 @@ public static class OrphanCleanupTools
                                       orphanShards,
                                       orphanExcluded,
                                       orphanAudit,
+                                      orphanDiffs,
                                       documentOrphans);
         return report;
     }
@@ -372,6 +388,23 @@ public static class OrphanCleanupTools
         return result;
     }
 
+    internal static Task<string> CleanupOrphans(RepositoryFactory repositoryFactory,
+                                                IBackgroundJobRunner runner,
+                                                string? library = null,
+                                                string? version = null,
+                                                bool dryRun = true,
+                                                string? profile = null,
+                                                CancellationToken ct = default) =>
+        CleanupOrphans(repositoryFactory,
+                       runner,
+                       new LibraryDeletionService(repositoryFactory,
+                                                  new InMemoryBruteForceVectorSearch()),
+                       library,
+                       version,
+                       dryRun,
+                       profile,
+                       ct);
+
     private static async Task<SourceDocumentRecord?> GetOrphanedSourceDocumentAsync(
         ISourceDocumentRepository sources,
         string documentId,
@@ -406,136 +439,76 @@ public static class OrphanCleanupTools
         return orphans;
     }
 
-    private static async Task<DeletionTotals> DeleteOrphansAsync(RepositoryFactory factory,
+    private static async Task<DeletionTotals> DeleteOrphansAsync(ILibraryDeletionService deletionService,
                                                                  string? profile,
                                                                  OrphanReport orphans,
                                                                  CancellationToken ct)
     {
-        var pageRepo = factory.GetPageRepository(profile);
-        var chunkRepo = factory.GetChunkRepository(profile);
-        var profileRepo = factory.GetLibraryProfileRepository(profile);
-        var indexRepo = factory.GetLibraryIndexRepository(profile);
-        var bm25Repo = factory.GetBm25ShardRepository(profile);
-        var excludedRepo = factory.GetExcludedSymbolsRepository(profile);
-        var auditRepo = factory.GetScrapeAuditRepository(profile);
-        var sourceRepo = factory.GetSourceDocumentRepository(profile);
-        var catalogRepo = factory.GetSubjectCatalogRepository(profile);
-        var assignmentRepo = factory.GetSubjectAssignmentRepository(profile);
-
-        long pages = await DeletePerKeyAsync(orphans.Pages,
-                                             (k, jobCt) => pageRepo.DeleteAsync(k.LibraryId, k.Version, jobCt),
-                                             ct
-                                            );
-        long chunks = await DeletePerKeyAsync(orphans.Chunks,
-                                              (k, jobCt) =>
-                                                  chunkRepo.DeleteChunksAsync(k.LibraryId, k.Version, jobCt),
-                                              ct
-                                             );
-        long profiles = await DeletePerKeyAsync(orphans.Profiles,
-                                                (k, jobCt) =>
-                                                    profileRepo.DeleteAsync(k.LibraryId, k.Version, jobCt),
-                                                ct
-                                               );
-        long indexes = await DeletePerKeyAsync(orphans.Indexes,
-                                               (k, jobCt) =>
-                                                   indexRepo.DeleteAsync(k.LibraryId, k.Version, jobCt),
-                                               ct
-                                              );
-        long shards = await DeletePerKeyAsync(orphans.Bm25Shards,
-                                              (k, jobCt) =>
-                                                  bm25Repo.DeleteAsync(k.LibraryId, k.Version, jobCt),
-                                              ct
-                                             );
-        long excluded = await DeletePerKeyAsync(orphans.ExcludedSymbols,
-                                                (k, jobCt) =>
-                                                    excludedRepo.DeleteAsync(k.LibraryId, k.Version, jobCt),
-                                                ct
-                                               );
-        long audit = await DeletePerKeyAsync(orphans.AuditLog,
-                                             (k, jobCt) =>
-                                                 auditRepo.DeleteByLibraryVersionAsync(k.LibraryId,
-                                                          k.Version,
-                                                          jobCt
-                                                     ),
-                                             ct
-                                            );
-        long documentRevisions = 0;
-        long subjectCatalogs = 0;
-        long subjectAssignments = 0;
-        foreach(IGrouping<string, DocumentRevisionRecord> libraryRevisions in
-                orphans.Documents.DocumentRevisions.GroupBy(revision => revision.LibraryId,
-                                                             StringComparer.Ordinal))
+        IReadOnlyList<LibraryVersionKey> orphanPairs = orphans.Pages
+                                                              .Concat(orphans.Chunks)
+                                                              .Concat(orphans.Profiles)
+                                                              .Concat(orphans.Indexes)
+                                                              .Concat(orphans.Bm25Shards)
+                                                              .Concat(orphans.ExcludedSymbols)
+                                                              .Concat(orphans.AuditLog)
+                                                              .Concat(orphans.Diffs)
+                                                              .Concat(orphans.Documents.DocumentRevisions.Select(
+                                                                  revision => new LibraryVersionKey(
+                                                                      revision.LibraryId,
+                                                                      revision.Version)))
+                                                              .Distinct()
+                                                              .ToList();
+        var total = new LibraryDeletionResult(0, 0, 0, 0, 0, 0, 0, 0, 0);
+        foreach(string libraryId in orphans.Documents.CompleteLibraryIds)
         {
-            if (orphans.Documents.CompleteLibraryIds.Contains(libraryRevisions.Key))
-            {
-                subjectAssignments += await assignmentRepo.DeleteLibraryAsync(libraryRevisions.Key, ct);
-                subjectCatalogs += await catalogRepo.DeleteLibraryAsync(libraryRevisions.Key, ct);
-                documentRevisions += await sourceRepo.DeleteLibraryAsync(libraryRevisions.Key, ct);
-            }
-            else
-            {
-                IReadOnlyList<string> scanRunIds = libraryRevisions
-                                                    .Select(revision => revision.ScanRunId)
-                                                    .Distinct(StringComparer.Ordinal)
-                                                    .ToList();
-                foreach(string scanRunId in scanRunIds)
-                {
-                    subjectAssignments += await assignmentRepo.DeleteScanRunAsync(libraryRevisions.Key,
-                                                                                    scanRunId,
-                                                                                    ct);
-                    string? deletingVersion = libraryRevisions
-                                               .FirstOrDefault(revision =>
-                                                   string.Equals(revision.ScanRunId,
-                                                                 scanRunId,
-                                                                 StringComparison.Ordinal))
-                                               ?.Version;
-                    subjectCatalogs += await catalogRepo.DeleteCandidateScanRunAsync(libraryRevisions.Key,
-                                                                                      scanRunId,
-                                                                                      deletingVersion,
-                                                                                      ct);
-                }
-
-                IReadOnlyList<LibraryVersionKey> revisionPairs = libraryRevisions
-                                                                  .Select(revision => new LibraryVersionKey(
-                                                                              revision.LibraryId,
-                                                                              revision.Version))
-                                                                  .Distinct()
-                                                                  .ToList();
-                documentRevisions += await DeletePerKeyAsync(revisionPairs,
-                                                             (key, jobCt) => sourceRepo.DeleteVersionAsync(
-                                                                 key.LibraryId,
-                                                                 key.Version,
-                                                                 jobCt),
-                                                             ct);
-            }
+            LibraryDeletionResult deleted = await deletionService.DeleteLibraryAsync(profile,
+                                                                                       libraryId,
+                                                                                       ct);
+            total = Add(total, deleted);
         }
 
-        var totals = new DeletionTotals(pages,
-                                        chunks,
-                                        profiles,
-                                        indexes,
-                                        shards,
-                                        excluded,
-                                        audit,
+        foreach(LibraryVersionKey pair in orphanPairs.Where(pair =>
+                    !orphans.Documents.CompleteLibraryIds.Contains(pair.LibraryId)))
+        {
+            LibraryDeletionResult deleted = await deletionService.DeleteVersionAsync(profile,
+                                                                                       pair.LibraryId,
+                                                                                       pair.Version,
+                                                                                       ct);
+            total = Add(total, deleted);
+        }
+
+        var totals = new DeletionTotals(total.Pages,
+                                        total.Chunks,
+                                        total.Profiles,
+                                        total.Indexes,
+                                        total.Bm25Shards,
+                                        total.ExcludedSymbols,
+                                        total.AuditEntries,
+                                        total.Diffs,
                                         orphans.Documents.DirectoryLibraries.Count,
                                         orphans.Documents.SourceDocuments.Count,
-                                        documentRevisions,
-                                        subjectCatalogs,
-                                        subjectAssignments,
+                                        total.DocumentRevisions,
+                                        total.SubjectCatalogs,
+                                        total.SubjectAssignments,
                                         orphans.Documents.DocumentArtifacts.Count
                                        );
         return totals;
     }
 
-    private static async Task<long> DeletePerKeyAsync(IReadOnlyList<LibraryVersionKey> keys,
-                                                      Func<LibraryVersionKey, CancellationToken, Task<long>> deleter,
-                                                      CancellationToken ct)
-    {
-        long total = 0;
-        foreach(var key in keys)
-            total += await deleter(key, ct);
-        return total;
-    }
+    private static LibraryDeletionResult Add(LibraryDeletionResult left, LibraryDeletionResult right) =>
+        new(left.Libraries + right.Libraries,
+            left.Versions + right.Versions,
+            left.Chunks + right.Chunks,
+            left.Pages + right.Pages,
+            left.Profiles + right.Profiles,
+            left.Indexes + right.Indexes,
+            left.Bm25Shards + right.Bm25Shards,
+            left.ExcludedSymbols + right.ExcludedSymbols,
+            left.AuditEntries + right.AuditEntries,
+            DocumentRevisions: left.DocumentRevisions + right.DocumentRevisions,
+            SubjectAssignments: left.SubjectAssignments + right.SubjectAssignments,
+            SubjectCatalogs: left.SubjectCatalogs + right.SubjectCatalogs,
+            Diffs: left.Diffs + right.Diffs);
 
     private static object SummarizeOrphans(OrphanReport orphans)
     {
@@ -546,6 +519,7 @@ public static class OrphanCleanupTools
                              .Concat(orphans.Bm25Shards)
                              .Concat(orphans.ExcludedSymbols)
                              .Concat(orphans.AuditLog)
+                             .Concat(orphans.Diffs)
                              .Concat(orphans.Documents.DocumentRevisions.Select(revision =>
                                  new LibraryVersionKey(revision.LibraryId, revision.Version)))
                              .Concat(orphans.Documents.SubjectAssignments.Select(assignment =>
@@ -567,6 +541,7 @@ public static class OrphanCleanupTools
                                                      Bm25Shards = orphans.Bm25Shards.Count,
                                                      ExcludedSymbols = orphans.ExcludedSymbols.Count,
                                                      AuditEntries = orphans.AuditLog.Count,
+                                                     Diffs = orphans.Diffs.Count,
                                                      DirectoryLibraries = orphans.Documents.DirectoryLibraries.Count,
                                                      SourceDocuments = orphans.Documents.SourceDocuments.Count,
                                                      DocumentRevisions = orphans.Documents.DocumentRevisions.Count,
@@ -585,7 +560,8 @@ public static class OrphanCleanupTools
                                                                   HasBm25Shards = orphans.Bm25Shards.Contains(k),
                                                                    HasExcludedSymbols =
                                                                        orphans.ExcludedSymbols.Contains(k),
-                                                                   HasAuditEntries = orphans.AuditLog.Contains(k),
+                                                                    HasAuditEntries = orphans.AuditLog.Contains(k),
+                                                                    HasDiffs = orphans.Diffs.Contains(k),
                                                                    HasDocumentRevisions =
                                                                        orphans.Documents.DocumentRevisions.Any(
                                                                            revision =>

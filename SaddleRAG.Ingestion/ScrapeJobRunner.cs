@@ -238,7 +238,8 @@ public class ScrapeJobRunner : IScrapeJobQueue
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        var chunks = await mChunkRepository.GetChunksAsync(libraryId, version, ct);
+        var chunkRepo = mRepositoryFactory.GetChunkRepository(profile);
+        var chunks = await chunkRepo.GetChunksAsync(libraryId, version, ct);
         var embeddedChunks = chunks.Where(c => c.Embedding != null).ToList();
 
         await mVectorSearch.IndexChunksAsync(profile, libraryId, version, embeddedChunks, ct);

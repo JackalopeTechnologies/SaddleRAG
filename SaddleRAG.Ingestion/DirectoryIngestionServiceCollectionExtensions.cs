@@ -27,6 +27,9 @@ public static class DirectoryIngestionServiceCollectionExtensions
         services.TryAddSingleton<IDirectoryDocumentCapabilityPreflight,
                                  DirectoryDocumentCapabilityPreflight>();
         services.TryAddSingleton<DirectoryRootValidator>();
+        services.TryAddSingleton<LibraryIngestionModeLeaseManager>();
+        services.TryAddSingleton<ILibraryIngestionModeLeaseManager>(provider =>
+            provider.GetRequiredService<LibraryIngestionModeLeaseManager>());
         services.TryAddSingleton<IDocumentIntake, DocumentIntakeService>();
         services.TryAddSingleton<WebDocumentPageProducer>();
         services.TryAddSingleton<SymbolExtractor>();

@@ -34,4 +34,22 @@ public interface IDiffRepository
                                           string fromVersion,
                                           string toVersion,
                                           CancellationToken ct = default);
+
+    /// <summary>
+    ///     Delete every comparison that references one library version.
+    /// </summary>
+    Task<long> DeleteVersionAsync(string libraryId,
+                                  string version,
+                                  CancellationToken ct = default);
+
+    /// <summary>
+    ///     Delete every comparison owned by one library.
+    /// </summary>
+    Task<long> DeleteLibraryAsync(string libraryId, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Enumerate both endpoints of every stored comparison for orphan detection.
+    /// </summary>
+    Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default);
 }

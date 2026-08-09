@@ -34,5 +34,13 @@ public static class DirectoryScanReasonCodes
     public const string DirectoryDisappeared = "DIRECTORY_DISAPPEARED";
     public const string DirectoryReparsePointSkipped = "DIRECTORY_REPARSE_POINT_SKIPPED";
     public const string PathOutsideRoot = "PATH_OUTSIDE_ROOT";
+    public const string PathIdentityCollision = "PATH_IDENTITY_COLLISION";
+    public const string DirectoryCountLimitExceeded = "DIRECTORY_COUNT_LIMIT_EXCEEDED";
+    public const string EntryCountLimitExceeded = "ENTRY_COUNT_LIMIT_EXCEEDED";
+    public const string DocumentCountLimitExceeded = "DOCUMENT_COUNT_LIMIT_EXCEEDED";
+    public const string TotalBytesLimitExceeded = "TOTAL_BYTES_LIMIT_EXCEEDED";
+    public const string SectionCountLimitExceeded = "SECTION_COUNT_LIMIT_EXCEEDED";
+    public const string ChunkCountLimitExceeded = "CHUNK_COUNT_LIMIT_EXCEEDED";
+    public const string PendingSpoolLimitExceeded = "PENDING_SPOOL_LIMIT_EXCEEDED";
     public const string DocumentPersistenceFailed = "DOCUMENT_PERSISTENCE_FAILED";
 }

@@ -43,8 +43,8 @@ internal static class DirectoryPackagingFixtures
             Id = libraryId,
             RootPath = RootPath,
             Recursive = true,
-            AllowedExtensions = [".pdf", ".docx", ".txt"],
-            ExclusionPatterns = ["**/bin/**", "**/.git/**"],
+            AllowedExtensions = [".docx", ".pdf", ".txt"],
+            ExclusionPatterns = ["**/.git/**", "**/bin/**"],
             BindingStatus = DirectoryLibraryBindingStatus.Bound,
             RegisteredAtUtc = RecordedAt,
             LastPublishedAtUtc = RecordedAt,
@@ -140,7 +140,7 @@ internal static class DirectoryPackagingFixtures
                                     string version = Version,
                                     string documentId = DocumentId) => new()
         {
-            Id = $"document-page-{Guid.NewGuid():N}",
+            Id = PageId(libraryId, version, documentId, sectionOrder: 1),
             LibraryId = libraryId,
             Version = version,
             Url = $"{SourceUri(libraryId, documentId)}#section-0001",
@@ -209,6 +209,19 @@ internal static class DirectoryPackagingFixtures
                                       string documentId = DocumentId) =>
         SourceDocumentRepository.MakeRevisionId(libraryId, version, documentId);
 
+    internal static string PageId(string libraryId,
+                                  string version,
+                                  string documentId,
+                                  int sectionOrder)
+    {
+        string identity = string.Join('\u001f',
+                                      libraryId,
+                                      version,
+                                      documentId,
+                                      sectionOrder.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return $"document-page-{Hash(System.Text.Encoding.UTF8.GetBytes(identity))}";
+    }
+
     internal static string SourceUri(string libraryId = LibraryId, string documentId = DocumentId) =>
         $"saddlerag://library/{libraryId}/documents/{documentId}";
 
@@ -238,7 +251,8 @@ internal static class DirectoryPackagingFixtures
     internal static readonly DateTime RecordedAt = new(2026, 8, 4, 12, 0, 0, DateTimeKind.Utc);
     internal const string LibraryId = "stage7-package-library";
     internal const string Version = "2026-08-04";
-    internal const string DocumentId = "stable-document-id";
+    internal const string DocumentId =
+        "source-document-42d1e592af3774dd59b75106705a9cf585c4a593623c095a064d712d625535bd";
     internal const string RelativePath = "manuals/Pump Manual.pdf";
     internal const string RootPath = "C:\\Users\\Doug\\Private Manuals";
     internal const string TaxonomyVersion = "taxonomy-stage7";

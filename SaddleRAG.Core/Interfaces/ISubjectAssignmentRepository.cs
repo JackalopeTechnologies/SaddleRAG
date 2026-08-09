@@ -20,5 +20,7 @@ public interface ISubjectAssignmentRepository
 
     Task<long> DeleteScanRunAsync(string libraryId, string scanRunId, CancellationToken ct = default);
 
+    Task<long> DeleteVersionAsync(string libraryId, string version, CancellationToken ct = default);
+
     Task<long> DeleteLibraryAsync(string libraryId, CancellationToken ct = default);
 }

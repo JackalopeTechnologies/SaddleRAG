@@ -79,8 +79,7 @@ internal sealed class DirectoryLibraryFixtureTree : IDisposable
 
     private static byte[] LoadOwnedFixture(string fileName)
     {
-        string projectDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-        string path = Path.Combine(projectDirectory, "TestData", "Documents", fileName);
+        string path = Path.Combine(AppContext.BaseDirectory, "TestData", "Documents", fileName);
         return File.ReadAllBytes(path);
     }
 

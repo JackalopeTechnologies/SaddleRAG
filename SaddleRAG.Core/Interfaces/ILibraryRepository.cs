@@ -35,6 +35,21 @@ public interface ILibraryRepository
     Task UpsertLibraryAsync(LibraryRecord library, CancellationToken ct = default);
 
     /// <summary>
+    ///     Atomically replace a library summary only when every expected
+    ///     summary field still matches.
+    /// </summary>
+    Task<bool> TryReplaceLibrarySummaryAsync(LibraryRecord expected,
+                                             LibraryRecord replacement,
+                                             CancellationToken ct = default);
+
+    /// <summary>
+    ///     Atomically delete a library summary only when every expected
+    ///     summary field still matches.
+    /// </summary>
+    Task<bool> TryDeleteLibrarySummaryAsync(LibraryRecord expected,
+                                            CancellationToken ct = default);
+
+    /// <summary>
     ///     Get version metadata for a specific library version.
     /// </summary>
     Task<LibraryVersionRecord?> GetVersionAsync(string libraryId, string version, CancellationToken ct = default);
@@ -55,6 +70,22 @@ public interface ILibraryRepository
     ///     Store version metadata after a scrape completes.
     /// </summary>
     Task UpsertVersionAsync(LibraryVersionRecord versionRecord, CancellationToken ct = default);
+
+    /// <summary>
+    ///     Atomically claim a missing version for one receiver-local package
+    ///     import. Existing versions are never replaced.
+    /// </summary>
+    Task<bool> TryClaimImportVersionAsync(LibraryVersionRecord buildingVersion,
+                                          string importOperationId,
+                                          CancellationToken ct = default);
+
+    /// <summary>
+    ///     Publish a package-imported version only while the receiver-local
+    ///     import operation still owns its building row.
+    /// </summary>
+    Task<bool> TryPublishImportVersionAsync(LibraryVersionRecord publishedVersion,
+                                            string importOperationId,
+                                            CancellationToken ct = default);
 
     /// <summary>
     ///     Atomically claim a missing or failed directory version for one scan
@@ -91,9 +122,9 @@ public interface ILibraryRepository
 
     /// <summary>
     ///     Delete a specific version of a library. Removes the LibraryVersions row,
-    ///     then either deletes the Library row (if no Published versions remain) or
-    ///     repoints CurrentVersion to the next-most-recent Published version. Building
-    ///     and Failed version rows remain as diagnostics when the parent is removed.
+    ///     then either deletes the Library row (if no versions remain) or repoints
+    ///     CurrentVersion to the next-most-recent Published version. Deleting the
+    ///     last Published version is refused while unpublished rows remain.
     /// </summary>
     Task<DeleteVersionResult> DeleteVersionAsync(string libraryId, string version, CancellationToken ct = default);
 
@@ -105,17 +136,16 @@ public interface ILibraryRepository
     Task<long> DeleteAsync(string libraryId, CancellationToken ct = default);
 
     /// <summary>
-    ///     Rename a library by renaming its LibraryId across all collections.
-    ///     Returns per-collection update counts for cascade-style reporting.
-    ///     Pre-checks for collision (new name already exists) and missing source.
+    ///     Direct repository renames are intentionally rejected. Call
+    ///     <see cref="ILibraryRenameService.RenameLibraryAsync" /> so the
+    ///     durable mode fence and recovery operation remain active.
     /// </summary>
     Task<RenameLibraryResponse> RenameAsync(string oldId, string newId, CancellationToken ct = default);
 
     /// <summary>
-    ///     Rename a version of a library by remapping the version segment of every
-    ///     composite _id across all collections (copy→flip pointer→delete). Pre-checks
-    ///     for collision (target version exists) and missing source version. Repoints
-    ///     CurrentVersion when the renamed version was current.
+    ///     Direct repository version renames are intentionally rejected. Call
+    ///     <see cref="ILibraryRenameService.RenameVersionAsync" /> so the
+    ///     durable mode fence and recovery operation remain active.
     /// </summary>
     Task<RenameLibraryResponse> RenameVersionAsync(string libraryId,
                                                    string oldVersion,

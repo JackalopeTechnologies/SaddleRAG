@@ -3,11 +3,28 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.Text.Json.Serialization;
+using SaddleRAG.Core.Enums;
+
 namespace SaddleRAG.Core.Models;
 
 /// <summary>Immutable revision of one library's subject catalog.</summary>
 public sealed record SubjectCatalogRecord
 {
+    /// <summary>
+    ///     Receiver-local package import that owns this catalog candidate.
+    ///     Excluded from bundle JSON so source scan provenance remains portable.
+    /// </summary>
+    [JsonIgnore]
+    public string? ImportOperationId { get; init; }
+
+    /// <summary>
+    ///     Candidate catalogs remain private to their creating scan until
+    ///     publication. The default preserves legacy rows as published.
+    /// </summary>
+    public SubjectCatalogPublicationState PublicationState { get; init; } =
+        SubjectCatalogPublicationState.Published;
+
     public required string Id { get; init; }
 
     public required string LibraryId { get; init; }

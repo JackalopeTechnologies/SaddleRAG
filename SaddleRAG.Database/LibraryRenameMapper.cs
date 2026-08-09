@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Database.Repositories;
 
 namespace SaddleRAG.Database;
@@ -19,6 +20,194 @@ internal static class LibraryRenameMapper
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrEmpty(targetLibraryId);
         var result = source with { Id = targetLibraryId };
+        return result;
+    }
+
+    internal static DirectoryLibraryDefinition MapPendingDirectoryDefinition(
+        DirectoryLibraryDefinition source,
+        string targetLibraryId,
+        string operationId,
+        string targetRegistrationIncarnationId)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(targetLibraryId);
+        ArgumentException.ThrowIfNullOrEmpty(operationId);
+        ArgumentException.ThrowIfNullOrEmpty(targetRegistrationIncarnationId);
+        var result = source with
+                         {
+                             Id = targetLibraryId,
+                             RegistrationRevision = checked(source.RegistrationRevision + 1),
+                             RegistrationIncarnationId = targetRegistrationIncarnationId,
+                             PublicationLeaseScanRunId = null,
+                             PublicationLeaseRegistrationRevision = null,
+                             PublicationLeaseExpiresAtUtc = null,
+                             PendingRenameOperationId = operationId
+                         };
+        return result;
+    }
+
+    internal static DirectoryLibraryDefinition MarkDirectoryDefinitionPending(
+        DirectoryLibraryDefinition source,
+        string operationId)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(operationId);
+        var result = source with { PendingRenameOperationId = operationId };
+        return result;
+    }
+
+    internal static DirectoryLibraryDefinition CompleteVersionDirectoryDefinition(
+        DirectoryLibraryDefinition source,
+        string operationId,
+        string sourceVersion,
+        string targetVersion,
+        string targetRegistrationIncarnationId)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(operationId);
+        ArgumentException.ThrowIfNullOrEmpty(targetRegistrationIncarnationId);
+        var result = source with
+                         {
+                             LastPublishedVersion = MapVersion(source.LastPublishedVersion,
+                                                               sourceVersion,
+                                                               targetVersion),
+                             RegistrationRevision = checked(source.RegistrationRevision + 1),
+                             RegistrationIncarnationId = targetRegistrationIncarnationId,
+                             PendingRenameOperationId = null,
+                             PublicationLeaseScanRunId = null,
+                             PublicationLeaseRegistrationRevision = null,
+                             PublicationLeaseExpiresAtUtc = null
+                         };
+        return result;
+    }
+
+    internal static LibraryRecord MapLibrary(LibraryRecord source, string targetLibraryId)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(targetLibraryId);
+        return new LibraryRecord
+                   {
+                       Id = targetLibraryId,
+                       Name = source.Name,
+                       Hint = source.Hint,
+                       CurrentVersion = source.CurrentVersion,
+                       AllVersions = [.. source.AllVersions]
+                   };
+    }
+
+    internal static LibraryRecord MapLibraryVersion(LibraryRecord source,
+                                                     string sourceVersion,
+                                                     string targetVersion)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(sourceVersion);
+        ArgumentException.ThrowIfNullOrEmpty(targetVersion);
+        return new LibraryRecord
+                   {
+                       Id = source.Id,
+                       Name = source.Name,
+                       Hint = source.Hint,
+                       CurrentVersion = MapVersion(source.CurrentVersion,
+                                                   sourceVersion,
+                                                   targetVersion) ?? source.CurrentVersion,
+                       AllVersions = ReplaceExactDistinct(source.AllVersions,
+                                                          sourceVersion,
+                                                          targetVersion)
+                   };
+    }
+
+    internal static LibraryVersionRecord MapLibraryVersion(LibraryVersionRecord source,
+                                                            string targetLibraryId,
+                                                            string targetVersion,
+                                                            string? sourceVersion = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ValidateTarget(targetLibraryId, targetVersion);
+        string originalVersion = sourceVersion ?? source.Version;
+        var result = source with
+                         {
+                             Id = $"{targetLibraryId}/{targetVersion}",
+                             LibraryId = targetLibraryId,
+                             Version = targetVersion,
+                             PreviousVersion = MapVersion(source.PreviousVersion,
+                                                          originalVersion,
+                                                          targetVersion)
+                         };
+        return result;
+    }
+
+    internal static LibraryVersionRecord MapPreviousVersionReference(LibraryVersionRecord source,
+                                                                      string sourceVersion,
+                                                                      string targetVersion)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var result = source with
+                         {
+                             PreviousVersion = MapVersion(source.PreviousVersion,
+                                                          sourceVersion,
+                                                          targetVersion)
+                         };
+        return result;
+    }
+
+    internal static VersionDiffRecord MapVersionDiff(VersionDiffRecord source,
+                                                      string targetLibraryId,
+                                                      string? sourceVersion = null,
+                                                      string? targetVersion = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(targetLibraryId);
+        string fromVersion = source.FromVersion;
+        string toVersion = source.ToVersion;
+        if (sourceVersion != null && targetVersion != null)
+        {
+            fromVersion = MapVersion(fromVersion, sourceVersion, targetVersion) ?? fromVersion;
+            toVersion = MapVersion(toVersion, sourceVersion, targetVersion) ?? toVersion;
+        }
+
+        var result = source with
+                         {
+                             Id = $"{targetLibraryId}/{fromVersion}-to-{toVersion}",
+                             LibraryId = targetLibraryId,
+                             FromVersion = fromVersion,
+                             ToVersion = toVersion
+                         };
+        return result;
+    }
+
+    internal static ProjectProfile MapProjectProfile(ProjectProfile source,
+                                                      string sourceLibraryId,
+                                                      string targetLibraryId)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(sourceLibraryId);
+        ArgumentException.ThrowIfNullOrEmpty(targetLibraryId);
+        var result = source with
+                         {
+                             IngestedPackages = ReplaceExactDistinct(source.IngestedPackages,
+                                                                     sourceLibraryId,
+                                                                     targetLibraryId)
+                         };
+        return result;
+    }
+
+    internal static ScrapeAuditLogEntry MapScrapeAudit(ScrapeAuditLogEntry source,
+                                                        string targetLibraryId,
+                                                        string targetVersion)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ValidateTarget(targetLibraryId, targetVersion);
+        var result = source with
+                         {
+                             LibraryId = targetLibraryId,
+                             Version = targetVersion,
+                             Url = MapLocalLibraryUrl(source.Url,
+                                                       source.LibraryId,
+                                                       targetLibraryId) ?? source.Url,
+                             ParentUrl = MapLocalLibraryUrl(source.ParentUrl,
+                                                             source.LibraryId,
+                                                             targetLibraryId)
+                         };
         return result;
     }
 
@@ -46,7 +235,10 @@ internal static class LibraryRenameMapper
     {
         ArgumentNullException.ThrowIfNull(source);
         ValidateTarget(targetLibraryId, targetVersion);
-        string sourceUri = MapSourceUri(source.SourceUri, targetLibraryId, source.Id);
+        string sourceUri = MapSourceUri(source.SourceUri,
+                                        source.LibraryId,
+                                        targetLibraryId,
+                                        source.Id);
         var result = source with
                          {
                              LibraryId = targetLibraryId,
@@ -66,7 +258,10 @@ internal static class LibraryRenameMapper
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrEmpty(targetLibraryId);
-        string sourceUri = MapSourceUri(source.SourceUri, targetLibraryId, source.Id);
+        string sourceUri = MapSourceUri(source.SourceUri,
+                                        source.LibraryId,
+                                        targetLibraryId,
+                                        source.Id);
         var result = source with
                          {
                              LibraryId = targetLibraryId,
@@ -146,8 +341,12 @@ internal static class LibraryRenameMapper
                                               PageIdPrefix),
                              LibraryId = targetLibraryId,
                              Version = targetVersion,
-                             Url = MapLocalUrl(source.Url, source.DocumentSource, provenance) ?? source.Url,
-                             ParentUrl = MapLocalUrl(source.ParentUrl, source.DocumentSource, provenance),
+                             Url = MapLocalUrl(source.Url, source.DocumentSource, provenance) ??
+                                   MapLocalLibraryUrl(source.Url, source.LibraryId, targetLibraryId) ?? source.Url,
+                             ParentUrl = MapLocalUrl(source.ParentUrl, source.DocumentSource, provenance) ??
+                                         MapLocalLibraryUrl(source.ParentUrl,
+                                                            source.LibraryId,
+                                                            targetLibraryId),
                              DocumentSource = provenance
                          };
         return result;
@@ -173,8 +372,13 @@ internal static class LibraryRenameMapper
                              LibraryId = targetLibraryId,
                              Version = targetVersion,
                              PageUrl = MapLocalUrl(source.PageUrl, source.DocumentSource, provenance) ??
-                                       source.PageUrl,
-                             ParentUrl = MapLocalUrl(source.ParentUrl, source.DocumentSource, provenance),
+                                       MapLocalLibraryUrl(source.PageUrl,
+                                                          source.LibraryId,
+                                                          targetLibraryId) ?? source.PageUrl,
+                             ParentUrl = MapLocalUrl(source.ParentUrl, source.DocumentSource, provenance) ??
+                                         MapLocalLibraryUrl(source.ParentUrl,
+                                                            source.LibraryId,
+                                                            targetLibraryId),
                              DocumentSource = provenance
                          };
         return result;
@@ -187,7 +391,13 @@ internal static class LibraryRenameMapper
         DocumentProvenance? result = null;
         if (source != null)
         {
-            string sourceUri = MapSourceUri(source.SourceUri, targetLibraryId, source.DocumentId);
+            string? sourceLibraryId = ExtractLocalLibraryId(source.SourceUri);
+            string sourceUri = sourceLibraryId == null
+                                   ? source.SourceUri
+                                   : MapSourceUri(source.SourceUri,
+                                                  sourceLibraryId,
+                                                  targetLibraryId,
+                                                  source.DocumentId);
             result = source with
                          {
                              RevisionId = SourceDocumentRepository.MakeRevisionId(targetLibraryId,
@@ -204,7 +414,7 @@ internal static class LibraryRenameMapper
                                        DocumentProvenance? source,
                                        DocumentProvenance? target)
     {
-        string? result = value;
+        string? result = null;
         if (value != null && source != null && target != null &&
             value.StartsWith(source.SourceUri, StringComparison.Ordinal))
         {
@@ -256,10 +466,55 @@ internal static class LibraryRenameMapper
     private static string MakeSourceUri(string libraryId, string documentId) =>
         $"saddlerag://library/{libraryId}/documents/{documentId}";
 
-    private static string MapSourceUri(string sourceUri, string targetLibraryId, string documentId) =>
-        sourceUri.StartsWith(LocalSourceScheme, StringComparison.OrdinalIgnoreCase)
+    private static string MapSourceUri(string sourceUri,
+                                       string sourceLibraryId,
+                                       string targetLibraryId,
+                                       string documentId) =>
+        sourceUri.StartsWith(LocalLibraryPrefix(sourceLibraryId), StringComparison.OrdinalIgnoreCase)
             ? MakeSourceUri(targetLibraryId, documentId)
             : sourceUri;
+
+    private static string? MapLocalLibraryUrl(string? value,
+                                              string sourceLibraryId,
+                                              string targetLibraryId)
+    {
+        string? result = value;
+        string sourcePrefix = LocalLibraryPrefix(sourceLibraryId);
+        if (value?.StartsWith(sourcePrefix, StringComparison.OrdinalIgnoreCase) == true)
+            result = $"{LocalLibraryPrefix(targetLibraryId)}{value[sourcePrefix.Length..]}";
+        return result;
+    }
+
+    private static string? ExtractLocalLibraryId(string sourceUri)
+    {
+        string? result = null;
+        if (sourceUri.StartsWith(LocalSourceScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            int end = sourceUri.IndexOf('/', LocalSourceScheme.Length);
+            if (end > LocalSourceScheme.Length)
+                result = sourceUri[LocalSourceScheme.Length..end];
+        }
+
+        return result;
+    }
+
+    private static string LocalLibraryPrefix(string libraryId) => $"{LocalSourceScheme}{libraryId}/";
+
+    private static List<string> ReplaceExactDistinct(IEnumerable<string> source,
+                                                     string oldValue,
+                                                     string newValue)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<string>();
+        foreach(string value in source)
+        {
+            string mapped = value.Equals(oldValue, StringComparison.Ordinal) ? newValue : value;
+            if (seen.Add(mapped))
+                result.Add(mapped);
+        }
+
+        return result;
+    }
 
     private static void ValidateTarget(string targetLibraryId, string targetVersion)
     {
@@ -270,6 +525,6 @@ internal static class LibraryRenameMapper
     private const int CompositeIdentitySegments = 2;
     private const string PageIdPrefix = "document-page";
     private const string ChunkIdPrefix = "document-chunk";
-    private const string LocalSourceScheme = "saddlerag://";
+    private const string LocalSourceScheme = "saddlerag://library/";
     private const char UnitSeparator = '\u001f';
 }

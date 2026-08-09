@@ -170,6 +170,44 @@ public sealed class OnnxSettingsClassifierRegistryTests
         Assert.Contains("ClassifierModels", result.FailureMessage);
     }
 
+    [Theory]
+    [InlineData(0, 256, "MaxContextLength")]
+    [InlineData(4096, 0, "MaxOutputTokens")]
+    [InlineData(4096, 4096, "MaxOutputTokens")]
+    [InlineData(4096, 8192, "MaxOutputTokens")]
+    public void ValidatorRejectsClassifierTokenBudgetsThatCannotReservePromptAndOutput(
+        int maxContextLength,
+        int maxOutputTokens,
+        string expectedDiagnostic)
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings { Enabled = true, ClassifierModels = [] };
+        ClassifierModelEntry entry = MakeCpuEntry(OnnxSettings.Phi3MiniCpuName);
+        entry.MaxContextLength = maxContextLength;
+        entry.MaxOutputTokens = maxOutputTokens;
+        settings.ClassifierModels.Add(entry);
+
+        ValidateOptionsResult result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains(expectedDiagnostic, result.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidatorRejectsEmptyClassifierStopToken()
+    {
+        var validator = new OnnxSettingsValidator();
+        var settings = new OnnxSettings { Enabled = true, ClassifierModels = [] };
+        ClassifierModelEntry entry = MakeCpuEntry(OnnxSettings.Phi3MiniCpuName);
+        entry.Stop = " ";
+        settings.ClassifierModels.Add(entry);
+
+        ValidateOptionsResult result = validator.Validate(name: null, settings);
+
+        Assert.True(result.Failed);
+        Assert.Contains("Stop token", result.FailureMessage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ValidatorAcceptsWellFormedClassifierRegistryWithoutActiveSelector()
     {
@@ -290,7 +328,7 @@ public sealed class OnnxSettingsClassifierRegistryTests
     private const int DefaultMaxContextLength = 4096;
     private const int DefaultMaxOutputTokens = 256;
     private const float DefaultTemperature = 0.0f;
-    private const string DefaultStop = "</json>";
+    private const string DefaultStop = "<|end|>";
 
     #endregion
 }

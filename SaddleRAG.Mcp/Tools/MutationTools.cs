@@ -258,6 +258,8 @@ public static class MutationTools
                                                                                            version,
                                                                                            newVersion,
                                                                                            jobCt);
+                                                if (renameResult.Outcome == RenameLibraryOutcome.Renamed)
+                                                    record.Version = newVersion;
                                                 record.ResultJson = JsonSerializer.Serialize(new
                                                              {
                                                                  DryRun = false,
@@ -296,6 +298,8 @@ public static class MutationTools
                                                                                                            library,
                                                                                                            newId,
                                                                                                            jobCt);
+                                                if (renameResult.Outcome == RenameLibraryOutcome.Renamed)
+                                                    record.LibraryId = newId;
                                                 record.ResultJson = JsonSerializer.Serialize(new
                                                              {
                                                          DryRun = false,
@@ -351,9 +355,10 @@ public static class MutationTools
 
     [McpServerTool(Name = "delete_version")]
     [Description("Hard-delete one (library, version): chunks, pages, profile, indexes, " +
-                 "bm25 shards, excluded symbols, and the LibraryVersions row. Cascade-deletes " +
-                 "the parent Library row if no other versions remain. ScrapeJobs are retained " +
-                 "for audit. Defaults to dryRun=true. dryRun=false returns { JobId, Status: 'Queued' } " +
+                 "bm25 shards, excluded symbols, document lifecycle data, and prior jobs. " +
+                 "Cascade-deletes the parent Library row if no other versions remain. The current " +
+                 "delete job is retained so its result can be polled. Defaults to dryRun=true. " +
+                 "dryRun=false returns { JobId, Status: 'Queued' } " +
                  "immediately; poll get_job_status for the outcome."
                 )]
     public static async Task<string> DeleteVersion(RepositoryFactory repositoryFactory,
@@ -394,6 +399,20 @@ public static class MutationTools
             string? wouldRepointTo = lib != null && lib.CurrentVersion == version && lib.AllVersions.Count > 1
                                          ? lib.AllVersions.First(v => v != version)
                                          : null;
+            bool wouldRemoveLibraryReferences = wouldDeleteLibraryRow && documents.DirectoryLibraries == 0;
+            IJobRepository jobs = repositoryFactory.GetJobRepository(profile);
+            long jobsToDelete = await jobs.CountDeleteCandidatesAsync(jobType: null,
+                                                                       status: null,
+                                                                       libraryId: library,
+                                                                       version: wouldRemoveLibraryReferences
+                                                                                    ? null
+                                                                                    : version,
+                                                                       completedBefore: null,
+                                                                       ct: ct);
+            long projectProfiles = wouldRemoveLibraryReferences
+                                       ? await repositoryFactory.GetProjectProfileRepository(profile)
+                                                                .CountIngestedPackageReferencesAsync(library, ct)
+                                       : 0L;
 
             var preview = new
                               {
@@ -412,11 +431,12 @@ public static class MutationTools
                                                          documents.DocumentRevisions,
                                                          documents.SubjectCatalogs,
                                                          documents.SubjectAssignments,
-                                                         documents.ArtifactReferences
+                                                         documents.ArtifactReferences,
+                                                         Jobs = jobsToDelete,
+                                                         ProjectProfiles = projectProfiles
                                                     },
                                   LibraryRowAffected = wouldDeleteLibraryRow,
-                                  CurrentVersionRepointedTo = wouldRepointTo,
-                                  ScrapeJobsRetained = PreservedForAudit
+                                  CurrentVersionRepointedTo = wouldRepointTo
                               };
             result = JsonSerializer.Serialize(preview, smJsonOptions);
         }
@@ -455,11 +475,12 @@ public static class MutationTools
         var jobId = await runner.QueueAsync(jobRecord,
                                             async (record, _, jobCt) =>
                                             {
-                                                var deleted = await deletionService.DeleteVersionAsync(profile,
-                                                     library,
-                                                     version,
-                                                     jobCt
-                                                );
+                                                var deleted = await deletionService
+                                                                    .DeleteVersionPreservingJobAsync(profile,
+                                                                         library,
+                                                                         version,
+                                                                         record.Id,
+                                                                         jobCt);
 
                                                 record.ResultJson = JsonSerializer.Serialize(new
                                                              {
@@ -478,8 +499,9 @@ public static class MutationTools
     }
 
     [McpServerTool(Name = "delete_library")]
-    [Description("Hard-delete an entire library across every collection except ScrapeJobs " +
-                 "(retained for audit). Cascades through every version. Defaults to " +
+    [Description("Hard-delete an entire library and its references across every owned collection. " +
+                 "The current delete job is retained so its result can be polled. " +
+                 "Cascades through every version. Defaults to " +
                  "dryRun=true so the calling LLM can preview the cascade before applying. " +
                  "dryRun=false returns { JobId, Status: 'Queued' } immediately; poll get_job_status for the outcome."
                 )]
@@ -536,10 +558,11 @@ public static class MutationTools
         var jobId = await runner.QueueAsync(jobRecord,
                                             async (record, _, jobCt) =>
                                             {
-                                                var deleted = await deletionService.DeleteLibraryAsync(profile,
-                                                     library,
-                                                     jobCt
-                                                );
+                                                var deleted = await deletionService
+                                                                    .DeleteLibraryPreservingJobAsync(profile,
+                                                                         library,
+                                                                         record.Id,
+                                                                         jobCt);
                                                 record.ResultJson = JsonSerializer.Serialize(new
                                                      {
                                                          DryRun = false,
@@ -575,6 +598,15 @@ public static class MutationTools
                                                                library,
                                                                lib.AllVersions,
                                                                ct);
+        long jobsToDelete = await repositoryFactory.GetJobRepository(profile)
+                                                   .CountDeleteCandidatesAsync(jobType: null,
+                                                       status: null,
+                                                       libraryId: library,
+                                                       version: null,
+                                                       completedBefore: null,
+                                                       ct: ct);
+        long projectProfiles = await repositoryFactory.GetProjectProfileRepository(profile)
+                                                      .CountIngestedPackageReferencesAsync(library, ct);
 
         var preview = new
                           {
@@ -594,9 +626,10 @@ public static class MutationTools
                                                      documents.DocumentRevisions,
                                                      documents.SubjectCatalogs,
                                                      documents.SubjectAssignments,
-                                                     documents.ArtifactReferences
-                                                 },
-                              ScrapeJobsRetained = PreservedForAudit
+                                                     documents.ArtifactReferences,
+                                                     Jobs = jobsToDelete,
+                                                     ProjectProfiles = projectProfiles
+                                                 }
                           };
         return JsonSerializer.Serialize(preview, smJsonOptions);
     }
@@ -650,7 +683,6 @@ public static class MutationTools
         return result;
     }
 
-    private const string PreservedForAudit = "preserved for audit";
     private const string NotFoundStatus = "NotFound";
     private const string SlashString = "/";
     private const string BothModesError =

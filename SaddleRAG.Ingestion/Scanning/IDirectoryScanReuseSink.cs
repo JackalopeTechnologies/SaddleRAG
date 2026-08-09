@@ -12,6 +12,8 @@ namespace SaddleRAG.Ingestion.Scanning;
 /// </summary>
 internal interface IDirectoryScanReuseSink
 {
-    Task<int?> TryAcceptUnchangedAsync(DirectoryStableDocument document,
-                                       CancellationToken ct = default);
+    PreparedDirectoryDocumentReuse? TryPrepareUnchanged(DirectoryStableDocument document);
+
+    Task AcceptPreparedUnchangedAsync(PreparedDirectoryDocumentReuse prepared,
+                                      CancellationToken ct = default);
 }

@@ -21,4 +21,14 @@ public sealed record DirectoryScanRequest
     public IReadOnlyList<string> ExclusionPatterns { get; init; } = [];
 
     public long MaxFileBytes { get; init; } = DirectoryScanLimits.DefaultMaxFileBytes;
+
+    public int MaxDocumentCount { get; init; } = DirectoryScanLimits.DefaultMaxDocumentCount;
+
+    public int MaxDirectoryCount { get; init; } = DirectoryScanLimits.DefaultMaxDirectoryCount;
+
+    public int MaxEntryCount { get; init; } = DirectoryScanLimits.DefaultMaxEntryCount;
+
+    public long MaxTotalBytes { get; init; } = DirectoryScanLimits.DefaultMaxTotalBytes;
+
+    public int MaxSectionCount { get; init; } = DirectoryScanLimits.DefaultMaxSectionCount;
 }

@@ -161,6 +161,38 @@ public class RepositoryFactory
         return result;
     }
 
+    /// <summary>Get project-profile lifecycle operations for the specified profile.</summary>
+    public virtual IProjectProfileRepository GetProjectProfileRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new ProjectProfileRepository(context);
+        return result;
+    }
+
+    /// <summary>Get the durable library source-mode fence for the specified profile.</summary>
+    public virtual ILibraryIngestionModeRepository GetLibraryIngestionModeRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new LibraryIngestionModeRepository(context);
+        return result;
+    }
+
+    /// <summary>Get durable rename recovery checkpoints for the specified profile.</summary>
+    public virtual ILibraryRenameOperationRepository GetLibraryRenameOperationRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new LibraryRenameOperationRepository(context);
+        return result;
+    }
+
+    /// <summary>Get fenced, idempotent rename data mutations for the specified profile.</summary>
+    public virtual ILibraryRenameDataRepository GetLibraryRenameDataRepository(string? profile = null)
+    {
+        var context = mContextFactory.GetForProfile(profile);
+        var result = new LibraryRenameDataRepository(context);
+        return result;
+    }
+
     /// <summary>
     ///     Get the raw <see cref="IMongoDatabase" /> for the specified
     ///     profile. Used by maintenance tools that issue admin commands

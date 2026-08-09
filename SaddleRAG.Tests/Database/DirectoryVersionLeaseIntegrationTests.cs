@@ -116,6 +116,30 @@ public sealed class DirectoryVersionLeaseIntegrationTests : IAsyncLifetime
         Assert.Equal(VersionPublicationState.Building, stored.PublicationState);
     }
 
+    [Fact]
+    public async Task RegistrationRevisionMismatchCannotPublishAnOwnedVersion()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        LibraryVersionRecord building = Version("scan-owner", VersionPublicationState.Building);
+        DirectoryVersionClaimResult claim = await mRepository.TryClaimDirectoryVersionAsync(building, ct);
+        LibraryVersionRecord wrongRevision = Version("scan-owner", VersionPublicationState.Published) with
+                                                 {
+                                                     RegistrationRevision = RegistrationRevision + 1
+                                                 };
+
+        bool stalePublished = await mRepository.TryPublishDirectoryVersionAsync(wrongRevision,
+                                                                                 "scan-owner",
+                                                                                 ct);
+        bool currentPublished = await mRepository.TryPublishDirectoryVersionAsync(
+                                    Version("scan-owner", VersionPublicationState.Published),
+                                    "scan-owner",
+                                    ct);
+
+        Assert.Equal(DirectoryVersionClaimStatus.Acquired, claim.Status);
+        Assert.False(stalePublished);
+        Assert.True(currentPublished);
+    }
+
     private static LibraryVersionRecord Version(string scanRunId, VersionPublicationState state) => new()
         {
             Id = $"{LibraryId}/{VersionName}",
@@ -128,7 +152,8 @@ public sealed class DirectoryVersionLeaseIntegrationTests : IAsyncLifetime
             EmbeddingModelName = string.Empty,
             EmbeddingDimensions = 0,
             PublicationState = state,
-            ScanRunId = scanRunId
+            ScanRunId = scanRunId,
+            RegistrationRevision = RegistrationRevision
         };
 
     private static readonly DateTime ScrapedAt = new(year: 2026,
@@ -141,4 +166,5 @@ public sealed class DirectoryVersionLeaseIntegrationTests : IAsyncLifetime
     private const string TestConnectionString = "mongodb://localhost:27017";
     private const string LibraryId = "manual-library";
     private const string VersionName = "2026-08-04";
+    private const long RegistrationRevision = 3;
 }

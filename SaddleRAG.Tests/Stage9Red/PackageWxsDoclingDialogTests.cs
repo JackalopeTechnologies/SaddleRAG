@@ -50,7 +50,7 @@ public sealed class PackageWxsDoclingDialogTests
     }
 
     [Fact]
-    public void TestButtonRunsBoundedHealthReadinessAndOwnedConversionProbe()
+    public void TestButtonRunsBoundedHealthReadinessAndAsyncOwnedConversionProbe()
     {
         XDocument package = LoadPackage();
         XNamespace ns = WixNamespace;
@@ -63,15 +63,28 @@ public sealed class PackageWxsDoclingDialogTests
         string source = File.ReadAllText(Path.Combine(InstallerDirectory(), "TestDoclingConnection.js"));
         Assert.Contains("/health", source, StringComparison.Ordinal);
         Assert.Contains("/ready", source, StringComparison.Ordinal);
-        Assert.Contains("/v1/convert/file", source, StringComparison.Ordinal);
-        Assert.Contains("120", source, StringComparison.Ordinal);
+        Assert.Contains("/v1/convert/file/async", source, StringComparison.Ordinal);
+        Assert.Contains("/v1/status/poll/", source, StringComparison.Ordinal);
+        Assert.Contains("?wait=5", source, StringComparison.Ordinal);
+        Assert.Contains("/v1/result/", source, StringComparison.Ordinal);
+        Assert.Contains("600000", source, StringComparison.Ordinal);
+        Assert.Contains("_waitWithinDeadline(_conversionDeadline, _conversionPollMilliseconds)",
+                        source,
+                        StringComparison.Ordinal);
+        Assert.Contains("_poll.status === 404", source, StringComparison.Ordinal);
+        Assert.Contains("[2000, 4000, 8000]", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("_endpoint + \"/v1/convert/file\";", source, StringComparison.Ordinal);
+        Assert.Contains("_authority.indexOf(\"@\") >= 0", source, StringComparison.Ordinal);
+        Assert.Contains("/\\s/.test(value)", source, StringComparison.Ordinal);
+        Assert.Contains("_validator.open(\"GET\", value, false)", source, StringComparison.Ordinal);
+        Assert.Contains("without embedded credentials, query, or fragment", source, StringComparison.Ordinal);
         Assert.Contains("SaddleRAG-owned", source, StringComparison.OrdinalIgnoreCase);
 
         foreach (string reason in new[]
                  {
                      "DOCLING_ENDPOINT_UNREACHABLE", "DOCLING_HEALTH_TIMEOUT", "DOCLING_UNAUTHORIZED",
                      "DOCLING_HEALTH_INVALID", "DOCLING_API_INCOMPATIBLE", "DOCLING_MODELS_UNAVAILABLE",
-                     "DOCLING_CONVERSION_FAILED", "DOCLING_READY"
+                     "DOCLING_CONVERSION_TIMEOUT", "DOCLING_CONVERSION_FAILED", "DOCLING_READY"
                  })
             Assert.Contains(reason, source, StringComparison.Ordinal);
     }

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
@@ -49,12 +50,14 @@ public sealed class SubjectCatalogBuilder
                                                                      StringComparer.Ordinal))
         {
             string prompt = SubjectCatalogPrompt.Build(concepts, descriptor);
-            string responseText = await mGenerator.GenerateAsync(prompt, ct);
-            SubjectCatalogResponse response = SubjectJson.Deserialize<SubjectCatalogResponse>(responseText);
+            SubjectCatalogResponse response =
+                await SubjectResponseGenerator.GenerateAsync<SubjectCatalogResponse>(mGenerator,
+                                                                                       prompt,
+                                                                                       ct);
             if (response.Concepts is not { Count: > 0 })
                 throw new InvalidDataException("The subject catalog response did not contain any concepts.");
 
-            foreach(SubjectConceptResponse proposal in response.Concepts)
+            foreach(SubjectConceptResponse? proposal in response.Concepts)
                 ReconcileProposal(concepts, proposal);
         }
 
@@ -74,6 +77,7 @@ public sealed class SubjectCatalogBuilder
                                   Revision = revision,
                                   TaxonomyVersion = taxonomyVersion,
                                   ScanRunId = scanRunId,
+                                  PublicationState = SubjectCatalogPublicationState.Candidate,
                                   PreviousTaxonomyVersion = existing?.TaxonomyVersion,
                                   Concepts = concepts.Select(CloneConcept).ToList(),
                                   Provenance = new SubjectClassifierProvenance
@@ -92,8 +96,11 @@ public sealed class SubjectCatalogBuilder
         return result;
     }
 
-    private void ReconcileProposal(List<SubjectConcept> concepts, SubjectConceptResponse proposal)
+    private void ReconcileProposal(List<SubjectConcept> concepts, SubjectConceptResponse? proposal)
     {
+        if (proposal == null)
+            throw new InvalidDataException("Subject concepts cannot be null.");
+
         string label = SubjectText.Bounded(proposal.Label,
                                            SubjectClassificationLimits.MaxHeadingCharacters);
         string description = SubjectText.Bounded(proposal.Description,
@@ -110,25 +117,48 @@ public sealed class SubjectCatalogBuilder
                      .ThenBy(alias => alias, StringComparer.Ordinal)
                      .Take(SubjectClassificationLimits.MaxHeadingCount)
                      .ToList();
+        IReadOnlyList<int> matches = FindSemanticMatches(concepts, label, aliases);
+        if (matches.Count > 1)
+            throw new InvalidDataException("The subject classifier returned a concept that ambiguously matches multiple published concepts.");
+
+        int semanticIndex = matches.Count == 1 ? matches[0] : -1;
+        string? proposedId = string.IsNullOrWhiteSpace(proposal.SubjectId)
+                                 ? null
+                                 : proposal.SubjectId.Trim();
+        int idIndex = proposedId == null
+                          ? -1
+                          : concepts.FindIndex(concept => string.Equals(concept.Id,
+                                                                         proposedId,
+                                                                         StringComparison.Ordinal));
         int existingIndex;
         string id;
-        if (!string.IsNullOrWhiteSpace(proposal.SubjectId))
+        if (semanticIndex >= 0)
         {
-            id = proposal.SubjectId.Trim();
-            existingIndex = concepts.FindIndex(concept => string.Equals(concept.Id,
-                                                                         id,
-                                                                         StringComparison.Ordinal));
-            if (existingIndex < 0)
-                throw new InvalidDataException($"The classifier returned unknown subject id '{id}'.");
+            SubjectConcept matched = concepts[semanticIndex];
+            if (idIndex >= 0 && idIndex != semanticIndex)
+            {
+                throw new InvalidDataException(
+                    "The subject classifier returned conflicting identity and semantic matches for a concept.");
+            }
+
+            existingIndex = semanticIndex;
+            id = matched.Id;
         }
         else
         {
-            IReadOnlyList<int> matches = FindSemanticMatches(concepts, label, aliases);
-            if (matches.Count > 1)
-                throw new InvalidDataException($"Subject concept '{label}' ambiguously matches existing concepts.");
+            if (proposedId != null)
+            {
+                if (idIndex < 0)
+                    throw new InvalidDataException("The subject classifier returned an id outside the published catalog for a new concept.");
 
-            existingIndex = matches.Count == 1 ? matches[0] : -1;
-            id = existingIndex >= 0 ? concepts[existingIndex].Id : mIdGenerator.CreateId();
+                existingIndex = idIndex;
+                id = proposedId;
+            }
+            else
+            {
+                existingIndex = -1;
+                id = mIdGenerator.CreateId();
+            }
         }
 
         var reconciled = new SubjectConcept
@@ -195,7 +225,7 @@ public sealed class SubjectCatalogBuilder
 
     private sealed record SubjectCatalogResponse
     {
-        public IReadOnlyList<SubjectConceptResponse>? Concepts { get; init; }
+        public IReadOnlyList<SubjectConceptResponse?>? Concepts { get; init; }
     }
 
     private sealed record SubjectConceptResponse

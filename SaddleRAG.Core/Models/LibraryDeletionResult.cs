@@ -21,4 +21,7 @@ public sealed record LibraryDeletionResult(
     string? CurrentVersionRepointedTo = null,
     long DocumentRevisions = 0,
     long SubjectAssignments = 0,
-    long SubjectCatalogs = 0);
+    long SubjectCatalogs = 0,
+    long Diffs = 0,
+    long Jobs = 0,
+    long ProjectProfiles = 0);

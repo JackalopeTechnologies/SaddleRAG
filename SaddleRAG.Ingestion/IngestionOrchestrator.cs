@@ -11,9 +11,11 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
+using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Ingestion.Suspect;
 
 #endregion
@@ -42,8 +44,13 @@ public class IngestionOrchestrator
                                  IScrapeAuditWriter auditWriter,
                                  IMonitorBroadcaster broadcaster,
                                  ILogger<IngestionOrchestrator> logger,
-                                 ISourceDocumentRepository? sourceDocumentRepository = null)
+                                 ISourceDocumentRepository sourceDocumentRepository,
+                                 RepositoryFactory repositoryFactory,
+                                 ILibraryIngestionModeLeaseManager modeLeaseManager)
     {
+        ArgumentNullException.ThrowIfNull(sourceDocumentRepository);
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(modeLeaseManager);
         mCrawler = crawler;
         mChunker = chunker;
         mEmbeddingProvider = embeddingProvider;
@@ -52,8 +59,13 @@ public class IngestionOrchestrator
         mBm25ShardRepository = bm25ShardRepository;
         mLibraryIndexRepository = libraryIndexRepository;
         mLibraryRepository = libraryRepository;
+        mLibraryProfileRepository = libraryProfileRepository;
         mVectorSearch = vectorSearch;
+        mLlmClassifier = llmClassifier;
+        mSuspectDetector = suspectDetector;
         mSourceDocumentRepository = sourceDocumentRepository;
+        mRepositoryFactory = repositoryFactory;
+        mModeLeaseManager = modeLeaseManager;
         mBroadcaster = broadcaster;
         mLogger = logger;
         mPageProcessor = new IngestionPageProcessor(llmClassifier,
@@ -96,12 +108,17 @@ public class IngestionOrchestrator
     private readonly IngestionFinalizer mFinalizer;
     private readonly IndexStage mIndexStage;
     private readonly ILogger<IngestionOrchestrator> mLogger;
+    private readonly ILlmClassifier mLlmClassifier;
     private readonly IngestionPageProcessor mPageProcessor;
+    private readonly ILibraryIngestionModeLeaseManager mModeLeaseManager;
     private readonly IBm25ShardRepository mBm25ShardRepository;
     private readonly ILibraryIndexRepository mLibraryIndexRepository;
     private readonly ILibraryRepository mLibraryRepository;
+    private readonly ILibraryProfileRepository mLibraryProfileRepository;
     private readonly IPageRepository mPageRepository;
-    private readonly ISourceDocumentRepository? mSourceDocumentRepository;
+    private readonly ISourceDocumentRepository mSourceDocumentRepository;
+    private readonly RepositoryFactory mRepositoryFactory;
+    private readonly SuspectDetector mSuspectDetector;
     private readonly IVectorSearchProvider mVectorSearch;
 
     /// <summary>
@@ -115,8 +132,14 @@ public class IngestionOrchestrator
                                   CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(job);
-        await EnsurePublishedVersionDoesNotExistAsync(job, ct);
-        await WriteBuildingVersionAsync(job, ct);
+        await using ILibraryIngestionModeLease modeLease =
+            await AcquireWebModeLeaseAsync(profile, job.LibraryId, ct);
+        using CancellationTokenSource operation =
+            CancellationTokenSource.CreateLinkedTokenSource(ct, modeLease.OwnershipLostToken);
+        await CommitWebOwnershipAsync(profile, job.LibraryId, modeLease, operation.Token);
+        ProfileRepositories repositories = ResolveRepositories(profile);
+        await EnsurePublishedVersionDoesNotExistAsync(job, repositories.Libraries, operation.Token);
+        await WriteBuildingVersionAsync(job, repositories.Libraries, operation.Token);
         var progress = jobRecord ??
                        new ScrapeJobRecord
                            {
@@ -127,26 +150,41 @@ public class IngestionOrchestrator
 
         try
         {
-            await IngestCandidateAsync(job, profile, forceClean, onProgress, progress, ct);
+            await IngestCandidateAsync(job,
+                                       profile,
+                                       forceClean,
+                                       onProgress,
+                                       progress,
+                                       repositories,
+                                       operation.Token);
         }
         catch(OperationCanceledException ex)
         {
             await MarkCandidateFailedPreservingOriginalAsync(job,
                                                              profile,
                                                              PublicationCancelledMessage,
-                                                             ex);
+                                                             ex,
+                                                             modeLease,
+                                                             repositories);
             throw;
         }
         catch(Exception ex)
         {
-            await MarkCandidateFailedPreservingOriginalAsync(job, profile, ex.Message, ex);
+            await MarkCandidateFailedPreservingOriginalAsync(job,
+                                                             profile,
+                                                             ex.Message,
+                                                             ex,
+                                                             modeLease,
+                                                             repositories);
             throw;
         }
     }
 
-    private async Task EnsurePublishedVersionDoesNotExistAsync(ScrapeJob job, CancellationToken ct)
+    private static async Task EnsurePublishedVersionDoesNotExistAsync(ScrapeJob job,
+                                                                       ILibraryRepository libraries,
+                                                                       CancellationToken ct)
     {
-        var existing = await mLibraryRepository.GetVersionAsync(job.LibraryId, job.Version, ct);
+        var existing = await libraries.GetVersionAsync(job.LibraryId, job.Version, ct);
         if (existing?.PublicationState == VersionPublicationState.Published)
         {
             throw new InvalidOperationException(
@@ -160,14 +198,16 @@ public class IngestionOrchestrator
                                             bool forceClean,
                                             Action<ScrapeJobRecord>? onProgress,
                                             ScrapeJobRecord progress,
+                                            ProfileRepositories repositories,
                                             CancellationToken ct)
     {
+        ScrapeJob operationJob = string.IsNullOrEmpty(profile) ? job : job with { DatabaseProfile = profile };
         mLogger.LogInformation("Starting streaming ingestion for {LibraryId} v{Version}", job.LibraryId, job.Version);
 
         // Build resume URL set from existing pages in DB. SeedFromStoredPages
         // flips this from "skip already-fetched URLs" to "use stored URLs as
         // extra crawl seeds and re-fetch every one of them."
-        var existingPages = await mPageRepository.GetPagesAsync(job.LibraryId, job.Version, ct);
+        var existingPages = await repositories.Pages.GetPagesAsync(job.LibraryId, job.Version, ct);
         IReadOnlySet<string>? resumeUrls = null;
         var seedUrls = new List<string>();
 
@@ -203,7 +243,7 @@ public class IngestionOrchestrator
         // On force re-scrape, clear existing chunks before pipeline starts
         if (forceClean)
         {
-            await mChunkRepository.DeleteChunksAsync(job.LibraryId, job.Version, ct);
+            await repositories.Chunks.DeleteChunksAsync(job.LibraryId, job.Version, ct);
             mLogger.LogInformation("Force clean: deleted existing chunks for {LibraryId} v{Version}",
                                    job.LibraryId,
                                    job.Version
@@ -230,7 +270,8 @@ public class IngestionOrchestrator
                            {
                                JobId = progress.Id,
                                LibraryId = job.LibraryId,
-                               Version = job.Version
+                               Version = job.Version,
+                               Profile = profile
                            };
 
         mBroadcaster.RecordJobStarted(progress.Id, job.LibraryId, job.Version, job.RootUrl ?? string.Empty);
@@ -238,7 +279,7 @@ public class IngestionOrchestrator
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         // Launch all five stages
-        var crawlTask = mCrawlStage.RunAsync(job,
+        var crawlTask = mCrawlStage.RunAsync(operationJob,
                                              crawlToClassify.Writer,
                                              resumeUrls,
                                              effectiveSeedUrls,
@@ -246,7 +287,7 @@ public class IngestionOrchestrator
                                              onProgress,
                                              cts
                                             );
-        var classifyTask = mClassifyStage.RunAsync(job,
+        var classifyTask = repositories.Classify.RunAsync(operationJob,
                                                    crawlToClassify.Reader,
                                                    classifyToChunk.Writer,
                                                    progress,
@@ -254,9 +295,13 @@ public class IngestionOrchestrator
                                                    cts
                                                   );
         var chunkTask = mChunkStage.RunAsync(classifyToChunk.Reader, chunkToEmbed.Writer, progress, onProgress, cts);
-        var embedTask = mEmbedStage.RunAsync(chunkToEmbed.Reader, embedToIndex.Writer, progress, onProgress, cts);
+        var embedTask = repositories.Embed.RunAsync(chunkToEmbed.Reader,
+                                                    embedToIndex.Writer,
+                                                    progress,
+                                                    onProgress,
+                                                    cts);
         var indexTask = mIndexStage.RunAsync(profile,
-                                             job,
+                                             operationJob,
                                              auditCtx,
                                              embedToIndex.Reader,
                                              progress,
@@ -284,7 +329,7 @@ public class IngestionOrchestrator
         }
 
         ValidateCandidateCompleteness(progress);
-        await mFinalizer.RunAsync(job, progress, profile, ct);
+        await repositories.Finalizer.RunAsync(operationJob, progress, profile, ct);
 
         progress.PipelineState = nameof(ScrapeJobStatus.Completed);
         onProgress?.Invoke(progress);
@@ -298,42 +343,47 @@ public class IngestionOrchestrator
                               );
     }
 
-    private async Task WriteBuildingVersionAsync(ScrapeJob job, CancellationToken ct)
+    private async Task WriteBuildingVersionAsync(ScrapeJob job,
+                                                  ILibraryRepository libraries,
+                                                  CancellationToken ct)
     {
         var version = CreateLifecycleVersion(job, VersionPublicationState.Building, publicationError: null);
-        await mLibraryRepository.UpsertVersionAsync(version, ct);
+        await libraries.UpsertVersionAsync(version, ct);
     }
 
     private async Task MarkCandidateFailedAsync(ScrapeJob job,
                                                 string? profile,
-                                                string publicationError)
+                                                string publicationError,
+                                                ILibraryIngestionModeLease modeLease,
+                                                ProfileRepositories repositories)
     {
+        bool renewed = await modeLease.TryRenewAsync(CancellationToken.None);
+        if (!renewed)
+            throw new InvalidOperationException(WebModeLeaseLostCleanupMessage);
+
+        CancellationToken ownership = modeLease.OwnershipLostToken;
         var failures = new List<Exception>();
         var failed = CreateLifecycleVersion(job, VersionPublicationState.Failed, publicationError);
         await TryCandidateCleanupStepAsync(
-            () => mLibraryRepository.UpsertVersionAsync(failed, CancellationToken.None),
+            () => repositories.Libraries.UpsertVersionAsync(failed, ownership),
             FailedDiagnosticsCleanupDescription,
             failures);
         await TryCandidateCleanupStepAsync(
-            () => DeleteCandidateBm25Async(job),
+            () => DeleteCandidateBm25Async(repositories.Shards, job, ownership),
             Bm25CleanupDescription,
             failures);
         await TryCandidateCleanupStepAsync(
-            () => DeleteCandidateLibraryIndexAsync(job),
+            () => DeleteCandidateLibraryIndexAsync(repositories.Indexes, job, ownership),
             LibraryIndexCleanupDescription,
             failures);
         await TryCandidateCleanupStepAsync(
-            () => mVectorSearch.RemoveIndexAsync(profile, job.LibraryId, job.Version, CancellationToken.None),
+            () => mVectorSearch.RemoveIndexAsync(profile, job.LibraryId, job.Version, ownership),
             VectorIndexCleanupDescription,
             failures);
-        ISourceDocumentRepository? sourceDocumentRepository = mSourceDocumentRepository;
-        if (sourceDocumentRepository != null)
-        {
-            await TryCandidateCleanupStepAsync(
-                () => DeleteCandidateSourceVersionAsync(sourceDocumentRepository, job),
-                SourceDocumentCleanupDescription,
-                failures);
-        }
+        await TryCandidateCleanupStepAsync(
+            () => DeleteCandidateSourceVersionAsync(repositories.Sources, job, ownership),
+            SourceDocumentCleanupDescription,
+            failures);
 
         if (failures.Count > 0)
             throw new AggregateException(CandidateCleanupFailureMessage, failures);
@@ -342,11 +392,13 @@ public class IngestionOrchestrator
     private async Task MarkCandidateFailedPreservingOriginalAsync(ScrapeJob job,
                                                                    string? profile,
                                                                    string publicationError,
-                                                                   Exception originalException)
+                                                                   Exception originalException,
+                                                                   ILibraryIngestionModeLease modeLease,
+                                                                   ProfileRepositories repositories)
     {
         try
         {
-            await MarkCandidateFailedAsync(job, profile, publicationError);
+            await MarkCandidateFailedAsync(job, profile, publicationError, modeLease, repositories);
         }
         catch(Exception cleanupException)
         {
@@ -359,22 +411,27 @@ public class IngestionOrchestrator
         }
     }
 
-    private async Task DeleteCandidateBm25Async(ScrapeJob job)
+    private static async Task DeleteCandidateBm25Async(IBm25ShardRepository shards,
+                                                       ScrapeJob job,
+                                                       CancellationToken ct)
     {
-        await mBm25ShardRepository.DeleteAsync(job.LibraryId, job.Version, CancellationToken.None);
+        await shards.DeleteAsync(job.LibraryId, job.Version, ct);
     }
 
-    private async Task DeleteCandidateLibraryIndexAsync(ScrapeJob job)
+    private static async Task DeleteCandidateLibraryIndexAsync(ILibraryIndexRepository indexes,
+                                                               ScrapeJob job,
+                                                               CancellationToken ct)
     {
-        await mLibraryIndexRepository.DeleteAsync(job.LibraryId, job.Version, CancellationToken.None);
+        await indexes.DeleteAsync(job.LibraryId, job.Version, ct);
     }
 
     private static async Task DeleteCandidateSourceVersionAsync(ISourceDocumentRepository sourceDocumentRepository,
-                                                                ScrapeJob job)
+                                                                ScrapeJob job,
+                                                                CancellationToken ct)
     {
         await sourceDocumentRepository.DeleteVersionAsync(job.LibraryId,
                                                            job.Version,
-                                                           CancellationToken.None);
+                                                           ct);
     }
 
     private static async Task TryCandidateCleanupStepAsync(Func<Task> cleanupStep,
@@ -392,8 +449,8 @@ public class IngestionOrchestrator
     }
 
     private LibraryVersionRecord CreateLifecycleVersion(ScrapeJob job,
-                                                        VersionPublicationState state,
-                                                        string? publicationError) =>
+                                                         VersionPublicationState state,
+                                                         string? publicationError) =>
         new()
             {
                 Id = $"{job.LibraryId}/{job.Version}",
@@ -430,6 +487,9 @@ public class IngestionOrchestrator
     private const int PageChannelCapacity = 50;
     private const int ChunkChannelCapacity = 20;
     private const string PublicationCancelledMessage = "Publication cancelled.";
+    private const string WebModeConflictDetail = "or another web-ingestion operation.";
+    private const string WebModeLeaseLostCleanupMessage =
+        "Candidate cleanup stopped because web ingestion no longer owns its source-mode lease.";
     private const string CandidateCannotBePublishedMessage = "the candidate cannot be published.";
     private const string CandidateCleanupFailureMessage = "One or more candidate cleanup operations failed.";
     private const string CandidateCleanupFailureDataKey = "SaddleRAG.CandidateCleanupFailure";
@@ -642,10 +702,19 @@ public class IngestionOrchestrator
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(url);
+        await using ILibraryIngestionModeLease modeLease = await AcquireWebModeLeaseAsync(profile, libraryId, ct);
+        using CancellationTokenSource operation =
+            CancellationTokenSource.CreateLinkedTokenSource(ct, modeLease.OwnershipLostToken);
+        await CommitWebOwnershipAsync(profile, libraryId, modeLease, operation.Token);
+        ProfileRepositories repositories = ResolveRepositories(profile);
 
         mLogger.LogInformation("Adding single page {Url} to {LibraryId} v{Version}", url, libraryId, version);
 
-        var page = await mCrawler.FetchSinglePageAsync(libraryId, version, url, ct);
+        var page = await mCrawler.FetchSinglePageForProfileAsync(libraryId,
+                                                                  version,
+                                                                  url,
+                                                                  profile,
+                                                                  operation.Token);
 
         SinglePageIngestResult result;
         if (page == null)
@@ -660,22 +729,85 @@ public class IngestionOrchestrator
                          };
         }
         else
-            result = await ProcessSinglePageAsync(page, libraryId, version, url, ct);
+            result = await ProcessSinglePageAsync(page,
+                                                  libraryId,
+                                                  version,
+                                                  url,
+                                                  repositories,
+                                                  operation.Token);
 
         return result;
+    }
+
+    private async Task<ILibraryIngestionModeLease> AcquireWebModeLeaseAsync(string? profile,
+                                                                            string libraryId,
+                                                                            CancellationToken ct)
+    {
+        ILibraryIngestionModeLease? modeLease = await mModeLeaseManager.TryAcquireAsync(profile,
+                                                                                         libraryId,
+                                                                                         LibraryIngestionMode.Web,
+                                                                                         ct);
+        if (modeLease == null)
+            throw new InvalidOperationException($"Library '{libraryId}' is owned by directory ingestion " +
+                                                WebModeConflictDetail);
+        return modeLease;
+    }
+
+    private async Task CommitWebOwnershipAsync(string? profile,
+                                               string libraryId,
+                                               ILibraryIngestionModeLease modeLease,
+                                               CancellationToken ct)
+    {
+        ISourceDocumentRepository sources = mRepositoryFactory.GetSourceDocumentRepository(profile);
+        DirectoryLibraryDefinition? definition = await sources.GetDirectoryDefinitionAsync(libraryId, ct);
+        if (definition != null)
+        {
+            if (modeLease.OwnershipStateAtAcquisition == LibraryIngestionOwnershipState.Reserved)
+                await modeLease.TryReconcileReservedModeAsync(LibraryIngestionMode.Directory,
+                                                               CancellationToken.None);
+            throw new InvalidOperationException(
+                $"Library '{libraryId}' is registered for directory ingestion and cannot be mutated by web ingestion.");
+        }
+
+
+        if (modeLease.OwnershipStateAtAcquisition == LibraryIngestionOwnershipState.Reserved)
+        {
+            ILibraryIngestionModeRepository modes =
+                mRepositoryFactory.GetLibraryIngestionModeRepository(profile);
+            LibraryIngestionDataEvidence evidence = await modes.GetLibraryDataEvidenceAsync(libraryId, ct);
+            if (evidence.HasDirectoryDefinition)
+            {
+                bool reconciled = await modeLease.TryReconcileReservedModeAsync(LibraryIngestionMode.Directory, ct);
+                if (!reconciled)
+                    throw new InvalidOperationException(
+                        "The web ingestion operation no longer owns its source-mode lease.");
+                throw new InvalidOperationException(
+                    $"Library '{libraryId}' contains directory-ingestion data and cannot be mutated by web ingestion.");
+            }
+
+            if (!evidence.HasLibraryRecord &&
+                (evidence.HasDocumentLifecycleData || evidence.HasChildContentData))
+                throw new InvalidOperationException(
+                    $"Library '{libraryId}' has unclassified partial data and cannot be mutated by web ingestion.");
+        }
+
+        bool committed = await modeLease.TryCommitAsync(ct);
+        if (!committed)
+            throw new InvalidOperationException("The web ingestion operation no longer owns its source-mode lease.");
     }
 
     private async Task<SinglePageIngestResult> ProcessSinglePageAsync(PageRecord page,
                                                                       string libraryId,
                                                                       string version,
                                                                       string url,
+                                                                      ProfileRepositories repositories,
                                                                       CancellationToken ct)
     {
         // Reuse the streaming pipeline's per-page classify + embed primitives
         // so the single-page path can't drift on prompt format, confidence
         // threshold, or retry semantics. The orchestrator owns only the
         // single-page result shape and BM25 refresh.
-        var classified = await mClassifyStage.ClassifyPageAsync(page, libraryId);
+        var classified = await repositories.Classify.ClassifyPageAsync(page, libraryId);
         var chunks = mChunker.Chunk(classified);
 
         SinglePageIngestResult result;
@@ -693,7 +825,7 @@ public class IngestionOrchestrator
         else
         {
             var embedded = await EmbedStage.EmbedBatchAsync(mEmbeddingProvider, mLogger, chunks, ct);
-            await mChunkRepository.UpsertChunksAsync(embedded, ct);
+            await repositories.Chunks.UpsertChunksAsync(embedded, ct);
 
             var bm25Job = new ScrapeJob
                               {
@@ -703,7 +835,7 @@ public class IngestionOrchestrator
                                   LibraryHint = libraryId,
                                   AllowedUrlPatterns = []
                               };
-            await mFinalizer.BuildBm25IndexAsync(bm25Job, ct);
+            await repositories.Finalizer.BuildBm25IndexAsync(bm25Job, ct);
 
             result = new SinglePageIngestResult
                          {
@@ -718,6 +850,71 @@ public class IngestionOrchestrator
 
         return result;
     }
+
+    private ProfileRepositories ResolveRepositories(string? profile)
+    {
+        ProfileRepositories result;
+        if (string.IsNullOrEmpty(profile))
+        {
+            result = new ProfileRepositories(mLibraryRepository,
+                                             mPageRepository,
+                                             mChunkRepository,
+                                             mLibraryProfileRepository,
+                                             mLibraryIndexRepository,
+                                             mBm25ShardRepository,
+                                             mSourceDocumentRepository,
+                                             mClassifyStage,
+                                             mEmbedStage,
+                                             mFinalizer);
+        }
+        else
+        {
+            ILibraryRepository libraries = mRepositoryFactory.GetLibraryRepository(profile);
+            IPageRepository pages = mRepositoryFactory.GetPageRepository(profile);
+            IChunkRepository chunks = mRepositoryFactory.GetChunkRepository(profile);
+            ILibraryProfileRepository profiles = mRepositoryFactory.GetLibraryProfileRepository(profile);
+            ILibraryIndexRepository indexes = mRepositoryFactory.GetLibraryIndexRepository(profile);
+            IBm25ShardRepository shards = mRepositoryFactory.GetBm25ShardRepository(profile);
+            ISourceDocumentRepository sources = mRepositoryFactory.GetSourceDocumentRepository(profile);
+            var classify = new ClassifyStage(mPageProcessor, pages, mBroadcaster, mLogger);
+            var embed = new EmbedStage(mPageProcessor, chunks, mBroadcaster, mLogger);
+            var finalizer = new IngestionFinalizer(chunks,
+                                                   shards,
+                                                   indexes,
+                                                   libraries,
+                                                   mVectorSearch,
+                                                   mEmbeddingProvider,
+                                                   profiles,
+                                                   mSuspectDetector,
+                                                   mLlmClassifier,
+                                                   mPageProcessor,
+                                                   mLogger,
+                                                   sources);
+            result = new ProfileRepositories(libraries,
+                                             pages,
+                                             chunks,
+                                             profiles,
+                                             indexes,
+                                             shards,
+                                             sources,
+                                             classify,
+                                             embed,
+                                             finalizer);
+        }
+
+        return result;
+    }
+
+    private sealed record ProfileRepositories(ILibraryRepository Libraries,
+                                              IPageRepository Pages,
+                                              IChunkRepository Chunks,
+                                              ILibraryProfileRepository Profiles,
+                                              ILibraryIndexRepository Indexes,
+                                              IBm25ShardRepository Shards,
+                                              ISourceDocumentRepository Sources,
+                                              ClassifyStage Classify,
+                                              EmbedStage Embed,
+                                              IngestionFinalizer Finalizer);
 
     #endregion
 

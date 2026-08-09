@@ -204,7 +204,9 @@ internal sealed class InMemorySubjectCatalogRepository : ISubjectCatalogReposito
     public Task<SubjectCatalogRecord?> GetLatestAsync(string libraryId, CancellationToken ct = default)
     {
         SubjectCatalogRecord? result = mCatalogs
-                                      .Where(c => c.LibraryId == libraryId)
+                                      .Where(c => c.LibraryId == libraryId &&
+                                                  c.PublicationState ==
+                                                  SubjectCatalogPublicationState.Published)
                                       .OrderByDescending(c => c.Revision)
                                       .FirstOrDefault();
         return Task.FromResult(result);
@@ -237,14 +239,173 @@ internal sealed class InMemorySubjectCatalogRepository : ISubjectCatalogReposito
         return Task.CompletedTask;
     }
 
+    public Task<bool> TryPublishImportCandidateAsync(string libraryId,
+                                                      string taxonomyVersion,
+                                                      string importOperationId,
+                                                      CancellationToken ct = default)
+    {
+        int index = mCatalogs.FindIndex(catalog => catalog.LibraryId == libraryId &&
+                                                  catalog.TaxonomyVersion == taxonomyVersion &&
+                                                  catalog.ImportOperationId == importOperationId);
+        bool result = index >= 0 &&
+                      mCatalogs[index].PublicationState == SubjectCatalogPublicationState.Published;
+        if (!result && index >= 0)
+        {
+            SubjectCatalogRecord candidate = mCatalogs[index];
+            result = candidate.PublicationState == SubjectCatalogPublicationState.Candidate;
+            if (result)
+            {
+                mCatalogs[index] = candidate with
+                                       {
+                                           PublicationState = SubjectCatalogPublicationState.Published
+                                       };
+            }
+        }
+
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryRollbackImportCandidatePublicationAsync(
+        string libraryId,
+        string taxonomyVersion,
+        string importOperationId,
+        CancellationToken ct = default)
+    {
+        int index = mCatalogs.FindIndex(catalog => catalog.LibraryId == libraryId &&
+                                                  catalog.TaxonomyVersion == taxonomyVersion &&
+                                                  catalog.ImportOperationId == importOperationId);
+        bool result = index >= 0 &&
+                      mCatalogs[index].PublicationState == SubjectCatalogPublicationState.Candidate;
+        if (!result && index >= 0)
+        {
+            SubjectCatalogRecord published = mCatalogs[index];
+            result = published.PublicationState == SubjectCatalogPublicationState.Published;
+            if (result)
+            {
+                mCatalogs[index] = published with
+                                       {
+                                           PublicationState = SubjectCatalogPublicationState.Candidate
+                                       };
+            }
+        }
+
+        return Task.FromResult(result);
+    }
+
+    public async Task<ImportCatalogRollbackOutcome> TryRollbackImportCandidatePublicationIfUnreferencedAsync(
+        string libraryId,
+        string taxonomyVersion,
+        string importOperationId,
+        CancellationToken ct = default)
+    {
+        SubjectCatalogRecord? current = await GetAsync(libraryId, taxonomyVersion, ct);
+        ImportCatalogRollbackOutcome result = current switch
+        {
+            null => ImportCatalogRollbackOutcome.NotOwned,
+            SubjectCatalogRecord catalog when !string.Equals(catalog.ImportOperationId,
+                                                               importOperationId,
+                                                               StringComparison.Ordinal) =>
+                ImportCatalogRollbackOutcome.NotOwned,
+            { PublicationState: SubjectCatalogPublicationState.Candidate } =>
+                ImportCatalogRollbackOutcome.AlreadyCandidate,
+            _ => ImportCatalogRollbackOutcome.RolledBack
+        };
+        if (result == ImportCatalogRollbackOutcome.RolledBack)
+        {
+            await TryRollbackImportCandidatePublicationAsync(libraryId,
+                                                              taxonomyVersion,
+                                                              importOperationId,
+                                                              ct);
+        }
+
+        return result;
+    }
+
+    public Task<bool> DeleteImportCandidateIfUnreferencedAsync(
+        string libraryId,
+        string taxonomyVersion,
+        string importOperationId,
+        string deletingVersion,
+        CancellationToken ct = default)
+    {
+        int removed = mCatalogs.RemoveAll(catalog => catalog.LibraryId == libraryId &&
+                                                       catalog.TaxonomyVersion == taxonomyVersion &&
+                                                       catalog.ImportOperationId == importOperationId &&
+                                                       catalog.PublicationState ==
+                                                       SubjectCatalogPublicationState.Candidate);
+        return Task.FromResult(removed > 0);
+    }
+
+    public Task<bool> TryPublishCandidateAsync(string libraryId,
+                                                string taxonomyVersion,
+                                                string scanRunId,
+                                                CancellationToken ct = default)
+    {
+        int index = mCatalogs.FindIndex(catalog => catalog.LibraryId == libraryId &&
+                                                     catalog.TaxonomyVersion == taxonomyVersion);
+        bool result = index >= 0 &&
+                      mCatalogs[index].PublicationState == SubjectCatalogPublicationState.Published;
+        if (!result && index >= 0)
+        {
+            SubjectCatalogRecord candidate = mCatalogs[index];
+            result = candidate.PublicationState == SubjectCatalogPublicationState.Candidate &&
+                     string.Equals(candidate.ScanRunId, scanRunId, StringComparison.Ordinal);
+            if (result)
+            {
+                mCatalogs[index] = candidate with
+                                       {
+                                           PublicationState = SubjectCatalogPublicationState.Published
+                                       };
+            }
+        }
+
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryRollbackCandidatePublicationAsync(string libraryId,
+                                                            string taxonomyVersion,
+                                                            string scanRunId,
+                                                            CancellationToken ct = default)
+    {
+        int index = mCatalogs.FindIndex(catalog => catalog.LibraryId == libraryId &&
+                                                  catalog.TaxonomyVersion == taxonomyVersion &&
+                                                  catalog.ScanRunId == scanRunId &&
+                                                  catalog.PublicationState ==
+                                                  SubjectCatalogPublicationState.Published);
+        bool result = index >= 0;
+        if (result)
+        {
+            mCatalogs[index] = mCatalogs[index] with
+                                   {
+                                       PublicationState = SubjectCatalogPublicationState.Candidate
+                                   };
+        }
+
+        return Task.FromResult(result);
+    }
+
     public Task<long> DeleteCandidateScanRunAsync(string libraryId,
                                                   string scanRunId,
                                                   string? deletingVersion,
                                                   CancellationToken ct = default)
     {
         int removed = mCatalogs.RemoveAll(catalog => catalog.LibraryId == libraryId &&
-                                                       catalog.ScanRunId == scanRunId);
+                                                       catalog.ScanRunId == scanRunId &&
+                                                       catalog.PublicationState ==
+                                                       SubjectCatalogPublicationState.Candidate);
         return Task.FromResult((long)removed);
+    }
+
+    public Task<bool> DeleteIfUnreferencedAsync(string libraryId,
+                                                 string taxonomyVersion,
+                                                 string deletingVersion,
+                                                 CancellationToken ct = default)
+    {
+        int removed = mCatalogs.RemoveAll(catalog => catalog.LibraryId == libraryId &&
+                                                       catalog.TaxonomyVersion == taxonomyVersion &&
+                                                       catalog.PublicationState ==
+                                                       SubjectCatalogPublicationState.Candidate);
+        return Task.FromResult(removed > 0);
     }
 
     public Task<long> DeleteLibraryAsync(string libraryId, CancellationToken ct = default)
@@ -290,6 +451,13 @@ internal sealed class InMemorySubjectAssignmentRepository : ISubjectAssignmentRe
     public Task<long> DeleteScanRunAsync(string libraryId, string scanRunId, CancellationToken ct = default)
     {
         int removed = mAssignments.RemoveAll(a => a.LibraryId == libraryId && a.ScanRunId == scanRunId);
+        return Task.FromResult((long)removed);
+    }
+
+    public Task<long> DeleteVersionAsync(string libraryId, string version, CancellationToken ct = default)
+    {
+        int removed = mAssignments.RemoveAll(assignment => assignment.LibraryId == libraryId &&
+                                                            assignment.Version == version);
         return Task.FromResult((long)removed);
     }
 

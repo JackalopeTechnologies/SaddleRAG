@@ -13,6 +13,7 @@ using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
 using SaddleRAG.Database.Migrations;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
 using SaddleRAG.Ingestion.Embedding;
@@ -137,6 +138,10 @@ public sealed class McpWarmupService : BackgroundService
                                                     requiredModels,
                                                     stoppingToken
                                                    );
+                await RecoverArtifactClaimsForProfileAsync(profile,
+                                                           repositoryFactory,
+                                                           mLogger,
+                                                           stoppingToken);
             }
 
 
@@ -244,11 +249,15 @@ public sealed class McpWarmupService : BackgroundService
                                   );
 
 
+            bool embeddingProviderReady = false;
+
             try
             {
                 stepSw.Restart();
 
                 await embeddingProvider.EmbedAsync([WarmupProbeText], ct: stoppingToken);
+
+                embeddingProviderReady = true;
 
                 mLogger.LogInformation("[Warmup] T+{Sec:F1}s ({Step}ms) - embedding provider warm ({Provider}/{Model})",
                                        startupSw.Elapsed.TotalSeconds,
@@ -294,6 +303,17 @@ public sealed class McpWarmupService : BackgroundService
 
             {
                 mLogger.LogWarning(ex, "[Warmup] T+{Sec:F1}s - Warmup probe failed", startupSw.Elapsed.TotalSeconds);
+            }
+
+            if (embeddingProviderReady)
+            {
+                var reembedRecovery = scope.ServiceProvider.GetRequiredService<QueuedReembedJobRecovery>();
+                await reembedRecovery.RecoverAsync(stoppingToken);
+            }
+            else
+            {
+                mLogger.LogWarning(
+                    "Queued reembed recovery was skipped because the embedding provider did not warm successfully");
             }
 
 
@@ -417,6 +437,39 @@ public sealed class McpWarmupService : BackgroundService
         {
             mLogger.LogWarning(ex, "Failed to inspect profile {Profile}, skipping at startup", profile ?? "(default)");
         }
+    }
+
+
+    internal static async Task<DocumentArtifactRecoveryResult?> RecoverArtifactClaimsForProfileAsync(
+        string? profile,
+        RepositoryFactory repositoryFactory,
+        ILogger<McpWarmupService> logger,
+        CancellationToken stoppingToken)
+    {
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        DocumentArtifactRecoveryResult? result = null;
+        try
+        {
+            ISourceDocumentRepository sourceDocuments =
+                repositoryFactory.GetSourceDocumentRepository(profile);
+            result = await sourceDocuments.RecoverArtifactClaimsAsync(DateTime.UtcNow, stoppingToken);
+            logger.LogInformation(
+                "[Warmup] Recovered document artifacts for profile {Profile}: {Finalized} claims finalized, {Released} claims released, {Deleted} deletions completed",
+                profile ?? "(default)",
+                result.ClaimsFinalized,
+                result.ClaimsReleased,
+                result.ArtifactDeletionsCompleted);
+        }
+        catch(Exception ex) when(ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex,
+                              "Failed to recover document artifacts for profile {Profile}, continuing startup",
+                              profile ?? "(default)");
+        }
+
+        return result;
     }
 
 

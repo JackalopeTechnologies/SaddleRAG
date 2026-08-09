@@ -24,4 +24,7 @@ public sealed record AuditContext
     ///     The version being scraped.
     /// </summary>
     public required string Version { get; init; }
+
+    /// <summary>The database profile that owns this audit event. Null selects the default profile.</summary>
+    public string? Profile { get; init; }
 }

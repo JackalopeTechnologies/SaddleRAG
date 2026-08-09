@@ -11,6 +11,9 @@ namespace SaddleRAG.Core.Models;
 /// </summary>
 public record DocumentArtifactBlobRecord
 {
+    /// <summary>Ownership schema understood by the managed-artifact protocol.</summary>
+    public const int CurrentClaimSchemaVersion = 1;
+
     public required string Id { get; init; }
 
     public required string GridFsId { get; init; }
@@ -18,4 +21,21 @@ public record DocumentArtifactBlobRecord
     public required long ByteLength { get; init; }
 
     public required DateTime CreatedAtUtc { get; init; }
+
+    /// <summary>
+    ///     Ownership protocol understood by the current writer. Null denotes
+    ///     legacy metadata, which is deliberately never auto-deleted.
+    /// </summary>
+    public int? ClaimSchemaVersion { get; init; }
+
+    /// <summary>Exact revision claims for schema-managed artifacts.</summary>
+    public IReadOnlyList<DocumentArtifactClaimRecord> Claims { get; init; } = [];
+
+    /// <summary>
+    ///     Token for an idempotent physical-deletion attempt. Claim writers
+    ///     cannot attach to a tombstoned artifact.
+    /// </summary>
+    public string? DeletionId { get; init; }
+
+    public DateTime? DeletionPreparedAtUtc { get; init; }
 }

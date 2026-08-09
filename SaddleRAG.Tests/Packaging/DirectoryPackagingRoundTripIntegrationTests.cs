@@ -14,6 +14,7 @@ using SaddleRAG.Database;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Ingestion.Services;
 using SaddleRAG.Mcp.Tools;
 using SaddleRAG.Packaging;
@@ -98,6 +99,14 @@ public sealed class DirectoryPackagingRoundTripIntegrationTests : IAsyncLifetime
                                                                   DirectoryPackagingFixtures.LibraryId,
                                                                   TestContext.Current.CancellationToken));
         Assert.Equal(DirectoryPackagingFixtures.Version, library.CurrentVersion);
+        LibraryVersionRecord importedVersion = Assert.IsType<LibraryVersionRecord>(
+            await mLibraries.GetVersionAsync(DirectoryPackagingFixtures.LibraryId,
+                                             DirectoryPackagingFixtures.Version,
+                                             TestContext.Current.CancellationToken));
+        Assert.False(string.IsNullOrWhiteSpace(importedVersion.ImportOperationId));
+        Assert.Equivalent(DirectoryPackagingFixtures.LibraryVersion(),
+                          importedVersion with { ImportOperationId = null },
+                          strict: true);
         DirectoryLibraryDefinition definition = Assert.IsType<DirectoryLibraryDefinition>(
             await mSources.GetDirectoryDefinitionAsync(DirectoryPackagingFixtures.LibraryId,
                                                         TestContext.Current.CancellationToken));
@@ -108,6 +117,12 @@ public sealed class DirectoryPackagingRoundTripIntegrationTests : IAsyncLifetime
                      definition.AllowedExtensions);
         Assert.Equal(DirectoryPackagingFixtures.DirectoryDefinition().ExclusionPatterns,
                      definition.ExclusionPatterns);
+        LibraryIngestionModeRecord mode = Assert.IsType<LibraryIngestionModeRecord>(
+            await mFactory.GetLibraryIngestionModeRepository().GetAsync(
+                DirectoryPackagingFixtures.LibraryId,
+                TestContext.Current.CancellationToken));
+        Assert.Equal(LibraryIngestionMode.Directory, mode.Mode);
+        Assert.Equal(LibraryIngestionOwnershipState.Committed, mode.OwnershipState);
 
         SourceDocumentRecord source = Assert.IsType<SourceDocumentRecord>(
             await mSources.GetDocumentAsync(DirectoryPackagingFixtures.DocumentId,
@@ -115,8 +130,18 @@ public sealed class DirectoryPackagingRoundTripIntegrationTests : IAsyncLifetime
         Assert.Equal(DirectoryPackagingFixtures.Source(), source);
         DocumentRevisionRecord revision = Assert.IsType<DocumentRevisionRecord>(
             await mSources.GetRevisionAsync(DirectoryPackagingFixtures.RevisionId(),
-                                             TestContext.Current.CancellationToken));
-        Assert.Equivalent(DirectoryPackagingFixtures.Revision(), revision, strict: true);
+                                              TestContext.Current.CancellationToken));
+        DocumentRevisionRecord expectedRevision = DirectoryPackagingFixtures.Revision() with
+                                                      {
+                                                          ArtifactClaims = revision.ArtifactClaims
+                                                      };
+        Assert.Equivalent(expectedRevision, revision, strict: true);
+        Assert.Equal(
+            new[] { revision.OriginalArtifactHash, revision.ExtractionArtifactHash! }
+                .Order(StringComparer.Ordinal),
+            revision.ArtifactClaims.Select(claim => claim.ArtifactHash).Order(StringComparer.Ordinal));
+        Assert.All(revision.ArtifactClaims,
+                   claim => Assert.False(string.IsNullOrWhiteSpace(claim.ClaimId)));
         Assert.Equivalent(DirectoryPackagingFixtures.ExtractionProvenance(),
                           revision.ExtractionProvenance,
                           strict: true);
@@ -130,7 +155,10 @@ public sealed class DirectoryPackagingRoundTripIntegrationTests : IAsyncLifetime
                                                                                DirectoryPackagingFixtures
                                                                                    .TaxonomyVersion,
                                                                                TestContext.Current.CancellationToken));
-        Assert.Equivalent(DirectoryPackagingFixtures.Catalog(), catalog, strict: true);
+        Assert.False(string.IsNullOrWhiteSpace(catalog.ImportOperationId));
+        Assert.Equivalent(DirectoryPackagingFixtures.Catalog(),
+                          catalog with { ImportOperationId = null },
+                          strict: true);
         SubjectAssignmentRecord assignment = Assert.Single(
             await mAssignments.GetByDocumentRevisionIdsAsync([DirectoryPackagingFixtures.RevisionId()],
                                                               TestContext.Current.CancellationToken));
@@ -227,6 +255,9 @@ public sealed class DirectoryPackagingRoundTripIntegrationTests : IAsyncLifetime
                                                       TestContext.Current.CancellationToken));
         Assert.Null(await mSources.GetDirectoryDefinitionAsync(DirectoryPackagingFixtures.LibraryId,
                                                                 TestContext.Current.CancellationToken));
+        Assert.Null(await mFactory.GetLibraryIngestionModeRepository().GetAsync(
+                        DirectoryPackagingFixtures.LibraryId,
+                        TestContext.Current.CancellationToken));
         Assert.Null(await mSources.GetDocumentAsync(DirectoryPackagingFixtures.DocumentId,
                                                      TestContext.Current.CancellationToken));
         Assert.Null(await mSources.GetRevisionAsync(DirectoryPackagingFixtures.RevisionId(),
@@ -340,7 +371,16 @@ public sealed class DirectoryPackagingRoundTripIntegrationTests : IAsyncLifetime
                                                                      mBm25,
                                                                      mSources,
                                                                      mCatalogs,
-                                                                     mAssignments);
+                                                                     mAssignments,
+                                                                     deletionService: new LibraryDeletionService(
+                                                                         mFactory,
+                                                                         new InMemoryBruteForceVectorSearch()),
+                                                                     modeLeaseManager:
+                                                                     new LibraryIngestionModeLeaseManager(
+                                                                         mFactory,
+                                                                         TimeProvider.System),
+                                                                     modeRepository:
+                                                                     mFactory.GetLibraryIngestionModeRepository());
 
     private async Task PersistRevisionAsync(DocumentRevisionRecord revision,
                                              byte[] original,

@@ -8,6 +8,7 @@
 using System.Threading.Channels;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Database.Repositories;
 
 #endregion
 
@@ -24,28 +25,37 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     public ScrapeAuditWriter(IScrapeAuditRepository repo,
                              int batchSize = DefaultBatchSize,
                              TimeSpan? flushInterval = null)
+        : this(repo, null, batchSize, flushInterval)
+    {
+    }
+
+    public ScrapeAuditWriter(IScrapeAuditRepository repo,
+                             RepositoryFactory? repositoryFactory,
+                             int batchSize = DefaultBatchSize,
+                             TimeSpan? flushInterval = null)
     {
         ArgumentNullException.ThrowIfNull(repo);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
-        mRepo = repo;
+        mDefaultRepo = repo;
+        mRepositoryFactory = repositoryFactory;
         mBatchSize = batchSize;
         mFlushInterval = flushInterval ?? smDefaultFlushInterval;
-        mChannel = Channel.CreateUnbounded<ScrapeAuditLogEntry>(new UnboundedChannelOptions
-                                                                    {
-                                                                        SingleReader = false,
-                                                                        SingleWriter = false
-                                                                    }
-                                                               );
+        mChannel = Channel.CreateUnbounded<PendingAuditEntry>(new UnboundedChannelOptions
+                                                                  {
+                                                                      SingleReader = false,
+                                                                      SingleWriter = false
+                                                                  });
         mLoop = Task.Run(RunFlushLoopAsync);
     }
 
     private readonly int mBatchSize;
-    private readonly Channel<ScrapeAuditLogEntry> mChannel;
+    private readonly Channel<PendingAuditEntry> mChannel;
     private readonly CancellationTokenSource mCts = new CancellationTokenSource();
     private readonly TimeSpan mFlushInterval;
     private readonly Task mLoop;
 
-    private readonly IScrapeAuditRepository mRepo;
+    private readonly IScrapeAuditRepository mDefaultRepo;
+    private readonly RepositoryFactory? mRepositoryFactory;
     private bool mDisposed;
 
     #region RecordSkipped method
@@ -62,7 +72,8 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
-        Enqueue(BuildEntry(ctx,
+        Enqueue(ctx.Profile,
+                BuildEntry(ctx,
                            url,
                            parentUrl,
                            host,
@@ -89,7 +100,8 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
-        Enqueue(BuildEntry(ctx,
+        Enqueue(ctx.Profile,
+                BuildEntry(ctx,
                            url,
                            parentUrl,
                            host,
@@ -118,7 +130,8 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
         ArgumentException.ThrowIfNullOrEmpty(error);
-        Enqueue(BuildEntry(ctx,
+        Enqueue(ctx.Profile,
+                BuildEntry(ctx,
                            url,
                            parentUrl,
                            host,
@@ -147,7 +160,8 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         ArgumentException.ThrowIfNullOrEmpty(url);
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(outcome);
-        Enqueue(BuildEntry(ctx,
+        Enqueue(ctx.Profile,
+                BuildEntry(ctx,
                            url,
                            parentUrl,
                            host,
@@ -167,14 +181,11 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     /// <inheritdoc />
     public async Task FlushAsync(CancellationToken ct = default)
     {
-        var batch = new List<ScrapeAuditLogEntry>(mBatchSize);
+        var batch = new List<PendingAuditEntry>(mBatchSize);
         while (mChannel.Reader.TryRead(out var entry))
             batch.Add(entry);
 
-        var flushTask = batch.Count > 0
-                            ? mRepo.InsertManyAsync(batch, ct)
-                            : Task.CompletedTask;
-        await flushTask;
+        await FlushBatchAsync(batch, ct);
     }
 
     #endregion
@@ -204,11 +215,12 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
 
     #endregion
 
-    private void Enqueue(ScrapeAuditLogEntry entry) => mChannel.Writer.TryWrite(entry);
+    private void Enqueue(string? profile, ScrapeAuditLogEntry entry) =>
+        mChannel.Writer.TryWrite(new PendingAuditEntry(profile, entry));
 
     private async Task RunFlushLoopAsync()
     {
-        var buffer = new List<ScrapeAuditLogEntry>(mBatchSize);
+        var buffer = new List<PendingAuditEntry>(mBatchSize);
         while (!mCts.IsCancellationRequested)
         {
             try
@@ -222,29 +234,35 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
             {
             }
 
-            var periodicFlushTask = buffer.Count > 0
-                                        ? mRepo.InsertManyAsync(buffer, CancellationToken.None)
-                                        : Task.CompletedTask;
-            await periodicFlushTask;
+            await FlushBatchAsync(buffer, CancellationToken.None);
             buffer.Clear();
         }
 
-        var finalFlushTask = buffer.Count > 0
-                                 ? mRepo.InsertManyAsync(buffer, CancellationToken.None)
-                                 : Task.CompletedTask;
-        await finalFlushTask;
+        await FlushBatchAsync(buffer, CancellationToken.None);
     }
 
-    private async Task DrainAvailableAsync(List<ScrapeAuditLogEntry> buffer)
+    private async Task DrainAvailableAsync(List<PendingAuditEntry> buffer)
     {
         while (mChannel.Reader.TryRead(out var entry))
         {
             buffer.Add(entry);
             if (buffer.Count >= mBatchSize)
             {
-                await mRepo.InsertManyAsync(buffer, mCts.Token);
+                await FlushBatchAsync(buffer, mCts.Token);
                 buffer.Clear();
             }
+        }
+    }
+
+    private async Task FlushBatchAsync(IReadOnlyList<PendingAuditEntry> batch, CancellationToken ct)
+    {
+        foreach(IGrouping<string?, PendingAuditEntry> group in batch.GroupBy(item => item.Profile,
+                                                                              StringComparer.Ordinal))
+        {
+            IScrapeAuditRepository repository = string.IsNullOrEmpty(group.Key) || mRepositoryFactory == null
+                                                    ? mDefaultRepo
+                                                    : mRepositoryFactory.GetScrapeAuditRepository(group.Key);
+            await repository.InsertManyAsync(group.Select(item => item.Entry), ct);
         }
     }
 
@@ -276,4 +294,6 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
 
     private const int DefaultBatchSize = 500;
     private static readonly TimeSpan smDefaultFlushInterval = TimeSpan.FromSeconds(seconds: 1);
+
+    private sealed record PendingAuditEntry(string? Profile, ScrapeAuditLogEntry Entry);
 }

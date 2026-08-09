@@ -14,19 +14,23 @@ public sealed class DirectoryLibraryRegistrationService : IDirectoryLibraryRegis
 {
     public DirectoryLibraryRegistrationService(RepositoryFactory repositoryFactory,
                                                DirectoryRootValidator rootValidator,
-                                               TimeProvider timeProvider)
+                                               TimeProvider timeProvider,
+                                               ILibraryIngestionModeLeaseManager modeLeaseManager)
     {
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(rootValidator);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(modeLeaseManager);
         mRepositoryFactory = repositoryFactory;
         mRootValidator = rootValidator;
         mTimeProvider = timeProvider;
+        mModeLeaseManager = modeLeaseManager;
     }
 
     private readonly RepositoryFactory mRepositoryFactory;
     private readonly DirectoryRootValidator mRootValidator;
     private readonly TimeProvider mTimeProvider;
+    private readonly ILibraryIngestionModeLeaseManager mModeLeaseManager;
 
     public async Task<DirectoryRegistrationResult> RegisterAsync(DirectoryRegistrationRequest request,
                                                                  string? profile,
@@ -47,15 +51,117 @@ public sealed class DirectoryLibraryRegistrationService : IDirectoryLibraryRegis
         }
         else
         {
-            var definition = CreateDefinition(request, validation.CanonicalRoot);
-            var sources = mRepositoryFactory.GetSourceDocumentRepository(profile);
+            result = await RegisterValidatedAsync(request, profile, validation.CanonicalRoot, ct);
+        }
+
+        return result;
+    }
+
+    private async Task<DirectoryRegistrationResult> RegisterValidatedAsync(DirectoryRegistrationRequest request,
+                                                                            string? profile,
+                                                                            string canonicalRoot,
+                                                                            CancellationToken ct)
+    {
+        ILibraryIngestionModeLease? modeLease = await mModeLeaseManager.TryAcquireAsync(
+                                                    profile,
+                                                    request.LibraryId,
+                                                    LibraryIngestionMode.Directory,
+                                                    ct);
+        DirectoryRegistrationResult result;
+        if (modeLease == null)
+        {
+            result = FailedModeConflict(request.LibraryId);
+        }
+        else
+        {
+            await using(modeLease)
+            {
+                using CancellationTokenSource operation =
+                    CancellationTokenSource.CreateLinkedTokenSource(ct, modeLease.OwnershipLostToken);
+                result = await RegisterUnderModeLeaseAsync(request,
+                                                           profile,
+                                                           canonicalRoot,
+                                                           modeLease,
+                                                           operation.Token);
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<DirectoryRegistrationResult> RegisterUnderModeLeaseAsync(
+        DirectoryRegistrationRequest request,
+        string? profile,
+        string canonicalRoot,
+        ILibraryIngestionModeLease modeLease,
+        CancellationToken ct)
+    {
+        var sources = mRepositoryFactory.GetSourceDocumentRepository(profile);
+        var modes = mRepositoryFactory.GetLibraryIngestionModeRepository(profile);
+        DirectoryLibraryDefinition? existingDefinition =
+            await sources.GetDirectoryDefinitionAsync(request.LibraryId, ct);
+        LibraryIngestionDataEvidence? evidence =
+            modeLease.OwnershipStateAtAcquisition == LibraryIngestionOwnershipState.Reserved &&
+            existingDefinition == null
+                ? await modes.GetLibraryDataEvidenceAsync(request.LibraryId, ct)
+                : null;
+        DirectoryRegistrationResult result;
+        if (evidence is { HasOwnedContent: true } ownedEvidence)
+        {
+            result = await ReconcileOwnedContentAsync(request.LibraryId,
+                                                      ownedEvidence,
+                                                      modeLease,
+                                                      ct);
+        }
+        else
+        {
+            bool renewed = await modeLease.TryRenewAsync(ct);
+            if (!renewed)
+                throw new InvalidOperationException(ModeLeaseLostDetail);
+
+            var definition = CreateDefinition(request, canonicalRoot);
             await sources.RegisterDirectoryDefinitionAsync(definition, ct);
+            bool committed = await modeLease.TryCommitAsync(ct);
+            if (!committed)
+                throw new InvalidOperationException(ModeLeaseLostDetail);
             result = new DirectoryRegistrationResult(DirectoryRegistrationStatuses.Registered,
                                                      request.LibraryId);
         }
 
         return result;
     }
+
+    private static async Task<DirectoryRegistrationResult> ReconcileOwnedContentAsync(
+        string libraryId,
+        LibraryIngestionDataEvidence evidence,
+        ILibraryIngestionModeLease modeLease,
+        CancellationToken ct)
+    {
+        if (evidence.HasDirectoryDefinition)
+        {
+            bool committed = await modeLease.TryCommitAsync(ct);
+            if (!committed)
+                throw new InvalidOperationException(ModeLeaseLostDetail);
+        }
+        else
+        {
+            if (evidence.HasLibraryRecord)
+            {
+                bool reconciled = await modeLease.TryReconcileReservedModeAsync(LibraryIngestionMode.Web, ct);
+                if (!reconciled)
+                    throw new InvalidOperationException(ModeLeaseLostDetail);
+            }
+        }
+
+        DirectoryRegistrationResult result = FailedModeConflict(libraryId);
+        return result;
+    }
+
+    private static DirectoryRegistrationResult FailedModeConflict(string libraryId) =>
+        new(DirectoryRegistrationStatuses.Failed,
+            libraryId,
+            ModeConflictReasonCode,
+            ModeConflictDetail);
 
     private DirectoryLibraryDefinition CreateDefinition(DirectoryRegistrationRequest request,
                                                          string canonicalRoot) =>
@@ -108,4 +214,9 @@ public sealed class DirectoryLibraryRegistrationService : IDirectoryLibraryRegis
                      .ToList();
         return result;
     }
+
+    private const string ModeConflictReasonCode = "LIBRARY_INGESTION_MODE_CONFLICT";
+    private const string ModeConflictDetail =
+        "The library identifier is already owned by web ingestion or another lifecycle operation.";
+    private const string ModeLeaseLostDetail = "The directory registration no longer owns its ingestion-mode lease.";
 }

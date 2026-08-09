@@ -312,12 +312,40 @@ public sealed class DocumentLinkRoutingTests
             CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<DirectoryLibraryDefinition>>([]);
 
-        public Task<bool> TryUpdateDirectoryPublicationAsync(string libraryId,
-                                                              long registrationRevision,
+        public Task<IDirectoryPublicationLease?> TryAcquireDirectoryPublicationLeaseAsync(
+            string libraryId,
+            long registrationRevision,
+            string? registrationIncarnationId,
+            string scanRunId,
+            string? expectedPublishedVersion,
+            CancellationToken ct = default) =>
+            Task.FromResult<IDirectoryPublicationLease?>(null);
+
+        public Task<bool> TryUpdateDirectoryPublicationAsync(IDirectoryPublicationLease lease,
                                                               string? expectedPublishedVersion,
                                                               DateTime? publishedAtUtc,
                                                               string? publishedVersion,
                                                               CancellationToken ct = default) =>
+            Task.FromResult(true);
+
+        public Task<bool> TryApplyDirectoryPackagePublicationAsync(
+            IDirectoryPublicationLease lease,
+            string? expectedPublishedVersion,
+            DirectoryLibraryDefinition packageDefinition,
+            DateTime publishedAtUtc,
+            string publishedVersion,
+            CancellationToken ct = default) =>
+            Task.FromResult(true);
+
+        public Task<bool> TryRestoreDirectoryPublicationAsync(IDirectoryPublicationLease lease,
+                                                               string failedPublishedVersion,
+                                                               DateTime? restoredPublishedAtUtc,
+                                                               string? restoredPublishedVersion,
+                                                               CancellationToken ct = default) =>
+            Task.FromResult(true);
+
+        public Task<bool> TryDeleteLeasedDirectoryDefinitionAsync(IDirectoryPublicationLease lease,
+                                                                   CancellationToken ct = default) =>
             Task.FromResult(true);
 
         public Task<SourceDocumentRecord> GetOrCreateDocumentAsync(SourceDocumentRecord candidate,
@@ -396,6 +424,11 @@ public sealed class DocumentLinkRoutingTests
 
         public Task<bool> DeleteRevisionAsync(string revisionId, CancellationToken ct = default) =>
             Task.FromResult(mRevisions.TryRemove(revisionId, out _));
+
+        public Task<DocumentArtifactRecoveryResult> RecoverArtifactClaimsAsync(
+            DateTime utcNow,
+            CancellationToken ct = default) =>
+            Task.FromResult(new DocumentArtifactRecoveryResult(0, 0, 0));
 
         public Task<long> DeleteCandidateScanRunAsync(string libraryId,
                                                       string scanRunId,

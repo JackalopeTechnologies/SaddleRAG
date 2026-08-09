@@ -33,6 +33,26 @@ public interface IJobRepository
     Task<JobRecord?> GetAsync(string jobId, CancellationToken ct = default);
 
     /// <summary>
+    ///     Lists every durable queued job of one type whose stored database
+    ///     profile exactly matches <paramref name="profile" />, oldest first.
+    /// </summary>
+    Task<IReadOnlyList<JobRecord>> ListQueuedAsync(JobType jobType,
+                                                   string? profile,
+                                                   CancellationToken ct = default);
+
+    /// <summary>
+    ///     Atomically transitions one exactly-profiled queued job to Running
+    ///     and returns the claimed durable record. Returns null when another
+    ///     dispatcher already claimed it or the row no longer matches.
+    /// </summary>
+    Task<JobRecord?> TryClaimQueuedAsync(string jobId,
+                                         JobType jobType,
+                                         string? profile,
+                                         string executionClaimId,
+                                         DateTime startedAt,
+                                         CancellationToken ct = default);
+
+    /// <summary>
     ///     Lists the most recently created jobs, optionally filtered by
     ///     <paramref name="jobType" />, sorted by
     ///     <see cref="JobRecord.CreatedAt" /> descending.
@@ -87,6 +107,18 @@ public interface IJobRepository
                                 string? version,
                                 DateTime? completedBefore,
                                 CancellationToken ct = default);
+
+    /// <summary>
+    ///     Deletes jobs matching the provided filter while retaining one exact job id.
+    ///     The filter follows <see cref="DeleteManyAsync" /> and still refuses all-null criteria.
+    /// </summary>
+    Task<long> DeleteManyExceptAsync(JobType? jobType,
+                                     JobStatus? status,
+                                     string? libraryId,
+                                     string? version,
+                                     DateTime? completedBefore,
+                                     string excludedJobId,
+                                     CancellationToken ct = default);
 
     /// <summary>
     ///     Counts jobs that would match

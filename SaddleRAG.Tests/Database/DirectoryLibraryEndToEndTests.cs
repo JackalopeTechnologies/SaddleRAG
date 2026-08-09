@@ -8,6 +8,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -278,10 +280,13 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CatalogCleanupDeletesOnlyScanOwnedTaxonomiesWithoutPublishedReferences()
+    public async Task CatalogCleanupDeletesOnlyScanOwnedCandidatesWithoutAnyReferences()
     {
         ISubjectCatalogRepository catalogs = mFactory.GetSubjectCatalogRepository(profile: null);
-        await catalogs.InsertRevisionAsync(Catalog("scan-published", "taxonomy-000001", revision: 1),
+        await catalogs.InsertRevisionAsync(Catalog("scan-published",
+                                                    "taxonomy-000001",
+                                                    revision: 1,
+                                                    SubjectCatalogPublicationState.Published),
                                            TestContext.Current.CancellationToken);
         await catalogs.InsertRevisionAsync(Catalog("scan-candidate", "taxonomy-000002", revision: 2),
                                            TestContext.Current.CancellationToken);
@@ -307,17 +312,214 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
         Assert.NotNull(await catalogs.GetAsync(LibraryId,
                                                "taxonomy-000001",
                                                TestContext.Current.CancellationToken));
-
         long deletedWithTarget = await catalogs.DeleteCandidateScanRunAsync(
                                      LibraryId,
                                      "scan-published",
                                      deletingVersion: FirstVersion,
                                      ct: TestContext.Current.CancellationToken);
 
-        Assert.Equal(1, deletedWithTarget);
+        Assert.Equal(0, deletedWithTarget);
+        Assert.NotNull(await catalogs.GetAsync(LibraryId,
+                                               "taxonomy-000001",
+                                               TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task FailedScanRollbackRemovesItsPromotedCatalogAndPreservesThePreviousPublishedCatalog()
+    {
+        ISubjectCatalogRepository catalogs = mFactory.GetSubjectCatalogRepository(profile: null);
+        SubjectCatalogRecord previous = Catalog("scan-previous",
+                                                "taxonomy-000001",
+                                                revision: 1,
+                                                SubjectCatalogPublicationState.Published);
+        await catalogs.InsertRevisionAsync(previous, TestContext.Current.CancellationToken);
+        await catalogs.InsertRevisionAsync(Catalog("scan-failed", "taxonomy-000002", revision: 2),
+                                           TestContext.Current.CancellationToken);
+        await Libraries.UpsertVersionAsync(PublishedVersion(FirstVersion, previous.TaxonomyVersion),
+                                           TestContext.Current.CancellationToken);
+        await Libraries.UpsertVersionAsync(PublishedVersion(SecondVersion, "taxonomy-000002"),
+                                           TestContext.Current.CancellationToken);
+        Assert.True(await catalogs.TryPublishCandidateAsync(LibraryId,
+                                                             "taxonomy-000002",
+                                                             "scan-failed",
+                                                             TestContext.Current.CancellationToken));
+        SubjectCatalogRecord promoted = Assert.IsType<SubjectCatalogRecord>(
+            await catalogs.GetLatestAsync(LibraryId, TestContext.Current.CancellationToken));
+
+        Assert.False(await catalogs.TryRollbackCandidatePublicationAsync(
+                         LibraryId,
+                         previous.TaxonomyVersion,
+                         "scan-failed",
+                         TestContext.Current.CancellationToken));
+        bool rolledBack = await catalogs.TryRollbackCandidatePublicationAsync(
+                              LibraryId,
+                              "taxonomy-000002",
+                              "scan-failed",
+                              TestContext.Current.CancellationToken);
+        SubjectCatalogRecord restored = Assert.IsType<SubjectCatalogRecord>(
+            await catalogs.GetLatestAsync(LibraryId, TestContext.Current.CancellationToken));
+        SubjectCatalogRecord rolledBackCandidate = Assert.IsType<SubjectCatalogRecord>(
+            await catalogs.GetAsync(LibraryId,
+                                    "taxonomy-000002",
+                                    TestContext.Current.CancellationToken));
+        long deleted = await catalogs.DeleteCandidateScanRunAsync(LibraryId,
+                                                                   "scan-failed",
+                                                                   deletingVersion: SecondVersion,
+                                                                   ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal("taxonomy-000002", promoted.TaxonomyVersion);
+        Assert.True(rolledBack);
+        Assert.Equal(SubjectCatalogPublicationState.Candidate,
+                     rolledBackCandidate.PublicationState);
+        Assert.Equal(1, deleted);
         Assert.Null(await catalogs.GetAsync(LibraryId,
-                                            "taxonomy-000001",
+                                            "taxonomy-000002",
                                             TestContext.Current.CancellationToken));
+        Assert.Equal(previous.Id, restored.Id);
+        Assert.Equal(previous.ScanRunId, restored.ScanRunId);
+        Assert.Equal(previous.TaxonomyVersion, restored.TaxonomyVersion);
+        Assert.Equal(previous.Revision, restored.Revision);
+        Assert.Equal(SubjectCatalogPublicationState.Published, restored.PublicationState);
+    }
+
+    [Fact]
+    public async Task CandidateCatalogIsInvisibleUntilItsExactOwnerPublishesIt()
+    {
+        ISubjectCatalogRepository catalogs = mFactory.GetSubjectCatalogRepository(profile: null);
+        await catalogs.InsertRevisionAsync(Catalog("scan-published",
+                                                    "taxonomy-000001",
+                                                    revision: 1,
+                                                    SubjectCatalogPublicationState.Published),
+                                           TestContext.Current.CancellationToken);
+        await catalogs.InsertRevisionAsync(Catalog("scan-candidate", "taxonomy-000002", revision: 2),
+                                           TestContext.Current.CancellationToken);
+
+        SubjectCatalogRecord before = Assert.IsType<SubjectCatalogRecord>(
+            await catalogs.GetLatestAsync(LibraryId, TestContext.Current.CancellationToken));
+        bool wrongOwner = await catalogs.TryPublishCandidateAsync(LibraryId,
+                                                                   "taxonomy-000002",
+                                                                   "other-scan",
+                                                                   TestContext.Current.CancellationToken);
+        bool published = await catalogs.TryPublishCandidateAsync(LibraryId,
+                                                                  "taxonomy-000002",
+                                                                  "scan-candidate",
+                                                                  TestContext.Current.CancellationToken);
+        SubjectCatalogRecord after = Assert.IsType<SubjectCatalogRecord>(
+            await catalogs.GetLatestAsync(LibraryId, TestContext.Current.CancellationToken));
+
+        Assert.Equal("taxonomy-000001", before.TaxonomyVersion);
+        Assert.False(wrongOwner);
+        Assert.True(published);
+        Assert.Equal("taxonomy-000002", after.TaxonomyVersion);
+        Assert.Equal(SubjectCatalogPublicationState.Published, after.PublicationState);
+    }
+
+    [Fact]
+    public async Task LegacyCatalogWithoutPublicationStateRemainsVisibleAndPublicationCompatible()
+    {
+        ISubjectCatalogRepository catalogs = mFactory.GetSubjectCatalogRepository(profile: null);
+        SubjectCatalogRecord legacy = Catalog("scan-legacy",
+                                               "taxonomy-000001",
+                                               revision: 1,
+                                               SubjectCatalogPublicationState.Published);
+        BsonDocument rawLegacy = legacy.ToBsonDocument();
+        rawLegacy.Remove(nameof(SubjectCatalogRecord.PublicationState));
+        IMongoCollection<BsonDocument> rawCatalogs =
+            mContext.Database.GetCollection<BsonDocument>("subjectCatalogs");
+        await rawCatalogs.InsertOneAsync(rawLegacy,
+                                         cancellationToken: TestContext.Current.CancellationToken);
+        await catalogs.InsertRevisionAsync(Catalog("scan-candidate", "taxonomy-000002", revision: 2),
+                                           TestContext.Current.CancellationToken);
+
+        SubjectCatalogRecord latest = Assert.IsType<SubjectCatalogRecord>(
+            await catalogs.GetLatestAsync(LibraryId, TestContext.Current.CancellationToken));
+        bool publicationCompatible = await catalogs.TryPublishCandidateAsync(
+                                         LibraryId,
+                                         legacy.TaxonomyVersion,
+                                         "different-scan",
+                                         TestContext.Current.CancellationToken);
+        FilterDefinition<BsonDocument> legacyFilter = Builders<BsonDocument>.Filter.Eq("_id", legacy.Id);
+        BsonDocument persisted = await rawCatalogs.Find(legacyFilter)
+                                                   .SingleAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(legacy.TaxonomyVersion, latest.TaxonomyVersion);
+        Assert.Equal(SubjectCatalogPublicationState.Published, latest.PublicationState);
+        Assert.True(publicationCompatible);
+        Assert.False(persisted.Contains(nameof(SubjectCatalogRecord.PublicationState)));
+    }
+
+    [Fact]
+    public async Task CandidatePromotionAndCleanupCannotPublishAMissingCatalog()
+    {
+        ISubjectCatalogRepository catalogs = mFactory.GetSubjectCatalogRepository(profile: null);
+        await catalogs.InsertRevisionAsync(Catalog("scan-race", "taxonomy-000001", revision: 1),
+                                           TestContext.Current.CancellationToken);
+
+        Task<bool> promotion = catalogs.TryPublishCandidateAsync(LibraryId,
+                                                                  "taxonomy-000001",
+                                                                  "scan-race",
+                                                                  TestContext.Current.CancellationToken);
+        Task<long> cleanup = catalogs.DeleteCandidateScanRunAsync(LibraryId,
+                                                                   "scan-race",
+                                                                   deletingVersion: null,
+                                                                   ct: TestContext.Current.CancellationToken);
+        bool promotionSucceeded = await promotion;
+        long deleted = await cleanup;
+        SubjectCatalogRecord? stored = await catalogs.GetAsync(LibraryId,
+                                                                "taxonomy-000001",
+                                                                TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(promotionSucceeded, deleted == 1);
+        if (promotionSucceeded)
+        {
+            Assert.NotNull(stored);
+            Assert.Equal(SubjectCatalogPublicationState.Published, stored.PublicationState);
+        }
+        else
+        {
+            Assert.Null(stored);
+        }
+    }
+
+    [Fact]
+    public async Task CatalogCleanupDefersForBuildingVersionsAndKeepsAssignmentReferences()
+    {
+        ISubjectCatalogRepository catalogs = mFactory.GetSubjectCatalogRepository(profile: null);
+        ISubjectAssignmentRepository assignments = mFactory.GetSubjectAssignmentRepository(profile: null);
+        await catalogs.InsertRevisionAsync(Catalog("scan-protected", "taxonomy-000003", revision: 3),
+                                           TestContext.Current.CancellationToken);
+        await catalogs.InsertRevisionAsync(Catalog("scan-protected", "taxonomy-000004", revision: 4),
+                                           TestContext.Current.CancellationToken);
+        await Libraries.UpsertVersionAsync(PublishedVersion("building-version", "taxonomy-000003") with
+                                               {
+                                                   PublicationState = VersionPublicationState.Building
+                                               },
+                                           TestContext.Current.CancellationToken);
+        await assignments.PersistAsync(Assignment("assignment-version", "taxonomy-000004"),
+                                       TestContext.Current.CancellationToken);
+
+        long deferred = await catalogs.DeleteCandidateScanRunAsync(
+                            LibraryId,
+                            "scan-protected",
+                            deletingVersion: null,
+                            ct: TestContext.Current.CancellationToken);
+        await Libraries.DeleteVersionAsync(LibraryId,
+                                           "building-version",
+                                           TestContext.Current.CancellationToken);
+        long deletedAfterBuild = await catalogs.DeleteCandidateScanRunAsync(
+                                     LibraryId,
+                                     "scan-protected",
+                                     deletingVersion: null,
+                                     ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, deferred);
+        Assert.Equal(1, deletedAfterBuild);
+        Assert.Null(await catalogs.GetAsync(LibraryId,
+                                            "taxonomy-000003",
+                                            TestContext.Current.CancellationToken));
+        Assert.NotNull(await catalogs.GetAsync(LibraryId,
+                                               "taxonomy-000004",
+                                               TestContext.Current.CancellationToken));
     }
 
     private ILibraryRepository Libraries => mFactory.GetLibraryRepository(profile: null);
@@ -377,13 +579,18 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
                                                          TestContext.Current.CancellationToken));
     }
 
-    private static SubjectCatalogRecord Catalog(string scanRunId, string taxonomyVersion, int revision) => new()
+    private static SubjectCatalogRecord Catalog(
+        string scanRunId,
+        string taxonomyVersion,
+        int revision,
+        SubjectCatalogPublicationState publicationState = SubjectCatalogPublicationState.Candidate) => new()
         {
             Id = SubjectCatalogRepository.MakeId(LibraryId, taxonomyVersion),
             LibraryId = LibraryId,
             Revision = revision,
             TaxonomyVersion = taxonomyVersion,
             ScanRunId = scanRunId,
+            PublicationState = publicationState,
             Concepts = [],
             Provenance = new SubjectClassifierProvenance
                              {
@@ -408,6 +615,24 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
             EmbeddingDimensions = 2,
             SubjectTaxonomyVersion = taxonomyVersion,
             PublicationState = VersionPublicationState.Published
+        };
+
+    private static SubjectAssignmentRecord Assignment(string version, string taxonomyVersion) => new()
+        {
+            Id = SubjectAssignmentRepository.MakeId(LibraryId, version, $"revision-{version}"),
+            LibraryId = LibraryId,
+            Version = version,
+            ScanRunId = $"scan-{version}",
+            DocumentId = $"document-{version}",
+            DocumentRevisionId = $"revision-{version}",
+            TaxonomyVersion = taxonomyVersion,
+            Primary = new SubjectSelection
+                          {
+                              SubjectId = "subject",
+                              Confidence = 1.0f
+                          },
+            NeedsReview = false,
+            Provenance = Catalog("assignment", taxonomyVersion, revision: 1).Provenance
         };
 
     private static void AssertReusedEmbeddings(IReadOnlyList<DocChunk> prior,
@@ -556,16 +781,25 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
         public Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
-            string response = prompt.Contains(SubjectCatalogPrompt.PromptVersion, StringComparison.Ordinal)
-                                  ? CatalogResponse
+            bool catalogPrompt = prompt.Contains(SubjectCatalogPrompt.PromptVersion, StringComparison.Ordinal);
+            string response = catalogPrompt
+                                  ? CatalogResponse(prompt)
                                   : AssignmentResponse;
             return Task.FromResult(response);
         }
 
-        private const string CatalogResponse =
+        private static string CatalogResponse(string prompt) =>
+            prompt.Contains(SubjectId, StringComparison.Ordinal)
+                ? ExistingCatalogResponse
+                : NewCatalogResponse;
+
+        private const string NewCatalogResponse =
             "{\"concepts\":[{\"subjectId\":null,\"label\":\"Owned manuals\",\"aliases\":[\"manual\"],\"description\":\"Owned manual fixture documents.\"}]}";
+        private const string ExistingCatalogResponse =
+            "{\"concepts\":[{\"subjectId\":\"subject-owned-manuals\",\"label\":\"Owned manuals\",\"aliases\":[\"manual\"],\"description\":\"Owned manual fixture documents.\"}]}";
         private const string AssignmentResponse =
             "{\"primary\":{\"subjectId\":\"subject-owned-manuals\",\"confidence\":0.99,\"evidence\":[\"owned manual fixture\"]},\"secondary\":[]}";
+        private const string SubjectId = "subject-owned-manuals";
     }
 
     private sealed class FixedSubjectIdGenerator : ISubjectIdGenerator

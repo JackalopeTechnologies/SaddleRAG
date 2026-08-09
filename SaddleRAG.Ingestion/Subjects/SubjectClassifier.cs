@@ -41,19 +41,15 @@ public sealed class SubjectClassifier : ISubjectClassifier
             throw new ArgumentException("The subject catalog cannot be empty.", nameof(catalog));
 
         string prompt = SubjectClassificationPrompt.Build(descriptor, catalog);
-        string responseText = await mGenerator.GenerateAsync(prompt, ct);
-        SubjectClassificationResponse response = SubjectJson.Deserialize<SubjectClassificationResponse>(responseText);
-        if (response.Primary == null)
-            throw new InvalidDataException("The subject classifier response requires one primary subject.");
-        if (response.Secondary is { Count: > SubjectClassificationLimits.MaxSecondarySubjects })
-            throw new InvalidDataException($"At most {SubjectClassificationLimits.MaxSecondarySubjects} secondary subjects are allowed.");
-
         var knownIds = catalog.Concepts.Select(concept => concept.Id).ToHashSet(StringComparer.Ordinal);
-        SubjectSelection primary = ValidateSelection(response.Primary, knownIds);
-        var secondary = (response.Secondary ?? []).Select(selection => ValidateSelection(selection, knownIds)).ToList();
-        var selectedIds = new HashSet<string>(StringComparer.Ordinal);
-        if (!selectedIds.Add(primary.SubjectId) || secondary.Any(selection => !selectedIds.Add(selection.SubjectId)))
-            throw new InvalidDataException("Primary and secondary subject ids must be unique.");
+        ValidatedClassification validated =
+            await SubjectResponseGenerator.GenerateValidatedAsync<SubjectClassificationResponse,
+                ValidatedClassification>(mGenerator,
+                                         prompt,
+                                         response => ValidateResponse(response, knownIds),
+                                         ct);
+        SubjectSelection primary = validated.Primary;
+        List<SubjectSelection> secondary = validated.Secondary;
 
         var assignment = new SubjectAssignmentRecord
                              {
@@ -84,11 +80,31 @@ public sealed class SubjectClassifier : ISubjectClassifier
         return assignment;
     }
 
-    private static SubjectSelection ValidateSelection(SubjectSelectionResponse response,
+    private static ValidatedClassification ValidateResponse(SubjectClassificationResponse response,
+                                                            IReadOnlySet<string> knownIds)
+    {
+        if (response.Primary == null)
+            throw new InvalidDataException("The subject classifier response requires one primary subject.");
+        if (response.Secondary is { Count: > SubjectClassificationLimits.MaxSecondarySubjects })
+            throw new InvalidDataException($"At most {SubjectClassificationLimits.MaxSecondarySubjects} secondary subjects are allowed.");
+
+        SubjectSelection primary = ValidateSelection(response.Primary, knownIds);
+        var secondary = (response.Secondary ?? []).Select(selection => ValidateSelection(selection, knownIds)).ToList();
+        var selectedIds = new HashSet<string>(StringComparer.Ordinal);
+        if (!selectedIds.Add(primary.SubjectId) || secondary.Any(selection => !selectedIds.Add(selection.SubjectId)))
+            throw new InvalidDataException("Primary and secondary subject ids must be unique.");
+
+        var result = new ValidatedClassification(primary, secondary);
+        return result;
+    }
+
+    private static SubjectSelection ValidateSelection(SubjectSelectionResponse? response,
                                                       IReadOnlySet<string> knownIds)
     {
+        if (response == null)
+            throw new InvalidDataException("Subject selections cannot be null.");
         if (string.IsNullOrWhiteSpace(response.SubjectId) || !knownIds.Contains(response.SubjectId))
-            throw new InvalidDataException($"The classifier returned unknown subject id '{response.SubjectId}'.");
+            throw new InvalidDataException("The subject classifier selected an id outside the published catalog.");
         if (!float.IsFinite(response.Confidence) || response.Confidence is < 0f or > 1f)
             throw new InvalidDataException("Subject confidence must be between 0 and 1.");
 
@@ -122,7 +138,7 @@ public sealed class SubjectClassifier : ISubjectClassifier
     {
         public SubjectSelectionResponse? Primary { get; init; }
 
-        public IReadOnlyList<SubjectSelectionResponse>? Secondary { get; init; }
+        public IReadOnlyList<SubjectSelectionResponse?>? Secondary { get; init; }
     }
 
     private sealed record SubjectSelectionResponse
@@ -133,4 +149,7 @@ public sealed class SubjectClassifier : ISubjectClassifier
 
         public IReadOnlyList<string>? Evidence { get; init; }
     }
+
+    private sealed record ValidatedClassification(SubjectSelection Primary,
+                                                  List<SubjectSelection> Secondary);
 }

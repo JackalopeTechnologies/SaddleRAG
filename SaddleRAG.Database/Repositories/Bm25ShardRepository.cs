@@ -163,11 +163,23 @@ public class Bm25ShardRepository : IBm25ShardRepository
     public async Task<string> UploadGridFsBlobAsync(Stream content, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(content);
-        var id = await mContext.Bm25Bucket.UploadFromStreamAsync(
-            filename: $"bm25-{Guid.NewGuid():N}.bin",
-            source: content,
-            cancellationToken: ct);
-        return id.ToString();
+        string result = ObjectId.GenerateNewId().ToString();
+        await UploadGridFsBlobAsync(result, content, ct);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task UploadGridFsBlobAsync(string gridFsId,
+                                            Stream content,
+                                            CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(gridFsId);
+        ArgumentNullException.ThrowIfNull(content);
+        ObjectId id = ObjectId.Parse(gridFsId);
+        await mContext.Bm25Bucket.UploadFromStreamAsync(id,
+                                                        $"bm25-{id}.bin",
+                                                        content,
+                                                        cancellationToken: ct);
     }
 
     /// <inheritdoc />

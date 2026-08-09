@@ -9,4 +9,5 @@ namespace SaddleRAG.Ingestion.Scanning;
 public sealed record DirectoryRootValidationResult(bool Succeeded,
                                                    string CanonicalRoot,
                                                    string ReasonCode,
-                                                   string Detail);
+                                                   string Detail,
+                                                   DirectoryEntrySnapshot? Snapshot = null);

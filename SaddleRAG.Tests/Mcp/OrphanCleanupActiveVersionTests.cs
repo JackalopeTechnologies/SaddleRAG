@@ -90,6 +90,12 @@ public sealed class OrphanCleanupActiveVersionTests
         var bm25 = Substitute.For<IBm25ShardRepository>();
         var excluded = Substitute.For<IExcludedSymbolsRepository>();
         var audit = Substitute.For<IScrapeAuditRepository>();
+        var diffs = Substitute.For<IDiffRepository>();
+        var sources = Substitute.For<ISourceDocumentRepository>();
+        var catalogs = Substitute.For<ISubjectCatalogRepository>();
+        var assignments = Substitute.For<ISubjectAssignmentRepository>();
+        var projectProfiles = Substitute.For<IProjectProfileRepository>();
+        var modes = Substitute.For<ILibraryIngestionModeRepository>();
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraries);
         factory.GetJobRepository(Arg.Any<string?>()).Returns(jobs);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pages);
@@ -99,7 +105,65 @@ public sealed class OrphanCleanupActiveVersionTests
         factory.GetBm25ShardRepository(Arg.Any<string?>()).Returns(bm25);
         factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excluded);
         factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(audit);
+        factory.GetDiffRepository(Arg.Any<string?>()).Returns(diffs);
+        factory.GetSourceDocumentRepository(Arg.Any<string?>()).Returns(sources);
+        factory.GetSubjectCatalogRepository(Arg.Any<string?>()).Returns(catalogs);
+        factory.GetSubjectAssignmentRepository(Arg.Any<string?>()).Returns(assignments);
+        factory.GetProjectProfileRepository(Arg.Any<string?>()).Returns(projectProfiles);
+        factory.GetLibraryIngestionModeRepository(Arg.Any<string?>()).Returns(modes);
+        modes.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns((LibraryIngestionModeRecord?)null);
+        modes.GetLibraryDataEvidenceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false, false, false, true, false));
+        modes.TryAcquireAsync(Arg.Any<string>(),
+                              Arg.Any<LibraryIngestionMode>(),
+                              Arg.Any<string>(),
+                              Arg.Any<DateTime>(),
+                              Arg.Any<DateTime>(),
+                              Arg.Any<CancellationToken>())
+             .Returns(call => new LibraryIngestionModeRecord
+                                  {
+                                      Id = call.ArgAt<string>(0),
+                                      Mode = call.ArgAt<LibraryIngestionMode>(1),
+                                      OwnershipState = LibraryIngestionOwnershipState.Reserved,
+                                      LeaseOwnerToken = call.ArgAt<string>(2),
+                                      LeaseExpiresAtUtc = call.ArgAt<DateTime>(4),
+                                      ReservedAtUtc = call.ArgAt<DateTime>(3),
+                                      UpdatedAtUtc = call.ArgAt<DateTime>(3)
+                                  });
+        modes.TryRenewAsync(Arg.Any<string>(),
+                            Arg.Any<LibraryIngestionMode>(),
+                            Arg.Any<string>(),
+                            Arg.Any<DateTime>(),
+                            Arg.Any<DateTime>(),
+                            Arg.Any<CancellationToken>())
+             .Returns(true);
+        modes.TryCommitAsync(Arg.Any<string>(),
+                             Arg.Any<LibraryIngestionMode>(),
+                             Arg.Any<string>(),
+                             Arg.Any<DateTime>(),
+                             Arg.Any<CancellationToken>())
+             .Returns(true);
+        modes.TryReleaseAsync(Arg.Any<string>(),
+                              Arg.Any<LibraryIngestionMode>(),
+                              Arg.Any<string>(),
+                              Arg.Any<DateTime>(),
+                              Arg.Any<CancellationToken>())
+             .Returns(true);
+        modes.TryDeleteOwnershipAsync(Arg.Any<string>(),
+                                      Arg.Any<LibraryIngestionMode>(),
+                                      Arg.Any<string>(),
+                                      Arg.Any<CancellationToken>())
+             .Returns(true);
         libraries.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryRecord>());
+        libraries.GetVersionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                 .Returns(Array.Empty<LibraryVersionRecord>());
+        libraries.DeleteVersionAsync(Arg.Any<string>(),
+                                     Arg.Any<string>(),
+                                     Arg.Any<CancellationToken>())
+                 .Returns(new DeleteVersionResult(VersionsDeleted: 0,
+                                                  LibraryRowDeleted: false,
+                                                  CurrentVersionRepointedTo: null));
         libraries.GetVersionsByPublicationStateAsync(VersionPublicationState.Building,
                                                      Arg.Any<CancellationToken>())
                  .Returns(Array.Empty<LibraryVersionRecord>());
@@ -111,6 +175,12 @@ public sealed class OrphanCleanupActiveVersionTests
         bm25.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryVersionKey>());
         excluded.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryVersionKey>());
         audit.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LibraryVersionKey>());
+        diffs.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+             .Returns(Array.Empty<LibraryVersionKey>());
+        sources.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+               .Returns(Array.Empty<LibraryVersionKey>());
+        sources.GetRevisionsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+               .Returns(Array.Empty<DocumentRevisionRecord>());
         return new Fixture(factory, libraries, jobs, pages);
     }
 

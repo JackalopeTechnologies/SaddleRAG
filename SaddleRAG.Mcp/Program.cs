@@ -18,6 +18,7 @@ using MudBlazor.Services;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
@@ -42,7 +43,6 @@ using SaddleRAG.Mcp.Monitor;
 using SaddleRAG.Mcp.Tools;
 using SaddleRAG.Monitor.Pages;
 using SaddleRAG.Monitor.Services;
-using SaddleRAG.Database.Repositories;
 using SaddleRAG.Packaging;
 using Serilog;
 using Serilog.Core;
@@ -209,30 +209,11 @@ builder.Services.AddHostedService<McpWarmupService>();
 builder.Services.AddSaddleRagDatabase(builder.Configuration);
 
 // Packaging services — CollectionCompactor is shared between compact_collections MCP tool
-// and the import_library compact opt-in. LibraryExporter and LibraryImporter are registered
-// here in anticipation of the export_library / import_library MCP tools (Task 22).
+// and the import_library compact opt-in. LibraryImporterFactory creates an importer whose
+// repositories all belong to the profile selected by the MCP request.
 builder.Services.AddSingleton<ICollectionCompactor, CollectionCompactor>();
 builder.Services.AddSingleton<LibraryExporter>();
-builder.Services.AddSingleton<LibraryImporter>(sp =>
-{
-    var factory = sp.GetRequiredService<RepositoryFactory>();
-    return new LibraryImporter(
-        sp.GetRequiredService<ILibraryRepository>(),
-        sp.GetRequiredService<IJobRepository>(),
-        sp.GetRequiredService<IEmbeddingProvider>(),
-        sp.GetRequiredService<ILibraryProfileRepository>(),
-        sp.GetRequiredService<ILibraryIndexRepository>(),
-        sp.GetRequiredService<IExcludedSymbolsRepository>(),
-        sp.GetRequiredService<IDiffRepository>(),
-        sp.GetRequiredService<IPageRepository>(),
-        sp.GetRequiredService<IChunkRepository>(),
-        sp.GetRequiredService<IBm25ShardRepository>(),
-        sp.GetRequiredService<ISourceDocumentRepository>(),
-        sp.GetRequiredService<ISubjectCatalogRepository>(),
-        sp.GetRequiredService<ISubjectAssignmentRepository>(),
-        sp.GetRequiredService<ICollectionCompactor>(),
-        profile => factory.GetDatabase(profile));
-});
+builder.Services.AddSingleton<LibraryImporterFactory>();
 
 // Ollama configuration
 
@@ -397,6 +378,8 @@ builder.Services.AddSingleton<JobCancellationService>();
 // Reembed service and background job runner (consumed by reembed_library MCP tool)
 builder.Services.AddSingleton<ReembedService>();
 builder.Services.AddSingleton<ReembedJobRunner>();
+builder.Services.AddSingleton<IReembedJobDispatcher>(sp => sp.GetRequiredService<ReembedJobRunner>());
+builder.Services.AddSingleton<QueuedReembedJobRecovery>();
 
 builder.Services.AddSingleton<BackgroundJobRunner>();
 builder.Services.AddSingleton<IBackgroundJobRunner>(sp =>
@@ -432,7 +415,8 @@ builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
 
 builder.Services.AddSingleton<IScrapeAuditWriter>(sp =>
                                                       new ScrapeAuditWriter(sp.GetRequiredService<
-                                                                                IScrapeAuditRepository>()
+                                                                                IScrapeAuditRepository>(),
+                                                                           sp.GetRequiredService<RepositoryFactory>()
                                                                            )
                                                  );
 

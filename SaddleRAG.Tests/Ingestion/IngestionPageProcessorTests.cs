@@ -17,6 +17,41 @@ namespace SaddleRAG.Tests.Ingestion;
 public sealed class IngestionPageProcessorTests
 {
     [Fact]
+    public async Task ChunkReservationFailurePrecedesPageChunkAndEmbeddingPersistence()
+    {
+        var classifier = Substitute.For<ILlmClassifier>();
+        classifier.ClassifyAsync(Arg.Any<PageRecord>(),
+                                 Arg.Any<string>(),
+                                 Arg.Any<CancellationToken>())
+                  .Returns(Task.FromResult((DocCategory.HowTo, 1.0f)));
+        var provider = new RecordingEmbeddingProvider();
+        var processor = new IngestionPageProcessor(classifier,
+                                                   new CategoryAwareChunker(new SymbolExtractor()),
+                                                   provider,
+                                                   new InMemoryBruteForceVectorSearch(),
+                                                   NullLogger<IngestionPageProcessor>.Instance);
+        var pages = Substitute.For<IPageRepository>();
+        var chunks = Substitute.For<IChunkRepository>();
+        PageRecord page = CreatePage();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await processor.ProcessPagesAsync([page],
+                                              "manual-library",
+                                              pages,
+                                              chunks,
+                                              PagePersistenceIntent.UpsertAlways,
+                                              beforeEmbedding: null,
+                                              _ => throw new InvalidOperationException("chunk limit"),
+                                              TestContext.Current.CancellationToken));
+
+        await pages.DidNotReceiveWithAnyArgs()
+                   .UpsertPageAsync(default!, TestContext.Current.CancellationToken);
+        await chunks.DidNotReceiveWithAnyArgs()
+                    .UpsertChunksAsync(default!, TestContext.Current.CancellationToken);
+        Assert.Empty(provider.BatchSizes);
+    }
+
+    [Fact]
     public async Task SharedEmbeddingBoundaryUsesBoundedProviderBatches()
     {
         var provider = new RecordingEmbeddingProvider();
@@ -45,6 +80,19 @@ public sealed class IngestionPageProcessorTests
             PageTitle = "Manual",
             Category = DocCategory.HowTo,
             Content = $"Content {index}"
+        };
+
+    private static PageRecord CreatePage() => new()
+        {
+            Id = "page-1",
+            LibraryId = "manual-library",
+            Version = "2026-08-07",
+            Url = "saddlerag://page/1",
+            Title = "Manual",
+            Category = DocCategory.Unclassified,
+            RawContent = "Manual content",
+            FetchedAt = DateTime.UnixEpoch,
+            ContentHash = "content-hash"
         };
 
     private sealed class RecordingEmbeddingProvider : IEmbeddingProvider

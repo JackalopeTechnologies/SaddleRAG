@@ -74,8 +74,7 @@ public sealed class IngestionPageProcessor
         PageRecord result = category != DocCategory.Unclassified && confidence > 0
             ? page with { Category = category }
             : page;
-        bool persist = persistence == PagePersistenceIntent.UpsertAlways ||
-                       persistence == PagePersistenceIntent.UpdateIfClassified && !ReferenceEquals(result, page);
+        bool persist = ShouldPersist(persistence, page, result);
         if (persist)
             await pageRepository.UpsertPageAsync(result, ct);
         return result;
@@ -110,6 +109,7 @@ public sealed class IngestionPageProcessor
         IChunkRepository chunkRepository,
         PagePersistenceIntent persistence,
         Func<IReadOnlyList<DocChunk>, IReadOnlyList<DocChunk>>? beforeEmbedding,
+        Action<int>? reserveChunks,
         CancellationToken ct)
     {
         var classifiedPages = new List<PageRecord>(pages.Count);
@@ -119,13 +119,21 @@ public sealed class IngestionPageProcessor
             PageRecord classified = await ClassifyAsync(page,
                                                         libraryHint,
                                                         pageRepository,
-                                                        persistence,
+                                                        PagePersistenceIntent.None,
                                                         ct);
             classifiedPages.Add(classified);
             chunks.AddRange(Chunk(classified));
         }
 
         IReadOnlyList<DocChunk> prepared = beforeEmbedding?.Invoke(chunks) ?? chunks;
+        reserveChunks?.Invoke(prepared.Count);
+        for(var index = 0; index < classifiedPages.Count; index++)
+        {
+            PageRecord classified = classifiedPages[index];
+            if (ShouldPersist(persistence, pages[index], classified))
+                await pageRepository.UpsertPageAsync(classified, ct);
+        }
+
         IReadOnlyList<DocChunk> missing = prepared.Where(chunk => chunk.Embedding == null).ToList();
         IReadOnlyList<DocChunk> embedded;
         if (missing.Count == 0)
@@ -145,6 +153,12 @@ public sealed class IngestionPageProcessor
             await chunkRepository.UpsertChunksAsync(embedded, ct);
         return new IngestionPageBatchResult(classifiedPages, embedded);
     }
+
+    private static bool ShouldPersist(PagePersistenceIntent persistence,
+                                      PageRecord original,
+                                      PageRecord classified) =>
+        persistence == PagePersistenceIntent.UpsertAlways ||
+        persistence == PagePersistenceIntent.UpdateIfClassified && !ReferenceEquals(classified, original);
 
     internal async Task PrepareSearchIndexesAsync(string? profile,
                                                   string libraryId,

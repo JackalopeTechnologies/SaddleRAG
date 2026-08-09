@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
@@ -200,7 +201,10 @@ public sealed class IngestionOrchestratorDryRunTests
                                                      suspectDetector,
                                                      auditWriter,
                                                      resolvedBroadcaster,
-                                                     NullLogger<IngestionOrchestrator>.Instance
+                                                     NullLogger<IngestionOrchestrator>.Instance,
+                                                     Substitute.For<ISourceDocumentRepository>(),
+                                                     Substitute.For<RepositoryFactory>([null!]),
+                                                     Substitute.For<ILibraryIngestionModeLeaseManager>()
                                                     );
 
         return new TestHarness

@@ -67,4 +67,58 @@ public class DiffRepository : IDiffRepository
 
         return result;
     }
+
+
+    /// <inheritdoc />
+    public async Task<long> DeleteVersionAsync(string libraryId,
+                                               string version,
+                                               CancellationToken ct = default)
+
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+
+        ArgumentException.ThrowIfNullOrEmpty(version);
+
+
+        var filter = Builders<VersionDiffRecord>.Filter.Eq(diff => diff.LibraryId, libraryId) &
+                     (Builders<VersionDiffRecord>.Filter.Eq(diff => diff.FromVersion, version) |
+                      Builders<VersionDiffRecord>.Filter.Eq(diff => diff.ToVersion, version));
+        DeleteResult result = await mContext.VersionDiffs.DeleteManyAsync(filter, ct);
+        return result.DeletedCount;
+    }
+
+
+    /// <inheritdoc />
+    public async Task<long> DeleteLibraryAsync(string libraryId, CancellationToken ct = default)
+
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+
+
+        DeleteResult result = await mContext.VersionDiffs.DeleteManyAsync(
+                                  diff => diff.LibraryId == libraryId,
+                                  ct);
+        return result.DeletedCount;
+    }
+
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
+        CancellationToken ct = default)
+
+    {
+        IReadOnlyList<VersionDiffRecord> diffs = await mContext.VersionDiffs
+                                                               .Find(Builders<VersionDiffRecord>.Filter.Empty)
+                                                               .ToListAsync(ct);
+        var result = diffs.SelectMany(diff => new[]
+                           {
+                               new LibraryVersionKey(diff.LibraryId, diff.FromVersion),
+                               new LibraryVersionKey(diff.LibraryId, diff.ToVersion)
+                           })
+                          .Distinct()
+                          .OrderBy(pair => pair.LibraryId, StringComparer.Ordinal)
+                          .ThenBy(pair => pair.Version, StringComparer.Ordinal)
+                          .ToList();
+        return result;
+    }
 }

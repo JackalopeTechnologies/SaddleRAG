@@ -6,8 +6,8 @@
 namespace SaddleRAG.Core.Models;
 
 /// <summary>
-///     Response from ILibraryRepository.RenameAsync. Counts is null
-///     when Outcome is Collision or NotFound.
+///     Response from a coordinated library rename. Counts is null when
+///     Outcome is Collision or NotFound.
 /// </summary>
 public sealed record RenameLibraryResponse(
     RenameLibraryOutcome Outcome,

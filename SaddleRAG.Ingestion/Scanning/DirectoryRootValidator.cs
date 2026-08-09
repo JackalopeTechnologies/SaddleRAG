@@ -70,7 +70,8 @@ public sealed class DirectoryRootValidator
                     : new DirectoryRootValidationResult(true,
                                                         canonicalRoot,
                                                         DirectoryScanReasonCodes.ScanCompleted,
-                                                        ValidRootDetail);
+                                                        ValidRootDetail,
+                                                        snapshot);
             }
         }
         return result;

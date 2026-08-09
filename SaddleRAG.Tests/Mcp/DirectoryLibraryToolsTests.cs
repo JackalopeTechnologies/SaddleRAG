@@ -19,7 +19,7 @@ namespace SaddleRAG.Tests.Mcp;
 public sealed class DirectoryLibraryToolsTests
 {
     [Fact]
-    public async Task RegisterRequiresExplicitPathPersistsBoundDefinitionAndDoesNotScan()
+    public async Task RegisterWithOnlyOperationalHistoryPersistsBoundDefinitionAndDoesNotScan()
     {
         var fileSystem = new ScriptedDirectoryScanFileSystem();
         fileSystem.SetInspection(RootPath,
@@ -31,10 +31,26 @@ public sealed class DirectoryLibraryToolsTests
                                                          null));
         var factory = Substitute.For<RepositoryFactory>([null!]);
         var sources = Substitute.For<ISourceDocumentRepository>();
+        var modes = Substitute.For<ILibraryIngestionModeRepository>();
+        var modeLeaseManager = Substitute.For<ILibraryIngestionModeLeaseManager>();
+        var modeLease = Substitute.For<ILibraryIngestionModeLease>();
         factory.GetSourceDocumentRepository(Arg.Any<string?>()).Returns(sources);
+        factory.GetLibraryIngestionModeRepository(Arg.Any<string?>()).Returns(modes);
+        modes.GetLibraryDataEvidenceAsync(LibraryId, Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false, false, false, false, true));
+        modeLease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        modeLease.OwnershipLostToken.Returns(CancellationToken.None);
+        modeLease.TryRenewAsync(Arg.Any<CancellationToken>()).Returns(true);
+        modeLease.TryCommitAsync(Arg.Any<CancellationToken>()).Returns(true);
+        modeLeaseManager.TryAcquireAsync(Arg.Any<string?>(),
+                                         LibraryId,
+                                         LibraryIngestionMode.Directory,
+                                         Arg.Any<CancellationToken>())
+                        .Returns(modeLease);
         var service = new DirectoryLibraryRegistrationService(factory,
                                                               new DirectoryRootValidator(fileSystem),
-                                                              new FixedRegistrationTimeProvider());
+                                                              new FixedRegistrationTimeProvider(),
+                                                              modeLeaseManager);
 
         DirectoryRegistrationResult result = await service.RegisterAsync(
                                                  new DirectoryRegistrationRequest(LibraryId,
@@ -62,6 +78,150 @@ public sealed class DirectoryLibraryToolsTests
                          Arg.Any<CancellationToken>());
         Assert.Empty(fileSystem.EnumeratedPaths);
         Assert.Empty(fileSystem.ReadPaths);
+    }
+
+    [Fact]
+    public async Task ReservedRegistrationWithChildOnlyDataFailsClosedWithoutMutationOrFenceAbandonment()
+    {
+        var fileSystem = new ScriptedDirectoryScanFileSystem();
+        fileSystem.SetInspection(RootPath,
+                                 new DirectoryPathResult(new DirectoryEntrySnapshot(RootPath,
+                                                                                    FileAttributes.Directory,
+                                                                                    0,
+                                                                                    RegisteredAt.UtcDateTime),
+                                                         string.Empty,
+                                                         null));
+        var factory = Substitute.For<RepositoryFactory>([null!]);
+        var sources = Substitute.For<ISourceDocumentRepository>();
+        var modes = Substitute.For<ILibraryIngestionModeRepository>();
+        var modeLeaseManager = Substitute.For<ILibraryIngestionModeLeaseManager>();
+        var modeLease = Substitute.For<ILibraryIngestionModeLease>();
+        factory.GetSourceDocumentRepository(ProfileName).Returns(sources);
+        factory.GetLibraryIngestionModeRepository(ProfileName).Returns(modes);
+        modes.GetLibraryDataEvidenceAsync(LibraryId, Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false, false, false, true, false));
+        modeLease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        modeLease.OwnershipLostToken.Returns(CancellationToken.None);
+        modeLeaseManager.TryAcquireAsync(ProfileName,
+                                         LibraryId,
+                                         LibraryIngestionMode.Directory,
+                                         Arg.Any<CancellationToken>())
+                        .Returns(modeLease);
+        var service = new DirectoryLibraryRegistrationService(factory,
+                                                              new DirectoryRootValidator(fileSystem),
+                                                              new FixedRegistrationTimeProvider(),
+                                                              modeLeaseManager);
+
+        DirectoryRegistrationResult result = await service.RegisterAsync(
+                                                 new DirectoryRegistrationRequest(LibraryId,
+                                                                                  RootPath,
+                                                                                  Recursive: true,
+                                                                                  ExclusionPatterns: []),
+                                                 ProfileName,
+                                                 TestContext.Current.CancellationToken);
+
+        Assert.Equal(DirectoryRegistrationStatuses.Failed, result.Status);
+        Assert.Equal("LIBRARY_INGESTION_MODE_CONFLICT", result.ReasonCode);
+        await sources.DidNotReceive()
+                     .RegisterDirectoryDefinitionAsync(Arg.Any<DirectoryLibraryDefinition>(),
+                                                       Arg.Any<CancellationToken>());
+        await modeLease.DidNotReceive().TryAbandonReservationAsync(Arg.Any<CancellationToken>());
+        await modeLease.DidNotReceive().TryCommitAsync(Arg.Any<CancellationToken>());
+        await modes.Received(requiredNumberOfCalls: 1)
+                   .GetLibraryDataEvidenceAsync(LibraryId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task BusyModeFenceRejectsRegistrationBeforeRepositoryMutation()
+    {
+        var fileSystem = new ScriptedDirectoryScanFileSystem();
+        fileSystem.SetInspection(RootPath,
+                                 new DirectoryPathResult(new DirectoryEntrySnapshot(RootPath,
+                                                                                    FileAttributes.Directory,
+                                                                                    0,
+                                                                                    RegisteredAt.UtcDateTime),
+                                                         string.Empty,
+                                                         null));
+        var factory = Substitute.For<RepositoryFactory>([null!]);
+        var sources = Substitute.For<ISourceDocumentRepository>();
+        var modeLeaseManager = Substitute.For<ILibraryIngestionModeLeaseManager>();
+        factory.GetSourceDocumentRepository(Arg.Any<string?>()).Returns(sources);
+        modeLeaseManager.TryAcquireAsync(Arg.Any<string?>(),
+                                         LibraryId,
+                                         LibraryIngestionMode.Directory,
+                                         Arg.Any<CancellationToken>())
+                        .Returns((ILibraryIngestionModeLease?)null);
+        var service = new DirectoryLibraryRegistrationService(factory,
+                                                              new DirectoryRootValidator(fileSystem),
+                                                              new FixedRegistrationTimeProvider(),
+                                                              modeLeaseManager);
+
+        DirectoryRegistrationResult result = await service.RegisterAsync(
+                                                 new DirectoryRegistrationRequest(LibraryId,
+                                                                                  RootPath,
+                                                                                  Recursive: true,
+                                                                                  ExclusionPatterns: []),
+                                                 profile: null,
+                                                 TestContext.Current.CancellationToken);
+
+        Assert.Equal(DirectoryRegistrationStatuses.Failed, result.Status);
+        factory.DidNotReceive().GetSourceDocumentRepository(Arg.Any<string?>());
+        await sources.DidNotReceive()
+                     .RegisterDirectoryDefinitionAsync(Arg.Any<DirectoryLibraryDefinition>(),
+                                                       Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReservedRegistrationReconcilesLegacyWebLibraryWithoutDirectoryMutation()
+    {
+        var fileSystem = new ScriptedDirectoryScanFileSystem();
+        fileSystem.SetInspection(RootPath,
+                                 new DirectoryPathResult(new DirectoryEntrySnapshot(RootPath,
+                                                                                    FileAttributes.Directory,
+                                                                                    0,
+                                                                                    RegisteredAt.UtcDateTime),
+                                                         string.Empty,
+                                                         null));
+        var factory = Substitute.For<RepositoryFactory>([null!]);
+        var sources = Substitute.For<ISourceDocumentRepository>();
+        var modes = Substitute.For<ILibraryIngestionModeRepository>();
+        var modeLeaseManager = Substitute.For<ILibraryIngestionModeLeaseManager>();
+        var modeLease = Substitute.For<ILibraryIngestionModeLease>();
+        factory.GetSourceDocumentRepository(Arg.Any<string?>()).Returns(sources);
+        factory.GetLibraryIngestionModeRepository(Arg.Any<string?>()).Returns(modes);
+        modes.GetLibraryDataEvidenceAsync(LibraryId, Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(true, false, false, true, true));
+        modeLease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        modeLease.OwnershipLostToken.Returns(CancellationToken.None);
+        modeLease.TryReconcileReservedModeAsync(LibraryIngestionMode.Web,
+                                                 Arg.Any<CancellationToken>())
+                 .Returns(true);
+        modeLeaseManager.TryAcquireAsync(Arg.Any<string?>(),
+                                         LibraryId,
+                                         LibraryIngestionMode.Directory,
+                                         Arg.Any<CancellationToken>())
+                        .Returns(modeLease);
+        var service = new DirectoryLibraryRegistrationService(factory,
+                                                              new DirectoryRootValidator(fileSystem),
+                                                              new FixedRegistrationTimeProvider(),
+                                                              modeLeaseManager);
+
+        DirectoryRegistrationResult result = await service.RegisterAsync(
+                                                 new DirectoryRegistrationRequest(LibraryId,
+                                                                                  RootPath,
+                                                                                  Recursive: true,
+                                                                                  ExclusionPatterns: []),
+                                                 profile: null,
+                                                 TestContext.Current.CancellationToken);
+
+        Assert.Equal(DirectoryRegistrationStatuses.Failed, result.Status);
+        await modeLease.Received(requiredNumberOfCalls: 1)
+                       .TryReconcileReservedModeAsync(LibraryIngestionMode.Web,
+                                                      Arg.Any<CancellationToken>());
+        await sources.DidNotReceive()
+                     .RegisterDirectoryDefinitionAsync(Arg.Any<DirectoryLibraryDefinition>(),
+                                                       Arg.Any<CancellationToken>());
+        await modeLease.DidNotReceive().TryAbandonReservationAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -187,6 +347,7 @@ public sealed class DirectoryLibraryToolsTests
     private const string RootPath = "C:\\owned-manuals";
     private const string ExclusionPattern = "**/bin/**";
     private const string LibraryId = "manual-library";
+    private const string ProfileName = "team-profile";
     private const string Version = "2026-08-04";
     private const string JobId = "directory-job-1";
 }

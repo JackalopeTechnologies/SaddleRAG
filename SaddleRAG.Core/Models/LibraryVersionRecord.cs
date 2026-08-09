@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.Text.Json.Serialization;
 using SaddleRAG.Core.Enums;
 
 namespace SaddleRAG.Core.Models;
@@ -12,6 +13,13 @@ namespace SaddleRAG.Core.Models;
 /// </summary>
 public record LibraryVersionRecord
 {
+    /// <summary>
+    ///     Receiver-local package import that owns this version's publication.
+    ///     Excluded from bundle JSON so source scan provenance remains portable.
+    /// </summary>
+    [JsonIgnore]
+    public string? ImportOperationId { get; init; }
+
     /// <summary>
     ///     Publication lifecycle. The default preserves legacy rows that do
     ///     not contain this field.
@@ -28,6 +36,12 @@ public record LibraryVersionRecord
     ///     Null for web ingestion and records created before directory leases.
     /// </summary>
     public string? ScanRunId { get; init; }
+
+    /// <summary>
+    ///     Directory registration revision captured when the scan claimed
+    ///     this publication lease. Null for web ingestion and legacy rows.
+    /// </summary>
+    public long? RegistrationRevision { get; init; }
 
     /// <summary>
     ///     True after the owning directory scan has atomically qualified a

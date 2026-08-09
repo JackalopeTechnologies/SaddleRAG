@@ -79,6 +79,65 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
         return Task.CompletedTask;
     }
 
+    public Task<bool> TryReplaceLibrarySummaryAsync(LibraryRecord expected,
+                                                     LibraryRecord replacement,
+                                                     CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(replacement);
+        int index = mLibraries.FindIndex(library => LibraryMatches(library, expected));
+        bool result = index >= 0 && string.Equals(expected.Id, replacement.Id, StringComparison.Ordinal);
+        if (result)
+            mLibraries[index] = replacement;
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryDeleteLibrarySummaryAsync(LibraryRecord expected,
+                                                    CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        int index = mLibraries.FindIndex(library => LibraryMatches(library, expected));
+        bool result = index >= 0;
+        if (result)
+            mLibraries.RemoveAt(index);
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryClaimImportVersionAsync(LibraryVersionRecord buildingVersion,
+                                                 string importOperationId,
+                                                 CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(buildingVersion);
+        ArgumentException.ThrowIfNullOrEmpty(importOperationId);
+        string key = VersionKey(buildingVersion.LibraryId, buildingVersion.Version);
+        bool result = buildingVersion.PublicationState == VersionPublicationState.Building &&
+                      string.Equals(buildingVersion.ImportOperationId,
+                                    importOperationId,
+                                    StringComparison.Ordinal) &&
+                      mVersions.TryAdd(key, buildingVersion);
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> TryPublishImportVersionAsync(LibraryVersionRecord publishedVersion,
+                                                   string importOperationId,
+                                                   CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(publishedVersion);
+        ArgumentException.ThrowIfNullOrEmpty(importOperationId);
+        string key = VersionKey(publishedVersion.LibraryId, publishedVersion.Version);
+        bool result = publishedVersion.PublicationState == VersionPublicationState.Published &&
+                      string.Equals(publishedVersion.ImportOperationId,
+                                    importOperationId,
+                                    StringComparison.Ordinal) &&
+                      mVersions.TryGetValue(key, out LibraryVersionRecord? existing) &&
+                      existing.PublicationState == VersionPublicationState.Building &&
+                      string.Equals(existing.ImportOperationId, importOperationId, StringComparison.Ordinal) &&
+                      !existing.CleanupInProgress;
+        if (result)
+            mVersions[key] = publishedVersion;
+        return Task.FromResult(result);
+    }
+
     public Task<DirectoryVersionClaimResult> TryClaimDirectoryVersionAsync(
         LibraryVersionRecord buildingVersion,
         CancellationToken ct = default)
@@ -209,6 +268,13 @@ internal sealed class FakeLibraryRepository : ILibraryRepository
         ArgumentNullException.ThrowIfNull(version);
         mVersions[VersionKey(version.LibraryId, version.Version)] = version;
     }
+
+    private static bool LibraryMatches(LibraryRecord actual, LibraryRecord expected) =>
+        string.Equals(actual.Id, expected.Id, StringComparison.Ordinal) &&
+        string.Equals(actual.Name, expected.Name, StringComparison.Ordinal) &&
+        string.Equals(actual.Hint, expected.Hint, StringComparison.Ordinal) &&
+        string.Equals(actual.CurrentVersion, expected.CurrentVersion, StringComparison.Ordinal) &&
+        actual.AllVersions.SequenceEqual(expected.AllVersions, StringComparer.Ordinal);
 
     private static string VersionKey(string libraryId, string version) => $"{libraryId}|{version}";
 }

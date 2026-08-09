@@ -38,7 +38,7 @@ public class BackgroundJobRecord
     ///     (e.g. <see cref="BackgroundJobTypes.DryRunScrape" /> and
     ///     <see cref="BackgroundJobTypes.IndexProjectDependencies" />).
     /// </summary>
-    public string? LibraryId { get; init; }
+    public string? LibraryId { get; set; }
 
     /// <summary>
     ///     Library version being operated on. Null for job types that are not
@@ -47,7 +47,7 @@ public class BackgroundJobRecord
     ///     <see cref="BackgroundJobTypes.DryRunScrape" />, and
     ///     <see cref="BackgroundJobTypes.IndexProjectDependencies" />).
     /// </summary>
-    public string? Version { get; init; }
+    public string? Version { get; set; }
 
     /// <summary>
     ///     JSON-serialized input parameters, stored for display and diagnostics.

@@ -6,7 +6,7 @@
 namespace SaddleRAG.Ingestion.Scanning;
 
 /// <summary>Typed result of enumerating one directory without recursion.</summary>
-public sealed record DirectoryEnumerationResult(IReadOnlyList<DirectoryEntrySnapshot> Entries,
+public sealed record DirectoryEnumerationResult(IEnumerable<DirectoryEntrySnapshot> Entries,
                                                 string ReasonCode,
                                                 Exception? Error)
 {

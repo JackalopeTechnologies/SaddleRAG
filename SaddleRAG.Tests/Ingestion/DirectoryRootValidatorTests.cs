@@ -76,6 +76,8 @@ public sealed class DirectoryRootValidatorTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(Path.GetFullPath(ValidRoot), result.CanonicalRoot);
+        DirectoryEntrySnapshot snapshot = Assert.IsType<DirectoryEntrySnapshot>(result.Snapshot);
+        Assert.Equal(ValidRoot, snapshot.FullPath);
         Assert.DoesNotContain(ValidRoot, result.Detail, StringComparison.OrdinalIgnoreCase);
     }
 

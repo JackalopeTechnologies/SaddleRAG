@@ -156,6 +156,12 @@ public class JobRecord
     /// <summary>When the job transitioned to <see cref="JobStatus.Running" /> (UTC).</summary>
     public DateTime? StartedAt { get; set; }
 
+    /// <summary>
+    ///     Receiver-local token for the runner that atomically claimed this
+    ///     queued job. Used to reconcile a write whose acknowledgement was lost.
+    /// </summary>
+    public string? ExecutionClaimId { get; set; }
+
     /// <summary>When the job finished — success, failure, or cancellation (UTC).</summary>
     public DateTime? CompletedAt { get; set; }
 

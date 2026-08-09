@@ -37,10 +37,12 @@ public sealed class DirectoryIngestionFailureTests
                               record => record.PublicationState == VersionPublicationState.Published);
         Assert.Equal(VersionPublicationState.Failed, fixture.VersionWrites[^1].PublicationState);
         await fixture.Deletion.Received(requiredNumberOfCalls: 1)
-                     .DeleteVersionAsync(profile: null,
-                                         LibraryId,
-                                         Version,
-                                         CancellationToken.None);
+                     .DeleteScanCandidateUnderLeaseAsync(profile: null,
+                                                         LibraryId,
+                                                         Version,
+                                                         fixture.PublicationLease,
+                                                         fixture.ModeLease,
+                                                         Arg.Any<CancellationToken>());
         await fixture.Libraries.DidNotReceive()
                      .UpsertLibraryAsync(Arg.Any<LibraryRecord>(), Arg.Any<CancellationToken>());
     }
@@ -49,13 +51,16 @@ public sealed class DirectoryIngestionFailureTests
     public async Task CancellationCleansCandidateBeforeRethrowAndLeavesPriorCurrent()
     {
         FailureFixture fixture = MakeFixture(existingAttempt: null);
+        using var cancellation = new CancellationTokenSource();
         fixture.Pipeline.ExecuteAsync(Arg.Any<DirectoryIngestionRequest>(),
                                       Arg.Any<Action<DirectoryScanProgress>?>(),
                                       Arg.Any<CancellationToken>())
-                .Returns(call => Task.FromCanceled<DirectoryIngestionPipelineResult>(
-                             call.Arg<CancellationToken>()));
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+                .Returns(call =>
+                         {
+                             cancellation.Cancel();
+                             return Task.FromCanceled<DirectoryIngestionPipelineResult>(
+                                 call.Arg<CancellationToken>());
+                         });
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Coordinator.RunAsync(
                                                                     Request(),
@@ -67,10 +72,12 @@ public sealed class DirectoryIngestionFailureTests
                               record => record.PublicationState == VersionPublicationState.Published);
         Assert.Equal(VersionPublicationState.Failed, fixture.VersionWrites[^1].PublicationState);
         await fixture.Deletion.Received(requiredNumberOfCalls: 1)
-                     .DeleteVersionAsync(profile: null,
-                                         LibraryId,
-                                         Version,
-                                         CancellationToken.None);
+                     .DeleteScanCandidateUnderLeaseAsync(profile: null,
+                                                         LibraryId,
+                                                         Version,
+                                                         fixture.PublicationLease,
+                                                         fixture.ModeLease,
+                                                         Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -88,10 +95,12 @@ public sealed class DirectoryIngestionFailureTests
 
         Assert.Equal(DirectoryIngestionStatuses.Completed, result.Status);
         await fixture.Deletion.Received(requiredNumberOfCalls: 1)
-                     .DeleteVersionAsync(profile: null,
-                                         LibraryId,
-                                         Version,
-                                         Arg.Any<CancellationToken>());
+                     .DeleteScanCandidateUnderLeaseAsync(profile: null,
+                                                         LibraryId,
+                                                         Version,
+                                                         fixture.PublicationLease,
+                                                         fixture.ModeLease,
+                                                         Arg.Any<CancellationToken>());
         await fixture.Pipeline.Received(requiredNumberOfCalls: 1)
                      .ExecuteAsync(Arg.Any<DirectoryIngestionRequest>(),
                                    Arg.Any<Action<DirectoryScanProgress>?>(),
@@ -113,7 +122,12 @@ public sealed class DirectoryIngestionFailureTests
         await fixture.Pipeline.DidNotReceiveWithAnyArgs()
                      .ExecuteAsync(default!, default, TestContext.Current.CancellationToken);
         await fixture.Deletion.DidNotReceiveWithAnyArgs()
-                     .DeleteVersionAsync(default, default!, default!, TestContext.Current.CancellationToken);
+                     .DeleteScanCandidateUnderLeaseAsync(default,
+                                                         default!,
+                                                         default!,
+                                                         default!,
+                                                         default!,
+                                                         TestContext.Current.CancellationToken);
         await fixture.Sources.DidNotReceiveWithAnyArgs()
                      .PublishCandidateScanRunAsync(default!,
                                                    default!,
@@ -135,7 +149,12 @@ public sealed class DirectoryIngestionFailureTests
         await fixture.Pipeline.DidNotReceiveWithAnyArgs()
                      .ExecuteAsync(default!, default, TestContext.Current.CancellationToken);
         await fixture.Deletion.DidNotReceiveWithAnyArgs()
-                     .DeleteVersionAsync(default, default!, default!, TestContext.Current.CancellationToken);
+                     .DeleteScanCandidateUnderLeaseAsync(default,
+                                                         default!,
+                                                         default!,
+                                                         default!,
+                                                         default!,
+                                                         TestContext.Current.CancellationToken);
         Assert.Equal(PriorVersion, fixture.Library.CurrentVersion);
     }
 
@@ -161,7 +180,12 @@ public sealed class DirectoryIngestionFailureTests
 
         Assert.Equal(DirectoryIngestionStatuses.Failed, result.Status);
         await fixture.Deletion.DidNotReceiveWithAnyArgs()
-                     .DeleteVersionAsync(default, default!, default!, TestContext.Current.CancellationToken);
+                     .DeleteScanCandidateUnderLeaseAsync(default,
+                                                         default!,
+                                                         default!,
+                                                         default!,
+                                                         default!,
+                                                         TestContext.Current.CancellationToken);
         await fixture.Libraries.DidNotReceiveWithAnyArgs()
                      .TryRecordDirectoryVersionFailureAsync(default!,
                                                             default!,
@@ -174,8 +198,14 @@ public sealed class DirectoryIngestionFailureTests
         var factory = Substitute.For<RepositoryFactory>([null!]);
         var libraries = Substitute.For<ILibraryRepository>();
         var sources = Substitute.For<ISourceDocumentRepository>();
+        var catalogs = Substitute.For<ISubjectCatalogRepository>();
+        var modeLeaseManager = Substitute.For<ILibraryIngestionModeLeaseManager>();
+        var modeLease = Substitute.For<ILibraryIngestionModeLease>();
         var pipeline = Substitute.For<IDirectoryIngestionPipeline>();
         var deletion = Substitute.For<ILibraryDeletionService>();
+        var publicationLease = new TestDirectoryPublicationLease(LibraryId,
+                                                                  ScanRunId,
+                                                                  RegistrationRevision);
         var library = new LibraryRecord
                           {
                               Id = LibraryId,
@@ -186,6 +216,15 @@ public sealed class DirectoryIngestionFailureTests
                           };
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraries);
         factory.GetSourceDocumentRepository(Arg.Any<string?>()).Returns(sources);
+        factory.GetSubjectCatalogRepository(Arg.Any<string?>()).Returns(catalogs);
+        modeLease.OwnershipLostToken.Returns(CancellationToken.None);
+        modeLease.TryCommitAsync(Arg.Any<CancellationToken>()).Returns(true);
+        modeLeaseManager.TryAcquireAsync(Arg.Any<string?>(),
+                                         LibraryId,
+                                         LibraryIngestionMode.Directory,
+                                         Arg.Any<CancellationToken>())
+                        .Returns(modeLease);
+        sources.GetDirectoryDefinitionAsync(LibraryId, Arg.Any<CancellationToken>()).Returns(Definition());
         libraries.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>()).Returns(library);
         bool requiresCleanup = existingAttempt?.PublicationState == VersionPublicationState.Failed;
         libraries.TryClaimDirectoryVersionAsync(Arg.Any<LibraryVersionRecord>(),
@@ -235,23 +274,46 @@ public sealed class DirectoryIngestionFailureTests
                                              Arg.Any<string>(),
                                              Arg.Any<CancellationToken>())
                .Returns(4L);
-        sources.TryUpdateDirectoryPublicationAsync(Arg.Any<string>(),
-                                                   Arg.Any<long>(),
-                                                   Arg.Any<string?>(),
-                                                   Arg.Any<DateTime?>(),
-                                                   Arg.Any<string?>(),
-                                                   Arg.Any<CancellationToken>())
+        sources.TryAcquireDirectoryPublicationLeaseAsync(Arg.Is<string>(value => value == LibraryId),
+                                                           Arg.Is<long>(value => value == RegistrationRevision),
+                                                           Arg.Is<string?>(value => value ==
+                                                                                         RegistrationIncarnationId),
+                                                           Arg.Any<string>(),
+                                                           Arg.Is<string?>(value => value == null),
+                                                           Arg.Any<CancellationToken>())
+               .Returns(publicationLease);
+        sources.TryUpdateDirectoryPublicationAsync(Arg.Any<IDirectoryPublicationLease>(),
+                                                    Arg.Any<string?>(),
+                                                    Arg.Any<DateTime?>(),
+                                                    Arg.Any<string?>(),
+                                                    Arg.Any<CancellationToken>())
                .Returns(true);
-        deletion.DeleteVersionAsync(Arg.Any<string?>(),
-                                    Arg.Any<string>(),
-                                    Arg.Any<string>(),
-                                    Arg.Any<CancellationToken>())
+        catalogs.TryPublishCandidateAsync(Arg.Any<string>(),
+                                          Arg.Any<string>(),
+                                          Arg.Any<string>(),
+                                          Arg.Any<CancellationToken>())
+                .Returns(true);
+        deletion.DeleteScanCandidateUnderLeaseAsync(Arg.Any<string?>(),
+                                                    Arg.Any<string>(),
+                                                    Arg.Any<string>(),
+                                                    Arg.Any<IDirectoryPublicationLease>(),
+                                                    Arg.Any<ILibraryIngestionModeLease>(),
+                                                    Arg.Any<CancellationToken>())
                 .Returns(EmptyDeletionResult);
         var coordinator = new DirectoryIngestionCoordinator(factory,
                                                             pipeline,
                                                             deletion,
-                                                            NullLogger<DirectoryIngestionCoordinator>.Instance);
-        return new FailureFixture(coordinator, pipeline, deletion, libraries, sources, library, writes);
+                                                            NullLogger<DirectoryIngestionCoordinator>.Instance,
+                                                            modeLeaseManager);
+        return new FailureFixture(coordinator,
+                                  pipeline,
+                                  deletion,
+                                  libraries,
+                                  sources,
+                                  library,
+                                  publicationLease,
+                                  modeLease,
+                                  writes);
     }
 
     private static DirectoryIngestionRequest Request() => new()
@@ -273,7 +335,8 @@ public sealed class DirectoryIngestionFailureTests
             ExclusionPatterns = [],
             BindingStatus = DirectoryLibraryBindingStatus.Bound,
             RegisteredAtUtc = QueuedAt.UtcDateTime,
-            RegistrationRevision = RegistrationRevision
+            RegistrationRevision = RegistrationRevision,
+            RegistrationIncarnationId = RegistrationIncarnationId
         };
 
     private static LibraryVersionRecord VersionRecord(VersionPublicationState state) => new()
@@ -304,15 +367,48 @@ public sealed class DirectoryIngestionFailureTests
     private sealed record FailureFixture(DirectoryIngestionCoordinator Coordinator,
                                          IDirectoryIngestionPipeline Pipeline,
                                          ILibraryDeletionService Deletion,
-                                         ILibraryRepository Libraries,
-                                         ISourceDocumentRepository Sources,
-                                         LibraryRecord Library,
-                                         List<LibraryVersionRecord> VersionWrites);
+                                          ILibraryRepository Libraries,
+                                          ISourceDocumentRepository Sources,
+                                          LibraryRecord Library,
+                                          TestDirectoryPublicationLease PublicationLease,
+                                          ILibraryIngestionModeLease ModeLease,
+                                          List<LibraryVersionRecord> VersionWrites);
+
+    private sealed class TestDirectoryPublicationLease : IDirectoryPublicationLease
+    {
+        internal TestDirectoryPublicationLease(string libraryId,
+                                               string scanRunId,
+                                               long registrationRevision)
+        {
+            LibraryId = libraryId;
+            ScanRunId = scanRunId;
+            RegistrationRevision = registrationRevision;
+        }
+
+        public string LibraryId { get; }
+
+        public string ScanRunId { get; }
+
+        public string? RegistrationIncarnationId => DirectoryIngestionFailureTests.RegistrationIncarnationId;
+
+        public long RegistrationRevision { get; }
+
+        public CancellationToken OwnershipLostToken => CancellationToken.None;
+
+        public ValueTask<bool> TryRenewAsync(CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(true);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 
     private static readonly DateTimeOffset QueuedAt = new(2026, 8, 4, 12, 0, 0, TimeSpan.FromHours(-6));
     private static readonly LibraryDeletionResult EmptyDeletionResult = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
     private const string LibraryId = "manual-library";
     private const string RootPath = "C:\\manuals";
+    private const string RegistrationIncarnationId = "registration-incarnation";
     private const string PriorVersion = "2026-08-03";
     private const string Version = "2026-08-04";
     private const string ScanRunId = "scan-1";

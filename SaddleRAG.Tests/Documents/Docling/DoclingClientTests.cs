@@ -6,6 +6,7 @@
 #region Usings
 
 using System.Net;
+using System.Text.Json;
 using SaddleRAG.Ingestion.Documents.Docling;
 
 #endregion
@@ -60,17 +61,17 @@ public sealed class DoclingClientTests
     public async Task PdfMultipartMatchesCommittedV1Contract()
     {
         var handler = new ScriptedHttpMessageHandler();
-        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
-                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        EnqueueSuccessfulConversion(handler, "docling-v1-pdf-success.json");
         using var client = MakeClient(handler);
         var file = LoadFile("saddlerag-docling-probe.pdf", "application/pdf");
 
         var result = await client.ConvertAsync(file, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
-        var request = Assert.Single(handler.Requests);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+        var request = handler.Requests[0];
         Assert.Equal(HttpMethod.Post, request.Method);
-        Assert.Equal("/v1/convert/file", request.RequestUri.AbsolutePath);
+        Assert.Equal("/v1/convert/file/async", request.RequestUri.AbsolutePath);
         Assert.StartsWith("multipart/form-data", request.ContentType, StringComparison.OrdinalIgnoreCase);
         AssertMultipartField(request.Body, "files", "saddlerag-docling-probe.pdf");
         AssertMultipartField(request.Body, "from_formats", "pdf");
@@ -83,14 +84,14 @@ public sealed class DoclingClientTests
         AssertMultipartField(request.Body, "do_picture_description", "false");
         Assert.Equal(expected: 1, CountOccurrences(request.Body, "name=files"));
         Assert.Equal(expected: 3, CountOccurrences(request.Body, "name=to_formats"));
+        Assert.Equal($"/v1/result/{TaskId}", handler.Requests[1].RequestUri.AbsolutePath);
     }
 
     [Fact]
     public async Task DocxMultipartMatchesCommittedV1Contract()
     {
         var handler = new ScriptedHttpMessageHandler();
-        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
-                                                        DoclingTestSupport.LoadFixture("docling-v1-docx-success.json")));
+        EnqueueSuccessfulConversion(handler, "docling-v1-docx-success.json");
         using var client = MakeClient(handler);
         var mediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         var file = LoadFile("saddlerag-docling-probe.docx", mediaType);
@@ -98,7 +99,8 @@ public sealed class DoclingClientTests
         var result = await client.ConvertAsync(file, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
-        var request = Assert.Single(handler.Requests);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+        var request = handler.Requests[0];
         AssertMultipartField(request.Body, "files", "saddlerag-docling-probe.docx");
         AssertMultipartField(request.Body, "from_formats", "docx");
         Assert.Contains(mediaType, request.Body, StringComparison.OrdinalIgnoreCase);
@@ -243,8 +245,10 @@ public sealed class DoclingClientTests
         {
             await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
             return DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
-                                                   DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json"));
+                                                   TaskStatus(SuccessTaskStatus));
         });
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
         var settings = new DoclingSettings { ConversionTimeoutSeconds = 2 };
         using var client = MakeClient(handler, settings);
 
@@ -253,15 +257,316 @@ public sealed class DoclingClientTests
         Assert.True(result.Succeeded);
     }
 
+    [Fact]
+    public async Task PendingTaskIsPolledThroughStartedAndSuccessBeforeReadingResult()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(PendingTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        const string apiKey = "private-test-key";
+        using var client = MakeClient(handler, FastSettings(apiKey));
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expected: 4, handler.Requests.Count);
+        Assert.Equal("/v1/convert/file/async", handler.Requests[0].RequestUri.AbsolutePath);
+        Assert.Equal($"/v1/status/poll/{TaskId}", handler.Requests[1].RequestUri.AbsolutePath);
+        Assert.Equal("?wait=5", handler.Requests[1].RequestUri.Query);
+        Assert.Equal($"/v1/status/poll/{TaskId}", handler.Requests[2].RequestUri.AbsolutePath);
+        Assert.Equal("?wait=5", handler.Requests[2].RequestUri.Query);
+        Assert.Equal($"/v1/result/{TaskId}", handler.Requests[3].RequestUri.AbsolutePath);
+        Assert.All(handler.Requests, request => Assert.Equal(apiKey, request.ApiKey));
+    }
+
+    [Fact]
+    public async Task ImmediateSuccessReadsResultWithoutPolling()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        EnqueueSuccessfulConversion(handler, "docling-v1-pdf-success.json");
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+        Assert.Equal($"/v1/result/{TaskId}", handler.Requests[1].RequestUri.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task PartialSuccessReadsResultAndPreservesPartialOutcome()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        var partialResult = DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")
+                                              .Replace("\"status\": \"success\"",
+                                                       "\"status\": \"partial_success\"",
+                                                       StringComparison.Ordinal);
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        TaskStatus(PartialSuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, partialResult));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.PartialConversion, result.ReasonCode);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+        Assert.Equal($"/v1/result/{TaskId}", handler.Requests[1].RequestUri.AbsolutePath);
+    }
+
+    [Theory]
+    [InlineData("{ definitely not json")]
+    [InlineData("{\"task_type\":\"convert\",\"task_status\":\"pending\"}")]
+    [InlineData("{\"task_id\":42,\"task_type\":\"convert\",\"task_status\":\"pending\"}")]
+    [InlineData("{\"task_id\":\"task-123\",\"task_status\":\"pending\"}")]
+    [InlineData("{\"task_id\":\"task-123\",\"task_type\":\"other\",\"task_status\":\"pending\"}")]
+    [InlineData("{\"task_id\":\"task-123\",\"task_type\":\"convert\"}")]
+    [InlineData("{\"task_id\":\"task-123\",\"task_type\":\"convert\",\"task_status\":\"unknown\"}")]
+    public async Task MalformedTaskStatusIsRejected(string responseJson)
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, responseJson));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ApiIncompatible, result.ReasonCode);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task PollTaskIdMustMatchSubmittedTaskId()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(PendingTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        TaskStatus(SuccessTaskStatus, "different-task")));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ApiIncompatible, result.ReasonCode);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task TaskIdIsEscapedAsOneUrlPathSegment()
+    {
+        const string unsafeTaskId = "task/path?query#fragment";
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        TaskStatus(PendingTaskStatus, unsafeTaskId)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        TaskStatus(SuccessTaskStatus, unsafeTaskId)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("/v1/status/poll/task%2Fpath%3Fquery%23fragment", handler.Requests[1].RequestUri.AbsolutePath);
+        Assert.Equal("/v1/result/task%2Fpath%3Fquery%23fragment", handler.Requests[2].RequestUri.AbsolutePath);
+    }
+
+    [Theory]
+    [InlineData("error_message")]
+    [InlineData("failure")]
+    public async Task FailedTaskReturnsSanitizedServerDetail(string detailShape)
+    {
+        const string secret = "private-test-key";
+        var failure = detailShape == "error_message"
+            ? $"{{\"task_id\":\"{TaskId}\",\"task_type\":\"convert\",\"task_status\":\"failure\",\"error_message\":\"backend rejected {secret}\"}}"
+            : $"{{\"task_id\":\"{TaskId}\",\"task_type\":\"convert\",\"task_status\":\"failure\",\"failure\":{{\"message\":\"backend rejected {secret}\"}}}}";
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, failure));
+        using var client = MakeClient(handler, new DoclingSettings { ApiKey = secret });
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ConversionFailed, result.ReasonCode);
+        Assert.Contains("backend rejected [REDACTED]", result.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, result.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, result.RawResponseJson, StringComparison.Ordinal);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task SkippedTaskReturnsConversionFailureWithoutResultRequest()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SkippedTaskStatus)));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ConversionFailed, result.ReasonCode);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task HttpOkTaskFailureResultIsMappedAndSanitized()
+    {
+        const string secret = "private-test-key";
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(
+                            HttpStatusCode.OK,
+                            $"{{\"kind\":\"TaskFailureResult\",\"failure\":{{\"message\":\"model weights missing {secret}\"}}}}"
+                        ));
+        using var client = MakeClient(handler, FastSettings(secret));
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ModelsUnavailable, result.ReasonCode);
+        Assert.Contains("model weights missing [REDACTED]", result.Detail, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, result.RawResponseJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CompletedTaskRetriesEventuallyAvailableResult()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        for (var index = 0; index < 3; index++)
+            handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.NotFound, "{\"detail\":\"not ready\"}"));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expected: 5, handler.Requests.Count);
+        Assert.All(handler.Requests.Skip(1),
+                   request => Assert.Equal($"/v1/result/{TaskId}", request.RequestUri.AbsolutePath));
+    }
+
+    [Fact]
+    public async Task MissingPollStatusFallsThroughToEventuallyAvailableResult()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(PendingTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.NotFound, "{\"detail\":\"task moved\"}"));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expected: 3, handler.Requests.Count);
+        Assert.Equal($"/v1/result/{TaskId}", handler.Requests[2].RequestUri.AbsolutePath);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, "DOCLING_UNAUTHORIZED")]
+    [InlineData(HttpStatusCode.MethodNotAllowed, "DOCLING_API_INCOMPATIBLE")]
+    public async Task PollHttpFailuresAreMapped(HttpStatusCode statusCode, string expectedReasonCode)
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(PendingTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(statusCode, "{\"detail\":\"poll failed\"}"));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(expectedReasonCode, result.ReasonCode);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden, "DOCLING_UNAUTHORIZED")]
+    [InlineData(HttpStatusCode.MethodNotAllowed, "DOCLING_API_INCOMPATIBLE")]
+    public async Task ResultHttpFailuresAreMapped(HttpStatusCode statusCode, string expectedReasonCode)
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(statusCode, "{\"detail\":\"result failed\"}"));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(expectedReasonCode, result.ReasonCode);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task ConversionTimeoutDuringPollingIsDistinct()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(PendingTaskStatus)));
+        handler.Enqueue((_, _) => throw new TaskCanceledException("simulated poll timeout"));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ConversionTimeout, result.ReasonCode);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task ExternalCancellationDuringPollingIsRethrown()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(PendingTaskStatus)));
+        handler.Enqueue(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus));
+        });
+        using var client = MakeClient(handler);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(25));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            client.ConvertAsync(ProbeFile(), cancellation.Token)
+        );
+        Assert.Equal(expected: 2, handler.Requests.Count);
+    }
+
     private static DoclingClientLease MakeClient(HttpMessageHandler handler, DoclingSettings? settings = null)
     {
         var httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-        var client = new DoclingClient(httpClient, settings ?? new DoclingSettings(), new DoclingDocumentMapper());
+        var client = new DoclingClient(httpClient, settings ?? FastSettings(), new DoclingDocumentMapper());
         return new DoclingClientLease(httpClient, client);
     }
 
+    private static DoclingSettings FastSettings(string apiKey = "") =>
+        new()
+        {
+            ApiKey = apiKey,
+            ConversionPollIntervalMilliseconds = 1,
+            ConversionResultRetryBaseMilliseconds = 1
+        };
+
     private static DoclingFile ProbeFile() =>
         new("probe.pdf", "application/pdf", new byte[] { 37, 80, 68, 70, 45, 49, 46, 55 });
+
+    private static void EnqueueSuccessfulConversion(ScriptedHttpMessageHandler handler, string fixtureName)
+    {
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture(fixtureName)));
+    }
+
+    private static string TaskStatus(string status, string taskId = TaskId) =>
+        JsonSerializer.Serialize(new
+                                 {
+                                     task_id = taskId,
+                                     task_type = "convert",
+                                     task_status = status
+                                 });
 
     private static DoclingFile LoadFile(string fileName, string mediaType)
     {
@@ -297,6 +602,13 @@ public sealed class DoclingClientTests
 
         return count;
     }
+
+    private const string TaskId = "task-123";
+    private const string PendingTaskStatus = "pending";
+    private const string StartedTaskStatus = "started";
+    private const string SuccessTaskStatus = "success";
+    private const string PartialSuccessTaskStatus = "partial_success";
+    private const string SkippedTaskStatus = "skipped";
 
     private sealed class DoclingClientLease : IDoclingClient, IDisposable
     {

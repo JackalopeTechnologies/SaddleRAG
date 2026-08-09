@@ -19,13 +19,23 @@ namespace SaddleRAG.Ingestion.Scanning;
 public sealed class DirectoryPageProducer
 {
     public DirectoryPageProducer(RepositoryFactory repositories, TimeProvider timeProvider)
+        : this(repositories, timeProvider, DirectoryPathIdentity.Platform)
+    {
+    }
+
+    internal DirectoryPageProducer(RepositoryFactory repositories,
+                                   TimeProvider timeProvider,
+                                   DirectoryPathIdentity pathIdentity)
     {
         ArgumentNullException.ThrowIfNull(repositories);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(pathIdentity);
         mRepositories = repositories;
         mTimeProvider = timeProvider;
+        mPathIdentity = pathIdentity;
     }
 
+    private readonly DirectoryPathIdentity mPathIdentity;
     private readonly RepositoryFactory mRepositories;
     private readonly TimeProvider mTimeProvider;
 
@@ -98,7 +108,7 @@ public sealed class DirectoryPageProducer
         return result;
     }
 
-    private static async Task<DirectoryPriorSnapshot> LoadPriorSnapshotAsync(
+    private async Task<DirectoryPriorSnapshot> LoadPriorSnapshotAsync(
         string libraryId,
         string? previousVersion,
         ISourceDocumentRepository sources,
@@ -108,7 +118,7 @@ public sealed class DirectoryPageProducer
     {
         DirectoryPriorSnapshot result;
         if (string.IsNullOrWhiteSpace(previousVersion))
-            result = DirectoryPriorSnapshot.Empty;
+            result = DirectoryPriorSnapshot.Empty(mPathIdentity);
         else
         {
             IReadOnlyList<DocumentRevisionRecord> revisions = await sources.GetRevisionsAsync(libraryId,
@@ -128,7 +138,7 @@ public sealed class DirectoryPageProducer
                                               .ToDictionary(group => group.Key,
                                                             group => (IReadOnlyList<DocChunk>)group.ToList(),
                                                             StringComparer.Ordinal);
-            var documents = new Dictionary<string, PriorDirectoryDocument>(StringComparer.OrdinalIgnoreCase);
+            var documents = new Dictionary<string, PriorDirectoryDocument>(mPathIdentity.Comparer);
             foreach(DocumentRevisionRecord revision in revisions)
             {
                 if (revision.State == DocumentRevisionState.Published
@@ -143,13 +153,13 @@ public sealed class DirectoryPageProducer
                 }
             }
 
-            result = new DirectoryPriorSnapshot(documents);
+            result = new DirectoryPriorSnapshot(documents, mPathIdentity);
         }
 
         return result;
     }
 
-    private static void AddPriorDocument(
+    private void AddPriorDocument(
         DocumentRevisionRecord revision,
         IReadOnlyList<PageRecord> documentPages,
         IReadOnlyDictionary<string, IReadOnlyList<DocChunk>> chunksByRevision,
@@ -158,7 +168,7 @@ public sealed class DirectoryPageProducer
         DocumentProvenance? source = documentPages[0].DocumentSource;
         if (source != null)
         {
-            string normalizedPath = NormalizeRelativePath(source.RelativePath);
+            string normalizedPath = mPathIdentity.NormalizeRelativePath(source.RelativePath);
             chunksByRevision.TryGetValue(revision.Id, out IReadOnlyList<DocChunk>? documentChunks);
             documents[normalizedPath] = new PriorDirectoryDocument(revision,
                                                                    documentPages,
@@ -184,11 +194,6 @@ public sealed class DirectoryPageProducer
 
     internal static string Hash(ReadOnlySpan<byte> content) =>
         Convert.ToHexStringLower(SHA256.HashData(content));
-
-    private static string NormalizeRelativePath(string relativePath) =>
-        relativePath.Replace('\\', '/')
-                    .Normalize(NormalizationForm.FormC)
-                    .ToLowerInvariant();
 
     private const char UnitSeparator = '\u001f';
 }

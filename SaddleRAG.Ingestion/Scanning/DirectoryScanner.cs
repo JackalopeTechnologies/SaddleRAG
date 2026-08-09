@@ -27,6 +27,7 @@ public sealed class DirectoryScanner : IDirectoryScanner
                                           documentIntake,
                                           logger,
                                           timeProvider,
+                                          DirectoryPathIdentity.Platform,
                                           sharedLoggerCategory: true);
         mSourceDocuments = sourceDocuments;
         mLogger = logger;

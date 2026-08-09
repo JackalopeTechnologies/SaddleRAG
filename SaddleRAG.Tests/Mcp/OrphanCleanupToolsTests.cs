@@ -28,7 +28,8 @@ public sealed class OrphanCleanupToolsTests
         ILibraryIndexRepository IndexRepo,
         IBm25ShardRepository Bm25Repo,
         IExcludedSymbolsRepository ExcludedRepo,
-        IScrapeAuditRepository AuditRepo)
+        IScrapeAuditRepository AuditRepo,
+        IDiffRepository DiffRepo)
     {
         public void SeedLibraries(params LibraryRecord[] libraries)
         {
@@ -63,6 +64,10 @@ public sealed class OrphanCleanupToolsTests
         public void SeedAuditPairs(params LibraryVersionKey[] pairs) =>
             AuditRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
                      .Returns(pairs.ToList());
+
+        public void SeedDiffPairs(params LibraryVersionKey[] pairs) =>
+            DiffRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                    .Returns(pairs.ToList());
     }
 
     [Fact]
@@ -236,6 +241,7 @@ public sealed class OrphanCleanupToolsTests
         fixture.SeedShardPairs(orphan);
         fixture.SeedExcludedPairs(orphan);
         fixture.SeedAuditPairs(orphan);
+        fixture.SeedDiffPairs(orphan);
 
         fixture.PageRepo.DeleteAsync(orphan.LibraryId, orphan.Version, Arg.Any<CancellationToken>())
                .Returns(returnThis: 9_977L);
@@ -254,6 +260,10 @@ public sealed class OrphanCleanupToolsTests
                                                       Arg.Any<CancellationToken>()
                                                      )
                .Returns(returnThis: 50L);
+        fixture.DiffRepo.DeleteVersionAsync(orphan.LibraryId,
+                                            orphan.Version,
+                                            Arg.Any<CancellationToken>())
+               .Returns(returnThis: 3L);
 
         var json = await OrphanCleanupTools.CleanupOrphans(fixture.Factory,
                                                            MakeInlineRunner(),
@@ -283,6 +293,10 @@ public sealed class OrphanCleanupToolsTests
                                                   orphan.Version,
                                                   Arg.Any<CancellationToken>()
                                                  );
+        await fixture.DiffRepo.Received(requiredNumberOfCalls: 1)
+                     .DeleteVersionAsync(orphan.LibraryId,
+                                         orphan.Version,
+                                         Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -359,6 +373,12 @@ public sealed class OrphanCleanupToolsTests
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
+        var diffRepo = Substitute.For<IDiffRepository>();
+        var sourceRepo = Substitute.For<ISourceDocumentRepository>();
+        var catalogRepo = Substitute.For<ISubjectCatalogRepository>();
+        var assignmentRepo = Substitute.For<ISubjectAssignmentRepository>();
+        var modeRepo = Substitute.For<ILibraryIngestionModeRepository>();
+        var projectProfileRepo = Substitute.For<IProjectProfileRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
@@ -370,6 +390,60 @@ public sealed class OrphanCleanupToolsTests
         factory.GetBm25ShardRepository(Arg.Any<string?>()).Returns(bm25Repo);
         factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excludedRepo);
         factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
+        factory.GetDiffRepository(Arg.Any<string?>()).Returns(diffRepo);
+        factory.GetSourceDocumentRepository(Arg.Any<string?>()).Returns(sourceRepo);
+        factory.GetSubjectCatalogRepository(Arg.Any<string?>()).Returns(catalogRepo);
+        factory.GetSubjectAssignmentRepository(Arg.Any<string?>()).Returns(assignmentRepo);
+        factory.GetLibraryIngestionModeRepository(Arg.Any<string?>()).Returns(modeRepo);
+        factory.GetProjectProfileRepository(Arg.Any<string?>()).Returns(projectProfileRepo);
+        modeRepo.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns((LibraryIngestionModeRecord?)null);
+        modeRepo.GetLibraryDataEvidenceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(new LibraryIngestionDataEvidence(HasLibraryRecord: false,
+                                                          HasDirectoryDefinition: false,
+                                                          HasDocumentLifecycleData: false,
+                                                          HasChildContentData: true,
+                                                          HasOperationalHistory: false));
+        modeRepo.TryAcquireAsync(Arg.Any<string>(),
+                                 Arg.Any<LibraryIngestionMode>(),
+                                 Arg.Any<string>(),
+                                 Arg.Any<DateTime>(),
+                                 Arg.Any<DateTime>(),
+                                 Arg.Any<CancellationToken>())
+                .Returns(call => new LibraryIngestionModeRecord
+                                     {
+                                         Id = call.ArgAt<string>(0),
+                                         Mode = call.ArgAt<LibraryIngestionMode>(1),
+                                         OwnershipState = LibraryIngestionOwnershipState.Reserved,
+                                         LeaseOwnerToken = call.ArgAt<string>(2),
+                                         LeaseExpiresAtUtc = call.ArgAt<DateTime>(4),
+                                         ReservedAtUtc = call.ArgAt<DateTime>(3),
+                                         UpdatedAtUtc = call.ArgAt<DateTime>(3)
+                                     });
+        modeRepo.TryRenewAsync(Arg.Any<string>(),
+                               Arg.Any<LibraryIngestionMode>(),
+                               Arg.Any<string>(),
+                               Arg.Any<DateTime>(),
+                               Arg.Any<DateTime>(),
+                               Arg.Any<CancellationToken>())
+                .Returns(true);
+        modeRepo.TryCommitAsync(Arg.Any<string>(),
+                                Arg.Any<LibraryIngestionMode>(),
+                                Arg.Any<string>(),
+                                Arg.Any<DateTime>(),
+                                Arg.Any<CancellationToken>())
+                .Returns(true);
+        modeRepo.TryReleaseAsync(Arg.Any<string>(),
+                                 Arg.Any<LibraryIngestionMode>(),
+                                 Arg.Any<string>(),
+                                 Arg.Any<DateTime>(),
+                                 Arg.Any<CancellationToken>())
+                .Returns(true);
+        modeRepo.TryDeleteOwnershipAsync(Arg.Any<string>(),
+                                         Arg.Any<LibraryIngestionMode>(),
+                                         Arg.Any<string>(),
+                                         Arg.Any<CancellationToken>())
+                .Returns(true);
 
         // Default empty pair lists so any test that doesn't seed a collection
         // implicitly contributes zero orphans.
@@ -387,6 +461,25 @@ public sealed class OrphanCleanupToolsTests
                     .Returns(EmptyKeys);
         auditRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
                  .Returns(EmptyKeys);
+        diffRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                .Returns(EmptyKeys);
+        sourceRepo.GetDistinctLibraryVersionPairsAsync(Arg.Any<CancellationToken>())
+                  .Returns(EmptyKeys);
+        sourceRepo.GetRevisionsAsync(Arg.Any<string>(),
+                                     Arg.Any<CancellationToken>())
+                  .Returns(Array.Empty<DocumentRevisionRecord>());
+        sourceRepo.GetRevisionsAsync(Arg.Any<string>(),
+                                     Arg.Any<string>(),
+                                     Arg.Any<CancellationToken>())
+                  .Returns(Array.Empty<DocumentRevisionRecord>());
+        libraryRepo.GetVersionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                   .Returns(Array.Empty<LibraryVersionRecord>());
+        libraryRepo.DeleteVersionAsync(Arg.Any<string>(),
+                                       Arg.Any<string>(),
+                                       Arg.Any<CancellationToken>())
+                   .Returns(new DeleteVersionResult(VersionsDeleted: 0,
+                                                    LibraryRowDeleted: false,
+                                                    CurrentVersionRepointedTo: null));
         libraryRepo.GetVersionsByPublicationStateAsync(VersionPublicationState.Building,
                                                        Arg.Any<CancellationToken>())
                    .Returns(Array.Empty<LibraryVersionRecord>());
@@ -402,7 +495,8 @@ public sealed class OrphanCleanupToolsTests
                            indexRepo,
                            bm25Repo,
                            excludedRepo,
-                           auditRepo
+                           auditRepo,
+                           diffRepo
                           );
     }
 

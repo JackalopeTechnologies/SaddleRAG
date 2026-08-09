@@ -83,6 +83,58 @@ public sealed class DoclingDocumentMapperTests
     }
 
     [Fact]
+    public void NestedDocxTextChildrenAreTraversedInDocumentOrder()
+    {
+        JsonObject root = JsonNode.Parse(DoclingTestSupport.LoadFixture("docling-v1-docx-success.json"))?.AsObject()
+                          ?? throw new InvalidOperationException("Fixture is invalid.");
+        JsonObject document = root["document"]?.AsObject()
+                              ?? throw new InvalidOperationException("Fixture document is invalid.");
+        JsonObject jsonContent = document["json_content"]?.AsObject()
+                                 ?? throw new InvalidOperationException("Fixture JSON content is invalid.");
+        JsonArray texts = jsonContent["texts"]?.AsArray()
+                          ?? throw new InvalidOperationException("Fixture texts are invalid.");
+        JsonObject body = jsonContent["body"]?.AsObject()
+                          ?? throw new InvalidOperationException("Fixture body is invalid.");
+        body["children"] = new JsonArray
+                               {
+                                   new JsonObject { ["$ref"] = "#/groups/0" }
+                               };
+        jsonContent["groups"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                            {
+                                                ["self_ref"] = "#/groups/0",
+                                                ["children"] = new JsonArray
+                                                                   {
+                                                                       new JsonObject
+                                                                           {
+                                                                               ["$ref"] = "#/texts/0"
+                                                                           }
+                                                                   },
+                                                ["label"] = "section"
+                                            }
+                                    };
+        texts[index: 0]?.AsObject()["children"] = new JsonArray
+                                                       {
+                                                           new JsonObject { ["$ref"] = "#/texts/1" }
+                                                       };
+        texts[index: 1]?.AsObject()["children"] = new JsonArray
+                                                       {
+                                                           new JsonObject { ["$ref"] = "#/texts/2" }
+                                                       };
+
+        DoclingConversionResult result = new DoclingDocumentMapper().Map(root.ToJsonString());
+
+        Assert.True(result.Succeeded);
+        IReadOnlyList<DoclingBlock> blocks = Assert.IsType<DoclingMappedDocument>(result.Document).Blocks;
+        Assert.Equal(expected: 3, blocks.Count);
+        Assert.Equal(["SaddleRAG Docling Probe", "Verification",
+                      "SADDLERAG_DOCLING_PROBE_2026_08_04 This document verifies local DOCX conversion."],
+                     blocks.Select(block => block.Text).ToArray());
+        Assert.Contains(DoclingProbeDocument.Marker, blocks[^1].Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnknownForwardCompatibleFieldsDoNotChangeMappedOrder()
     {
         var json = DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json");

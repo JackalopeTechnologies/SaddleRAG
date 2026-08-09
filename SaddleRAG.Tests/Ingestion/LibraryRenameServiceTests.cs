@@ -1,4 +1,3 @@
-// LibraryRenameServiceTests.cs
 // Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
@@ -7,6 +6,7 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Services;
 
 namespace SaddleRAG.Tests.Ingestion;
@@ -14,321 +14,633 @@ namespace SaddleRAG.Tests.Ingestion;
 public sealed class LibraryRenameServiceTests
 {
     [Fact]
-    public async Task RenameLibraryCommitsMongoThenRebuildsTargetsAndCleansSourceIndexes()
+    public async Task LibraryRenameKeepsBothMarkersUntilMongoAndVectorMaintenanceCommit()
     {
-        RenameFixture fixture = MakeFixture();
+        RenameFixture fixture = MakeNewLibraryRenameFixture();
 
         RenameLibraryResponse result = await fixture.Service.RenameLibraryAsync(Profile,
-                                                                                  OldLibraryId,
-                                                                                  NewLibraryId,
-                                                                                  TestContext.Current.CancellationToken);
+                                                                                  SourceLibraryId,
+                                                                                  TargetLibraryId,
+                                                                                  TestContext.Current
+                                                                                             .CancellationToken);
 
         Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
+        RenameLibraryResult expectedCounts = ExpectedFinalCounts(TargetLibraryId, VersionId);
+        Assert.Equal(expectedCounts, result.Counts);
         Assert.Null(result.Warning);
-        Assert.Equal(["database-flip", "rebuild-v1", "rebuild-v2", "cleanup-source"], fixture.Events);
-        await fixture.Vector.Received(requiredNumberOfCalls: 1)
-                     .IndexChunksAsync(Profile,
-                                       NewLibraryId,
-                                       FirstVersion,
-                                       Arg.Is<IReadOnlyList<DocChunk>>(chunks => IsLibraryTarget(chunks,
-                                                                                                 FirstVersion)),
-                                       Arg.Any<CancellationToken>());
-        await fixture.Vector.Received(requiredNumberOfCalls: 1)
-                     .IndexChunksAsync(Profile,
-                                       NewLibraryId,
-                                       SecondVersion,
-                                       Arg.Is<IReadOnlyList<DocChunk>>(chunks => IsLibraryTarget(chunks,
-                                                                                                 SecondVersion)),
-                                       Arg.Any<CancellationToken>());
-        await fixture.Vector.Received(requiredNumberOfCalls: 1)
-                     .RemoveLibraryIndexesAsync(Profile, OldLibraryId, Arg.Any<CancellationToken>());
+        Assert.Equal([
+                         "source-commit",
+                         "begin-operation",
+                         "source-pending",
+                         "target-pending",
+                         "prepare-directory",
+                         "source-pending",
+                         "target-pending",
+                         "prepare-directory",
+                         "apply-mongo",
+                         "mongo-committed",
+                         "target-commit",
+                         "rebuild-target",
+                         "remove-source-vector",
+                         "vector-committed",
+                         "source-pending",
+                         "target-pending",
+                         "finalize-directory",
+                         "target-commit",
+                         "target-clear",
+                         "source-delete",
+                         "delete-operation"
+                     ],
+                     fixture.Events);
     }
 
     [Fact]
-    public async Task RenameLibraryDatabaseFailureDoesNotTouchVectorIndexes()
+    public async Task VectorFailureLeavesMongoCheckpointAndExactMarkersForRetry()
     {
-        RenameFixture fixture = MakeFixture();
-        fixture.Libraries.RenameAsync(OldLibraryId,
-                                      NewLibraryId,
-                                      Arg.Any<CancellationToken>())
-               .Returns(call =>
-                        {
-                            fixture.Events.Add("database-flip");
-                            return Task.FromException<RenameLibraryResponse>(
-                                new InvalidOperationException(DatabaseFailure));
-                        });
+        RenameFixture fixture = MakeNewLibraryRenameFixture();
+        fixture.Vector.RemoveLibraryIndexesAsync(Profile,
+                                                  SourceLibraryId,
+                                                  Arg.Any<CancellationToken>())
+               .Returns(_ => throw new InvalidOperationException(VectorFailure));
+
+        RenameLibraryResponse result = await fixture.Service.RenameLibraryAsync(Profile,
+                                                                                  SourceLibraryId,
+                                                                                  TargetLibraryId,
+                                                                                  TestContext.Current
+                                                                                             .CancellationToken);
+
+        Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
+        Assert.Equal(Counts, result.Counts);
+        Assert.Contains(VectorFailure, Assert.IsType<string>(result.Warning), StringComparison.Ordinal);
+        await fixture.Data.DidNotReceive()
+                     .FinalizeDirectoryDefinitionsAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                                        Arg.Any<CancellationToken>());
+        await fixture.SourceLease.DidNotReceive()
+                     .TryDeleteOwnershipAsync(Arg.Any<CancellationToken>());
+        await fixture.Operations.DidNotReceive()
+                     .TryDeleteAsync(Arg.Any<string>(),
+                                     Arg.Any<string>(),
+                                     Arg.Any<LibraryRenameOperationState>(),
+                                     Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MongoCommittedRecoveryReacquiresOnlyTheExactPendingOperation()
+    {
+        LibraryRenameOperationRecord operation = Operation(LibraryRenameOperationState.MongoCommitted,
+                                                            Counts);
+        RenameFixture fixture = MakeRecoveryFixture(operation,
+                                                    sourcePending: true,
+                                                    targetPending: true,
+                                                    finalized: false);
+
+        RenameLibraryResponse result = await fixture.Service.RenameLibraryAsync(Profile,
+                                                                                  SourceLibraryId,
+                                                                                  TargetLibraryId,
+                                                                                  TestContext.Current
+                                                                                             .CancellationToken);
+
+        Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
+        RenameLibraryResult expectedCounts = ExpectedFinalCounts(TargetLibraryId, VersionId);
+        Assert.Equal(expectedCounts, result.Counts);
+        await fixture.Operations.Received(requiredNumberOfCalls: 1)
+                     .TryAdvanceAsync(SourceLibraryId,
+                                      OperationId,
+                                      LibraryRenameOperationState.MongoCommitted,
+                                      LibraryRenameOperationState.VectorCommitted,
+                                      expectedCounts,
+                                      Arg.Any<DateTime>(),
+                                      Arg.Any<CancellationToken>());
+        await fixture.ModeManager.Received(requiredNumberOfCalls: 1)
+                     .TryAcquireRenameRecoveryAsync(Profile,
+                                                    SourceLibraryId,
+                                                    LibraryIngestionMode.Web,
+                                                    OperationId,
+                                                    Arg.Any<CancellationToken>());
+        await fixture.ModeManager.Received(requiredNumberOfCalls: 1)
+                     .TryAcquireRenameRecoveryAsync(Profile,
+                                                    TargetLibraryId,
+                                                    LibraryIngestionMode.Web,
+                                                    OperationId,
+                                                    Arg.Any<CancellationToken>());
+        await fixture.Data.DidNotReceive()
+                     .ApplyLibraryRenameAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                              Arg.Any<CancellationToken>());
+        Assert.Contains("rebuild-target", fixture.Events);
+        Assert.Contains("delete-operation", fixture.Events);
+    }
+
+    [Fact]
+    public async Task MongoCommittedVersionRecoveryPersistsActualRebuiltShardCount()
+    {
+        LibraryRenameOperationRecord operation = VersionOperation(LibraryRenameOperationState.MongoCommitted,
+                                                                   Counts);
+        RenameFixture fixture = MakeVersionRecoveryFixture(operation);
+
+        RenameLibraryResponse result = await fixture.Service.RenameVersionAsync(Profile,
+                                                                                  SourceLibraryId,
+                                                                                  SourceVersionId,
+                                                                                  TargetVersionId,
+                                                                                  TestContext.Current
+                                                                                             .CancellationToken);
+
+        RenameLibraryResult expectedCounts = ExpectedFinalCounts(SourceLibraryId, TargetVersionId);
+        Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
+        Assert.Equal(expectedCounts, result.Counts);
+        await fixture.Operations.Received(requiredNumberOfCalls: 1)
+                     .TryAdvanceAsync(SourceLibraryId,
+                                      OperationId,
+                                      LibraryRenameOperationState.MongoCommitted,
+                                      LibraryRenameOperationState.VectorCommitted,
+                                      expectedCounts,
+                                      Arg.Any<DateTime>(),
+                                      Arg.Any<CancellationToken>());
+        await fixture.Vector.Received(requiredNumberOfCalls: 1)
+                     .RemoveIndexAsync(Profile,
+                                       SourceLibraryId,
+                                       SourceVersionId,
+                                       Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CrashAfterSourceOwnershipDeletionOnlyDeletesVerifiedCompletedOperation()
+    {
+        LibraryRenameOperationRecord operation = Operation(LibraryRenameOperationState.VectorCommitted,
+                                                            Counts);
+        RenameFixture fixture = MakeRecoveryFixture(operation,
+                                                    sourcePending: false,
+                                                    targetPending: false,
+                                                    finalized: true,
+                                                    sourceOwnershipMissing: true);
+
+        RenameLibraryResponse result = await fixture.Service.RenameLibraryAsync(Profile,
+                                                                                  SourceLibraryId,
+                                                                                  TargetLibraryId,
+                                                                                  TestContext.Current
+                                                                                             .CancellationToken);
+
+        Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
+        await fixture.ModeManager.DidNotReceive()
+                     .TryAcquireAsync(Profile,
+                                      SourceLibraryId,
+                                      Arg.Any<LibraryIngestionMode>(),
+                                      Arg.Any<CancellationToken>());
+        await fixture.Data.Received(requiredNumberOfCalls: 2)
+                     .IsFinalizedAsync(operation, Arg.Any<CancellationToken>());
+        await fixture.Data.DidNotReceive()
+                     .FinalizeDirectoryDefinitionsAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                                        Arg.Any<CancellationToken>());
+        Assert.Equal(["delete-operation"], fixture.Events);
+    }
+
+    [Fact]
+    public async Task ClearedTargetMarkerIsRearmedBeforeDeletingSourceOwnership()
+    {
+        LibraryRenameOperationRecord operation = Operation(LibraryRenameOperationState.VectorCommitted,
+                                                            Counts);
+        RenameFixture fixture = MakeRecoveryFixture(operation,
+                                                    sourcePending: true,
+                                                    targetPending: false,
+                                                    finalized: false);
+
+        _ = await fixture.Service.RenameLibraryAsync(Profile,
+                                                     SourceLibraryId,
+                                                     TargetLibraryId,
+                                                     TestContext.Current.CancellationToken);
+
+        Received.InOrder(() =>
+                         {
+                             fixture.TargetLease.TryMarkPendingRenameAsync(OperationId,
+                                                                            Arg.Any<CancellationToken>());
+                             fixture.Data.FinalizeDirectoryDefinitionsAsync(
+                                  Arg.Is<LibraryRenameOperationRecord>(item =>
+                                      item != null &&
+                                      item.State == LibraryRenameOperationState.VectorCommitted),
+                                 Arg.Any<CancellationToken>());
+                             fixture.TargetLease.TryClearPendingRenameAsync(OperationId,
+                                                                             Arg.Any<CancellationToken>());
+                             fixture.SourceLease.TryDeleteOwnershipAsync(Arg.Any<CancellationToken>());
+                         });
+    }
+
+    [Fact]
+    public async Task NewerSourceOwnershipGenerationIsNeverMarkedOrDeletedByRecovery()
+    {
+        LibraryRenameOperationRecord operation = Operation(LibraryRenameOperationState.VectorCommitted,
+                                                            Counts);
+        RenameFixture fixture = MakeRecoveryFixture(operation,
+                                                    sourcePending: false,
+                                                    targetPending: false,
+                                                    finalized: false);
+        fixture.Modes.GetAsync(SourceLibraryId, Arg.Any<CancellationToken>())
+               .Returns(Ownership(SourceLibraryId, pendingOperationId: null) with
+                            {
+                                ReservedAtUtc = RecordedAt.AddMinutes(1)
+                            });
+
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             fixture.Service.RenameLibraryAsync(Profile,
-                                               OldLibraryId,
-                                               NewLibraryId,
+                                               SourceLibraryId,
+                                               TargetLibraryId,
                                                TestContext.Current.CancellationToken));
 
-        Assert.Equal(DatabaseFailure, exception.Message);
-        Assert.Equal(["database-flip"], fixture.Events);
-        await fixture.Vector.DidNotReceive()
-                     .IndexChunksAsync(Arg.Any<string?>(),
-                                       Arg.Any<string>(),
-                                       Arg.Any<string>(),
-                                       Arg.Any<IReadOnlyList<DocChunk>>(),
-                                       Arg.Any<CancellationToken>());
-        await fixture.Vector.DidNotReceive()
-                     .RemoveLibraryIndexesAsync(Profile, OldLibraryId, Arg.Any<CancellationToken>());
+        Assert.Contains("newer generation", exception.Message, StringComparison.Ordinal);
+        await fixture.SourceLease.DidNotReceive()
+                     .TryMarkPendingRenameAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await fixture.SourceLease.DidNotReceive()
+                     .TryDeleteOwnershipAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task RenameLibraryRebuildFailureReturnsActionableWarningAndKeepsMongoRename()
+    public async Task DifferentRecoveryTargetIsRejectedBeforeAnyLeaseAcquisition()
     {
-        RenameFixture fixture = MakeFixture();
-        fixture.Vector.IndexChunksAsync(Profile,
-                                        NewLibraryId,
-                                        FirstVersion,
-                                        Arg.Any<IReadOnlyList<DocChunk>>(),
-                                        Arg.Any<CancellationToken>())
-               .Returns(call =>
-                        {
-                            fixture.Events.Add("rebuild-failed");
-                            throw new InvalidOperationException(VectorFailure);
-                        });
+        LibraryRenameOperationRecord operation = Operation(LibraryRenameOperationState.Applying,
+                                                            counts: null);
+        RenameFixture fixture = MakeRecoveryFixture(operation,
+                                                    sourcePending: true,
+                                                    targetPending: true,
+                                                    finalized: false);
 
-        RenameLibraryResponse result = await fixture.Service.RenameLibraryAsync(Profile,
-                                                                                  OldLibraryId,
-                                                                                  NewLibraryId,
-                                                                                  TestContext.Current.CancellationToken);
-
-        Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
-        string warning = Assert.IsType<string>(result.Warning);
-        Assert.Contains(VectorFailure, warning, StringComparison.Ordinal);
-        Assert.Contains("reembed_library", warning, StringComparison.Ordinal);
-        Assert.Equal(["database-flip", "rebuild-failed"], fixture.Events);
-        await fixture.Vector.DidNotReceive()
-                     .RemoveLibraryIndexesAsync(Profile, OldLibraryId, Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task RenameVersionCommitsMongoThenRebuildsTargetAndCleansOnlyTheSourceVersion()
-    {
-        RenameFixture fixture = MakeFixture();
-
-        RenameLibraryResponse result = await fixture.Service.RenameVersionAsync(Profile,
-                                                                                  OldLibraryId,
-                                                                                  FirstVersion,
-                                                                                  NewVersion,
-                                                                                  TestContext.Current.CancellationToken);
-
-        Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
-        Assert.Null(result.Warning);
-        Assert.Equal(["database-version-flip", "rebuild-version", "cleanup-source-version"],
-                     fixture.VersionEvents);
-        await fixture.Vector.Received(requiredNumberOfCalls: 1)
-                     .IndexChunksAsync(Profile,
-                                       OldLibraryId,
-                                       NewVersion,
-                                       Arg.Is<IReadOnlyList<DocChunk>>(chunks => IsVersionTarget(chunks)),
-                                       Arg.Any<CancellationToken>());
-        await fixture.Vector.Received(requiredNumberOfCalls: 1)
-                     .RemoveIndexAsync(Profile,
-                                       OldLibraryId,
-                                       FirstVersion,
-                                       Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task RenameVersionDatabaseFailureDoesNotTouchVectorIndexes()
-    {
-        RenameFixture fixture = MakeFixture();
-        fixture.Libraries.RenameVersionAsync(OldLibraryId,
-                                             FirstVersion,
-                                             NewVersion,
-                                             Arg.Any<CancellationToken>())
-               .Returns(call =>
-                        {
-                            fixture.VersionEvents.Add("database-version-flip");
-                            return Task.FromException<RenameLibraryResponse>(
-                                new InvalidOperationException(DatabaseFailure));
-                        });
         InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            fixture.Service.RenameVersionAsync(Profile,
-                                               OldLibraryId,
-                                               FirstVersion,
-                                               NewVersion,
+            fixture.Service.RenameLibraryAsync(Profile,
+                                               SourceLibraryId,
+                                               DifferentTargetLibraryId,
                                                TestContext.Current.CancellationToken));
 
-        Assert.Equal(DatabaseFailure, exception.Message);
-        Assert.Equal(["database-version-flip"], fixture.VersionEvents);
-        await fixture.Vector.DidNotReceive()
-                     .IndexChunksAsync(Arg.Any<string?>(),
-                                       Arg.Any<string>(),
-                                       Arg.Any<string>(),
-                                       Arg.Any<IReadOnlyList<DocChunk>>(),
-                                       Arg.Any<CancellationToken>());
-        await fixture.Vector.DidNotReceive()
-                     .RemoveIndexAsync(Profile,
-                                      OldLibraryId,
-                                      FirstVersion,
-                                      Arg.Any<CancellationToken>());
+        Assert.Contains("different rename", exception.Message, StringComparison.Ordinal);
+        await fixture.ModeManager.DidNotReceiveWithAnyArgs()
+                     .TryAcquireAsync(default,
+                                      default!,
+                                      default,
+                                      TestContext.Current.CancellationToken);
+        await fixture.ModeManager.DidNotReceiveWithAnyArgs()
+                     .TryAcquireRenameRecoveryAsync(default,
+                                                    default!,
+                                                    default,
+                                                    default!,
+                                                    TestContext.Current.CancellationToken);
     }
 
-    [Fact]
-    public async Task RenameVersionCleanupFailureReturnsActionableWarningWithoutUndoingRename()
+    private static RenameFixture MakeNewLibraryRenameFixture()
     {
-        RenameFixture fixture = MakeFixture();
-        fixture.Vector.RemoveIndexAsync(Profile,
-                                        OldLibraryId,
-                                        FirstVersion,
-                                        Arg.Any<CancellationToken>())
+        RenameFixture fixture = MakeBaseFixture();
+        fixture.Operations.GetAsync(SourceLibraryId, Arg.Any<CancellationToken>())
+               .Returns((LibraryRenameOperationRecord?)null);
+        fixture.Modes.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+               .Returns((LibraryIngestionModeRecord?)null);
+        fixture.Modes.GetAsync(SourceLibraryId, Arg.Any<CancellationToken>())
+               .Returns((LibraryIngestionModeRecord?)null,
+                        (LibraryIngestionModeRecord?)null,
+                        Ownership(SourceLibraryId, pendingOperationId: null));
+        fixture.Modes.GetAsync(TargetLibraryId, Arg.Any<CancellationToken>())
+               .Returns((LibraryIngestionModeRecord?)null,
+                        Ownership(TargetLibraryId, pendingOperationId: null) with
+                            {
+                                OwnershipState = LibraryIngestionOwnershipState.Reserved,
+                                CommittedAtUtc = null
+                            });
+        fixture.Sources.GetDirectoryDefinitionAsync(SourceLibraryId, Arg.Any<CancellationToken>())
+               .Returns((DirectoryLibraryDefinition?)null);
+        fixture.ModeManager.TryAcquireAsync(Profile,
+                                            SourceLibraryId,
+                                            LibraryIngestionMode.Web,
+                                            Arg.Any<CancellationToken>())
+               .Returns(fixture.SourceLease);
+        fixture.ModeManager.TryAcquireAsync(Profile,
+                                            TargetLibraryId,
+                                            LibraryIngestionMode.Web,
+                                            Arg.Any<CancellationToken>())
+               .Returns(fixture.TargetLease);
+        fixture.SourceLease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        fixture.TargetLease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        fixture.SourceLease.TryCommitAsync(Arg.Any<CancellationToken>())
+               .Returns(_ =>
+                        {
+                            fixture.Events.Add("source-commit");
+                            return true;
+                        });
+        fixture.Data.PreflightLibraryRenameAsync(SourceLibraryId,
+                                                 TargetLibraryId,
+                                                 Arg.Any<CancellationToken>())
+               .Returns(RenameLibraryOutcome.Renamed);
+        fixture.Operations.TryBeginAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                         Arg.Any<CancellationToken>())
                .Returns(call =>
                         {
-                            fixture.VersionEvents.Add("cleanup-failed");
-                            throw new InvalidOperationException(VectorFailure);
+                            fixture.Events.Add("begin-operation");
+                            return call.Arg<LibraryRenameOperationRecord>();
                         });
-
-        RenameLibraryResponse result = await fixture.Service.RenameVersionAsync(Profile,
-                                                                                  OldLibraryId,
-                                                                                  FirstVersion,
-                                                                                  NewVersion,
-                                                                                  TestContext.Current.CancellationToken);
-
-        Assert.Equal(RenameLibraryOutcome.Renamed, result.Outcome);
-        string warning = Assert.IsType<string>(result.Warning);
-        Assert.Contains(VectorFailure, warning, StringComparison.Ordinal);
-        Assert.Contains("reembed_library", warning, StringComparison.Ordinal);
-        Assert.Equal(["database-version-flip", "rebuild-version", "cleanup-failed"],
-                     fixture.VersionEvents);
+        ConfigureApplyingAndFinalization(fixture);
+        return fixture;
     }
 
-    private static RenameFixture MakeFixture()
+    private static RenameFixture MakeRecoveryFixture(LibraryRenameOperationRecord operation,
+                                                     bool sourcePending,
+                                                     bool targetPending,
+                                                     bool finalized,
+                                                     bool sourceOwnershipMissing = false)
+    {
+        RenameFixture fixture = MakeBaseFixture();
+        fixture.Operations.GetAsync(SourceLibraryId, Arg.Any<CancellationToken>()).Returns(operation);
+        LibraryIngestionModeRecord? source = sourceOwnershipMissing
+                                                 ? null
+                                                 : Ownership(SourceLibraryId,
+                                                             sourcePending ? OperationId : null);
+        LibraryIngestionModeRecord target = Ownership(TargetLibraryId,
+                                                       targetPending ? OperationId : null);
+        fixture.Modes.GetAsync(SourceLibraryId, Arg.Any<CancellationToken>()).Returns(source);
+        fixture.Modes.GetAsync(TargetLibraryId, Arg.Any<CancellationToken>()).Returns(target);
+        if (!sourceOwnershipMissing)
+        {
+            fixture.ModeManager.TryAcquireRenameRecoveryAsync(Profile,
+                                                               SourceLibraryId,
+                                                               LibraryIngestionMode.Web,
+                                                               OperationId,
+                                                               Arg.Any<CancellationToken>())
+                   .Returns(fixture.SourceLease);
+        }
+
+        fixture.ModeManager.TryAcquireRenameRecoveryAsync(Profile,
+                                                           TargetLibraryId,
+                                                           LibraryIngestionMode.Web,
+                                                           OperationId,
+                                                           Arg.Any<CancellationToken>())
+               .Returns(fixture.TargetLease);
+        ConfigureApplyingAndFinalization(fixture);
+        fixture.Data.IsFinalizedAsync(Arg.Is<LibraryRenameOperationRecord>(item =>
+                                           item != null &&
+                                           item.State == LibraryRenameOperationState.VectorCommitted),
+                                       Arg.Any<CancellationToken>())
+               .Returns(_ => finalized ||
+                             fixture.Events.Contains("source-delete", StringComparer.Ordinal));
+        return fixture;
+    }
+
+    private static RenameFixture MakeBaseFixture()
     {
         var events = new List<string>();
-        var versionEvents = new List<string>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
+        var operations = Substitute.For<ILibraryRenameOperationRepository>();
+        var data = Substitute.For<ILibraryRenameDataRepository>();
+        var modes = Substitute.For<ILibraryIngestionModeRepository>();
+        var sources = Substitute.For<ISourceDocumentRepository>();
         var libraries = Substitute.For<ILibraryRepository>();
         var chunks = Substitute.For<IChunkRepository>();
+        var indexes = Substitute.For<ILibraryIndexRepository>();
+        var shards = Substitute.For<IBm25ShardRepository>();
         var vector = Substitute.For<IVectorSearchProvider>();
+        var manager = Substitute.For<ILibraryIngestionModeLeaseManager>();
+        var sourceLease = MakeLease(SourceLibraryId, events, "source");
+        var targetLease = MakeLease(TargetLibraryId, events, "target");
+        factory.GetLibraryRenameOperationRepository(Profile).Returns(operations);
+        factory.GetLibraryRenameDataRepository(Profile).Returns(data);
+        factory.GetLibraryIngestionModeRepository(Profile).Returns(modes);
+        factory.GetSourceDocumentRepository(Profile).Returns(sources);
         factory.GetLibraryRepository(Profile).Returns(libraries);
         factory.GetChunkRepository(Profile).Returns(chunks);
-        libraries.GetVersionsAsync(NewLibraryId, Arg.Any<CancellationToken>())
-                 .Returns([VersionRecord(NewLibraryId, FirstVersion),
-                           VersionRecord(NewLibraryId, SecondVersion)]);
-        chunks.GetChunksAsync(NewLibraryId, FirstVersion, Arg.Any<CancellationToken>())
-              .Returns([Chunk(NewLibraryId, FirstVersion)]);
-        chunks.GetChunksAsync(NewLibraryId, SecondVersion, Arg.Any<CancellationToken>())
-              .Returns([Chunk(NewLibraryId, SecondVersion)]);
-        chunks.GetChunksAsync(OldLibraryId, NewVersion, Arg.Any<CancellationToken>())
-              .Returns([Chunk(OldLibraryId, NewVersion)]);
-        libraries.RenameAsync(OldLibraryId, NewLibraryId, Arg.Any<CancellationToken>())
-                 .Returns(call =>
-                          {
-                              events.Add("database-flip");
-                              return Renamed();
-                          });
+        factory.GetLibraryIndexRepository(Profile).Returns(indexes);
+        factory.GetBm25ShardRepository(Profile).Returns(shards);
+        libraries.GetVersionsAsync(TargetLibraryId, Arg.Any<CancellationToken>())
+                 .Returns([Version(TargetLibraryId, VersionId)]);
+        chunks.GetChunksAsync(TargetLibraryId, VersionId, Arg.Any<CancellationToken>())
+              .Returns([Chunk(TargetLibraryId, VersionId)]);
+        chunks.GetChunksAsync(SourceLibraryId, TargetVersionId, Arg.Any<CancellationToken>())
+              .Returns([Chunk(SourceLibraryId, TargetVersionId)]);
         vector.IndexChunksAsync(Profile,
-                                NewLibraryId,
-                                FirstVersion,
+                                TargetLibraryId,
+                                VersionId,
                                 Arg.Any<IReadOnlyList<DocChunk>>(),
                                 Arg.Any<CancellationToken>())
-              .Returns(call =>
+              .Returns(_ =>
                        {
-                           events.Add("rebuild-v1");
+                           events.Add("rebuild-target");
                            return Task.CompletedTask;
                        });
         vector.IndexChunksAsync(Profile,
-                                NewLibraryId,
-                                SecondVersion,
+                                SourceLibraryId,
+                                TargetVersionId,
                                 Arg.Any<IReadOnlyList<DocChunk>>(),
                                 Arg.Any<CancellationToken>())
-              .Returns(call =>
+              .Returns(Task.CompletedTask);
+        vector.RemoveLibraryIndexesAsync(Profile,
+                                          SourceLibraryId,
+                                          Arg.Any<CancellationToken>())
+              .Returns(_ =>
                        {
-                           events.Add("rebuild-v2");
-                           return Task.CompletedTask;
-                       });
-        vector.RemoveLibraryIndexesAsync(Profile, OldLibraryId, Arg.Any<CancellationToken>())
-              .Returns(call =>
-                       {
-                           events.Add("cleanup-source");
-                           return Task.CompletedTask;
-                       });
-
-        libraries.RenameVersionAsync(OldLibraryId,
-                                     FirstVersion,
-                                     NewVersion,
-                                     Arg.Any<CancellationToken>())
-                 .Returns(call =>
-                          {
-                              versionEvents.Add("database-version-flip");
-                              return Renamed();
-                          });
-        vector.IndexChunksAsync(Profile,
-                                OldLibraryId,
-                                NewVersion,
-                                Arg.Any<IReadOnlyList<DocChunk>>(),
-                                Arg.Any<CancellationToken>())
-              .Returns(call =>
-                       {
-                           versionEvents.Add("rebuild-version");
+                           events.Add("remove-source-vector");
                            return Task.CompletedTask;
                        });
         vector.RemoveIndexAsync(Profile,
-                                OldLibraryId,
-                                FirstVersion,
+                                SourceLibraryId,
+                                SourceVersionId,
                                 Arg.Any<CancellationToken>())
-              .Returns(call =>
+              .Returns(_ =>
                        {
-                           versionEvents.Add("cleanup-source-version");
+                           events.Add("remove-source-version-vector");
                            return Task.CompletedTask;
                        });
-        ILibraryRenameService service = new LibraryRenameService(factory, vector);
-        return new RenameFixture(service, libraries, vector, events, versionEvents);
+        ILibraryRenameService service = new LibraryRenameService(factory,
+                                                                  vector,
+                                                                  manager,
+                                                                  TimeProvider.System);
+        return new RenameFixture(service,
+                                 operations,
+                                 data,
+                                 modes,
+                                 sources,
+                                 vector,
+                                 manager,
+                                 sourceLease,
+                                 targetLease,
+                                 events);
     }
 
-    private static bool IsLibraryTarget(IReadOnlyList<DocChunk>? chunks, string version)
+    private static void ConfigureApplyingAndFinalization(RenameFixture fixture)
     {
-        bool result = chunks is not null
-                      && chunks.Count == 1
-                      && chunks[index: 0].Id == $"{NewLibraryId}/{version}/chunk-1"
-                      && chunks[index: 0].LibraryId == NewLibraryId
-                      && chunks[index: 0].Version == version
-                      && chunks[index: 0].PageUrl == $"{SourceUri(NewLibraryId)}#section-1"
-                      && chunks[index: 0].DocumentSource?.DocumentId == DocumentId
-                      && chunks[index: 0].DocumentSource?.RevisionId == RevisionId(NewLibraryId, version)
-                      && chunks[index: 0].DocumentSource?.SourceUri == SourceUri(NewLibraryId);
+        RenameLibraryResult expectedCounts = ExpectedFinalCounts(TargetLibraryId, VersionId);
+        fixture.Data.PrepareDirectoryDefinitionsAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                                      Arg.Any<CancellationToken>())
+               .Returns(_ =>
+                        {
+                            fixture.Events.Add("prepare-directory");
+                            return Task.CompletedTask;
+                        });
+        fixture.Data.ApplyLibraryRenameAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                             Arg.Any<CancellationToken>())
+               .Returns(_ =>
+                        {
+                            fixture.Events.Add("apply-mongo");
+                            return Counts;
+                        });
+        fixture.Operations.TryAdvanceAsync(SourceLibraryId,
+                                           Arg.Any<string>(),
+                                           LibraryRenameOperationState.Applying,
+                                           LibraryRenameOperationState.MongoCommitted,
+                                           Counts,
+                                           Arg.Any<DateTime>(),
+                                           Arg.Any<CancellationToken>())
+               .Returns(_ =>
+                        {
+                            fixture.Events.Add("mongo-committed");
+                            return true;
+                        });
+        fixture.Operations.TryAdvanceAsync(SourceLibraryId,
+                                           Arg.Any<string>(),
+                                           LibraryRenameOperationState.MongoCommitted,
+                                           LibraryRenameOperationState.VectorCommitted,
+                                           expectedCounts,
+                                           Arg.Any<DateTime>(),
+                                           Arg.Any<CancellationToken>())
+               .Returns(_ =>
+                        {
+                            fixture.Events.Add("vector-committed");
+                            return true;
+                        });
+        fixture.Data.IsFinalizedAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                      Arg.Any<CancellationToken>())
+               .Returns(_ => fixture.Events.Contains("source-delete", StringComparer.Ordinal));
+        fixture.Data.FinalizeDirectoryDefinitionsAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                                       Arg.Any<CancellationToken>())
+               .Returns(_ =>
+                        {
+                            fixture.Events.Add("finalize-directory");
+                            return Task.CompletedTask;
+                        });
+        fixture.Operations.TryDeleteAsync(SourceLibraryId,
+                                          Arg.Any<string>(),
+                                          LibraryRenameOperationState.VectorCommitted,
+                                          Arg.Any<CancellationToken>())
+               .Returns(_ =>
+                        {
+                            fixture.Events.Add("delete-operation");
+                            return true;
+                        });
+    }
+
+    private static RenameFixture MakeVersionRecoveryFixture(LibraryRenameOperationRecord operation)
+    {
+        RenameFixture fixture = MakeBaseFixture();
+        RenameLibraryResult expectedCounts = ExpectedFinalCounts(SourceLibraryId, TargetVersionId);
+        fixture.Operations.GetAsync(SourceLibraryId, Arg.Any<CancellationToken>()).Returns(operation);
+        fixture.Modes.GetAsync(SourceLibraryId, Arg.Any<CancellationToken>())
+               .Returns(Ownership(SourceLibraryId, OperationId));
+        fixture.ModeManager.TryAcquireRenameRecoveryAsync(Profile,
+                                                           SourceLibraryId,
+                                                           LibraryIngestionMode.Web,
+                                                           OperationId,
+                                                           Arg.Any<CancellationToken>())
+               .Returns(fixture.SourceLease);
+        fixture.Operations.TryAdvanceAsync(SourceLibraryId,
+                                           OperationId,
+                                           LibraryRenameOperationState.MongoCommitted,
+                                           LibraryRenameOperationState.VectorCommitted,
+                                           expectedCounts,
+                                           Arg.Any<DateTime>(),
+                                           Arg.Any<CancellationToken>())
+               .Returns(true);
+        fixture.Data.IsFinalizedAsync(Arg.Is<LibraryRenameOperationRecord>(item =>
+                                           item != null &&
+                                           item.State == LibraryRenameOperationState.VectorCommitted),
+                                       Arg.Any<CancellationToken>())
+               .Returns(_ => fixture.Events.Contains("source-clear", StringComparer.Ordinal));
+        fixture.Data.FinalizeDirectoryDefinitionsAsync(Arg.Any<LibraryRenameOperationRecord>(),
+                                                       Arg.Any<CancellationToken>())
+               .Returns(Task.CompletedTask);
+        fixture.Operations.TryDeleteAsync(SourceLibraryId,
+                                          OperationId,
+                                          LibraryRenameOperationState.VectorCommitted,
+                                          Arg.Any<CancellationToken>())
+               .Returns(true);
+        return fixture;
+    }
+
+    private static ILibraryIngestionModeLease MakeLease(string libraryId,
+                                                        ICollection<string> events,
+                                                        string label)
+    {
+        var result = Substitute.For<ILibraryIngestionModeLease>();
+        result.LibraryId.Returns(libraryId);
+        result.Mode.Returns(LibraryIngestionMode.Web);
+        result.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Committed);
+        result.OwnershipLostToken.Returns(CancellationToken.None);
+        result.TryCommitAsync(Arg.Any<CancellationToken>())
+              .Returns(_ =>
+                       {
+                           events.Add($"{label}-commit");
+                           return true;
+                       });
+        result.TryMarkPendingRenameAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+              .Returns(_ =>
+                       {
+                           events.Add($"{label}-pending");
+                           return true;
+                       });
+        result.TryClearPendingRenameAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+              .Returns(_ =>
+                       {
+                           events.Add($"{label}-clear");
+                           return true;
+                       });
+        result.TryDeleteOwnershipAsync(Arg.Any<CancellationToken>())
+              .Returns(_ =>
+                       {
+                           events.Add($"{label}-delete");
+                           return true;
+                       });
         return result;
     }
 
-    private static bool IsVersionTarget(IReadOnlyList<DocChunk>? chunks)
-    {
-        bool result = chunks is not null
-                      && chunks.Count == 1
-                      && chunks[index: 0].Id == $"{OldLibraryId}/{NewVersion}/chunk-1"
-                      && chunks[index: 0].LibraryId == OldLibraryId
-                      && chunks[index: 0].Version == NewVersion
-                      && chunks[index: 0].PageUrl == $"{SourceUri(OldLibraryId)}#section-1"
-                      && chunks[index: 0].DocumentSource?.DocumentId == DocumentId
-                      && chunks[index: 0].DocumentSource?.RevisionId == RevisionId(OldLibraryId, NewVersion)
-                      && chunks[index: 0].DocumentSource?.SourceUri == SourceUri(OldLibraryId);
-        return result;
-    }
+    private static LibraryRenameOperationRecord Operation(LibraryRenameOperationState state,
+                                                          RenameLibraryResult? counts) =>
+        new()
+            {
+                Id = SourceLibraryId,
+                OperationId = OperationId,
+                Kind = LibraryRenameOperationKind.Library,
+                State = state,
+                Mode = LibraryIngestionMode.Web,
+                SourceLibraryId = SourceLibraryId,
+                TargetLibraryId = TargetLibraryId,
+                SourceOwnershipReservedAtUtc = RecordedAt,
+                TargetOwnershipReservedAtUtc = RecordedAt,
+                Counts = counts,
+                StartedAtUtc = RecordedAt,
+                UpdatedAtUtc = RecordedAt
+            };
 
-    private static DocChunk Chunk(string libraryId, string version) => new()
-        {
-            Id = $"{libraryId}/{version}/chunk-1",
-            LibraryId = libraryId,
-            Version = version,
-            PageUrl = $"{SourceUri(libraryId)}#section-1",
-            PageTitle = "Manual",
-            Category = DocCategory.HowTo,
-            Content = "rename marker",
-            TokenCount = 2,
-            Embedding = [1.0f, 0.0f],
-            DocumentSource = new DocumentProvenance
-                                 {
-                                     DocumentId = DocumentId,
-                                     RevisionId = RevisionId(libraryId, version),
-                                     SourceUri = SourceUri(libraryId),
-                                     RelativePath = "manual.pdf"
-                                 }
-        };
+    private static LibraryRenameOperationRecord VersionOperation(LibraryRenameOperationState state,
+                                                                 RenameLibraryResult? counts) =>
+        new()
+            {
+                Id = SourceLibraryId,
+                OperationId = OperationId,
+                Kind = LibraryRenameOperationKind.Version,
+                State = state,
+                Mode = LibraryIngestionMode.Web,
+                SourceLibraryId = SourceLibraryId,
+                TargetLibraryId = SourceLibraryId,
+                SourceVersion = SourceVersionId,
+                TargetVersion = TargetVersionId,
+                SourceOwnershipReservedAtUtc = RecordedAt,
+                TargetOwnershipReservedAtUtc = RecordedAt,
+                Counts = counts,
+                StartedAtUtc = RecordedAt,
+                UpdatedAtUtc = RecordedAt
+            };
 
-    private static LibraryVersionRecord VersionRecord(string libraryId, string version) => new()
+    private static LibraryIngestionModeRecord Ownership(string libraryId, string? pendingOperationId) =>
+        new()
+            {
+                Id = libraryId,
+                Mode = LibraryIngestionMode.Web,
+                OwnershipState = LibraryIngestionOwnershipState.Committed,
+                PendingRenameOperationId = pendingOperationId,
+                ReservedAtUtc = RecordedAt,
+                CommittedAtUtc = RecordedAt,
+                UpdatedAtUtc = RecordedAt
+            };
+
+    private static LibraryVersionRecord Version(string libraryId, string version) => new()
         {
             Id = $"{libraryId}/{version}",
             LibraryId = libraryId,
@@ -338,48 +650,62 @@ public sealed class LibraryRenameServiceTests
             ChunkCount = 1,
             EmbeddingProviderId = "test",
             EmbeddingModelName = "test",
-            EmbeddingDimensions = 2,
-            PublicationState = VersionPublicationState.Published
+            EmbeddingDimensions = 2
         };
 
-    private static RenameLibraryResponse Renamed() => new(
-        RenameLibraryOutcome.Renamed,
-        new RenameLibraryResult(Libraries: 1,
-                                Versions: 1,
-                                Chunks: 1,
-                                Pages: 1,
-                                Profiles: 0,
-                                Indexes: 0,
-                                Bm25Shards: 0,
-                                ExcludedSymbols: 0,
-                                ScrapeJobs: 0));
+    private static DocChunk Chunk(string libraryId, string version) => new()
+        {
+            Id = $"{libraryId}/{version}/chunk",
+            LibraryId = libraryId,
+            Version = version,
+            PageUrl = "https://example.test/page",
+            PageTitle = "Page",
+            Category = DocCategory.HowTo,
+            Content = "content",
+            TokenCount = 1,
+            Embedding = [1.0f, 0.0f]
+        };
 
-    private static string RevisionId(string libraryId, string version) =>
-        SourceDocumentRepository.MakeRevisionId(libraryId, version, DocumentId);
-
-    private static string SourceUri(string libraryId) =>
-        $"saddlerag://library/{libraryId}/documents/{DocumentId}";
+    private static RenameLibraryResult ExpectedFinalCounts(string libraryId, string version) =>
+        Counts with
+            {
+                Bm25Shards = Bm25IndexBuilder.Build(libraryId, version, [Chunk(libraryId, version)]).Shards.Count
+            };
 
     private sealed record RenameFixture(ILibraryRenameService Service,
-                                        ILibraryRepository Libraries,
+                                        ILibraryRenameOperationRepository Operations,
+                                        ILibraryRenameDataRepository Data,
+                                        ILibraryIngestionModeRepository Modes,
+                                        ISourceDocumentRepository Sources,
                                         IVectorSearchProvider Vector,
-                                        List<string> Events,
-                                        List<string> VersionEvents);
+                                        ILibraryIngestionModeLeaseManager ModeManager,
+                                        ILibraryIngestionModeLease SourceLease,
+                                        ILibraryIngestionModeLease TargetLease,
+                                        List<string> Events);
 
+    private static readonly RenameLibraryResult Counts = new(Libraries: 1,
+                                                              Versions: 1,
+                                                              Chunks: 1,
+                                                              Pages: 1,
+                                                              Profiles: 0,
+                                                              Indexes: 0,
+                                                              Bm25Shards: 0,
+                                                              ExcludedSymbols: 0,
+                                                              ScrapeJobs: 0);
     private static readonly DateTime RecordedAt = new(year: 2026,
                                                       month: 8,
-                                                      day: 4,
-                                                      hour: 18,
+                                                      day: 8,
+                                                      hour: 12,
                                                       minute: 0,
                                                       second: 0,
                                                       DateTimeKind.Utc);
-    private const string DatabaseFailure = "database flip failed";
-    private const string VectorFailure = "vector maintenance failed";
     private const string Profile = "profile-a";
-    private const string OldLibraryId = "manual-library";
-    private const string NewLibraryId = "renamed-library";
-    private const string FirstVersion = "v1";
-    private const string SecondVersion = "v2";
-    private const string NewVersion = "v1-renamed";
-    private const string DocumentId = "document-1";
+    private const string SourceLibraryId = "manual-library";
+    private const string TargetLibraryId = "renamed-library";
+    private const string DifferentTargetLibraryId = "different-library";
+    private const string VersionId = "v1";
+    private const string SourceVersionId = "old-version";
+    private const string TargetVersionId = "new-version";
+    private const string OperationId = "operation-1";
+    private const string VectorFailure = "vector maintenance failed";
 }

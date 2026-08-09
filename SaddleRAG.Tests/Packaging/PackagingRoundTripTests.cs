@@ -123,11 +123,16 @@ public sealed class PackagingRoundTripTests : IAsyncLifetime
 
         // IMPORT: encoder matches the bundle (same providerId / modelName / dimensions).
         var matchingEmbeddingProvider = new RoundTripFakeEmbeddingProvider("onnx-local", "test-embed", Dim);
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(libRepo,
+            profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, bm25Repo);
 
         var importer = new LibraryImporter(libRepo, jobRepo, matchingEmbeddingProvider,
                                            profileRepo, indexRepo, excludedRepo,
                                            diffRepo, pageRepo, chunkRepo,
-                                           bm25Repo);
+                                           bm25Repo,
+                                           deletionService: lifecycle.DeletionService,
+                                           modeLeaseManager: lifecycle.ModeLeaseManager,
+                                           modeRepository: lifecycle.ModeRepository);
 
         var importResult = await importer.ImportAsync(
             new ImportRequest { BundlePath = mTempBundlePath },

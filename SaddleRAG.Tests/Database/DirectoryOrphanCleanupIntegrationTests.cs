@@ -128,6 +128,42 @@ public sealed class DirectoryOrphanCleanupIntegrationTests : IAsyncLifetime
         Assert.Equal(SharedOriginalBytes, await ReadArtifactAsync(Hash(SharedOriginalBytes)));
     }
 
+    [Fact]
+    public async Task ApplyRejectsBusyDirectoryLifecycleBeforeDeletingAnyOrphanData()
+    {
+        await SeedValidAndOrphanedDocumentsAsync();
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        DirectoryLibraryDefinition definition = Assert.IsType<DirectoryLibraryDefinition>(
+            await mSources.GetDirectoryDefinitionAsync(OrphanLibraryId, ct));
+        IDirectoryPublicationLease? blockingLease =
+            await mSources.TryAcquireDirectoryPublicationLeaseAsync(
+                OrphanLibraryId,
+                definition.RegistrationRevision,
+                definition.RegistrationIncarnationId,
+                "active-directory-scan",
+                definition.LastPublishedVersion,
+                ct);
+        Assert.NotNull(blockingLease);
+
+        await using(blockingLease)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => OrphanCleanupTools.CleanupOrphans(
+                mFactory,
+                InlineRunner(_ => { }),
+                library: OrphanLibraryId,
+                version: Version,
+                dryRun: false,
+                profile: null,
+                ct));
+
+            Assert.NotNull(await mSources.GetDirectoryDefinitionAsync(OrphanLibraryId, ct));
+            Assert.NotNull(await mSources.GetDocumentAsync(OrphanDocumentId, ct));
+            Assert.NotNull(await mSources.GetRevisionAsync(OrphanRevisionId, ct));
+            Assert.NotNull(await mCatalogs.GetAsync(OrphanLibraryId, TaxonomyVersion, ct));
+            Assert.NotEmpty(await mPages.GetPagesAsync(OrphanLibraryId, Version, ct));
+        }
+    }
+
     private async Task SeedValidAndOrphanedDocumentsAsync()
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
