@@ -38,7 +38,7 @@ public sealed class DocumentSetupGuidanceTests
                         StringComparison.Ordinal);
         Assert.Contains("Test Docling", readme, StringComparison.Ordinal);
         Assert.Contains("health, model readiness", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Installing Tesseract alone does not make SaddleRAG or Docling use it",
+        Assert.Contains("installing Tesseract alone does not change how documents are converted",
                         readme,
                         StringComparison.Ordinal);
         Assert.Contains("set `TESSDATA_PREFIX`", readme, StringComparison.Ordinal);
@@ -49,12 +49,16 @@ public sealed class DocumentSetupGuidanceTests
         Assert.Contains("DocumentIngestion:Docling:ApiKey", readme, StringComparison.Ordinal);
 
         Assert.Contains("user-managed Docling Serve", landingPage, StringComparison.Ordinal);
-        Assert.Contains("SaddleRAG never installs or manages Docling or Tesseract",
+        Assert.Contains("SaddleRAG never installs, licenses, configures, or upgrades Docling or Tesseract",
                         landingPage,
                         StringComparison.Ordinal);
-        Assert.Contains("installing Tesseract alone does not make SaddleRAG or Docling use it",
+        Assert.Contains("MCP service never starts, stops, or restarts anything",
                         landingPage,
                         StringComparison.Ordinal);
+        Assert.Contains("installing Tesseract alone does not change how documents are converted",
+                        landingPage,
+                        StringComparison.Ordinal);
+        Assert.Contains("DocumentIngestion:Docling:OcrEngine", landingPage, StringComparison.Ordinal);
         Assert.Contains("only tests unauthenticated endpoints", landingPage, StringComparison.Ordinal);
         Assert.Contains("never collects", landingPage, StringComparison.Ordinal);
         Assert.Contains("docling-project/docling-serve/releases/latest",
@@ -64,10 +68,13 @@ public sealed class DocumentSetupGuidanceTests
                         landingPage,
                         StringComparison.Ordinal);
 
-        Assert.Contains("does not send Docling an OCR-engine or preset selection",
+        Assert.Contains("sends Docling an OCR-engine selection only when you set",
                         clientGuide,
                         StringComparison.Ordinal);
-        Assert.Contains("never installs, licenses, starts, stops, restarts, upgrades, or otherwise manages Docling or Tesseract",
+        Assert.Contains("never installs, licenses, configures, or upgrades Docling or Tesseract",
+                        clientGuide,
+                        StringComparison.Ordinal);
+        Assert.Contains("MCP service never starts, stops, or restarts anything",
                         clientGuide,
                         StringComparison.Ordinal);
         Assert.Contains("set `TESSDATA_PREFIX`", clientGuide, StringComparison.Ordinal);
@@ -78,7 +85,7 @@ public sealed class DocumentSetupGuidanceTests
         Assert.Contains("limited to unauthenticated endpoints", clientGuide, StringComparison.Ordinal);
         Assert.Contains("never asks for, collects, or stores secrets", clientGuide, StringComparison.Ordinal);
 
-        Assert.Contains("Installing Tesseract alone does not make SaddleRAG or Docling use it",
+        Assert.Contains("installing Tesseract alone does not change how documents are converted",
                         instructionSource,
                         StringComparison.Ordinal);
         Assert.Contains("set TESSDATA_PREFIX", instructionSource, StringComparison.Ordinal);

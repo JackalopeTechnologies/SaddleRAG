@@ -39,9 +39,9 @@ public sealed class PackageWxsDoclingDialogTests
         Assert.Contains("user-managed", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("separately installed", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("license", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("never controls", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("never installs, licenses, configures, or upgrades", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("unauthenticated", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("not selected", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("only when you configure OcrEngine", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("[DOCLINGHEALTHURL]", text, StringComparison.Ordinal);
         Assert.Contains("[DOCLINGSTATUS]", text, StringComparison.Ordinal);
 

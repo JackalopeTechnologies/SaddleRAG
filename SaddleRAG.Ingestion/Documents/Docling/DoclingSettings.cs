@@ -16,6 +16,14 @@ public sealed class DoclingSettings
     /// <summary>Optional Docling Serve API key.</summary>
     public string ApiKey { get; set; } = string.Empty;
 
+    /// <summary>
+    ///     OCR engine Docling should use, for example <c>tesseract</c>. Empty by default,
+    ///     and when empty the request omits the field entirely so Docling keeps its own
+    ///     default. Selecting an engine is the user's explicit, reversible decision —
+    ///     installing Tesseract does not silently change how documents are converted.
+    /// </summary>
+    public string OcrEngine { get; set; } = string.Empty;
+
     /// <summary>Cold-start grace period before a transient startup state becomes unavailable.</summary>
     public int StartupGracePeriodSeconds { get; set; } = DefaultStartupGracePeriodSeconds;
 

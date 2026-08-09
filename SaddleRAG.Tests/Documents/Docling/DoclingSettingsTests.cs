@@ -125,16 +125,23 @@ public sealed class DoclingSettingsTests
         Assert.Contains(DoclingInstallInstructions.OfficialTesseractInstallUrl,
                         guide.Instructions,
                         StringComparison.Ordinal);
-        Assert.Contains("Installing Tesseract alone does not make SaddleRAG or Docling use it",
+        Assert.Contains("installing Tesseract alone does not change how documents are converted",
                         guide.Instructions,
                         StringComparison.Ordinal);
+        Assert.Contains("DocumentIngestion:Docling:OcrEngine", guide.Instructions, StringComparison.Ordinal);
         Assert.Contains(@"tessdata\", guide.Instructions, StringComparison.Ordinal);
         Assert.Contains("deliberately unauthenticated", guide.Instructions, StringComparison.Ordinal);
         Assert.Contains("never asks for, collects, or stores secrets",
                         guide.Instructions,
                         StringComparison.Ordinal);
         Assert.Contains("DocumentIngestion:Docling:ApiKey", guide.Instructions, StringComparison.Ordinal);
-        Assert.Contains("never installs or manages either product",
+        // Narrowed, not deleted: SaddleRAG may now start a command the user registered, so the
+        // claim states what remains true and keeps the service's own hands-off guarantee.
+        Assert.Contains("never installs, licenses, configures, or upgrades",
+                        guide.OwnershipNotice,
+                        StringComparison.Ordinal);
+        Assert.Contains("start a command you registered", guide.OwnershipNotice, StringComparison.Ordinal);
+        Assert.Contains("MCP service never starts, stops, or restarts anything",
                         guide.OwnershipNotice,
                         StringComparison.Ordinal);
     }

@@ -183,7 +183,7 @@ public sealed class DoclingClient : IDoclingClient
                                                                    CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(endpoint, AsyncConversionPath));
-        request.Content = BuildMultipartContent(file, inputFormat);
+        request.Content = BuildMultipartContent(file, inputFormat, mSettings.OcrEngine);
         AddApiKey(request);
         var submission = await SendAsync(request, cancellationToken);
         DoclingConversionResult result;
@@ -519,7 +519,9 @@ public sealed class DoclingClient : IDoclingClient
         return result;
     }
 
-    private static MultipartFormDataContent BuildMultipartContent(DoclingFile file, string inputFormat)
+    private static MultipartFormDataContent BuildMultipartContent(DoclingFile file,
+                                                                   string inputFormat,
+                                                                   string ocrEngine)
     {
         var multipart = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(file.Content.ToArray());
@@ -530,6 +532,12 @@ public sealed class DoclingClient : IDoclingClient
         AddFormField(multipart, ToFormatsField, JsonFormat);
         AddFormField(multipart, ToFormatsField, TextFormat);
         AddFormField(multipart, DoOcrField, TrueValue);
+
+        // Omitted rather than sent empty when unset: the committed v1 multipart contract has
+        // no ocr_engine field, and an empty one would be a different request than today's.
+        if (!string.IsNullOrWhiteSpace(ocrEngine))
+            AddFormField(multipart, OcrEngineField, ocrEngine);
+
         AddFormField(multipart, TableModeField, AccurateValue);
         AddFormField(multipart, PipelineField, StandardValue);
         AddFormField(multipart, ImageExportModeField, PlaceholderValue);
@@ -704,6 +712,7 @@ public sealed class DoclingClient : IDoclingClient
     private const string FromFormatsField = "from_formats";
     private const string ToFormatsField = "to_formats";
     private const string DoOcrField = "do_ocr";
+    private const string OcrEngineField = "ocr_engine";
     private const string TableModeField = "table_mode";
     private const string PipelineField = "pipeline";
     private const string ImageExportModeField = "image_export_mode";

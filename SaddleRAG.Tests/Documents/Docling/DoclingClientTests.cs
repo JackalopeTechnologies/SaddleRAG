@@ -107,6 +107,32 @@ public sealed class DoclingClientTests
     }
 
     [Fact]
+    public async Task OcrEngineFieldIsOmittedEntirelyWhenTheSettingIsEmpty()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        EnqueueSuccessfulConversion(handler, "docling-v1-pdf-success.json");
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.DoesNotContain("name=ocr_engine", handler.Requests[0].Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OcrEngineFieldIsSentWhenTheUserSelectsAnEngine()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        EnqueueSuccessfulConversion(handler, "docling-v1-pdf-success.json");
+        using var client = MakeClient(handler, new DoclingSettings { OcrEngine = "tesseract" });
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        AssertMultipartField(handler.Requests[0].Body, "ocr_engine", "tesseract");
+    }
+
+    [Fact]
     public async Task ApiKeyHeaderIsSentOnlyWhenConfigured()
     {
         var keyedHandler = new ScriptedHttpMessageHandler();

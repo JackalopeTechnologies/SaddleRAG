@@ -807,7 +807,7 @@
 
                 <Control Id="Description" Type="Text" X="25" Y="53" Width="320" Height="40"
                           Transparent="yes" NoPrefix="yes"
-                          Text="Docling is optional, separately installed, and user-managed; SaddleRAG never controls it. This test is unauthenticated. Tesseract is optional, separately licensed, and not selected by SaddleRAG." />
+                          Text="Docling is optional, separately installed, and user-managed; SaddleRAG never installs, licenses, configures, or upgrades it. This test is unauthenticated. Tesseract is optional and separately licensed; SaddleRAG selects it only when you configure OcrEngine." />
 
                 <Control Id="EndpointLabel" Type="Text" X="25" Y="96" Width="320" Height="12"
                          Text="Docling Serve endpoint:" />
