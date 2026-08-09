@@ -605,6 +605,7 @@ builder.Services.AddHostedService<MonitorLifecycleRelay>();
 builder.Services.AddSingleton<IUnifiedJobView, UnifiedJobView>();
 builder.Services.AddSingleton<MonitorDataService>();
 builder.Services.AddSingleton<IDirectoryLibraryMonitorDataService, DirectoryLibraryMonitorDataService>();
+builder.Services.AddSingleton<IDoclingLaunchRequestService, DoclingLaunchRequestService>();
 builder.Services.AddSingleton<MonitorJobService>();
 builder.Services.AddSingleton<IMonitorConfigSource, McpMonitorConfigSource>();
 
@@ -783,6 +784,7 @@ else
     MonitorLibraryActionsEndpoints.Map(app);
     MonitorDirectoryLibraryEndpoints.Map(app);
     MonitorSnapshotEndpoints.Map(app);
+    MonitorDoclingLaunchEndpoints.Map(app);
 
 
     try
