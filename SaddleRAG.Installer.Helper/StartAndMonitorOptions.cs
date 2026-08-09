@@ -57,6 +57,16 @@ public sealed class StartAndMonitorOptions
 
     public int MaxStartAttempts { get; }
 
+    /// <summary>Creates the bounded startup settings used by the installed helper.</summary>
+    public static StartAndMonitorOptions ForProduction() =>
+        new(OwnedServiceName,
+            new Uri(DefaultHealthUrl, UriKind.Absolute),
+            Path.Combine(AppContext.BaseDirectory, DefaultBinaryName),
+            TimeSpan.FromSeconds(DefaultTotalTimeoutSeconds),
+            TimeSpan.FromSeconds(DefaultPollIntervalSeconds),
+            TimeSpan.FromSeconds(DefaultHealthTimeoutSeconds),
+            DefaultMaxStartAttempts);
+
     public static StartAndMonitorOptions ForTests() =>
         new(OwnedServiceName,
             new Uri(DefaultHealthUrl, UriKind.Absolute),
@@ -78,9 +88,16 @@ public sealed class StartAndMonitorOptions
         }
         else
         {
-            ParseValues(arguments, out ParsedValues values, out error);
-            if (string.IsNullOrEmpty(error))
-                result = CreateParsed(values, out error);
+            if (arguments.Count == 1)
+            {
+                result = ForProduction();
+            }
+            else
+            {
+                ParseValues(arguments, out ParsedValues values, out error);
+                if (string.IsNullOrEmpty(error))
+                    result = CreateParsed(values, out error);
+            }
         }
 
         return result;
@@ -211,6 +228,10 @@ public sealed class StartAndMonitorOptions
     private const string MaxStartAttemptsOption = "--max-start-attempts";
     private const string DefaultHealthUrl = "http://localhost:6100/health";
     private const string DefaultBinaryName = "SaddleRAG.Mcp.exe";
+    private const int DefaultTotalTimeoutSeconds = 300;
+    private const int DefaultPollIntervalSeconds = 2;
+    private const int DefaultHealthTimeoutSeconds = 5;
+    private const int DefaultMaxStartAttempts = 5;
     private const string MissingOptionValueError = "Every option must have a value.";
     private const string InvalidRequiredOptionsError = "Required startup options are missing or invalid.";
 }

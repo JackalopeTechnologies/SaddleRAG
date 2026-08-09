@@ -40,7 +40,9 @@ public sealed class DoclingInstallerRulesTests
         string[] actionIds = package.Descendants()
                                     .Where(e => e.Name == ns + "CustomAction" || e.Name == ns + "SetProperty")
                                     .Select(e => (string?)e.Attribute("Id"))
-                                    .Where(id => id != null && id.Contains("Docling", StringComparison.OrdinalIgnoreCase))
+                                    .Where(id => id != null
+                                                 && (id.Contains("Docling", StringComparison.OrdinalIgnoreCase)
+                                                     || id.Contains("Tesseract", StringComparison.OrdinalIgnoreCase)))
                                     .Cast<string>()
                                     .Distinct(StringComparer.Ordinal)
                                     .ToArray();
@@ -53,7 +55,9 @@ public sealed class DoclingInstallerRulesTests
                                              "TestDoclingConnection",
                                              "OpenDoclingInstallInstructions",
                                              "OpenDoclingReleases",
-                                             "OpenDoclingApiDocumentation"
+                                             "OpenDoclingApiDocumentation",
+                                             "OpenTesseractInstallInstructions",
+                                             "DOCLING_E"
                                          }));
 
         IEnumerable<string> actionValues = package.Descendants(ns + "SetProperty")
@@ -103,9 +107,12 @@ public sealed class DoclingInstallerRulesTests
         DoclingInstallationGuide guide = DoclingInstallInstructions.Create(new DoclingSettings());
 
         Assert.Equal("1.29.0", guide.CompatibilityTestedVersion);
-        Assert.StartsWith("https://github.com/docling-project/", guide.OfficialInstallUrl);
+        Assert.StartsWith("https://docling-project.github.io/", guide.OfficialInstallUrl);
         Assert.StartsWith("https://github.com/docling-project/", guide.OfficialReleaseUrl);
         Assert.StartsWith("https://docling-project.github.io/", guide.OfficialApiUrl);
+        Assert.Contains(DoclingInstallInstructions.OfficialTesseractInstallUrl,
+                        guide.Instructions,
+                        StringComparison.Ordinal);
         Assert.Contains("user", guide.OwnershipNotice, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("startup", guide.Instructions, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("PYTHONUTF8=1", guide.Instructions, StringComparison.Ordinal);

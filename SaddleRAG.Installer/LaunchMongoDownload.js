@@ -3,4 +3,8 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+function SaddleRagInstallerAction()
+{
 try { new ActiveXObject("WScript.Shell").Run("https://www.mongodb.com/try/download/community"); } catch(e) {}
+return 1;
+}

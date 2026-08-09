@@ -1,4 +1,5 @@
 // Stage 9 acceptance coverage for Doug's separately approved startup root fix.
+using System.Reflection;
 using System.Xml.Linq;
 using SaddleRAG.Installer.Helper;
 
@@ -7,7 +8,7 @@ namespace SaddleRAG.Tests.Installer;
 public sealed class StartupHelperContractTests
 {
     [Fact]
-    public void StartAndMonitorCustomActionInvokesDedicatedHelperWithoutPowerShell()
+    public void StartAndMonitorCustomActionNeedsOnlyDedicatedHelperAndCommand()
     {
         string root = ResolveRepositoryRoot();
         XDocument package = XDocument.Load(Path.Combine(root, "SaddleRAG.Installer", "Package.wxs"));
@@ -16,13 +17,56 @@ public sealed class StartupHelperContractTests
                                  .Single(e => (string?)e.Attribute("Id") == "StartAndMonitorService");
         string command = (string?)action.Attribute("Value") ?? string.Empty;
 
-        Assert.Contains("[MCPFOLDER]SaddleRAG.Installer.Helper.exe", command, StringComparison.Ordinal);
-        Assert.Contains("start-and-monitor", command, StringComparison.Ordinal);
-        Assert.Contains("SaddleRAGMcp", command, StringComparison.Ordinal);
-        Assert.Contains("http://localhost:6100/health", command, StringComparison.Ordinal);
+        Assert.Equal("\"[MCPFOLDER]SaddleRAG.Installer.Helper.exe\" start-and-monitor", command);
         Assert.DoesNotContain("powershell", command, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("pwsh", command, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("start-and-monitor.ps1", command, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProductionDefaultsUseOwnedServiceSiblingBinaryAndBoundedTiming()
+    {
+        StartAndMonitorOptions options = StartAndMonitorOptions.ForProduction();
+
+        AssertProductionDefaults(options);
+    }
+
+    [Fact]
+    public void CommandWithoutOptionsUsesProductionDefaults()
+    {
+        StartAndMonitorOptions? options = ParseOptions(["start-and-monitor"], out string error);
+
+        Assert.Empty(error);
+        Assert.NotNull(options);
+        AssertProductionDefaults(options);
+    }
+
+    [Fact]
+    public void ExplicitStartupOptionsRemainSupported()
+    {
+        string[] arguments =
+        [
+            "start-and-monitor",
+            "--service-name", "SaddleRAGMcp",
+            "--health-url", "http://localhost:7100/health",
+            "--binary-path", "C:\\SaddleRAG\\SaddleRAG.Mcp.exe",
+            "--total-timeout-seconds", "120",
+            "--poll-interval-seconds", "3",
+            "--health-timeout-seconds", "4",
+            "--max-start-attempts", "6"
+        ];
+
+        StartAndMonitorOptions? options = ParseOptions(arguments, out string error);
+
+        Assert.Empty(error);
+        Assert.NotNull(options);
+        Assert.Equal("SaddleRAGMcp", options.ServiceName);
+        Assert.Equal(new Uri("http://localhost:7100/health", UriKind.Absolute), options.HealthUrl);
+        Assert.Equal("C:\\SaddleRAG\\SaddleRAG.Mcp.exe", options.BinaryPath);
+        Assert.Equal(TimeSpan.FromSeconds(120), options.TotalTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(3), options.PollInterval);
+        Assert.Equal(TimeSpan.FromSeconds(4), options.HealthRequestTimeout);
+        Assert.Equal(6, options.MaxStartAttempts);
     }
 
     [Fact]
@@ -99,6 +143,30 @@ public sealed class StartupHelperContractTests
         Assert.Equal("ordinary output", result.StandardOutput);
         Assert.Equal("specific native error", result.StandardError);
         Assert.NotEqual(result.StandardOutput, result.StandardError);
+    }
+
+    private static void AssertProductionDefaults(StartAndMonitorOptions options)
+    {
+        Assert.Equal("SaddleRAGMcp", options.ServiceName);
+        Assert.Equal(new Uri("http://localhost:6100/health", UriKind.Absolute), options.HealthUrl);
+        Assert.Equal(Path.Combine(AppContext.BaseDirectory, "SaddleRAG.Mcp.exe"), options.BinaryPath);
+        Assert.Equal(TimeSpan.FromSeconds(300), options.TotalTimeout);
+        Assert.Equal(TimeSpan.FromSeconds(2), options.PollInterval);
+        Assert.Equal(TimeSpan.FromSeconds(5), options.HealthRequestTimeout);
+        Assert.Equal(5, options.MaxStartAttempts);
+    }
+
+    private static StartAndMonitorOptions? ParseOptions(IReadOnlyList<string> arguments,
+                                                        out string error)
+    {
+        MethodInfo? method = typeof(StartAndMonitorOptions).GetMethod("Parse",
+                                                                      BindingFlags.NonPublic
+                                                                      | BindingFlags.Static);
+        Assert.NotNull(method);
+        object?[] parameters = [arguments, string.Empty];
+        var result = method.Invoke(null, parameters) as StartAndMonitorOptions;
+        error = Assert.IsType<string>(parameters[1]);
+        return result;
     }
 
     private static string ResolveRepositoryRoot()

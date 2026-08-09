@@ -156,7 +156,13 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
 
       - name: Build MSI
-        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ steps.version.outputs.PackageVersion }}/publish -d Version=${{ steps.version.outputs.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -o ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
+        # Playwright's app-scoped codicon TTFs are intentionally LANGID 0 for ICE60.
+        # WiX 5 raises WIX1101 because those upstream files contain no language resource;
+        # exclude only that warning and fail the build on every other WiX warning.
+        run: wix build SaddleRAG.Installer/Package.wxs -d PublishDir=${{ github.workspace }}/artifacts/${{ steps.version.outputs.PackageVersion }}/publish -d Version=${{ steps.version.outputs.MsiVersion }} -ext WixToolset.Util.wixext -ext WixToolset.UI.wixext -arch x64 -b SaddleRAG.Installer -sw1101 -wx -o ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
+
+      - name: Validate MSI
+        run: wix msi validate ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi -pdb ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.wixpdb
 
       - name: Pack Desktop extension (.mcpb)
         # The Claude Desktop Extension (durable registration on the newer Desktop

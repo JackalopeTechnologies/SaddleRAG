@@ -17,6 +17,8 @@
 //
 // JScript style mirrors TestOllamaConnection.js / TestMongoConnection.js.
 
+function SaddleRagInstallerAction()
+{
 var _existing = "";
 var _willSet  = "0";
 var _notice   = "";
@@ -42,3 +44,5 @@ if (_willSet === "1") {
 Session.Property("OLLAMA_KEEPALIVE_EXISTING") = _existing;
 Session.Property("OLLAMA_KEEPALIVE_WILL_SET") = _willSet;
 Session.Property("OLLAMA_KEEPALIVE_NOTICE")   = _notice;
+return 1;
+}

@@ -9,6 +9,8 @@
 // contract. It never changes the external process or the user's startup
 // configuration.
 
+function SaddleRagInstallerAction()
+{
 var _endpoint = _trimEndpoint(Session.Property("DOCLINGENDPOINT"));
 var _healthUrl = _endpoint + "/health";
 var _readyUrl = _endpoint + "/ready";
@@ -587,4 +589,6 @@ function _singleLine(value)
 function _setStatus(reasonCode, detail)
 {
     Session.Property("DOCLINGSTATUS") = reasonCode + ": " + _singleLine(detail);
+}
+return 1;
 }

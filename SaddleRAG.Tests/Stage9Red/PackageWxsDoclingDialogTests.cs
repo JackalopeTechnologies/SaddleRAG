@@ -39,12 +39,23 @@ public sealed class PackageWxsDoclingDialogTests
         Assert.Contains("user-managed", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("separately installed", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("license", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("never controls", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unauthenticated", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not selected", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("[DOCLINGHEALTHURL]", text, StringComparison.Ordinal);
         Assert.Contains("[DOCLINGSTATUS]", text, StringComparison.Ordinal);
 
+        XElement status = package.Descendants(ns + "Property")
+                                 .Single(e => (string?)e.Attribute("Id") == "DOCLINGSTATUS");
+        string? defaultStatus = (string?)status.Attribute("Value");
+        Assert.NotNull(defaultStatus);
+        Assert.Contains("unauthenticated", defaultStatus, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("protected runtime settings", defaultStatus, StringComparison.OrdinalIgnoreCase);
+
         foreach (string controlId in new[]
                  {
-                     "OpenInstallInstructions", "OpenReleases", "OpenApiDocumentation", "TestDocling"
+                     "OpenInstallInstructions", "OpenReleases", "OpenApiDocumentation",
+                     "OpenTesseractInstructions", "TestDocling"
                  })
             _ = Control(dialog, ns, controlId);
     }
@@ -97,18 +108,43 @@ public sealed class PackageWxsDoclingDialogTests
                                       {
                                           "OpenDoclingInstallInstructions.js",
                                           "OpenDoclingReleases.js",
-                                          "OpenDoclingApiDocumentation.js"
+                                          "OpenDoclingApiDocumentation.js",
+                                          "OpenTesseractInstallInstructions.js"
                                       }.Select(file => File.ReadAllText(Path.Combine(InstallerDirectory(), file))));
 
-        Assert.Contains("https://github.com/docling-project/docling-serve#installation",
+        Assert.Contains("https://docling-project.github.io/docling/usage/api_server/deployment/",
                         combined,
                         StringComparison.Ordinal);
-        Assert.Contains("https://github.com/docling-project/docling-serve/releases",
+        Assert.Contains("https://github.com/docling-project/docling-serve/releases/latest",
                         combined,
                         StringComparison.Ordinal);
         Assert.Contains("https://docling-project.github.io/docling/usage/api_server/",
                         combined,
                         StringComparison.Ordinal);
+        Assert.Contains("https://tesseract-ocr.github.io/tessdoc/Installation.html",
+                        combined,
+                        StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ServiceExecutableIsExcludedFromHarvestAndOwnsServiceComponentKeyPath()
+    {
+        XDocument package = LoadPackage();
+        XNamespace ns = WixNamespace;
+        XElement files = package.Descendants(ns + "ComponentGroup")
+                                .Single(e => (string?)e.Attribute("Id") == "PublishOutput")
+                                .Element(ns + "Files")!;
+
+        Assert.Null(files.Attribute("Exclude"));
+        _ = Assert.Single(files.Elements(ns + "Exclude"),
+                          exclude => (string?)exclude.Attribute("Files")
+                                     == @"$(var.PublishDir)\SaddleRAG.Mcp.exe");
+
+        XElement serviceComponent = package.Descendants(ns + "Component")
+                                           .Single(e => (string?)e.Attribute("Id") == "ServiceComponent");
+        XElement executable = Assert.Single(serviceComponent.Elements(ns + "File"));
+        Assert.Equal(@"$(var.PublishDir)\SaddleRAG.Mcp.exe", (string?)executable.Attribute("Source"));
+        Assert.Equal("yes", (string?)executable.Attribute("KeyPath"));
     }
 
     private static XElement Dialog(XDocument document, XNamespace ns, string id) =>

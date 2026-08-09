@@ -5,7 +5,7 @@ description: Guide a user through installing, configuring, validating, and recov
 
 # SaddleRAG Docling setup protocol
 
-Treat Docling Serve and Docling MCP as user-owned optional software. SaddleRAG consumes a configured HTTP endpoint; it never installs, licenses, starts, stops, restarts, upgrades, or supervises either process.
+Treat Docling Serve, Docling MCP, and Tesseract as user-owned optional software. SaddleRAG consumes a configured Docling HTTP endpoint; it never installs, licenses, starts, stops, restarts, upgrades, or otherwise manages Docling or Tesseract.
 
 ## Preserve the ownership boundary
 
@@ -29,11 +29,14 @@ The refreshed status is intentionally stronger than a port check. SaddleRAG perf
 
 Present these primary sources before an installation decision:
 
-- Installation: https://github.com/docling-project/docling-serve#installation
-- Releases: https://github.com/docling-project/docling-serve/releases
+- Installation and deployment: https://docling-project.github.io/docling/usage/api_server/deployment/
+- Latest Docling Serve release: https://github.com/docling-project/docling-serve/releases/latest
 - API server: https://docling-project.github.io/docling/usage/api_server/
 - Docling Serve license: https://github.com/docling-project/docling-serve/blob/main/LICENSE
 - Model and OCR catalog: https://docling-project.github.io/docling/usage/model_catalog/
+- Docling OCR installation options: https://docling-project.github.io/docling/getting_started/installation/#ocr-engines
+- Tesseract installation: https://tesseract-ocr.github.io/tessdoc/Installation.html
+- Windows Tesseract installers referenced by the official guide: https://github.com/UB-Mannheim/tesseract/wiki
 
 Explain that SaddleRAG is compatibility-tested with Docling Serve `1.29.0`; this is a compatibility statement, not a claim that it is the newest release or a license recommendation. If the user chooses a different release, verify it through SaddleRAG's conversion probe before scanning.
 
@@ -42,15 +45,18 @@ Explain that SaddleRAG is compatibility-tested with Docling Serve `1.29.0`; this
 Prefer a dedicated Python environment selected by the user. On Windows, SaddleRAG's compatibility-tested example uses Python 3.12 and Docling Serve 1.29.0:
 
 ```powershell
-py -3.12 -m pip install "docling-serve[ui]==1.29.0"
+py -3.12 -m venv .venv
+.\.venv\Scripts\python -m pip install "docling-serve[ui]==1.29.0"
 $env:PYTHONUTF8 = "1"
 $env:TORCH_COMPILE_DISABLE = "1"
-docling-serve run
+.\.venv\Scripts\docling-serve run
 ```
 
 Set `PYTHONUTF8=1` and `TORCH_COMPILE_DISABLE=1` in the environment of the user-owned Docling process. Do not change machine-wide environment variables or create a startup task unless the user explicitly authorizes that separate change.
 
-The default SaddleRAG endpoint is `http://localhost:5001`. Configure `DocumentIngestion:Docling:Endpoint` to the user-selected absolute HTTP or HTTPS root URL without embedded credentials, query, or fragment. Keep any API key in the separate Docling API-key setting.
+Tesseract is optional. SaddleRAG currently requests OCR but does not send Docling an OCR-engine or preset selection, so Docling uses its own configured/default OCR behavior. Installing Tesseract alone does not make SaddleRAG or Docling use it. If the user deliberately configures the user-owned Docling environment to use Tesseract, follow the official Tesseract guide to the current UB Mannheim installer, include the required language data, add the Tesseract program directory to `PATH` when necessary, and set `TESSDATA_PREFIX` to the installed `tessdata` directory with a trailing path separator (for example, `C:\Program Files\Tesseract-OCR\tessdata\`). Restart the user-owned Docling process after changing its OCR environment.
+
+The default SaddleRAG endpoint is `http://localhost:5001`. Configure `DocumentIngestion:Docling:Endpoint` to the user-selected absolute HTTP or HTTPS root URL without embedded credentials, query, or fragment. The Windows installer's **Test Docling** action is deliberately limited to unauthenticated endpoints and never asks for, collects, or stores secrets. For an API-key-protected endpoint, keep `DocumentIngestion:Docling:ApiKey` in an access-restricted runtime configuration source and verify it with `get_document_ingestion_status(refresh=true)` after installation.
 
 Do not have SaddleRAG launch the command above. If the user authorizes agent assistance, run it directly in the user-selected environment, report the exact result, and leave process ownership with the user.
 
@@ -61,6 +67,8 @@ Do not have SaddleRAG launch the command above. If the user authorizes agent ass
 3. Proceed only when it returns `State=Ready` and `ReasonCode=DOCLING_READY`.
 4. On failure, follow the returned `Detail` and `Remediation`; inspect the user-managed Docling logs when requested.
 5. Do not retry indefinitely, restart automatically, or mask a conversion failure with a simple `/health` success.
+
+The SaddleRAG-owned conversion probe verifies the configured Docling API contract using Docling's configured/default OCR behavior; it does not prove that Tesseract is the selected OCR engine. When Tesseract-specific readiness matters, use a harmless image-only scanned PDF and verify both the extracted marker and the user-owned Docling logs.
 
 Use the stable reason code to keep recovery focused:
 

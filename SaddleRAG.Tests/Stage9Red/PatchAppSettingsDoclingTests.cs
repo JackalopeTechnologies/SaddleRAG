@@ -70,12 +70,21 @@ public sealed class PatchAppSettingsDoclingTests
                                                         "SaddleRAG.Installer",
                                                         "Package.wxs"));
         XNamespace ns = "http://wixtoolset.org/schemas/v4/wxs";
+        XElement alias = package.Descendants(ns + "SetProperty")
+                                .Single(e => (string?)e.Attribute("Id") == "DOCLING_E");
+        Assert.Equal("[DOCLINGENDPOINT_ESCAPED]", (string?)alias.Attribute("Value"));
+
         XElement command = package.Descendants(ns + "SetProperty")
                                   .Single(e => (string?)e.Attribute("Id") == "PatchAppSettings");
-        Assert.Contains("-DoclingEndpoint", (string?)command.Attribute("Value"), StringComparison.Ordinal);
-        Assert.Contains("[DOCLINGENDPOINT_ESCAPED]",
+        Assert.Contains("-L \"[DOCLING_E]\"",
                         (string?)command.Attribute("Value"),
                         StringComparison.Ordinal);
+
+        string script = File.ReadAllText(Path.Combine(run.RepositoryRoot,
+                                                       "SaddleRAG.Installer",
+                                                       "PatchAppSettings.ps1"));
+        Assert.Contains("[Alias('L')]", script, StringComparison.Ordinal);
+        Assert.Contains("$DoclingEndpoint", script, StringComparison.Ordinal);
     }
 
     private static JsonObject Settings(string endpoint) => new()

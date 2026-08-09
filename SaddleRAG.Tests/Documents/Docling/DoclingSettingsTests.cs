@@ -101,8 +101,23 @@ public sealed class DoclingSettingsTests
         Assert.Contains("TORCH_COMPILE_DISABLE=1", guide.Instructions, StringComparison.Ordinal);
         Assert.Contains("Docling process", guide.Instructions, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("user", guide.OwnershipNotice, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith("https://github.com/docling-project/", guide.OfficialInstallUrl, StringComparison.Ordinal);
+        Assert.StartsWith("https://docling-project.github.io/", guide.OfficialInstallUrl, StringComparison.Ordinal);
         Assert.StartsWith("https://github.com/docling-project/", guide.OfficialReleaseUrl, StringComparison.Ordinal);
+        Assert.Contains(DoclingInstallInstructions.OfficialTesseractInstallUrl,
+                        guide.Instructions,
+                        StringComparison.Ordinal);
+        Assert.Contains("Installing Tesseract alone does not make SaddleRAG or Docling use it",
+                        guide.Instructions,
+                        StringComparison.Ordinal);
+        Assert.Contains(@"tessdata\", guide.Instructions, StringComparison.Ordinal);
+        Assert.Contains("deliberately unauthenticated", guide.Instructions, StringComparison.Ordinal);
+        Assert.Contains("never asks for, collects, or stores secrets",
+                        guide.Instructions,
+                        StringComparison.Ordinal);
+        Assert.Contains("DocumentIngestion:Docling:ApiKey", guide.Instructions, StringComparison.Ordinal);
+        Assert.Contains("never installs or manages either product",
+                        guide.OwnershipNotice,
+                        StringComparison.Ordinal);
     }
 
     [Fact]

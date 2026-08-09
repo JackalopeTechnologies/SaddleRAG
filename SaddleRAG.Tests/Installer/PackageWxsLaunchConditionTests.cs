@@ -61,7 +61,7 @@ public sealed class PackageWxsLaunchConditionTests
     }
 
     [Fact]
-    public void OnnxExecutionProviderPropertyHasNoDefaultValue()
+    public void OnnxExecutionProviderPropertyUsesAutoDetectionSentinel()
     {
         XDocument doc = LoadPackageWxs();
         XNamespace ns = smWixNamespace;
@@ -71,50 +71,47 @@ public sealed class PackageWxsLaunchConditionTests
         XElement property = doc.Descendants(ns + PropertyElementName)
                                .Single(e => (string?) e.Attribute(IdAttributeName) == OnnxExecutionProviderPropertyId);
 
-        // The "empty == auto-detect" semantic depends on this property
-        // arriving as an empty string. A default Value attribute would
-        // make the CA's empty-guard a no-op and break command-line
-        // overrides on silent installs.
-        Assert.Null(property.Attribute(ValueAttributeName));
+        Assert.Equal("Auto", (string?)property.Attribute(ValueAttributeName));
+
+        string? scriptPath = InstallerSourceTreeResolver.TryResolveInstallerFile(GpuScriptFileName);
+        Assert.NotNull(scriptPath);
+        string script = File.ReadAllText(scriptPath);
+        Assert.Contains("_currentProvider === \"Auto\"", script, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void PatchAppSettingsSetPropertyContainsAllScriptParameterNames()
+    public void PatchAppSettingsSetPropertyUsesDeclaredCompactAliases()
     {
         XDocument doc = LoadPackageWxs();
         XNamespace ns = smWixNamespace;
 
         // The deferred PatchAppSettings CA is driven by a SetProperty whose
-        // Value attribute carries the full powershell.exe command line. A
-        // typo in any of the five parameter names (e.g., capitalization
-        // drift between -AppSettingsPath and the .ps1's param declaration)
-        // would fall through to PowerShell's parameter binder and surface
-        // only as a "missing parameter" message in the verbose MSI log.
+        // Value attribute carries the powershell.exe command line. Compact
+        // aliases keep the MSI CustomAction.Target row below 255 characters,
+        // so each alias must remain paired with its full script parameter.
         XElement setProperty = doc.Descendants(ns + SetPropertyElementName)
                                   .Single(e => (string?) e.Attribute(IdAttributeName) == PatchAppSettingsId);
 
         string? commandLine = (string?) setProperty.Attribute(ValueAttributeName);
         Assert.NotNull(commandLine);
 
-        foreach (string parameterName in smPatchAppSettingsScriptParameters)
-            Assert.Contains(parameterName, commandLine);
-
-        // And the script itself must declare each of those parameters,
-        // matching by name. This catches a rename on either side without
-        // having to actually execute the script.
+        // The script itself must declare both each full parameter and the
+        // exact alias used by the MSI command. This catches drift on either
+        // side without depending only on runtime PowerShell binding.
         string? scriptPath = TryResolveScriptPath();
         if (scriptPath != null)
         {
             string scriptText = File.ReadAllText(scriptPath);
-            foreach (string parameterName in smPatchAppSettingsScriptParameters)
+            foreach ((string parameterName, string alias) in smPatchAppSettingsScriptParameters)
             {
-                // PowerShell param-block names appear as "[string]$Name" or
-                // "[Parameter(...)]\n[type]$Name". Strip the leading '-' from
-                // the CA arg form and search for the unprefixed identifier.
+                Assert.Contains($" {alias} \"", commandLine, StringComparison.Ordinal);
+
                 string identifier = parameterName.TrimStart(ParameterPrefixDash);
                 Assert.True(scriptText.Contains(identifier, StringComparison.Ordinal),
-                            $"PatchAppSettings.ps1 missing param declaration for {parameterName}."
-                           );
+                             $"PatchAppSettings.ps1 missing param declaration for {parameterName}."
+                            );
+                string aliasDeclaration = $"[Alias('{alias.TrimStart(ParameterPrefixDash)}')]";
+                Assert.Contains(aliasDeclaration, scriptText, StringComparison.Ordinal);
             }
         }
     }
@@ -159,15 +156,17 @@ public sealed class PackageWxsLaunchConditionTests
         return InstallerSourceTreeResolver.TryResolveInstallerFile(PatchScriptFileName);
     }
 
-    private static readonly string[] smPatchAppSettingsScriptParameters =
-    [
-        "-AppSettingsPath",
-        "-ConnectionString",
-        "-DatabaseName",
-        "-OllamaEndpoint",
-        "-ExecutionProvider",
-        "-EscapeFailed"
-    ];
+    private static readonly IReadOnlyDictionary<string, string> smPatchAppSettingsScriptParameters =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["-AppSettingsPath"] = "-A",
+            ["-ConnectionString"] = "-C",
+            ["-DatabaseName"] = "-D",
+            ["-OllamaEndpoint"] = "-O",
+            ["-DoclingEndpoint"] = "-L",
+            ["-ExecutionProvider"] = "-E",
+            ["-EscapeFailed"] = "-F"
+        };
 
     private static readonly XNamespace smWixNamespace = "http://wixtoolset.org/schemas/v4/wxs";
 
@@ -194,6 +193,7 @@ public sealed class PackageWxsLaunchConditionTests
 
     private const string WxsFileName = "Package.wxs";
     private const string PatchScriptFileName = "PatchAppSettings.ps1";
+    private const string GpuScriptFileName = "CheckGpuCapability.js";
 
     private const string WxsMissingSkipReason =
         "Package.wxs not locatable from test binary directory; the test requires the WiX source to be present in the source tree.";

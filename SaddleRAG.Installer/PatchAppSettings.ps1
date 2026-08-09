@@ -7,26 +7,32 @@
 param
 (
     [Parameter(Mandatory = $true)]
+    [Alias('A')]
     [string]$AppSettingsPath,
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('C')]
     [string]$ConnectionString,
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('D')]
     [string]$DatabaseName,
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('O')]
     [string]$OllamaEndpoint,
 
     [Parameter(Mandatory = $false)]
     [AllowEmptyString()]
+    [Alias('L')]
     [string]$DoclingEndpoint = '',
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('E')]
     [string]$ExecutionProvider,
 
     # Set by the immediate EscapeAppSettingsProperties CA when one of the
@@ -35,6 +41,7 @@ param
     # Empty string means "no escape failure recorded".
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('F')]
     [string]$EscapeFailed
 )
 
@@ -44,8 +51,9 @@ param
 # embedded in Package.wxs SetProperty; extracted here so it is testable in
 # isolation and so future installer-driven config edits land in one place.
 #
-# ExecutionProvider falls back to 'Cpu' when empty so the written value is
-# always a valid OnnxExecutionProvider enum literal. The CA wrapper in
+# ExecutionProvider falls back to 'Cpu' when empty or when the MSI Auto
+# sentinel survives GPU detection, so the written value is always a valid
+# OnnxExecutionProvider enum literal. The CA wrapper in
 # Package.wxs is Return="ignore", so this script's non-zero exit codes
 # surface in the MSI log but do not abort the install — the runtime EP
 # fallback catches DirectML load failures and degrades to CPU with a
@@ -165,7 +173,8 @@ try
         $json.DocumentIngestion.Docling.Endpoint = $effectiveDoclingEndpoint
     }
 
-    $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider))
+    $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider) -or
+                             $ExecutionProvider.Equals('Auto', [StringComparison]::OrdinalIgnoreCase))
                          {
                              'Cpu'
                          }
