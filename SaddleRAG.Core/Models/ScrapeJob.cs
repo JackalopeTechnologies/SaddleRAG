@@ -43,6 +43,12 @@ public record ScrapeJob
     public required IReadOnlyList<string> AllowedUrlPatterns { get; init; }
 
     /// <summary>
+    ///     Database profile selected by the orchestrator for this execution. The crawler and
+    ///     document producers use it to keep every persistence path in the fenced profile.
+    /// </summary>
+    public string? DatabaseProfile { get; init; }
+
+    /// <summary>
     ///     URL patterns to explicitly exclude.
     /// </summary>
     public IReadOnlyList<string> ExcludedUrlPatterns { get; init; } = [];

@@ -6,6 +6,7 @@
 #region Usings
 
 using Microsoft.Extensions.Logging;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
@@ -19,11 +20,10 @@ namespace SaddleRAG.Ingestion;
 
 /// <summary>
 ///     Post-pipeline finalization for a scrape job. Once all five streaming
-///     stages have completed, the finalizer (a) rebuilds the BM25 inverted
-///     index over the freshly persisted chunks, (b) upserts the
-///     <see cref="LibraryRecord" /> and <see cref="LibraryVersionRecord" />
-///     metadata, and (c) evaluates the version against the suspect-detector
-///     rules. These steps are sequential and not channel-driven, so they
+///     stages have completed, the finalizer (a) prepares search indexes,
+///     (b) publishes candidate source-document revisions, and (c) publishes
+///     the <see cref="LibraryVersionRecord" /> and <see cref="LibraryRecord" />
+///     metadata. These steps are sequential and not channel-driven, so they
 ///     don't fit the <c>IStage</c>-shaped contract that <see cref="CrawlStage" />
 ///     and friends follow — they live in their own type so the orchestrator
 ///     stays a thin wire harness over the stage classes.
@@ -34,16 +34,19 @@ internal sealed class IngestionFinalizer
                               IBm25ShardRepository bm25ShardRepository,
                               ILibraryIndexRepository libraryIndexRepository,
                               ILibraryRepository libraryRepository,
+                              IVectorSearchProvider vectorSearch,
                               IEmbeddingProvider embeddingProvider,
                               ILibraryProfileRepository libraryProfileRepository,
                               SuspectDetector suspectDetector,
                               ILlmClassifier classifier,
-                              ILogger logger)
+                              ILogger logger,
+                              ISourceDocumentRepository? sourceDocumentRepository = null)
     {
         ArgumentNullException.ThrowIfNull(chunkRepository);
         ArgumentNullException.ThrowIfNull(bm25ShardRepository);
         ArgumentNullException.ThrowIfNull(libraryIndexRepository);
         ArgumentNullException.ThrowIfNull(libraryRepository);
+        ArgumentNullException.ThrowIfNull(vectorSearch);
         ArgumentNullException.ThrowIfNull(embeddingProvider);
         ArgumentNullException.ThrowIfNull(libraryProfileRepository);
         ArgumentNullException.ThrowIfNull(suspectDetector);
@@ -53,11 +56,49 @@ internal sealed class IngestionFinalizer
         mBm25ShardRepository = bm25ShardRepository;
         mLibraryIndexRepository = libraryIndexRepository;
         mLibraryRepository = libraryRepository;
+        mVectorSearch = vectorSearch;
         mEmbeddingProvider = embeddingProvider;
         mLibraryProfileRepository = libraryProfileRepository;
         mSuspectDetector = suspectDetector;
         mLlmClassifier = classifier;
         mLogger = logger;
+        mSourceDocumentRepository = sourceDocumentRepository;
+        mPrepareIndexes = PrepareLegacyIndexesAsync;
+    }
+
+    internal IngestionFinalizer(IChunkRepository chunkRepository,
+                                IBm25ShardRepository bm25ShardRepository,
+                                ILibraryIndexRepository libraryIndexRepository,
+                                ILibraryRepository libraryRepository,
+                                IVectorSearchProvider vectorSearch,
+                                IEmbeddingProvider embeddingProvider,
+                                ILibraryProfileRepository libraryProfileRepository,
+                                SuspectDetector suspectDetector,
+                                ILlmClassifier classifier,
+                                IngestionPageProcessor pageProcessor,
+                                ILogger logger,
+                                ISourceDocumentRepository? sourceDocumentRepository = null)
+        : this(chunkRepository,
+               bm25ShardRepository,
+               libraryIndexRepository,
+               libraryRepository,
+               vectorSearch,
+               embeddingProvider,
+               libraryProfileRepository,
+               suspectDetector,
+               classifier,
+               logger,
+               sourceDocumentRepository)
+    {
+        ArgumentNullException.ThrowIfNull(pageProcessor);
+        mPrepareIndexes = (profile, job, chunks, ct) => pageProcessor.PrepareSearchIndexesAsync(
+                              profile,
+                              job.LibraryId,
+                              job.Version,
+                              chunks,
+                              mBm25ShardRepository,
+                              mLibraryIndexRepository,
+                              ct);
     }
 
     private readonly IBm25ShardRepository mBm25ShardRepository;
@@ -66,21 +107,56 @@ internal sealed class IngestionFinalizer
     private readonly ILibraryIndexRepository mLibraryIndexRepository;
     private readonly ILibraryProfileRepository mLibraryProfileRepository;
     private readonly ILibraryRepository mLibraryRepository;
+    private readonly IVectorSearchProvider mVectorSearch;
     private readonly ILlmClassifier mLlmClassifier;
     private readonly ILogger mLogger;
+    private readonly Func<string?, ScrapeJob, IReadOnlyList<DocChunk>, CancellationToken, Task> mPrepareIndexes;
+    private readonly ISourceDocumentRepository? mSourceDocumentRepository;
     private readonly SuspectDetector mSuspectDetector;
 
     /// <summary>
-    ///     Run the full post-pipeline finalization: BM25 build → library +
-    ///     version metadata upsert → suspect evaluation.
+    ///     Run post-pipeline finalization: prepare indexes, publish source
+    ///     documents, then publish version metadata and the library pointer.
     /// </summary>
-    public async Task RunAsync(ScrapeJob job, ScrapeJobRecord progress, CancellationToken ct)
+    public Task RunAsync(ScrapeJob job, ScrapeJobRecord progress, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(progress);
+        return RunAsync(job, progress, profile: null, ct);
+    }
 
+    /// <summary>
+    ///     Profile-aware publication entry point used by the lifecycle-safe
+    ///     orchestrator.
+    /// </summary>
+    public async Task RunAsync(ScrapeJob job,
+                               ScrapeJobRecord progress,
+                               string? profile,
+                               CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(progress);
+        var chunks = await mChunkRepository.GetChunksAsync(job.LibraryId, job.Version, ct);
+        await mPrepareIndexes(profile, job, chunks, ct);
+        if (mSourceDocumentRepository != null)
+        {
+            await mSourceDocumentRepository.PublishCandidateScanRunAsync(job.LibraryId,
+                                                                          job.Version,
+                                                                          progress.Id,
+                                                                          ct);
+        }
+
+        await PublishLibraryMetadataAsync(job, progress, ct);
+    }
+
+    private async Task PrepareLegacyIndexesAsync(string? profile,
+                                                 ScrapeJob job,
+                                                 IReadOnlyList<DocChunk> chunks,
+                                                 CancellationToken ct)
+    {
         await BuildBm25IndexAsync(job, ct);
-        await UpdateLibraryMetadataAsync(job, progress, ct);
+        IReadOnlyList<DocChunk> embeddedChunks = chunks.Where(c => c.Embedding != null).ToList();
+        await mVectorSearch.IndexChunksAsync(profile, job.LibraryId, job.Version, embeddedChunks, ct);
     }
 
     /// <summary>
@@ -134,8 +210,28 @@ internal sealed class IngestionFinalizer
                               );
     }
 
-    private async Task UpdateLibraryMetadataAsync(ScrapeJob job, ScrapeJobRecord progress, CancellationToken ct)
+    private async Task PublishLibraryMetadataAsync(ScrapeJob job,
+                                                   ScrapeJobRecord progress,
+                                                   CancellationToken ct)
     {
+        var versionRecord = new LibraryVersionRecord
+                                {
+                                    Id = $"{job.LibraryId}/{job.Version}",
+                                    LibraryId = job.LibraryId,
+                                    Version = job.Version,
+                                    ScrapedAt = DateTime.UtcNow,
+                                    PageCount = progress.PagesFetched,
+                                    ChunkCount = progress.ChunksCompleted,
+                                    EmbeddingProviderId = mEmbeddingProvider.ProviderId,
+                                    EmbeddingModelName = mEmbeddingProvider.ModelName,
+                                    EmbeddingDimensions = mEmbeddingProvider.Dimensions,
+                                    ClassifierBackend = mLlmClassifier.BackendName,
+                                    ClassifierModel = mLlmClassifier.ModelId,
+                                    PublicationState = VersionPublicationState.Published
+                                };
+        await mLibraryRepository.UpsertVersionAsync(versionRecord, ct);
+        await EvaluateSuspectAsync(job, progress, ct);
+
         var library = await mLibraryRepository.GetLibraryAsync(job.LibraryId, ct);
         if (library == null)
         {
@@ -156,23 +252,6 @@ internal sealed class IngestionFinalizer
         }
 
         await mLibraryRepository.UpsertLibraryAsync(library, ct);
-
-        var versionRecord = new LibraryVersionRecord
-                                {
-                                    Id = $"{job.LibraryId}/{job.Version}",
-                                    LibraryId = job.LibraryId,
-                                    Version = job.Version,
-                                    ScrapedAt = DateTime.UtcNow,
-                                    PageCount = progress.PagesFetched,
-                                    ChunkCount = progress.ChunksCompleted,
-                                    EmbeddingProviderId = mEmbeddingProvider.ProviderId,
-                                    EmbeddingModelName = mEmbeddingProvider.ModelName,
-                                    EmbeddingDimensions = mEmbeddingProvider.Dimensions,
-                                    ClassifierBackend = mLlmClassifier.BackendName,
-                                    ClassifierModel = mLlmClassifier.ModelId
-                                };
-        await mLibraryRepository.UpsertVersionAsync(versionRecord, ct);
-        await EvaluateSuspectAsync(job, progress, ct);
     }
 
     private async Task EvaluateSuspectAsync(ScrapeJob job, ScrapeJobRecord progress, CancellationToken ct)

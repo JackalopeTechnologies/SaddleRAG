@@ -8,6 +8,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
@@ -76,8 +77,14 @@ public static class HealthTools
         var versionRecord = await libraryRepo.GetVersionAsync(library, resolvedVersion, ct);
 
         string result;
-        if (versionRecord == null)
-            result = JsonSerializer.Serialize(new { Error = $"Version '{resolvedVersion}' not found." }, smJsonOptions);
+        if (versionRecord?.PublicationState != VersionPublicationState.Published)
+            result = JsonSerializer.Serialize(new
+                                                   {
+                                                       Error =
+                                                           $"Version '{resolvedVersion}' not found or not published."
+                                                   },
+                                               smJsonOptions
+                                              );
         else
         {
             result = await BuildVersionSnapshotAsync(library,

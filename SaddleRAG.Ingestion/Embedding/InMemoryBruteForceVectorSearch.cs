@@ -108,6 +108,37 @@ public class InMemoryBruteForceVectorSearch : IVectorSearchProvider
         return Task.FromResult<IReadOnlyList<VectorSearchResult>>(results);
     }
 
+    /// <inheritdoc />
+    public Task RemoveIndexAsync(string? profile,
+                                 string libraryId,
+                                 string version,
+                                 CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        string key = MakeKey(profile, libraryId, version);
+        lock(mLock)
+            mIndices.Remove(key);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task RemoveLibraryIndexesAsync(string? profile,
+                                          string libraryId,
+                                          CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        string prefix = $"{MakeProfilePrefix(profile)}{libraryId}/";
+        lock(mLock)
+        {
+            var keys = mIndices.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+            foreach(var key in keys)
+                mIndices.Remove(key);
+        }
+
+        return Task.CompletedTask;
+    }
+
 
     private static void CollectScoredCandidates(List<DocChunk> chunks,
                                                 VectorSearchFilter filter,
@@ -118,6 +149,10 @@ public class InMemoryBruteForceVectorSearch : IVectorSearchProvider
         var filtered = filter.Category.HasValue
                            ? chunks.Where(c => c.Category == filter.Category.Value)
                            : chunks;
+
+        if (!string.IsNullOrEmpty(filter.SubjectId))
+            filtered = filtered.Where(chunk => chunk.SubjectIds.Contains(filter.SubjectId,
+                                                                          StringComparer.Ordinal));
 
 
         foreach(var chunk in filtered.Where(c => c.Embedding != null))

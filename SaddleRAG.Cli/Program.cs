@@ -23,6 +23,7 @@ using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
 using SaddleRAG.Ingestion.Diagnostics;
+using SaddleRAG.Ingestion.Documents.Docling;
 using SaddleRAG.Ingestion.Ecosystems.Common;
 using SaddleRAG.Ingestion.Ecosystems.Npm;
 using SaddleRAG.Ingestion.Ecosystems.NuGet;
@@ -104,6 +105,18 @@ var configuration = new ConfigurationBuilder()
 var services = new ServiceCollection();
 services.AddLogging(b => b.AddConsole());
 services.AddSaddleRagDatabase(configuration);
+// Optional user-operated Docling endpoint. Registration is passive: the CLI makes
+// no network call until intake needs it, and never installs, starts, or supervises Docling.
+services.AddOptions<DoclingSettings>()
+        .Bind(configuration.GetSection(DoclingSettings.SectionName));
+services.AddSingleton(provider => provider.GetRequiredService<IOptions<DoclingSettings>>().Value);
+services.AddSingleton<DoclingDocumentMapper>();
+services.AddHttpClient<IDoclingClient, DoclingClient>(client => client.Timeout = Timeout.InfiniteTimeSpan);
+services.AddSingleton<DoclingReadinessProbe>();
+services.AddSingleton<DoclingCapabilityService>();
+services.AddSingleton<IDoclingCapabilityService>(provider =>
+    provider.GetRequiredService<DoclingCapabilityService>());
+services.AddSaddleRagDirectoryIngestion();
 services.Configure<OllamaSettings>(configuration.GetSection(OllamaSettings.SectionName));
 services.Configure<OnnxSettings>(configuration.GetSection(OnnxSettings.SectionName));
 services.AddSingleton<OllamaBootstrapper>();

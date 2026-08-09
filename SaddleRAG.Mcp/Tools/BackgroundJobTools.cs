@@ -28,7 +28,7 @@ public static class BackgroundJobTools
 {
     [McpServerTool(Name = "get_job_status")]
     [Description("Check the status of any job by its id — works for scrape, reextract, " +
-                 "reembed, rechunk, rename_library, delete_version, delete_library, dryrun_scrape, " +
+                 "reembed, directory_scan, rechunk, rename_library, delete_version, delete_library, dryrun_scrape, " +
                  "index_project_dependencies, submit_url_correction, and the cleanup_* family. " +
                  "Status values: Queued, Running (ItemsProcessed/ItemsTotal show progress where applicable), " +
                  "Completed (Result contains the full output), Failed (check ErrorMessage), Cancelled. " +
@@ -89,6 +89,7 @@ public static class BackgroundJobTools
                                    job.ItemsProcessed,
                                    job.ItemsTotal,
                                    job.ItemsLabel,
+                                   job.DirectoryScanProgress,
                                    job.ErrorMessage,
                                    Result = parsedResult,
                                    BoundaryHint = boundaryHint,
@@ -130,7 +131,7 @@ public static class BackgroundJobTools
 
     [McpServerTool(Name = "list_jobs")]
     [Description("List recent jobs from the unified queue, most recent first. " +
-                 "Returns every job type — scrape, reextract, reembed, rechunk, rename_library, " +
+                 "Returns every job type — scrape, directory_scan, reextract, reembed, rechunk, rename_library, " +
                  "delete_version, delete_library, dryrun_scrape, index_project_dependencies, " +
                  "submit_url_correction, and the cleanup_* family. Filter by jobType to narrow " +
                  "results. Use get_job_status(jobId) to poll a specific job's full state. " +
@@ -139,7 +140,7 @@ public static class BackgroundJobTools
                 )]
     public static async Task<string> ListJobs(RepositoryFactory repositoryFactory,
                                               [Description("Optional job type filter. Accepts enum names (Scrape, Rechunk, " +
-                                                           "Rescrub, Reembed, RenameLibrary, DeleteVersion, DeleteLibrary, " +
+                                                           "DirectoryScan, Rescrub, Reembed, RenameLibrary, DeleteVersion, DeleteLibrary, " +
                                                            "DryRunScrape, IndexProjectDependencies, SubmitUrlCorrection, " +
                                                            "CleanupAuditLog, CleanupJobs, CleanupOrphans) and legacy snake_case " +
                                                            "(rechunk, rename_library, …). Omit to list all types."
@@ -194,6 +195,7 @@ public static class BackgroundJobTools
     private static JobType? LegacyJobTypeToEnum(string legacyType) => legacyType switch
         {
             "scrape"                     => JobType.Scrape,
+            "directory_scan"              => JobType.DirectoryScan,
             "rescrub"                    => JobType.Rescrub,
             "reextract"                  => JobType.Rescrub,
             "reembed"                    => JobType.Reembed,

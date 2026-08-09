@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion.Diagnostics;
 
 #endregion
@@ -191,6 +192,27 @@ public sealed class ScrapeAuditWriterTests
         Assert.All(spy.Inserted, e => Assert.Equal(string.Empty, e.Host));
     }
 
+    [Fact]
+    public async Task NamedProfileAuditFlushNeverWritesTheDefaultRepository()
+    {
+        var defaultRepository = new SpyRepository();
+        var profileRepository = new SpyRepository();
+        var factory = Substitute.For<RepositoryFactory>([null!]);
+        factory.GetScrapeAuditRepository(ProfileName).Returns(profileRepository);
+        var writer = new ScrapeAuditWriter(defaultRepository,
+                                           factory,
+                                           batchSize: 1000,
+                                           TimeSpan.FromMinutes(minutes: 5));
+        AuditContext context = NewCtx("profile-job") with { Profile = ProfileName };
+
+        writer.RecordFetched(context, "https://profile.test/", parentUrl: null, "profile.test", depth: 0);
+        await writer.DisposeAsync();
+
+        Assert.Empty(defaultRepository.Inserted);
+        Assert.Single(profileRepository.Inserted);
+        factory.Received(requiredNumberOfCalls: 1).GetScrapeAuditRepository(ProfileName);
+    }
+
     private static AuditContext NewCtx(string jobId) =>
         new AuditContext
             {
@@ -198,4 +220,6 @@ public sealed class ScrapeAuditWriterTests
                 LibraryId = "lib",
                 Version = "1.0"
             };
+
+    private const string ProfileName = "team-profile";
 }

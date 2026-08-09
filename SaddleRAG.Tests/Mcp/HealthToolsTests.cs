@@ -82,6 +82,52 @@ public sealed class HealthToolsTests
         Assert.Contains("not found", json, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(VersionPublicationState.Building)]
+    [InlineData(VersionPublicationState.Failed)]
+    public async Task GetLibraryHealthDoesNotReadChunksForUnpublishedVersion(VersionPublicationState state)
+    {
+        (var factory, var libraryRepo, var chunkRepo, var _) = MakeFactory();
+        libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
+                   .Returns(new LibraryRecord
+                                {
+                                    Id = "foo",
+                                    Name = "f",
+                                    Hint = "h",
+                                    CurrentVersion = "published",
+                                    AllVersions = ["published"]
+                                }
+                           );
+        libraryRepo.GetVersionAsync("foo", "candidate", Arg.Any<CancellationToken>())
+                   .Returns(new LibraryVersionRecord
+                                {
+                                    Id = "foo/candidate",
+                                    LibraryId = "foo",
+                                    Version = "candidate",
+                                    ScrapedAt = DateTime.UtcNow,
+                                    PageCount = 0,
+                                    ChunkCount = 0,
+                                    EmbeddingProviderId = "ollama",
+                                    EmbeddingModelName = "nomic-embed-text",
+                                    EmbeddingDimensions = 768,
+                                    PublicationState = state
+                                }
+                           );
+
+        var json = await HealthTools.GetLibraryHealth(factory,
+                                                      "foo",
+                                                      version: "candidate",
+                                                      profile: null,
+                                                      TestContext.Current.CancellationToken
+                                                     );
+
+        Assert.Contains("not published", json, StringComparison.OrdinalIgnoreCase);
+        await chunkRepo.DidNotReceiveWithAnyArgs()
+                       .GetLanguageMixAsync(default!, default!, TestContext.Current.CancellationToken);
+        await chunkRepo.DidNotReceiveWithAnyArgs()
+                       .GetHostnameDistributionAsync(default!, default!, TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task GetLibraryHealthHighBoundaryPctRecommendsRechunk()
     {

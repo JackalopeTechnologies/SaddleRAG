@@ -39,6 +39,7 @@ public sealed class MutationToolsTests
 
         var json = await MutationTools.RenameLibrary(factory,
                                                      MakeNoopRunner(),
+                                                     Substitute.For<ILibraryRenameService>(),
                                                      "old",
                                                      "new",
                                                      dryRun: true,
@@ -65,6 +66,7 @@ public sealed class MutationToolsTests
 
         var json = await MutationTools.RenameLibrary(factory,
                                                      MakeNoopRunner(),
+                                                     Substitute.For<ILibraryRenameService>(),
                                                      "missing",
                                                      "new",
                                                      dryRun: true,
@@ -79,28 +81,25 @@ public sealed class MutationToolsTests
     [Fact]
     public async Task RenameLibraryApplyQueuesJobAndCallsRenameAsync()
     {
-        var libraryRepo = Substitute.For<ILibraryRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
+        var renameService = Substitute.For<ILibraryRenameService>();
+        BackgroundJobRecord? completed = null;
 
-        libraryRepo.RenameAsync("old", "new", Arg.Any<CancellationToken>())
-                   .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
-                                                      new RenameLibraryResult(Libraries: 1,
-                                                                              Versions: 1,
-                                                                              Chunks: 100,
-                                                                              Pages: 50,
-                                                                              Profiles: 1,
-                                                                              Indexes: 1,
-                                                                              Bm25Shards: 1,
-                                                                              ExcludedSymbols: 5,
-                                                                              ScrapeJobs: 3
-                                                                             )
-                                                     )
-                           );
-
-        factory.GetLibraryRepository(profile: null).Returns(libraryRepo);
+        renameService.RenameLibraryAsync(null, "old", "new", Arg.Any<CancellationToken>())
+                     .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
+                                                        new RenameLibraryResult(Libraries: 1,
+                                                                                Versions: 1,
+                                                                                Chunks: 100,
+                                                                                Pages: 50,
+                                                                                Profiles: 1,
+                                                                                Indexes: 1,
+                                                                                Bm25Shards: 1,
+                                                                                ExcludedSymbols: 5,
+                                                                                ScrapeJobs: 3)));
 
         var json = await MutationTools.RenameLibrary(factory,
-                                                     MakeInlineRunner(),
+                                                     MakeInlineRunner(record => completed = record),
+                                                     renameService,
                                                      "old",
                                                      "new",
                                                      dryRun: false,
@@ -110,22 +109,24 @@ public sealed class MutationToolsTests
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await libraryRepo.Received(requiredNumberOfCalls: 1).RenameAsync("old", "new", Arg.Any<CancellationToken>());
+        await renameService.Received(requiredNumberOfCalls: 1)
+                           .RenameLibraryAsync(null, "old", "new", Arg.Any<CancellationToken>());
+        Assert.Equal("new", Assert.IsType<BackgroundJobRecord>(completed).LibraryId);
     }
 
     [Fact]
     public async Task RenameLibraryApplyQueuesJobEvenOnCollision()
     {
-        var libraryRepo = Substitute.For<ILibraryRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
+        var renameService = Substitute.For<ILibraryRenameService>();
+        BackgroundJobRecord? completed = null;
 
-        libraryRepo.RenameAsync("old", "new", Arg.Any<CancellationToken>())
-                   .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Collision, Counts: null));
-
-        factory.GetLibraryRepository(profile: null).Returns(libraryRepo);
+        renameService.RenameLibraryAsync(null, "old", "new", Arg.Any<CancellationToken>())
+                     .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Collision, Counts: null));
 
         var json = await MutationTools.RenameLibrary(factory,
-                                                     MakeInlineRunner(),
+                                                     MakeInlineRunner(record => completed = record),
+                                                     renameService,
                                                      "old",
                                                      "new",
                                                      dryRun: false,
@@ -135,6 +136,9 @@ public sealed class MutationToolsTests
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
+        await renameService.Received(requiredNumberOfCalls: 1)
+                           .RenameLibraryAsync(null, "old", "new", Arg.Any<CancellationToken>());
+        Assert.Equal("old", Assert.IsType<BackgroundJobRecord>(completed).LibraryId);
     }
 
     [Fact]
@@ -143,11 +147,24 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
+        var jobRepo = Substitute.For<IJobRepository>();
+        var projectProfiles = Substitute.For<IProjectProfileRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
+        factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
+        factory.GetProjectProfileRepository(Arg.Any<string?>()).Returns(projectProfiles);
+        jobRepo.CountDeleteCandidatesAsync(jobType: null,
+                                            status: null,
+                                            libraryId: "foo",
+                                            version: null,
+                                            completedBefore: null,
+                                            ct: Arg.Any<CancellationToken>())
+               .Returns(7L);
+        projectProfiles.CountIngestedPackageReferencesAsync("foo", Arg.Any<CancellationToken>())
+                       .Returns(2L);
 
         libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
                    .Returns(new LibraryRecord
@@ -164,6 +181,7 @@ public sealed class MutationToolsTests
 
         var json = await MutationTools.DeleteVersion(factory,
                                                      MakeNoopRunner(),
+                                                     Substitute.For<ILibraryDeletionService>(),
                                                      "foo",
                                                      "1.0",
                                                      dryRun: true,
@@ -174,12 +192,14 @@ public sealed class MutationToolsTests
         Assert.Contains("\"DryRun\": true", json);
         Assert.Contains("\"Chunks\": 123", json);
         Assert.Contains("\"Pages\": 45", json);
+        Assert.Contains("\"Jobs\": 7", json);
+        Assert.Contains("\"ProjectProfiles\": 2", json);
         await chunkRepo.DidNotReceive()
                        .DeleteChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task DeleteVersionApplyQueuesJobAndCallsAllCollections()
+    public async Task DeleteVersionApplyQueuesJobAndDelegatesToSharedCascade()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
@@ -189,6 +209,7 @@ public sealed class MutationToolsTests
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
+        var deletionService = Substitute.For<ILibraryDeletionService>();
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -198,11 +219,16 @@ public sealed class MutationToolsTests
         factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excludedRepo);
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
 
-        libraryRepo.DeleteVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
-                   .Returns(new DeleteVersionResult(VersionsDeleted: 1, LibraryRowDeleted: false, "0.9"));
+        deletionService.DeleteVersionPreservingJobAsync(Arg.Is<string?>(value => value == null),
+                                                         Arg.Is("foo"),
+                                                         Arg.Is("1.0"),
+                                                         Arg.Any<string>(),
+                                                         Arg.Any<CancellationToken>())
+                       .Returns(new LibraryDeletionResult(0, 1, 0, 0, 0, 0, 0, 0, 0, "0.9"));
 
         var json = await MutationTools.DeleteVersion(factory,
                                                      MakeInlineRunner(),
+                                                     deletionService,
                                                      "foo",
                                                      "1.0",
                                                      dryRun: false,
@@ -212,15 +238,12 @@ public sealed class MutationToolsTests
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await chunkRepo.Received(requiredNumberOfCalls: 1)
-                       .DeleteChunksAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await pageRepo.Received(requiredNumberOfCalls: 1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await profileRepo.Received(requiredNumberOfCalls: 1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await indexRepo.Received(requiredNumberOfCalls: 1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await bm25Repo.Received(requiredNumberOfCalls: 1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await excludedRepo.Received(requiredNumberOfCalls: 1).DeleteAsync("foo", "1.0", Arg.Any<CancellationToken>());
-        await libraryRepo.Received(requiredNumberOfCalls: 1)
-                         .DeleteVersionAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await deletionService.Received(requiredNumberOfCalls: 1)
+                             .DeleteVersionPreservingJobAsync(Arg.Is<string?>(value => value == null),
+                                                              Arg.Is("foo"),
+                                                              Arg.Is("1.0"),
+                                                              Arg.Any<string>(),
+                                                              Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -229,11 +252,24 @@ public sealed class MutationToolsTests
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
         var pageRepo = Substitute.For<IPageRepository>();
+        var jobRepo = Substitute.For<IJobRepository>();
+        var projectProfiles = Substitute.For<IProjectProfileRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
+        factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
+        factory.GetProjectProfileRepository(Arg.Any<string?>()).Returns(projectProfiles);
+        jobRepo.CountDeleteCandidatesAsync(jobType: null,
+                                            status: null,
+                                            libraryId: "foo",
+                                            version: null,
+                                            completedBefore: null,
+                                            ct: Arg.Any<CancellationToken>())
+               .Returns(8L);
+        projectProfiles.CountIngestedPackageReferencesAsync("foo", Arg.Any<CancellationToken>())
+                       .Returns(3L);
 
         libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
                    .Returns(new LibraryRecord
@@ -252,6 +288,7 @@ public sealed class MutationToolsTests
 
         var json = await MutationTools.DeleteLibrary(factory,
                                                      MakeNoopRunner(),
+                                                     Substitute.For<ILibraryDeletionService>(),
                                                      "foo",
                                                      dryRun: true,
                                                      profile: null,
@@ -261,10 +298,12 @@ public sealed class MutationToolsTests
         Assert.Contains("\"Versions\":", json);
         Assert.Contains("\"Chunks\": 150", json);
         Assert.Contains("\"Pages\": 30", json);
+        Assert.Contains("\"Jobs\": 8", json);
+        Assert.Contains("\"ProjectProfiles\": 3", json);
     }
 
     [Fact]
-    public async Task DeleteLibraryApplyQueuesJobAndDeletesEachVersionThenLibraryRow()
+    public async Task DeleteLibraryApplyQueuesJobAndDelegatesToSharedCascade()
     {
         var libraryRepo = Substitute.For<ILibraryRepository>();
         var chunkRepo = Substitute.For<IChunkRepository>();
@@ -274,6 +313,7 @@ public sealed class MutationToolsTests
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
+        var deletionService = Substitute.For<ILibraryDeletionService>();
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
         factory.GetPageRepository(Arg.Any<string?>()).Returns(pageRepo);
@@ -293,10 +333,15 @@ public sealed class MutationToolsTests
                                     AllVersions = ["1.0", "2.0"]
                                 }
                            );
-        libraryRepo.DeleteAsync("foo", Arg.Any<CancellationToken>()).Returns(returnThis: 2);
+        deletionService.DeleteLibraryPreservingJobAsync(Arg.Is<string?>(value => value == null),
+                                                         Arg.Is("foo"),
+                                                         Arg.Any<string>(),
+                                                         Arg.Any<CancellationToken>())
+                       .Returns(new LibraryDeletionResult(1, 2, 0, 0, 0, 0, 0, 0, 0));
 
         var json = await MutationTools.DeleteLibrary(factory,
                                                      MakeInlineRunner(),
+                                                     deletionService,
                                                      "foo",
                                                      dryRun: false,
                                                      profile: null,
@@ -305,8 +350,11 @@ public sealed class MutationToolsTests
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await chunkRepo.Received().DeleteChunksAsync("foo", Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await libraryRepo.Received(requiredNumberOfCalls: 1).DeleteAsync("foo", Arg.Any<CancellationToken>());
+        await deletionService.Received(requiredNumberOfCalls: 1)
+                             .DeleteLibraryPreservingJobAsync(Arg.Is<string?>(value => value == null),
+                                                              Arg.Is("foo"),
+                                                              Arg.Any<string>(),
+                                                              Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -331,7 +379,10 @@ public sealed class MutationToolsTests
         chunkRepo.GetChunkCountAsync("scichart-wpf", "current", Arg.Any<CancellationToken>()).Returns(48734);
         pageRepo.GetPageCountAsync("scichart-wpf", "current", Arg.Any<CancellationToken>()).Returns(20636);
 
-        var json = await MutationTools.RenameLibrary(factory, MakeNoopRunner(), "scichart-wpf",
+        var json = await MutationTools.RenameLibrary(factory,
+                                                     MakeNoopRunner(),
+                                                     Substitute.For<ILibraryRenameService>(),
+                                                     "scichart-wpf",
                                                      newId: null, version: "current", newVersion: "v8",
                                                      dryRun: true, profile: null,
                                                      TestContext.Current.CancellationToken);
@@ -348,22 +399,36 @@ public sealed class MutationToolsTests
     [Fact]
     public async Task RenameVersionApplyQueuesJobAndCallsRenameVersionAsync()
     {
-        var libraryRepo = Substitute.For<ILibraryRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
-        factory.GetLibraryRepository(profile: null).Returns(libraryRepo);
-        libraryRepo.RenameVersionAsync("scichart-wpf", "current", "v8", Arg.Any<CancellationToken>())
-                   .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
-                                new RenameLibraryResult(1, 1, 48734, 20636, 1, 1, 4, 0, 0)));
+        var renameService = Substitute.For<ILibraryRenameService>();
+        BackgroundJobRecord? completed = null;
+        renameService.RenameVersionAsync(null,
+                                         "scichart-wpf",
+                                         "current",
+                                         "v8",
+                                         Arg.Any<CancellationToken>())
+                     .Returns(new RenameLibraryResponse(RenameLibraryOutcome.Renamed,
+                                                        new RenameLibraryResult(1, 1, 48734, 20636, 1, 1, 4, 0, 0)));
 
-        var json = await MutationTools.RenameLibrary(factory, MakeInlineRunner(), "scichart-wpf",
+        var json = await MutationTools.RenameLibrary(factory,
+                                                     MakeInlineRunner(record => completed = record),
+                                                     renameService,
+                                                     "scichart-wpf",
                                                      newId: null, version: "current", newVersion: "v8",
                                                      dryRun: false, profile: null,
                                                      TestContext.Current.CancellationToken);
 
         Assert.Contains("\"JobId\":", json);
         Assert.Contains("\"Status\": \"Queued\"", json);
-        await libraryRepo.Received(1)
-                         .RenameVersionAsync("scichart-wpf", "current", "v8", Arg.Any<CancellationToken>());
+        await renameService.Received(requiredNumberOfCalls: 1)
+                           .RenameVersionAsync(null,
+                                               "scichart-wpf",
+                                               "current",
+                                               "v8",
+                                               Arg.Any<CancellationToken>());
+        BackgroundJobRecord completedRecord = Assert.IsType<BackgroundJobRecord>(completed);
+        Assert.Equal("scichart-wpf", completedRecord.LibraryId);
+        Assert.Equal("v8", completedRecord.Version);
     }
 
     [Theory]
@@ -383,7 +448,10 @@ public sealed class MutationToolsTests
     {
         var factory = Substitute.For<RepositoryFactory>([null!]);
 
-        var json = await MutationTools.RenameLibrary(factory, MakeNoopRunner(), "lib",
+        var json = await MutationTools.RenameLibrary(factory,
+                                                     MakeNoopRunner(),
+                                                     Substitute.For<ILibraryRenameService>(),
+                                                     "lib",
                                                      newId, version, newVersion,
                                                      dryRun: true, profile: null,
                                                      TestContext.Current.CancellationToken);
@@ -416,7 +484,7 @@ public sealed class MutationToolsTests
         return runner;
     }
 
-    private static IBackgroundJobRunner MakeInlineRunner()
+    private static IBackgroundJobRunner MakeInlineRunner(Action<BackgroundJobRecord>? onCompleted = null)
     {
         var runner = Substitute.For<IBackgroundJobRunner>();
         runner.QueueAsync(Arg.Any<BackgroundJobRecord>(),
@@ -429,6 +497,7 @@ public sealed class MutationToolsTests
                            var execute = callInfo
                                .Arg<Func<BackgroundJobRecord, Action<int, int>?, CancellationToken, Task>>()!;
                            await execute(record, arg2: null, CancellationToken.None);
+                           onCompleted?.Invoke(record);
                            return record.Id;
                        }
                       );

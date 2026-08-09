@@ -38,7 +38,22 @@ internal sealed class EmbedStage
         ArgumentNullException.ThrowIfNull(chunkRepository);
         ArgumentNullException.ThrowIfNull(broadcaster);
         ArgumentNullException.ThrowIfNull(logger);
-        mEmbeddingProvider = embeddingProvider;
+        mEmbed = (chunks, ct) => EmbedBatchAsync(embeddingProvider, logger, chunks, ct);
+        mChunkRepository = chunkRepository;
+        mBroadcaster = broadcaster;
+        mLogger = logger;
+    }
+
+    internal EmbedStage(IngestionPageProcessor processor,
+                        IChunkRepository chunkRepository,
+                        IMonitorBroadcaster broadcaster,
+                        ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(processor);
+        ArgumentNullException.ThrowIfNull(chunkRepository);
+        ArgumentNullException.ThrowIfNull(broadcaster);
+        ArgumentNullException.ThrowIfNull(logger);
+        mEmbed = processor.EmbedAsync;
         mChunkRepository = chunkRepository;
         mBroadcaster = broadcaster;
         mLogger = logger;
@@ -46,7 +61,7 @@ internal sealed class EmbedStage
 
     private readonly IMonitorBroadcaster mBroadcaster;
     private readonly IChunkRepository mChunkRepository;
-    private readonly IEmbeddingProvider mEmbeddingProvider;
+    private readonly Func<IReadOnlyList<DocChunk>, CancellationToken, Task<DocChunk[]>> mEmbed;
     private readonly ILogger mLogger;
 
     /// <summary>
@@ -129,7 +144,7 @@ internal sealed class EmbedStage
         var sw = Stopwatch.StartNew();
         try
         {
-            var embeddedChunks = await EmbedBatchAsync(mEmbeddingProvider, mLogger, batch, ct);
+            DocChunk[] embeddedChunks = await mEmbed(batch, ct);
 
             if (persistMode == IngestionPersistenceMode.Full)
                 await mChunkRepository.UpsertChunksAsync(embeddedChunks, ct);
@@ -227,5 +242,5 @@ internal sealed class EmbedStage
     /// </summary>
     internal const int MaxEmbedChars = 6000;
 
-    private const int EmbedBatchSize = 32;
+    internal const int EmbedBatchSize = 32;
 }

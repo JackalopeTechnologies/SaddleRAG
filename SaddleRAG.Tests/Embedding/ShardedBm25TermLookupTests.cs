@@ -69,6 +69,11 @@ public sealed class ShardedBm25TermLookupTests
         public Task<string> UploadGridFsBlobAsync(Stream content, CancellationToken ct = default) =>
             Task.FromResult(string.Empty);
 
+        public Task UploadGridFsBlobAsync(string gridFsId,
+                                          Stream content,
+                                          CancellationToken ct = default) =>
+            Task.CompletedTask;
+
         public Task UpsertShardAsync(Bm25Shard shard, CancellationToken ct = default) =>
             Task.CompletedTask;
 

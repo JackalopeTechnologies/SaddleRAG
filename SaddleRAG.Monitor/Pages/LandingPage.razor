@@ -27,7 +27,20 @@
         <MudText Typo="Typo.body2" Class="mb-2">
             Run <code>start_ingest</code> via Claude Code to scrape a library's documentation.
             See the
-            <MudLink Href="https://github.com/JackalopeTechnologies/SaddleRAG#getting-started" Target="_blank">getting-started guide</MudLink>.
+            <MudLink Href="https://github.com/JackalopeTechnologies/SaddleRAG#quick-start-windows-installer" Target="_blank">getting-started guide</MudLink>.
+        </MudText>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Local PDF and DOCX libraries use a separately installed, user-managed Docling Serve endpoint.
+            SaddleRAG never installs or manages Docling or Tesseract. It asks Docling to perform OCR without selecting
+            an engine or preset, so installing Tesseract alone does not make SaddleRAG or Docling use it. See the
+            <MudLink Href="https://github.com/JackalopeTechnologies/SaddleRAG#step-3-enable-local-pdf-and-docx-libraries-optional" Target="_blank">document setup guide</MudLink>,
+            <MudLink Href="https://github.com/docling-project/docling-serve/releases/latest" Target="_blank">latest Docling Serve release</MudLink>,
+            and <MudLink Href="https://tesseract-ocr.github.io/tessdoc/Installation.html" Target="_blank">Tesseract installation guide</MudLink>.
+        </MudText>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            The installer's <strong>Test Docling</strong> action only tests unauthenticated endpoints and never collects
+            secrets. Configure protected endpoints in access-restricted runtime configuration, then verify them with
+            SaddleRAG's runtime status/conversion probe.
         </MudText>
         <MudText Typo="Typo.caption">
             Tip: <code>recon_library</code> first to build a profile, then <code>scrape_docs</code> to ingest.

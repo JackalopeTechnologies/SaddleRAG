@@ -9,6 +9,10 @@ using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
+using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Packaging;
 
@@ -64,7 +68,8 @@ public static class PackagingTools
                  "receiver's active model, chunks land with null embeddings and a re-embed job is " +
                  "enqueued per imported version. Pass compact=true to run compact_collections " +
                  "automatically after a successful overwrite-import.")]
-    public static async Task<string> ImportLibrary(LibraryImporter importer,
+    public static async Task<string> ImportLibrary(LibraryImporterFactory importerFactory,
+                                                   RepositoryFactory repositoryFactory,
                                                    ScrapeJobRunner runner,
                                                    ILogger<PackagingToolsLog> logger,
                                                    [Description("Path to a .srlib.zip bundle on disk.")]
@@ -77,33 +82,44 @@ public static class PackagingTools
                                                    string? profile = null,
                                                    CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(importer);
+        ArgumentNullException.ThrowIfNull(importerFactory);
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(runner);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentException.ThrowIfNullOrEmpty(bundlePath);
 
+        LibraryImporter importer = importerFactory.Create(profile);
         var result = await importer.ImportAsync(
             new ImportRequest { BundlePath = bundlePath, Overwrite = overwrite, Compact = compact, Profile = profile },
             progress: null,
             ct: ct);
 
-        result = await ReloadImportedLibraryAsync(runner, logger, result, profile, bundlePath, ct);
+        result = await ReloadImportedLibraryAsync(repositoryFactory,
+                                                  runner,
+                                                  logger,
+                                                  result,
+                                                  profile,
+                                                  bundlePath,
+                                                  ct);
         return JsonSerializer.Serialize(result, smJsonOptions);
     }
 
     // An import writes chunks and embeddings straight into MongoDB but, unlike scrape
     // ingestion, does not refresh the in-memory vector index — so a freshly imported library
-    // returns zero search candidates until a reload or restart. Reload only the imported
-    // library's own versions (targeted, not a whole-profile reindex), which also makes
-    // non-current imported versions searchable. The data was already committed, so a reload
-    // failure is reported via RecommendedFollowUp rather than surfaced as an import failure;
-    // cancellation still propagates.
-    private static async Task<ImportResult> ReloadImportedLibraryAsync(ScrapeJobRunner runner,
-                                                                       ILogger<PackagingToolsLog> logger,
-                                                                       ImportResult result,
-                                                                       string? profile,
-                                                                       string bundlePath,
-                                                                       CancellationToken ct)
+    // returns zero search candidates until a reload or restart. Reload only matching-encoder
+    // versions. A version with a durable re-embed job is owned by ReembedJobRunner, including
+    // when that job completes before this method runs; reloading the importer's null embeddings
+    // would otherwise replace the fresh index with an empty one. The data was already committed,
+    // so a reload failure is reported via RecommendedFollowUp rather than surfaced as an import
+    // failure; cancellation still propagates.
+    internal static async Task<ImportResult> ReloadImportedLibraryAsync(
+        RepositoryFactory repositoryFactory,
+        ScrapeJobRunner runner,
+        ILogger<PackagingToolsLog> logger,
+        ImportResult result,
+        string? profile,
+        string bundlePath,
+        CancellationToken ct)
     {
         ImportResult res = result;
         List<string> versions = result.VersionsImported
@@ -114,8 +130,18 @@ public static class PackagingTools
         {
             try
             {
-                foreach (string version in versions)
-                    await runner.ReloadIndexForLibraryAsync(profile, result.LibraryId, version, ct);
+                IReadOnlySet<string> reembedVersions = await GetDurableReembedVersionsAsync(
+                                                            repositoryFactory.GetJobRepository(profile),
+                                                            result,
+                                                            versions,
+                                                            profile,
+                                                            ct);
+                await ReloadVersionsWithoutReembedJobsAsync(runner,
+                                                            result.LibraryId,
+                                                            versions,
+                                                            reembedVersions,
+                                                            profile,
+                                                            ct);
             }
             catch (OperationCanceledException)
             {
@@ -128,6 +154,49 @@ public static class PackagingTools
             }
         }
         return res;
+    }
+
+    private static async Task ReloadVersionsWithoutReembedJobsAsync(
+        ScrapeJobRunner runner,
+        string libraryId,
+        IReadOnlyList<string> versions,
+        IReadOnlySet<string> reembedVersions,
+        string? profile,
+        CancellationToken ct)
+    {
+        foreach(string version in versions)
+        {
+            if (!reembedVersions.Contains(version))
+                await runner.ReloadIndexForLibraryAsync(profile, libraryId, version, ct);
+        }
+    }
+
+    private static async Task<IReadOnlySet<string>> GetDurableReembedVersionsAsync(
+        IJobRepository jobs,
+        ImportResult import,
+        IReadOnlyList<string> importedVersions,
+        string? profile,
+        CancellationToken ct)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach(string jobId in import.PendingReembedJobIds.Distinct(StringComparer.Ordinal))
+        {
+            JobRecord? job = await jobs.GetAsync(jobId, ct);
+            if (job == null ||
+                !string.Equals(job.Id, jobId, StringComparison.Ordinal) ||
+                job.JobType != JobType.Reembed ||
+                !string.Equals(job.Profile, profile, StringComparison.Ordinal) ||
+                !string.Equals(job.LibraryId, import.LibraryId, StringComparison.Ordinal) ||
+                string.IsNullOrEmpty(job.Version) ||
+                !importedVersions.Contains(job.Version, StringComparer.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Pending re-embed job '{jobId}' could not be attributed to this import.");
+            }
+
+            result.Add(job.Version);
+        }
+        return result;
     }
 
     private static string AppendReloadWarning(string existing) =>

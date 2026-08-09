@@ -32,13 +32,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="start-and-monitor.ps1">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-  </ItemGroup>
-
-  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SaddleRAG.Tests</_Parameter1>
     </AssemblyAttribute>

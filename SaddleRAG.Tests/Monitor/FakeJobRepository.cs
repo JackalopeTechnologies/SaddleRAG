@@ -40,6 +40,41 @@ internal sealed class FakeJobRepository : IJobRepository
         return Task.FromResult(result);
     }
 
+    public Task<IReadOnlyList<JobRecord>> ListQueuedAsync(JobType jobType,
+                                                          string? profile,
+                                                          CancellationToken ct = default)
+    {
+        IReadOnlyList<JobRecord> result = mRecords
+            .Where(record => record.JobType == jobType &&
+                             record.Status == JobStatus.Queued &&
+                             string.Equals(record.Profile, profile, StringComparison.Ordinal))
+            .OrderBy(record => record.CreatedAt)
+            .ToList();
+        return Task.FromResult(result);
+    }
+
+    public Task<JobRecord?> TryClaimQueuedAsync(string jobId,
+                                                JobType jobType,
+                                                string? profile,
+                                                string executionClaimId,
+                                                DateTime startedAt,
+                                                CancellationToken ct = default)
+    {
+        JobRecord? result = mRecords.FirstOrDefault(record =>
+            string.Equals(record.Id, jobId, StringComparison.Ordinal) &&
+            record.JobType == jobType &&
+            string.Equals(record.Profile, profile, StringComparison.Ordinal) &&
+            record.Status == JobStatus.Queued);
+        if (result != null)
+        {
+            result.Status = JobStatus.Running;
+            result.PipelineState = nameof(JobStatus.Running);
+            result.StartedAt = startedAt;
+            result.ExecutionClaimId = executionClaimId;
+        }
+        return Task.FromResult(result);
+    }
+
     public Task<IReadOnlyList<JobRecord>> ListRecentAsync(JobType? jobType = null,
                                                           int limit = 20,
                                                           CancellationToken ct = default)
@@ -95,6 +130,11 @@ internal sealed class FakeJobRepository : IJobRepository
 
     public Task<long> DeleteManyAsync(JobType? jobType, JobStatus? status, string? libraryId,
                                        string? version, DateTime? completedBefore, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task<long> DeleteManyExceptAsync(JobType? jobType, JobStatus? status, string? libraryId,
+                                             string? version, DateTime? completedBefore, string excludedJobId,
+                                             CancellationToken ct = default) =>
         throw new NotSupportedException();
 
     public Task<long> CountDeleteCandidatesAsync(JobType? jobType, JobStatus? status, string? libraryId,

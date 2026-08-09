@@ -22,16 +22,15 @@
 //                             (/qn, where the UI sequence is skipped) use it
 //                             as the default written to appsettings.json via
 //                             PatchAppSettings. The CA only writes when the
-//                             property is currently empty, so an explicit
+//                             property is currently Auto/empty, so an explicit
 //                             command-line override (msiexec ... ONNX_EXECUTION_PROVIDER=Cpu)
 //                             on a silent install is preserved when the
 //                             Execute-sequence copy of this CA fires, and a
 //                             user's radio click in interactive installs is
 //                             preserved when the same Execute-sequence copy
 //                             re-runs after the dialog. The Property
-//                             declaration in Package.wxs intentionally has no
-//                             default Value attribute so "empty == auto-detect"
-//                             is the unambiguous initial state.
+//                             declaration in Package.wxs uses Auto both as the
+//                             initial sentinel and as a valid radio value.
 //
 // JScript style mirrors CheckOllamaKeepAlive.js. Detection is intentionally
 // permissive: a runtime EP-append failure in OnnxExecutionProviderConfigurator
@@ -43,6 +42,8 @@
 // SaddleRAG.Tests.Installer.GpuDetectionRulesTests) so the heuristic is unit-
 // testable. If either side changes, update the other.
 
+function SaddleRagInstallerAction()
+{
 var _buildNumber          = 0;
 var _buildNumberReadFailed = false;
 var _gpuDetected          = "0";
@@ -164,8 +165,8 @@ Session.Property("WINDOWSBUILDNUMBER")   = String(_buildNumber);
 Session.Property("GPU_DETECTED")         = _gpuDetected;
 Session.Property("GPU_DETECTION_REASON") = _reason;
 
-// Only seed ONNX_EXECUTION_PROVIDER if it hasn't already been set. The empty-
-// guard protects two distinct scenarios:
+// Only seed ONNX_EXECUTION_PROVIDER when it still has the authored Auto
+// sentinel or is empty. The guard protects two distinct scenarios:
 //   * Silent install (/qn): InstallUISequence is skipped, so only the
 //     Execute-sequence copy of this CA runs. If the operator passed
 //     ONNX_EXECUTION_PROVIDER=X on the msiexec command line, the property
@@ -175,6 +176,8 @@ Session.Property("GPU_DETECTION_REASON") = _reason;
 //     user click, then the Execute-sequence copy re-runs this CA. The guard
 //     keeps the user's choice across that second invocation.
 var _currentProvider = Session.Property("ONNX_EXECUTION_PROVIDER");
-if (!_currentProvider || _currentProvider.length === 0) {
+if (!_currentProvider || _currentProvider.length === 0 || _currentProvider === "Auto") {
     Session.Property("ONNX_EXECUTION_PROVIDER") = (_gpuDetected === "1") ? "DirectMl" : "Cpu";
+}
+return 1;
 }

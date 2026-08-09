@@ -51,18 +51,32 @@ public static class PageTools
         if (lib == null)
             result = JsonSerializer.Serialize(new { Error = $"Library '{library}' not found." }, smJsonOptions);
         else
-            result = await BuildPageListResponseAsync(library, lib, version, pageRepo, ct);
+        {
+            var candidateVersion = version ?? lib.CurrentVersion;
+            var resolvedVersion = await LibraryTools.ResolveVersionAsync(libraryRepo,
+                                                                          library,
+                                                                          candidateVersion,
+                                                                          ct
+                                                                         );
+            result = resolvedVersion == null
+                         ? JsonSerializer.Serialize(new
+                                                        {
+                                                            Error =
+                                                                $"Version '{candidateVersion}' not found or not published."
+                                                        },
+                                                    smJsonOptions
+                                                   )
+                         : await BuildPageListResponseAsync(library, resolvedVersion, pageRepo, ct);
+        }
 
         return result;
     }
 
     private static async Task<string> BuildPageListResponseAsync(string library,
-                                                                 LibraryRecord lib,
-                                                                 string? version,
+                                                                 string resolvedVersion,
                                                                  IPageRepository pageRepo,
                                                                  CancellationToken ct)
     {
-        var resolvedVersion = version ?? lib.CurrentVersion;
         var pages = await pageRepo.GetPagesAsync(library, resolvedVersion, ct);
 
         var projection = pages

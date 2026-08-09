@@ -25,7 +25,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     <see langword="volatile" /> ensures the new value is visible to all
 ///     threads immediately.
 /// </summary>
-public sealed class ClassifierBackendSwitch : ILlmClassifier
+public sealed class ClassifierBackendSwitch : ILlmClassifier, IClassifierTextGenerator
 {
     /// <summary>
     ///     Initializes a new <see cref="ClassifierBackendSwitch" /> with ONNX
@@ -132,6 +132,15 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier
         ArgumentException.ThrowIfNullOrEmpty(libraryHint);
 
         return mActive.ClassifyAsync(page, libraryHint, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(prompt);
+        if (mActive is not IClassifierTextGenerator generator)
+            throw new InvalidOperationException("The active classifier backend does not support structured subject generation.");
+        return generator.GenerateAsync(prompt, ct);
     }
 
     private const string OllamaNotReachableMessage = "Cannot switch to Ollama classifier: Ollama is not reachable. Install and run Ollama from https://ollama.com, then retry.";

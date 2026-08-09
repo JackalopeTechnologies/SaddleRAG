@@ -1,0 +1,185 @@
+{
+  "document": {
+    "filename": "saddlerag-docling-probe.pdf",
+    "md_content": "# SaddleRAG Docling Probe\n\nSADDLERAG_DOCLING_PROBE_2026_08_04\n\n## Purpose\n\nThis document verifies local PDF conversion.\n\n| Capability | Expected |\n|---|---|\n| PDF | Ready |",
+    "text_content": "SaddleRAG Docling Probe\nSADDLERAG_DOCLING_PROBE_2026_08_04\nPurpose\nThis document verifies local PDF conversion.\nCapability Expected PDF Ready",
+    "json_content": {
+      "schema_name": "DoclingDocument",
+      "version": "1.7.0",
+      "name": "saddlerag-docling-probe",
+      "body": {
+        "self_ref": "#/body",
+        "children": [
+          { "$ref": "#/texts/0" },
+          { "$ref": "#/texts/1" },
+          { "$ref": "#/groups/0" },
+          { "$ref": "#/tables/0" }
+        ],
+        "name": "_root_",
+        "label": "unspecified"
+      },
+      "groups": [
+        {
+          "self_ref": "#/groups/0",
+          "parent": { "$ref": "#/body" },
+          "children": [
+            { "$ref": "#/texts/2" }
+          ],
+          "label": "section",
+          "name": "purpose-body"
+        }
+      ],
+      "texts": [
+        {
+          "self_ref": "#/texts/0",
+          "parent": { "$ref": "#/body" },
+          "children": [],
+          "label": "title",
+          "level": 1,
+          "prov": [
+            {
+              "page_no": 1,
+              "bbox": {
+                "l": 72.0,
+                "t": 742.0,
+                "r": 402.0,
+                "b": 714.0,
+                "coord_origin": "BOTTOMLEFT"
+              },
+              "charspan": [0, 25]
+            }
+          ],
+          "orig": "SaddleRAG Docling Probe",
+          "text": "SaddleRAG Docling Probe"
+        },
+        {
+          "self_ref": "#/texts/1",
+          "parent": { "$ref": "#/body" },
+          "children": [],
+          "label": "section_header",
+          "level": 2,
+          "prov": [
+            {
+              "page_no": 1,
+              "bbox": {
+                "l": 72.0,
+                "t": 688.0,
+                "r": 154.0,
+                "b": 670.0,
+                "coord_origin": "BOTTOMLEFT"
+              },
+              "charspan": [0, 7]
+            }
+          ],
+          "orig": "Purpose",
+          "text": "Purpose"
+        },
+        {
+          "self_ref": "#/texts/2",
+          "parent": { "$ref": "#/groups/0" },
+          "children": [],
+          "label": "text",
+          "prov": [
+            {
+              "page_no": 1,
+              "bbox": {
+                "l": 72.0,
+                "t": 650.0,
+                "r": 426.0,
+                "b": 610.0,
+                "coord_origin": "BOTTOMLEFT"
+              },
+              "charspan": [0, 86]
+            }
+          ],
+          "orig": "SADDLERAG_DOCLING_PROBE_2026_08_04 This document verifies local PDF conversion.",
+          "text": "SADDLERAG_DOCLING_PROBE_2026_08_04 This document verifies local PDF conversion.",
+          "unknown_future_text_property": {
+            "safe_to_ignore": true
+          }
+        }
+      ],
+      "tables": [
+        {
+          "self_ref": "#/tables/0",
+          "parent": { "$ref": "#/body" },
+          "children": [],
+          "label": "table",
+          "prov": [
+            {
+              "page_no": 1,
+              "bbox": {
+                "l": 72.0,
+                "t": 570.0,
+                "r": 360.0,
+                "b": 510.0,
+                "coord_origin": "BOTTOMLEFT"
+              },
+              "charspan": [0, 29]
+            }
+          ],
+          "data": {
+            "num_rows": 2,
+            "num_cols": 2,
+            "table_cells": [
+              {
+                "start_row_offset_idx": 0,
+                "end_row_offset_idx": 1,
+                "start_col_offset_idx": 0,
+                "end_col_offset_idx": 1,
+                "text": "Capability",
+                "column_header": true
+              },
+              {
+                "start_row_offset_idx": 0,
+                "end_row_offset_idx": 1,
+                "start_col_offset_idx": 1,
+                "end_col_offset_idx": 2,
+                "text": "Expected",
+                "column_header": true
+              },
+              {
+                "start_row_offset_idx": 1,
+                "end_row_offset_idx": 2,
+                "start_col_offset_idx": 0,
+                "end_col_offset_idx": 1,
+                "text": "PDF",
+                "column_header": false
+              },
+              {
+                "start_row_offset_idx": 1,
+                "end_row_offset_idx": 2,
+                "start_col_offset_idx": 1,
+                "end_col_offset_idx": 2,
+                "text": "Ready",
+                "column_header": false
+              }
+            ]
+          }
+        }
+      ],
+      "pictures": [],
+      "key_value_items": [],
+      "form_items": [],
+      "pages": {
+        "1": {
+          "page_no": 1,
+          "size": {
+            "width": 612.0,
+            "height": 792.0
+          }
+        }
+      },
+      "unknown_future_document_property": ["ignored", 29]
+    }
+  },
+  "status": "success",
+  "processing_time": 12.5,
+  "timings": {
+    "pipeline": 12.1
+  },
+  "errors": [],
+  "unknown_future_response_property": {
+    "safe_to_ignore": true
+  }
+}

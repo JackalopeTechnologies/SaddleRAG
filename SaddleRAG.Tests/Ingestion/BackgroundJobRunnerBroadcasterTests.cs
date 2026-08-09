@@ -7,6 +7,7 @@
 
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
@@ -32,6 +33,52 @@ public sealed class BackgroundJobRunnerBroadcasterTests
                    .RecordJobStarted(record.Id, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
         broadcaster.Received(requiredNumberOfCalls: 1).RecordJobCompleted(record.Id, Arg.Any<int>());
         broadcaster.DidNotReceive().RecordJobFailed(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task CompletedJobPersistsIdentityChangedByItsOperation()
+    {
+        (BackgroundJobRunner runner, IMonitorBroadcaster broadcaster, FakeJobRepository jobs) = MakeRunner();
+        BackgroundJobRecord record = MakeRecord(BackgroundJobTypes.RenameVersion);
+
+        await runner.QueueAsync(record,
+                                (running, _, _) =>
+                                {
+                                    running.LibraryId = "renamed-library";
+                                    running.Version = "renamed-version";
+                                    return Task.CompletedTask;
+                                },
+                                TestContext.Current.CancellationToken);
+        await WaitForCompletion(record, broadcaster);
+
+        JobRecord stored = Assert.IsType<JobRecord>(
+            await jobs.GetAsync(record.Id, TestContext.Current.CancellationToken));
+        Assert.Equal("renamed-library", stored.LibraryId);
+        Assert.Equal("renamed-version", stored.Version);
+    }
+
+    [Fact]
+    public async Task FailedJobKeepsIdentityAlreadyMovedInDurableStorage()
+    {
+        (BackgroundJobRunner runner, IMonitorBroadcaster broadcaster, FakeJobRepository jobs) = MakeRunner();
+        BackgroundJobRecord record = MakeRecord(BackgroundJobTypes.RenameLibrary);
+
+        await runner.QueueAsync(record,
+                                async (_, _, _) =>
+                                {
+                                    JobRecord running = Assert.IsType<JobRecord>(
+                                        await jobs.GetAsync(record.Id, TestContext.Current.CancellationToken));
+                                    JobRecord moved = CopyWithLibraryId(running, "renamed-library");
+                                    await jobs.UpsertAsync(moved, TestContext.Current.CancellationToken);
+                                    throw new InvalidOperationException("interrupted after Mongo rename");
+                                },
+                                TestContext.Current.CancellationToken);
+        await WaitForCompletion(record, broadcaster);
+
+        JobRecord stored = Assert.IsType<JobRecord>(
+            await jobs.GetAsync(record.Id, TestContext.Current.CancellationToken));
+        Assert.Equal("renamed-library", stored.LibraryId);
+        Assert.Equal(JobStatus.Failed, stored.Status);
     }
 
     [Fact]
@@ -112,6 +159,33 @@ public sealed class BackgroundJobRunnerBroadcasterTests
                                              NullLogger<BackgroundJobRunner>.Instance);
         return (runner, broadcaster, jobRepo);
     }
+
+    private static JobRecord CopyWithLibraryId(JobRecord source, string libraryId) =>
+        new()
+            {
+                Id = source.Id,
+                JobType = source.JobType,
+                Profile = source.Profile,
+                LibraryId = libraryId,
+                Version = source.Version,
+                InputJson = source.InputJson,
+                Status = source.Status,
+                PipelineState = source.PipelineState,
+                ItemsProcessed = source.ItemsProcessed,
+                ItemsTotal = source.ItemsTotal,
+                ItemsLabel = source.ItemsLabel,
+                ResultJson = source.ResultJson,
+                ScrapeProgress = source.ScrapeProgress,
+                DirectoryScanProgress = source.DirectoryScanProgress,
+                DirectoryScanFailures = source.DirectoryScanFailures,
+                ErrorCount = source.ErrorCount,
+                ErrorMessage = source.ErrorMessage,
+                CreatedAt = source.CreatedAt,
+                StartedAt = source.StartedAt,
+                CompletedAt = source.CompletedAt,
+                LastProgressAt = source.LastProgressAt,
+                CancelledAt = source.CancelledAt
+            };
 
     private static BackgroundJobRecord MakeRecord(string jobType) =>
         new BackgroundJobRecord

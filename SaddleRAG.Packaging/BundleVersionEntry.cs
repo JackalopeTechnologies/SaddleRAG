@@ -36,6 +36,15 @@ public sealed record BundleVersionEntry
     [JsonPropertyName("chunkCount")]
     public required int ChunkCount { get; init; }
 
+    [JsonPropertyName("sourceDocumentCount")]
+    public int SourceDocumentCount { get; init; }
+
+    [JsonPropertyName("documentRevisionCount")]
+    public int DocumentRevisionCount { get; init; }
+
+    [JsonPropertyName("subjectAssignmentCount")]
+    public int SubjectAssignmentCount { get; init; }
+
     [JsonPropertyName("bm25HasGridFs")]
     public required bool Bm25HasGridFs { get; init; }
 

@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+function SaddleRagInstallerAction()
+{
 var _status;
 var _pass = "0";
 try {
@@ -51,3 +53,5 @@ try {
 }
 Session.Property("MONGOSTATUS") = _status;
 Session.Property("MONGOTEST_PASS") = _pass;
+return 1;
+}

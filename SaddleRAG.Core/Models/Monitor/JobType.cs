@@ -11,6 +11,7 @@ namespace SaddleRAG.Core.Models.Monitor;
 public enum JobType
 {
     Scrape,
+    DirectoryScan,
     DryRunScrape,
     Rechunk,
     Rescrub,

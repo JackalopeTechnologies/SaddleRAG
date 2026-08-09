@@ -265,10 +265,11 @@
         "watch",
         "--project",
         "${workspaceFolder}/SaddleRAG.Mcp",
-        "run",
-        "-p:Platform=x64",
         "--launch-profile",
-        "Dev"
+        "Dev",
+        "run",
+        "--",
+        "-p:Platform=x64"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -288,10 +289,11 @@
         "watch",
         "--project",
         "${workspaceFolder}/SaddleRAG.Mcp",
-        "run",
-        "-p:Platform=x64",
         "--launch-profile",
-        "DevSideBySide"
+        "DevSideBySide",
+        "run",
+        "--",
+        "-p:Platform=x64"
       ],
       "options": {
         "cwd": "${workspaceFolder}"

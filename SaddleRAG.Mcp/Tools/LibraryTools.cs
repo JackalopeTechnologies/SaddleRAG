@@ -134,14 +134,22 @@ public static class LibraryTools
                                                             string? version,
                                                             CancellationToken ct)
     {
-        string? result;
+        ArgumentNullException.ThrowIfNull(libraryRepository);
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
 
-        if (!string.IsNullOrEmpty(version))
-            result = version;
-        else
+        string? candidate = version;
+        if (string.IsNullOrEmpty(candidate))
         {
             var library = await libraryRepository.GetLibraryAsync(libraryId, ct);
-            result = library?.CurrentVersion;
+            candidate = library?.CurrentVersion;
+        }
+
+        string? result = null;
+        if (!string.IsNullOrEmpty(candidate))
+        {
+            var versionRecord = await libraryRepository.GetVersionAsync(libraryId, candidate, ct);
+            if (versionRecord?.PublicationState == VersionPublicationState.Published)
+                result = candidate;
         }
 
         return result;

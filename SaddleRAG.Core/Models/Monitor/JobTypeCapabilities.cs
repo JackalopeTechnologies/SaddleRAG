@@ -26,6 +26,7 @@ public static class JobTypeCapabilities
         bool res = type switch
         {
             JobType.Scrape => true,
+            JobType.DirectoryScan => true,
             JobType.DryRunScrape => true,
             JobType.Rechunk => true,
             JobType.Reembed => true,

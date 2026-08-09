@@ -121,10 +121,6 @@ public class ScrapeJobRunner : IScrapeJobQueue
                                             cts.Token
                                            );
 
-            // Reload the vector index for this library version so the new
-            // chunks are immediately searchable via search_docs.
-            await ReloadIndexForLibraryAsync(jobRecord.Profile, jobRecord.Job.LibraryId, jobRecord.Job.Version);
-
             await RecordTerminalOutcomeAsync(jobRecord, jobRepo);
         }
         catch(Exception) when(cts is { IsCancellationRequested: true })
@@ -242,7 +238,8 @@ public class ScrapeJobRunner : IScrapeJobQueue
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        var chunks = await mChunkRepository.GetChunksAsync(libraryId, version, ct);
+        var chunkRepo = mRepositoryFactory.GetChunkRepository(profile);
+        var chunks = await chunkRepo.GetChunksAsync(libraryId, version, ct);
         var embeddedChunks = chunks.Where(c => c.Embedding != null).ToList();
 
         await mVectorSearch.IndexChunksAsync(profile, libraryId, version, embeddedChunks, ct);
@@ -266,10 +263,14 @@ public class ScrapeJobRunner : IScrapeJobQueue
         var libraries = await libraryRepo.GetAllLibrariesAsync(ct);
         foreach(var lib in libraries)
         {
-            var chunks = await chunkRepo.GetChunksAsync(lib.Id, lib.CurrentVersion, ct);
-            var embeddedChunks = chunks.Where(c => c.Embedding != null).ToList();
+            var currentVersion = await libraryRepo.GetVersionAsync(lib.Id, lib.CurrentVersion, ct);
+            if (currentVersion?.PublicationState == VersionPublicationState.Published)
+            {
+                var chunks = await chunkRepo.GetChunksAsync(lib.Id, lib.CurrentVersion, ct);
+                var embeddedChunks = chunks.Where(c => c.Embedding != null).ToList();
 
-            await mVectorSearch.IndexChunksAsync(profile, lib.Id, lib.CurrentVersion, embeddedChunks, ct);
+                await mVectorSearch.IndexChunksAsync(profile, lib.Id, lib.CurrentVersion, embeddedChunks, ct);
+            }
         }
 
         mLogger.LogInformation("Reloaded all libraries for profile {Profile} ({Count} libraries)",

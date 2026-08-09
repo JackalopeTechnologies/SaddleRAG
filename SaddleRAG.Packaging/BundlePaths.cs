@@ -11,10 +11,13 @@ namespace SaddleRAG.Packaging;
 /// </summary>
 public static class BundlePaths
 {
-    public const int CurrentManifestVersion = 1;
+    public const int CurrentManifestVersion = 2;
 
     public const string ManifestFile = "manifest.json";
     public const string LibraryFile = "library.json";
+    public const string SourcesFile = "documents/sources.jsonl";
+    public const string SubjectCatalogsFile = "subjects/catalogs.jsonl";
+    public const string DocumentArtifactsDir = "document-artifacts";
     public const string VersionsDir = "versions";
     public const string VersionFile = "version.json";
     public const string ProfileFile = "profile.json";
@@ -23,6 +26,8 @@ public static class BundlePaths
     public const string VersionDiffFile = "versionDiff.json";
     public const string PagesFile = "pages.jsonl";
     public const string ChunksFile = "chunks.jsonl";
+    public const string DocumentRevisionsFile = "documentRevisions.jsonl";
+    public const string SubjectAssignmentsFile = "subjectAssignments.jsonl";
     public const string EmbeddingsBlobFile = "chunks.embeddings.f32";
     public const string Bm25Dir = "bm25";
     public const string Bm25ShardsFile = "bm25/shards.jsonl";
@@ -46,5 +51,11 @@ public static class BundlePaths
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(gridFsId);
         return $"{VersionDir(version)}/{Bm25GridFsDir}/{gridFsId}.bin";
+    }
+
+    public static string DocumentArtifact(string sha256)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sha256);
+        return $"{DocumentArtifactsDir}/{sha256.ToLowerInvariant()}.bin";
     }
 }

@@ -7,22 +7,32 @@
 param
 (
     [Parameter(Mandatory = $true)]
+    [Alias('A')]
     [string]$AppSettingsPath,
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('C')]
     [string]$ConnectionString,
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('D')]
     [string]$DatabaseName,
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('O')]
     [string]$OllamaEndpoint,
+
+    [Parameter(Mandatory = $false)]
+    [AllowEmptyString()]
+    [Alias('L')]
+    [string]$DoclingEndpoint = '',
 
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('E')]
     [string]$ExecutionProvider,
 
     # Set by the immediate EscapeAppSettingsProperties CA when one of the
@@ -31,17 +41,19 @@ param
     # Empty string means "no escape failure recorded".
     [Parameter(Mandatory = $true)]
     [AllowEmptyString()]
+    [Alias('F')]
     [string]$EscapeFailed
 )
 
 # Rewrites the installed appsettings.json with the user's MongoDB / Ollama /
-# ONNX-execution-provider choices captured by the installer UI (or the
+# Docling / ONNX-execution-provider choices captured by the installer UI (or the
 # command line on a silent install). Mirrors the inline logic previously
 # embedded in Package.wxs SetProperty; extracted here so it is testable in
 # isolation and so future installer-driven config edits land in one place.
 #
-# ExecutionProvider falls back to 'Cpu' when empty so the written value is
-# always a valid OnnxExecutionProvider enum literal. The CA wrapper in
+# ExecutionProvider falls back to 'Cpu' when empty or when the MSI Auto
+# sentinel survives GPU detection, so the written value is always a valid
+# OnnxExecutionProvider enum literal. The CA wrapper in
 # Package.wxs is Return="ignore", so this script's non-zero exit codes
 # surface in the MSI log but do not abort the install — the runtime EP
 # fallback catches DirectML load failures and degrades to CPU with a
@@ -61,6 +73,7 @@ $ErrorActionPreference = 'Stop'
 $DefaultConnectionString = 'mongodb://localhost:27017'
 $DefaultDatabaseName     = 'SaddleRAG'
 $DefaultOllamaEndpoint   = 'http://localhost:11434'
+$DefaultDoclingEndpoint  = 'http://localhost:5001'
 
 # Resolve a config value with a three-tier fallback: the provided installer value
 # wins when non-blank; otherwise keep whatever the shipped template already holds;
@@ -127,7 +140,41 @@ try
     $json.MongoDB.Profiles.local.DatabaseName     = Resolve-ConfigValue -Provided $DatabaseName     -Existing ([string]$json.MongoDB.Profiles.local.DatabaseName)     -Default $DefaultDatabaseName
     $json.Ollama.Endpoint                         = Resolve-ConfigValue -Provided $OllamaEndpoint    -Existing ([string]$json.Ollama.Endpoint)                         -Default $DefaultOllamaEndpoint
 
-    $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider))
+    # Older installations predate the optional document-ingestion section. Add
+    # only the missing object hierarchy, leaving existing API keys, timeouts,
+    # and every unrelated setting untouched.
+    $documentIngestionProperty = $json.PSObject.Properties['DocumentIngestion']
+    if ($null -eq $documentIngestionProperty)
+    {
+        $json | Add-Member -MemberType NoteProperty -Name DocumentIngestion -Value ([pscustomobject]@{})
+    }
+    $doclingProperty = $json.DocumentIngestion.PSObject.Properties['Docling']
+    if ($null -eq $doclingProperty)
+    {
+        $json.DocumentIngestion | Add-Member -MemberType NoteProperty -Name Docling -Value ([pscustomobject]@{})
+    }
+
+    $endpointProperty = $json.DocumentIngestion.Docling.PSObject.Properties['Endpoint']
+    $existingDoclingEndpoint = if ($null -eq $endpointProperty)
+                               {
+                                   ''
+                               }
+                               else
+                               {
+                                   [string]$endpointProperty.Value
+                               }
+    $effectiveDoclingEndpoint = Resolve-ConfigValue -Provided $DoclingEndpoint -Existing $existingDoclingEndpoint -Default $DefaultDoclingEndpoint
+    if ($null -eq $endpointProperty)
+    {
+        $json.DocumentIngestion.Docling | Add-Member -MemberType NoteProperty -Name Endpoint -Value $effectiveDoclingEndpoint
+    }
+    else
+    {
+        $json.DocumentIngestion.Docling.Endpoint = $effectiveDoclingEndpoint
+    }
+
+    $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider) -or
+                             $ExecutionProvider.Equals('Auto', [StringComparison]::OrdinalIgnoreCase))
                          {
                              'Cpu'
                          }

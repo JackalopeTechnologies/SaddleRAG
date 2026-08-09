@@ -26,6 +26,8 @@
 *.eot   binary
 *.zip   binary
 *.gz    binary
+*.pdf   binary
+*.docx  binary
 *.onnx  binary
 *.dll   binary
 *.exe   binary

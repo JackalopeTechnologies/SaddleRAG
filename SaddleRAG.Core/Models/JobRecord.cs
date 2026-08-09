@@ -124,6 +124,19 @@ public class JobRecord
     public ScrapeProgress? ScrapeProgress { get; set; }
 
     /// <summary>
+    ///     Directory-specific progress for an explicitly queued manual scan.
+    ///     Null for every other job type and for legacy rows.
+    /// </summary>
+    public DirectoryScanJobProgress? DirectoryScanProgress { get; set; }
+
+    /// <summary>
+    ///     Sanitized per-file failures from an explicitly queued directory scan.
+    ///     Paths are relative to the registered root and details never contain
+    ///     the absolute root.
+    /// </summary>
+    public IReadOnlyList<DirectoryScanFileFailure> DirectoryScanFailures { get; set; } = [];
+
+    /// <summary>
     ///     Count of recoverable errors observed during the job. Today
     ///     only scrape's parallel fetchers increment this (via
     ///     <see cref="IncrementErrorCount" />); other job types leave
@@ -142,6 +155,12 @@ public class JobRecord
 
     /// <summary>When the job transitioned to <see cref="JobStatus.Running" /> (UTC).</summary>
     public DateTime? StartedAt { get; set; }
+
+    /// <summary>
+    ///     Receiver-local token for the runner that atomically claimed this
+    ///     queued job. Used to reconcile a write whose acknowledgement was lost.
+    /// </summary>
+    public string? ExecutionClaimId { get; set; }
 
     /// <summary>When the job finished — success, failure, or cancellation (UTC).</summary>
     public DateTime? CompletedAt { get; set; }

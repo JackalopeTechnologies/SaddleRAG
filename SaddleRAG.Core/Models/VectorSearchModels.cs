@@ -45,4 +45,7 @@ public record VectorSearchFilter
     /// </summary>
 
     public DocCategory? Category { get; init; }
+
+    /// <summary>Optional explicit stable subject identifier filter.</summary>
+    public string? SubjectId { get; init; }
 }

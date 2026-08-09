@@ -52,6 +52,53 @@ public sealed class JobRepository : IJobRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<JobRecord>> ListQueuedAsync(JobType jobType,
+                                                                string? profile,
+                                                                CancellationToken ct = default)
+    {
+        FilterDefinition<JobRecord> filter = Builders<JobRecord>.Filter.And(
+            Builders<JobRecord>.Filter.Eq(job => job.JobType, jobType),
+            Builders<JobRecord>.Filter.Eq(job => job.Status, JobStatus.Queued),
+            Builders<JobRecord>.Filter.Eq(job => job.Profile, profile));
+        IReadOnlyList<JobRecord> result = await mContext.Jobs
+                                                        .Find(filter)
+                                                        .SortBy(job => job.CreatedAt)
+                                                        .ToListAsync(ct);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<JobRecord?> TryClaimQueuedAsync(string jobId,
+                                                      JobType jobType,
+                                                      string? profile,
+                                                      string executionClaimId,
+                                                      DateTime startedAt,
+                                                      CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        ArgumentException.ThrowIfNullOrEmpty(executionClaimId);
+        FilterDefinition<JobRecord> filter = Builders<JobRecord>.Filter.And(
+            Builders<JobRecord>.Filter.Eq(job => job.Id, jobId),
+            Builders<JobRecord>.Filter.Eq(job => job.JobType, jobType),
+            Builders<JobRecord>.Filter.Eq(job => job.Profile, profile),
+            Builders<JobRecord>.Filter.Eq(job => job.Status, JobStatus.Queued));
+        UpdateDefinition<JobRecord> update = Builders<JobRecord>.Update
+            .Set(job => job.Status, JobStatus.Running)
+            .Set(job => job.PipelineState, nameof(JobStatus.Running))
+            .Set(job => job.StartedAt, startedAt)
+            .Set(job => job.ExecutionClaimId, executionClaimId);
+        JobRecord? result = await mContext.Jobs.FindOneAndUpdateAsync(
+                                filter,
+                                update,
+                                new FindOneAndUpdateOptions<JobRecord>
+                                    {
+                                        ReturnDocument = ReturnDocument.After
+                                    },
+                                ct);
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<JobRecord>> ListRecentAsync(JobType? jobType = null,
                                                                  int limit = 20,
                                                                  CancellationToken ct = default)
@@ -142,17 +189,58 @@ public sealed class JobRepository : IJobRepository
     }
 
     /// <inheritdoc />
-    public async Task<long> DeleteManyAsync(JobType? jobType,
-                                             JobStatus? status,
-                                             string? libraryId,
-                                             string? version,
-                                             DateTime? completedBefore,
-                                             CancellationToken ct = default)
+    public Task<long> DeleteManyAsync(JobType? jobType,
+                                       JobStatus? status,
+                                       string? libraryId,
+                                       string? version,
+                                       DateTime? completedBefore,
+                                       CancellationToken ct = default) =>
+        DeleteManyCoreAsync(jobType,
+                            status,
+                            libraryId,
+                            version,
+                            completedBefore,
+                            excludedJobId: null,
+                            ct);
+
+    /// <inheritdoc />
+    public async Task<long> DeleteManyExceptAsync(JobType? jobType,
+                                                   JobStatus? status,
+                                                   string? libraryId,
+                                                   string? version,
+                                                   DateTime? completedBefore,
+                                                   string excludedJobId,
+                                                   CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(excludedJobId);
+        return await DeleteManyCoreAsync(jobType,
+                                         status,
+                                         libraryId,
+                                         version,
+                                         completedBefore,
+                                         excludedJobId,
+                                         ct);
+    }
+
+    private async Task<long> DeleteManyCoreAsync(JobType? jobType,
+                                                  JobStatus? status,
+                                                  string? libraryId,
+                                                  string? version,
+                                                  DateTime? completedBefore,
+                                                  string? excludedJobId,
+                                                  CancellationToken ct)
     {
         FilterDefinition<JobRecord>? filter = BuildDeleteFilter(jobType, status, libraryId, version, completedBefore);
         long result = 0;
         if (filter != null)
         {
+            if (!string.IsNullOrEmpty(excludedJobId))
+            {
+                filter = Builders<JobRecord>.Filter.And(
+                    filter,
+                    Builders<JobRecord>.Filter.Ne(job => job.Id, excludedJobId));
+            }
+
             DeleteResult deletion = await mContext.Jobs.DeleteManyAsync(filter, ct);
             result = deletion.DeletedCount;
         }

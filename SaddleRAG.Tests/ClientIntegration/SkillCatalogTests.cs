@@ -21,7 +21,9 @@ public sealed class SkillCatalogTests
             "saddlerag-recon",
             "saddlerag-scrape",
             "saddlerag-scrape-strategy",
-            "saddlerag-maintain"
+            "saddlerag-maintain",
+            "saddlerag-documents",
+            "saddlerag-docling-setup"
         ];
 
     [Fact]

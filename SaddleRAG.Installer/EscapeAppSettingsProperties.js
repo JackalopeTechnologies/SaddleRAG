@@ -37,10 +37,13 @@
 //
 // JScript style mirrors CheckOllamaKeepAlive.js / CheckGpuCapability.js.
 
+function SaddleRagInstallerAction()
+{
 var _props = [
     "MONGOCONNECTION",
     "MONGODATABASE",
     "OLLAMAENDPOINT",
+    "DOCLINGENDPOINT",
     "ONNX_EXECUTION_PROVIDER"
 ];
 
@@ -100,3 +103,5 @@ for (var _idx = 0; _idx < _props.length; _idx++) {
 }
 
 Session.Property("ESCAPE_FAILED") = _firstFailure;
+return 1;
+}

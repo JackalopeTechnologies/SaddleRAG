@@ -15,6 +15,8 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Packaging;
 using SaddleRAG.Tests.Packaging.Fixtures;
 
@@ -121,6 +123,47 @@ public sealed class LibraryImporterTests
     }
 
     [Fact]
+    public async Task RefusesIfActualVersionRowIsOmittedFromLibrarySummary()
+    {
+        const string LibraryId = "foo";
+        const string Version = "1.0";
+        const string PreviousVersion = "0.9";
+
+        var libraryRepo = Substitute.For<ILibraryRepository>();
+        libraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
+                   .Returns(PackagingFixtures.MakeLibrary(LibraryId,
+                                                          PreviousVersion,
+                                                          PreviousVersion));
+        var jobRepo = Substitute.For<IJobRepository>();
+        jobRepo.ListActiveAsync(Arg.Any<string>(),
+                                Arg.Any<string?>(),
+                                Arg.Any<JobType?>(),
+                                Arg.Any<CancellationToken>())
+               .Returns(Array.Empty<JobRecord>() as IReadOnlyList<JobRecord>);
+        LibraryImporter importer = MakeImporter(libraryRepo, jobRepo, MakeEmbeddingProvider());
+        libraryRepo.GetVersionsAsync(LibraryId, Arg.Any<CancellationToken>())
+                   .Returns([PackagingFixtures.MakeVersion(LibraryId,
+                                                            Version,
+                                                            pageCount: 0,
+                                                            chunkCount: 0,
+                                                            dim: 384) with
+                                 {
+                                     PublicationState = VersionPublicationState.Building
+                                 }]);
+        string path = await CreateBundleWithVersionEntryAsync(LibraryId, Version);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            importer.ImportAsync(new ImportRequest { BundlePath = path, Overwrite = false },
+                                 progress: null,
+                                 TestContext.Current.CancellationToken));
+
+        Assert.Contains(Version, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("overwrite=true", exception.Message, StringComparison.Ordinal);
+        await libraryRepo.DidNotReceiveWithAnyArgs()
+                         .TryClaimImportVersionAsync(default!, default!, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task SucceedsConflictCheckWhenOverwriteTrue()
     {
         const string LibraryId = "foo";
@@ -149,14 +192,20 @@ public sealed class LibraryImporterTests
 
         var path = await CreateBundleWithVersionEntryAsync(LibraryId, Version);
 
-        // Overwrite=true clears the conflict gate. The bundle lacks version.json
-        // so the write attempt fails; the version lands in PartialFailures, not
-        // VersionsImported.
-        var result = await importer.ImportAsync(new ImportRequest { BundlePath = path, Overwrite = true },
-                                                progress: null,
-                                                ct: TestContext.Current.CancellationToken);
-        Assert.NotNull(result);
-        Assert.Empty(result.VersionsImported);
+        // Overwrite=true clears the conflict gate for this fully valid package.
+        ImportResult result = await importer.ImportAsync(new ImportRequest { BundlePath = path, Overwrite = true },
+                                                         progress: null,
+                                                         ct: TestContext.Current.CancellationToken);
+        Assert.Contains(Version, result.VersionsImported);
+        Assert.Empty(result.PartialFailures);
+        await libraryRepo.Received(requiredNumberOfCalls: 1)
+                         .TryPublishImportVersionAsync(
+                              Arg.Is<LibraryVersionRecord>(record =>
+                                  record != null &&
+                                  record.LibraryId == LibraryId &&
+                                  record.Version == Version),
+                              Arg.Any<string>(),
+                              Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -253,7 +302,7 @@ public sealed class LibraryImporterTests
             LibraryId, Version);
 
         // Wire receiver-side importer mocks — library doesn't exist yet.
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns((LibraryRecord?) null);
 
@@ -278,10 +327,16 @@ public sealed class LibraryImporterTests
         var importDiffRepo = Substitute.For<IDiffRepository>();
 
         var importBm25Repo = MakeEmptyBm25Repo();
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
                                            importDiffRepo, importPageRepo, importChunkRepo,
-                                           importBm25Repo);
+                                           importBm25Repo,
+                                           deletionService: lifecycle.DeletionService,
+                                           modeLeaseManager: lifecycle.ModeLeaseManager,
+                                           modeRepository: lifecycle.ModeRepository);
 
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
                                                 progress: null,
@@ -291,9 +346,11 @@ public sealed class LibraryImporterTests
         Assert.Contains(Version, result.VersionsImported);
         Assert.Empty(result.PartialFailures);
 
-        // Version record was upserted.
-        await importLibraryRepo.Received(1).UpsertVersionAsync(
-            Arg.Is<LibraryVersionRecord>(r => r!.LibraryId == LibraryId && r.Version == Version),
+        // Version record was published after the import claim completed.
+        await importLibraryRepo.Received(1).TryPublishImportVersionAsync(
+            Arg.Is<LibraryVersionRecord>(record =>
+                record != null && record.LibraryId == LibraryId && record.Version == Version),
+            Arg.Any<string>(),
             Arg.Any<CancellationToken>());
 
         // Pages were inserted.
@@ -362,7 +419,7 @@ public sealed class LibraryImporterTests
             LibraryId, Version);
 
         // Receiver importer — chunk insert throws.
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns((LibraryRecord?) null);
         importLibraryRepo.DeleteVersionAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -399,10 +456,16 @@ public sealed class LibraryImporterTests
         var importDiffRepo = Substitute.For<IDiffRepository>();
         var importBm25Repo = MakeEmptyBm25Repo();
 
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
                                            importDiffRepo, importPageRepo, importChunkRepo,
-                                           importBm25Repo);
+                                            importBm25Repo,
+                                            deletionService: lifecycle.DeletionService,
+                                            modeLeaseManager: lifecycle.ModeLeaseManager,
+                                            modeRepository: lifecycle.ModeRepository);
 
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
                                                 progress: null,
@@ -433,16 +496,20 @@ public sealed class LibraryImporterTests
         const int PageCount = 2;
         const int ChunkCount = 3;
         const string OriginalGridFsId = "aaa111bbb222ccc333ddd444e";
-        const string NewGridFsId = "newId-1";
-        var blobBytes = new byte[] { 1, 2, 3, 4, 5 };
 
         // Build fixture data.
         var library = PackagingFixtures.MakeLibrary(LibraryId, Version);
         var versionRecord = PackagingFixtures.MakeVersion(LibraryId, Version, PageCount, ChunkCount, Dim);
         var pages = PackagingFixtures.MakePages(LibraryId, Version, PageCount);
         var chunks = PackagingFixtures.MakeChunks(LibraryId, Version, ChunkCount, Dim);
-        var shard = PackagingFixtures.MakeBm25Shard(LibraryId, Version, shardIndex: 0,
-                                                     shardGridFsRef: OriginalGridFsId);
+        Bm25BuildResult bm25 = Bm25IndexBuilder.Build(LibraryId, Version, chunks, shardCount: 1);
+        Bm25Shard sourceShard = bm25.Shards[0];
+        byte[] blobBytes = Bm25ShardRepository.SerializePostingsDictionary(sourceShard.InlineTerms);
+        Bm25Shard shard = sourceShard with
+                              {
+                                  InlineTerms = new Dictionary<string, IReadOnlyList<Bm25Posting>>(),
+                                  ShardGridFsRef = OriginalGridFsId
+                              };
 
         // Wire exporter mocks.
         var exportLibraryRepo = Substitute.For<ILibraryRepository>();
@@ -465,7 +532,7 @@ public sealed class LibraryImporterTests
 
         var exportIndexRepo = Substitute.For<ILibraryIndexRepository>();
         exportIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                       .Returns((LibraryIndex?) null);
+                       .Returns(PackagingFixtures.MakeIndex(LibraryId, Version) with { Bm25 = bm25.Stats });
 
         var exportDiffRepo = Substitute.For<IDiffRepository>();
         var exportExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
@@ -485,7 +552,7 @@ public sealed class LibraryImporterTests
             LibraryId, Version);
 
         // Wire receiver-side mocks — library does not yet exist.
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns((LibraryRecord?) null);
 
@@ -511,22 +578,30 @@ public sealed class LibraryImporterTests
 
         // Capture the stream bytes passed to UploadGridFsBlobAsync.
         byte[]? capturedBytes = null;
+        string? capturedGridFsId = null;
         var importBm25Repo = Substitute.For<IBm25ShardRepository>();
         importBm25Repo
-            .UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .UploadGridFsBlobAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                var stream = ci.Arg<Stream>()!;
+                capturedGridFsId = ci.ArgAt<string>(0);
+                var stream = ci.ArgAt<Stream>(1);
                 using var ms = new MemoryStream();
                 stream.CopyTo(ms);
                 capturedBytes = ms.ToArray();
-                return Task.FromResult(NewGridFsId);
+                return Task.CompletedTask;
             });
 
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
                                            importDiffRepo, importPageRepo, importChunkRepo,
-                                           importBm25Repo);
+                                           importBm25Repo,
+                                           deletionService: lifecycle.DeletionService,
+                                           modeLeaseManager: lifecycle.ModeLeaseManager,
+                                           modeRepository: lifecycle.ModeRepository);
 
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
                                                 progress: null,
@@ -538,14 +613,17 @@ public sealed class LibraryImporterTests
 
         // GridFS blob was re-uploaded with the original bytes.
         await importBm25Repo.Received(1)
-                            .UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+                            .UploadGridFsBlobAsync(Arg.Any<string>(),
+                                                   Arg.Any<Stream>(),
+                                                   Arg.Any<CancellationToken>());
+        Assert.False(string.IsNullOrWhiteSpace(capturedGridFsId));
         Assert.NotNull(capturedBytes);
         Assert.Equal(blobBytes, capturedBytes);
 
         // Shard was upserted with the rewritten GridFS ref.
         await importBm25Repo.Received(1)
                             .UpsertShardAsync(
-                                Arg.Is<Bm25Shard>(s => s!.ShardGridFsRef == NewGridFsId),
+                                Arg.Is<Bm25Shard>(s => s!.ShardGridFsRef == capturedGridFsId),
                                 Arg.Any<CancellationToken>());
     }
 
@@ -603,7 +681,7 @@ public sealed class LibraryImporterTests
             LibraryId, Version);
 
         // Receiver: library doesn't exist yet.
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns((LibraryRecord?) null);
 
@@ -638,11 +716,26 @@ public sealed class LibraryImporterTests
         var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var importDiffRepo = Substitute.For<IDiffRepository>();
         var importBm25Repo = MakeEmptyBm25Repo();
+        JobRecord? dispatchedJob = null;
+        var reembedDispatcher = Substitute.For<IReembedJobDispatcher>();
+        reembedDispatcher.TryDispatchPersisted(Arg.Any<JobRecord>())
+                         .Returns(call =>
+                                      {
+                                          dispatchedJob = call.ArgAt<JobRecord>(0);
+                                          return true;
+                                      });
 
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
                                            importDiffRepo, importPageRepo, importChunkRepo,
-                                           importBm25Repo);
+                                            importBm25Repo,
+                                            deletionService: lifecycle.DeletionService,
+                                            modeLeaseManager: lifecycle.ModeLeaseManager,
+                                            modeRepository: lifecycle.ModeRepository,
+                                            reembedJobDispatcher: reembedDispatcher);
 
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = bundlePath },
                                                 progress: null,
@@ -671,6 +764,7 @@ public sealed class LibraryImporterTests
         Assert.Single(result.PendingReembedJobIds);
         Assert.NotNull(capturedJob);
         Assert.Equal(capturedJob.Id, result.PendingReembedJobIds[0]);
+        Assert.Same(capturedJob, dispatchedJob);
 
         // RecommendedFollowUp points the caller at get_reembed_status.
         Assert.Contains("Re-embed in progress", result.RecommendedFollowUp);
@@ -738,7 +832,7 @@ public sealed class LibraryImporterTests
                                                              shardGridFsRef: ExistingGridFsId);
 
         // Receiver-side mocks — library already has Version "1.0".
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns(new LibraryRecord
                                       {
@@ -793,10 +887,16 @@ public sealed class LibraryImporterTests
         importBm25Repo.UploadGridFsBlobAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
                       .Returns(string.Empty);
 
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
                                            importDiffRepo, importPageRepo, importChunkRepo,
-                                           importBm25Repo);
+                                           importBm25Repo,
+                                           deletionService: lifecycle.DeletionService,
+                                           modeLeaseManager: lifecycle.ModeLeaseManager,
+                                           modeRepository: lifecycle.ModeRepository);
 
         var result = await importer.ImportAsync(
             new ImportRequest { BundlePath = bundlePath, Overwrite = true },
@@ -902,7 +1002,7 @@ public sealed class LibraryImporterTests
             ct: TestContext.Current.CancellationToken);
 
         // Receiver — library already has "1.0", no conflicts with "1.1".
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns(new LibraryRecord
                                       {
@@ -939,10 +1039,16 @@ public sealed class LibraryImporterTests
         var importDiffRepo = Substitute.For<IDiffRepository>();
         var importBm25Repo = MakeEmptyBm25Repo();
 
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
                                            importDiffRepo, importPageRepo, importChunkRepo,
-                                           importBm25Repo);
+                                           importBm25Repo,
+                                           deletionService: lifecycle.DeletionService,
+                                           modeLeaseManager: lifecycle.ModeLeaseManager,
+                                           modeRepository: lifecycle.ModeRepository);
 
         var result = await importer.ImportAsync(new ImportRequest { BundlePath = outputPath },
                                                 progress: null,
@@ -1017,7 +1123,7 @@ public sealed class LibraryImporterTests
             LibraryId, Version);
 
         // Receiver — library already has the same version (triggers overwrite path).
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns(new LibraryRecord
                                       {
@@ -1089,10 +1195,16 @@ public sealed class LibraryImporterTests
         var fakeDatabase = Substitute.For<MongoDB.Driver.IMongoDatabase>();
         Func<string?, MongoDB.Driver.IMongoDatabase> databaseResolver = _ => fakeDatabase;
 
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
                                            importProfileRepo, importIndexRepo, importExcludedRepo,
                                            importDiffRepo, importPageRepo, importChunkRepo, importBm25Repo,
-                                           compactor, databaseResolver);
+                                           compactor, databaseResolver,
+                                           lifecycle.DeletionService,
+                                           lifecycle.ModeLeaseManager,
+                                           lifecycle.ModeRepository);
 
         var result = await importer.ImportAsync(
             new ImportRequest { BundlePath = bundlePath, Overwrite = true, Compact = true },
@@ -1163,7 +1275,7 @@ public sealed class LibraryImporterTests
             LibraryId, Version);
 
         // Receiver — library does NOT exist, so no overwrite occurs.
-        var importLibraryRepo = Substitute.For<ILibraryRepository>();
+        ILibraryRepository importLibraryRepo = CreateImportLibraryRepository();
         importLibraryRepo.GetLibraryAsync(LibraryId, Arg.Any<CancellationToken>())
                          .Returns((LibraryRecord?) null);
 
@@ -1185,15 +1297,28 @@ public sealed class LibraryImporterTests
         var fakeDatabase = Substitute.For<MongoDB.Driver.IMongoDatabase>();
         Func<string?, MongoDB.Driver.IMongoDatabase> databaseResolver = _ => fakeDatabase;
 
+        var importProfileRepo = Substitute.For<ILibraryProfileRepository>();
+        var importIndexRepo = Substitute.For<ILibraryIndexRepository>();
+        var importExcludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        var importDiffRepo = Substitute.For<IDiffRepository>();
+        var importPageRepo = Substitute.For<IPageRepository>();
+        var importChunkRepo = Substitute.For<IChunkRepository>();
+        IBm25ShardRepository importBm25Repo = MakeEmptyBm25Repo();
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(importLibraryRepo,
+            importProfileRepo, importIndexRepo, importExcludedRepo, importDiffRepo, importPageRepo,
+            importChunkRepo, importBm25Repo);
         var importer = new LibraryImporter(importLibraryRepo, importJobRepo, importEmbeddingProvider,
-                                           Substitute.For<ILibraryProfileRepository>(),
-                                           Substitute.For<ILibraryIndexRepository>(),
-                                           Substitute.For<IExcludedSymbolsRepository>(),
-                                           Substitute.For<IDiffRepository>(),
-                                           Substitute.For<IPageRepository>(),
-                                           Substitute.For<IChunkRepository>(),
-                                           MakeEmptyBm25Repo(),
-                                           compactor, databaseResolver);
+                                           importProfileRepo,
+                                           importIndexRepo,
+                                           importExcludedRepo,
+                                           importDiffRepo,
+                                           importPageRepo,
+                                           importChunkRepo,
+                                           importBm25Repo,
+                                           compactor, databaseResolver,
+                                           lifecycle.DeletionService,
+                                           lifecycle.ModeLeaseManager,
+                                           lifecycle.ModeRepository);
 
         var result = await importer.ImportAsync(
             new ImportRequest { BundlePath = bundlePath, Compact = true },
@@ -1211,6 +1336,13 @@ public sealed class LibraryImporterTests
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private static ILibraryRepository CreateImportLibraryRepository()
+    {
+        ILibraryRepository result = Substitute.For<ILibraryRepository>();
+        ConfigureSuccessfulImportVersionLifecycle(result);
+        return result;
+    }
 
     private static LibraryImporter MakeImporter()
     {
@@ -1233,18 +1365,42 @@ public sealed class LibraryImporterTests
                                                  IEmbeddingProvider embeddingProvider,
                                                  IBm25ShardRepository? bm25Repo = null)
     {
+        ConfigureSuccessfulImportVersionLifecycle(libraryRepo);
         var bm25 = bm25Repo ?? MakeEmptyBm25Repo();
+        var profileRepo = Substitute.For<ILibraryProfileRepository>();
+        var indexRepo = Substitute.For<ILibraryIndexRepository>();
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
+        var diffRepo = Substitute.For<IDiffRepository>();
+        var pageRepo = Substitute.For<IPageRepository>();
+        var chunkRepo = Substitute.For<IChunkRepository>();
+        PackagingImportLifecycle lifecycle = PackagingImportLifecycle.Create(libraryRepo,
+            profileRepo, indexRepo, excludedRepo, diffRepo, pageRepo, chunkRepo, bm25);
         return new LibraryImporter(
             libraryRepo,
             jobRepo,
             embeddingProvider,
-            Substitute.For<ILibraryProfileRepository>(),
-            Substitute.For<ILibraryIndexRepository>(),
-            Substitute.For<IExcludedSymbolsRepository>(),
-            Substitute.For<IDiffRepository>(),
-            Substitute.For<IPageRepository>(),
-            Substitute.For<IChunkRepository>(),
-            bm25);
+            profileRepo,
+            indexRepo,
+            excludedRepo,
+            diffRepo,
+            pageRepo,
+            chunkRepo,
+            bm25,
+            deletionService: lifecycle.DeletionService,
+            modeLeaseManager: lifecycle.ModeLeaseManager,
+            modeRepository: lifecycle.ModeRepository);
+    }
+
+    private static void ConfigureSuccessfulImportVersionLifecycle(ILibraryRepository libraryRepo)
+    {
+        libraryRepo.TryClaimImportVersionAsync(Arg.Any<LibraryVersionRecord>(),
+                                               Arg.Any<string>(),
+                                               Arg.Any<CancellationToken>())
+                   .Returns(true);
+        libraryRepo.TryPublishImportVersionAsync(Arg.Any<LibraryVersionRecord>(),
+                                                  Arg.Any<string>(),
+                                                  Arg.Any<CancellationToken>())
+                   .Returns(true);
     }
 
     private static IBm25ShardRepository MakeEmptyBm25Repo()
@@ -1326,9 +1482,9 @@ public sealed class LibraryImporterTests
 
     /// <summary>
     ///     Builds a valid bundle that contains a single version entry.
-    ///     Both the per-version blob and manifest blob hashes are correct
-    ///     so the importer proceeds past the sha256 gate. The bundle lacks
-    ///     version.json intentionally — used only for gate-check tests.
+    ///     Both the per-version blob and manifest blob hashes are correct,
+    ///     allowing conflict and active-job gates to be tested independently
+    ///     from package validation.
     /// </summary>
     private static async Task<string> CreateBundleWithVersionEntryAsync(string libraryId,
                                                                          string version,
@@ -1338,15 +1494,25 @@ public sealed class LibraryImporterTests
     {
         var path = Path.Combine(Path.GetTempPath(), $"saddlerag-test-{Guid.NewGuid():N}.srlib.zip");
 
-        // Build a minimal library.json blob.
-        var libContent = System.Text.Encoding.UTF8.GetBytes("{\"id\":\"" + libraryId + "\"}");
+        // Build valid canonical library and version metadata so these tests
+        // reach their intended conflict or job boundary.
+        byte[] libContent = JsonSerializer.SerializeToUtf8Bytes(
+            PackagingFixtures.MakeLibrary(libraryId, version),
+            BundleJsonOptions.Default);
         var libSha = Convert.ToHexString(SHA256.HashData(libContent)).ToLowerInvariant();
-        var libBlobPath = "library.json";
-
-        // Build a minimal per-version chunks blob.
-        var chunkContent = System.Text.Encoding.UTF8.GetBytes("{}");
-        var chunkSha = Convert.ToHexString(SHA256.HashData(chunkContent)).ToLowerInvariant();
-        var chunkBlobPath = $"{libraryId}/{version}/chunks.jsonl";
+        var libBlobPath = BundlePaths.LibraryFile;
+        LibraryVersionRecord versionRecord = PackagingFixtures.MakeVersion(libraryId,
+                                                                             version,
+                                                                             pageCount: 0,
+                                                                             chunkCount: 0,
+                                                                             dim: dimensions,
+                                                                             modelName: modelName) with
+                                                 {
+                                                     EmbeddingProviderId = providerId
+                                                 };
+        byte[] versionContent = JsonSerializer.SerializeToUtf8Bytes(versionRecord, BundleJsonOptions.Default);
+        string versionBlobPath = BundlePaths.VersionFilePath(version, BundlePaths.VersionFile);
+        string versionSha = Convert.ToHexString(SHA256.HashData(versionContent)).ToLowerInvariant();
 
         var versionEntry = new BundleVersionEntry
                                {
@@ -1356,11 +1522,15 @@ public sealed class LibraryImporterTests
                                    EmbeddingDimensions = dimensions,
                                    PageCount = 0,
                                    ChunkCount = 0,
-                                   Bm25HasGridFs = false,
-                                   Blobs = new Dictionary<string, BlobInfo>
-                                               {
-                                                   [chunkBlobPath] = new BlobInfo { Sha256 = chunkSha, Bytes = chunkContent.Length }
-                                               }
+                                    Bm25HasGridFs = false,
+                                    Blobs = new Dictionary<string, BlobInfo>
+                                                {
+                                                    [versionBlobPath] = new BlobInfo
+                                                                            {
+                                                                                Sha256 = versionSha,
+                                                                                Bytes = versionContent.Length
+                                                                            }
+                                                }
                                };
 
         var manifest = new BundleManifest
@@ -1382,8 +1552,8 @@ public sealed class LibraryImporterTests
             await using (var libEntry = archive.CreateEntry(libBlobPath).Open())
                 await libEntry.WriteAsync(libContent);
 
-            await using (var chunkEntry = archive.CreateEntry(chunkBlobPath).Open())
-                await chunkEntry.WriteAsync(chunkContent);
+            await using (var versionStream = archive.CreateEntry(versionBlobPath).Open())
+                await versionStream.WriteAsync(versionContent);
 
             await using var manifestEntry = archive.CreateEntry("manifest.json").Open();
             await JsonSerializer.SerializeAsync(manifestEntry, manifest, BundleJsonOptions.Default);

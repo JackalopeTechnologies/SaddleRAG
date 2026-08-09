@@ -18,11 +18,13 @@ using MudBlazor.Services;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
 using SaddleRAG.Ingestion.Diagnostics;
+using SaddleRAG.Ingestion.Documents.Docling;
 using SaddleRAG.Ingestion.Ecosystems.Common;
 using SaddleRAG.Ingestion.Ecosystems.Npm;
 using SaddleRAG.Ingestion.Ecosystems.NuGet;
@@ -32,6 +34,7 @@ using SaddleRAG.Ingestion.Recon;
 using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Ingestion.Suspect;
 using SaddleRAG.Ingestion.Symbols;
+using SaddleRAG.Ingestion.Subjects;
 using SaddleRAG.Mcp;
 using SaddleRAG.Mcp.Api;
 using SaddleRAG.Mcp.Auth;
@@ -40,7 +43,6 @@ using SaddleRAG.Mcp.Monitor;
 using SaddleRAG.Mcp.Tools;
 using SaddleRAG.Monitor.Pages;
 using SaddleRAG.Monitor.Services;
-using SaddleRAG.Database.Repositories;
 using SaddleRAG.Packaging;
 using Serilog;
 using Serilog.Core;
@@ -207,31 +209,20 @@ builder.Services.AddHostedService<McpWarmupService>();
 builder.Services.AddSaddleRagDatabase(builder.Configuration);
 
 // Packaging services — CollectionCompactor is shared between compact_collections MCP tool
-// and the import_library compact opt-in. LibraryExporter and LibraryImporter are registered
-// here in anticipation of the export_library / import_library MCP tools (Task 22).
+// and the import_library compact opt-in. LibraryImporterFactory creates an importer whose
+// repositories all belong to the profile selected by the MCP request.
 builder.Services.AddSingleton<ICollectionCompactor, CollectionCompactor>();
 builder.Services.AddSingleton<LibraryExporter>();
-builder.Services.AddSingleton<LibraryImporter>(sp =>
-{
-    var factory = sp.GetRequiredService<RepositoryFactory>();
-    return new LibraryImporter(
-        sp.GetRequiredService<ILibraryRepository>(),
-        sp.GetRequiredService<IJobRepository>(),
-        sp.GetRequiredService<IEmbeddingProvider>(),
-        sp.GetRequiredService<ILibraryProfileRepository>(),
-        sp.GetRequiredService<ILibraryIndexRepository>(),
-        sp.GetRequiredService<IExcludedSymbolsRepository>(),
-        sp.GetRequiredService<IDiffRepository>(),
-        sp.GetRequiredService<IPageRepository>(),
-        sp.GetRequiredService<IChunkRepository>(),
-        sp.GetRequiredService<IBm25ShardRepository>(),
-        sp.GetRequiredService<ICollectionCompactor>(),
-        profile => factory.GetDatabase(profile));
-});
+builder.Services.AddSingleton<LibraryImporterFactory>();
 
 // Ollama configuration
 
 builder.Services.Configure<OllamaSettings>(builder.Configuration.GetSection(OllamaSettings.SectionName));
+
+// Optional user-operated Docling Serve endpoint. SaddleRAG only checks and uses
+// the configured HTTP boundary; it never installs, starts, stops, or restarts Docling.
+builder.Services.AddDoclingDocumentIngestion(builder.Configuration);
+builder.Services.AddSaddleRagDirectoryIngestion();
 
 // ONNX configuration (in-process embedding + reranking via Microsoft.ML.OnnxRuntime).
 // When Onnx.Enabled && Onnx.EmbeddingEnabled, the OnnxEmbeddingProvider is
@@ -361,6 +352,11 @@ builder.Services.AddSingleton<ClassifierBackendSwitch>(sp =>
                                )
 );
 builder.Services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
+builder.Services.AddSingleton<IClassifierTextGenerator>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
+builder.Services.AddSingleton<SubjectDescriptorBuilder>();
+builder.Services.AddSingleton<ISubjectIdGenerator, GuidSubjectIdGenerator>();
+builder.Services.AddSingleton<SubjectCatalogBuilder>();
+builder.Services.AddSingleton<ISubjectClassifier, SubjectClassifier>();
 
 // Recon flow (LibraryProfile validation/persistence + CLI Ollama fallback)
 builder.Services.AddSingleton<LibraryProfileService>();
@@ -382,6 +378,8 @@ builder.Services.AddSingleton<JobCancellationService>();
 // Reembed service and background job runner (consumed by reembed_library MCP tool)
 builder.Services.AddSingleton<ReembedService>();
 builder.Services.AddSingleton<ReembedJobRunner>();
+builder.Services.AddSingleton<IReembedJobDispatcher>(sp => sp.GetRequiredService<ReembedJobRunner>());
+builder.Services.AddSingleton<QueuedReembedJobRecovery>();
 
 builder.Services.AddSingleton<BackgroundJobRunner>();
 builder.Services.AddSingleton<IBackgroundJobRunner>(sp =>
@@ -417,7 +415,8 @@ builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
 
 builder.Services.AddSingleton<IScrapeAuditWriter>(sp =>
                                                       new ScrapeAuditWriter(sp.GetRequiredService<
-                                                                                IScrapeAuditRepository>()
+                                                                                IScrapeAuditRepository>(),
+                                                                           sp.GetRequiredService<RepositoryFactory>()
                                                                            )
                                                  );
 
@@ -546,6 +545,15 @@ const string SaddleRagServerInstructions = """
       and get_library_health; if results are wrong, recon again and adjust patterns before
       re-scraping.
 
+    Local document directories are an explicit, manual workflow:
+    - register_directory_library requires the user's explicit local path and stores it without
+      scanning, watching, or scheduling the directory.
+    - scan_directory_library queues one manual scan of an already registered root; it cannot
+      replace or register a root.
+    - For PDF or DOCX capability problems, call get_document_ingestion_status for the observed
+      reason and get_docling_install_instructions for official recovery documentation.
+    - Docling is user-managed. SaddleRAG does not install, license, start, stop, or upgrade it.
+
     Do NOT use SaddleRAG for questions about the user's own working-directory code (use file
     tools) or for purely conceptual questions independent of a specific library.
     """;
@@ -596,6 +604,7 @@ builder.Services.AddHostedService<MonitorTickService>();
 builder.Services.AddHostedService<MonitorLifecycleRelay>();
 builder.Services.AddSingleton<IUnifiedJobView, UnifiedJobView>();
 builder.Services.AddSingleton<MonitorDataService>();
+builder.Services.AddSingleton<IDirectoryLibraryMonitorDataService, DirectoryLibraryMonitorDataService>();
 builder.Services.AddSingleton<MonitorJobService>();
 builder.Services.AddSingleton<IMonitorConfigSource, McpMonitorConfigSource>();
 
@@ -603,6 +612,8 @@ var monitorPort = builder.Configuration.GetValue<int?>(KestrelHttpPortKey) ?? De
 builder.Services.AddHttpClient<MonitorWriteService>(client =>
                                                         client.BaseAddress = new Uri($"http://localhost:{monitorPort}/")
                                                    );
+builder.Services.AddTransient<IDirectoryLibraryMonitorCommands>(provider =>
+    provider.GetRequiredService<MonitorWriteService>());
 
 builder.Services.AddAuthorization(opts =>
                                       opts.AddPolicy(DiagnosticsWriteRequirement.PolicyName,
@@ -736,23 +747,17 @@ else
 
     // Static files for Blazor framework script and Razor Class Library assets (e.g. MudBlazor)
     app.UseStaticFiles();
+    app.MapStaticAssets();
 
 
     // Health check
 
     app.MapGet(HealthEndpointPath,
-               (McpWarmupState warmupState) => Results.Ok(new
-
-                                                              {
-                                                                  Status = HealthyStatus,
-
-                                                                  WarmupStatus = warmupState.Status,
-
-                                                                  WarmupPhase = warmupState.CurrentPhase,
-
-                                                                  WarmupError = warmupState.LastError
-                                                              }
-                                                         )
+               (McpWarmupState warmupState,
+                IDoclingCapabilityService doclingCapability) =>
+                   Results.Ok(ServiceHealthResponseFactory.Create(HealthyStatus,
+                                                                  warmupState,
+                                                                  doclingCapability))
               );
 
 
@@ -776,6 +781,7 @@ else
     app.UseAntiforgery();
     MonitorApiEndpoints.Map(app);
     MonitorLibraryActionsEndpoints.Map(app);
+    MonitorDirectoryLibraryEndpoints.Map(app);
     MonitorSnapshotEndpoints.Map(app);
 
 

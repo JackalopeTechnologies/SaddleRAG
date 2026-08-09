@@ -12,6 +12,7 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
@@ -223,7 +224,10 @@ public sealed class FileScrapeAuditTests
                                          suspectDetector,
                                          auditWriter,
                                          broadcaster,
-                                         NullLogger<IngestionOrchestrator>.Instance
+                                         NullLogger<IngestionOrchestrator>.Instance,
+                                         Substitute.For<ISourceDocumentRepository>(),
+                                         Substitute.For<RepositoryFactory>([null!]),
+                                         Substitute.For<ILibraryIngestionModeLeaseManager>()
                                         );
     }
 

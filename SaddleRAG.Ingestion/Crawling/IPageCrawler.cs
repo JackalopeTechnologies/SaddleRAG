@@ -44,4 +44,12 @@ public interface IPageCrawler
                                            string version,
                                            string url,
                                            CancellationToken ct = default);
+
+    /// <summary>Profile-aware single-page fetch. Implementations without persistence may use the default body.</summary>
+    Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+                                                     string version,
+                                                     string url,
+                                                     string? profile,
+                                                     CancellationToken ct = default) =>
+        FetchSinglePageAsync(libraryId, version, url, ct);
 }

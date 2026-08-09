@@ -9,6 +9,7 @@ SaddleRAG scrapes documentation websites, classifies and chunks the content with
 AI coding assistants are limited by their training cutoff and context window. When you're working with a niche library, a new release, or internal documentation, the assistant doesn't know about it. SaddleRAG bridges that gap:
 
 - **Scrape any documentation site** into a searchable vector database
+- **Index local PDF, DOCX, Markdown, text, and HTML document libraries** with citations and subject classification
 - **Auto-index project dependencies** from NuGet, npm, and pip
 - **Serve documentation to your AI assistant** via MCP tools during coding sessions
 - **Track multiple versions** of the same library and diff changes between them
@@ -51,7 +52,7 @@ learn.microsoft   --+      +------+------+
 
 The fastest way to get SaddleRAG running is the MSI installer from [GitHub Releases](https://github.com/JackalopeTechnologies/saddlerag/releases). It installs SaddleRAG as a Windows service, configures connections to MongoDB and Ollama, and starts automatically.
 
-SaddleRAG requires two free, open-source tools as prerequisites. Both are available as community editions at no cost.
+Website indexing requires two free, open-source prerequisites: MongoDB and Ollama. Local PDF and DOCX libraries additionally use an optional, user-operated Docling Serve endpoint. Tesseract is an optional, separately user-installed OCR engine; SaddleRAG does not select it for Docling.
 
 ### Step 1: Install MongoDB Community Edition (free)
 
@@ -78,17 +79,37 @@ SaddleRAG automatically pulls the required models on first use:
 
 > **Running Ollama elsewhere?** The SaddleRAG installer lets you point to any Ollama endpoint (e.g. `http://your-gpu-server:11434`).
 
-### Step 3: Install SaddleRAG
+### Step 3: Enable local PDF and DOCX libraries (optional)
+
+SaddleRAG does **not** install, license, start, stop, or upgrade Docling Serve or Tesseract. You install and operate them only if you want PDF/DOCX ingestion. Markdown, text, HTML, and website ingestion do not require either tool.
+
+1. Review the current [official Docling Serve deployment guide](https://docling-project.github.io/docling/usage/api_server/deployment/) and [latest Docling Serve release](https://github.com/docling-project/docling-serve/releases/latest).
+2. Install Docling Serve in a user-owned Python environment. A simple Windows setup is:
+
+   ```powershell
+   py -3.12 -m venv .venv
+   .\.venv\Scripts\python -m pip install --upgrade "docling-serve[ui]"
+   .\.venv\Scripts\docling-serve run
+   ```
+
+   Keep that process running when SaddleRAG scans PDF or DOCX files. A local server normally listens at `http://localhost:5001`.
+3. Tesseract is optional. SaddleRAG currently asks Docling to perform OCR but does not choose an OCR engine or preset, so Docling uses its own configured/default OCR behavior. Installing Tesseract alone does not make SaddleRAG or Docling use it. If you deliberately configure your user-owned Docling environment to use Tesseract, follow the [official Tesseract installation guide](https://tesseract-ocr.github.io/tessdoc/Installation.html); on Windows, that guide directs users to the current [UB Mannheim installers](https://github.com/UB-Mannheim/tesseract/wiki). Include the required language data, add the Tesseract program directory to `PATH` if necessary, and set `TESSDATA_PREFIX` to the installed `tessdata` directory with a trailing path separator (for example, `C:\Program Files\Tesseract-OCR\tessdata\`). Restart your user-owned Docling Serve process after changing its OCR environment.
+4. In the SaddleRAG installer, leave the endpoint at `http://localhost:5001` or enter your own Docling Serve URL. Click **Test Docling**. For an endpoint that does not require an API key, the test checks health, model readiness, and a bounded asynchronous conversion of a SaddleRAG-owned PDF before reporting `DOCLING_READY`.
+
+The installer test is deliberately unauthenticated and never asks for, collects, or stores secrets. For an API-key-protected endpoint, configure `DocumentIngestion:Docling:ApiKey` through an access-restricted runtime configuration source, then use SaddleRAG's runtime status/conversion probe to verify it. Neither probe installs either prerequisite, tests private documents, or proves that Tesseract is the OCR engine selected inside Docling. Use a harmless image-only scanned PDF and the user-owned Docling logs to verify a specific OCR-engine configuration.
+
+### Step 4: Install SaddleRAG
 
 1. Download `SaddleRAG.Mcp-*.msi` from the [latest release](https://github.com/JackalopeTechnologies/saddlerag/releases/latest)
 2. Run the installer
 3. **MongoDB Configuration** -- the installer defaults to `mongodb://localhost:27017` with database `SaddleRAG`. Use the **Test Connection** button to verify MongoDB is reachable. If your MongoDB is on a different host, enter the connection string. **Reset to Local Defaults** reverts to the standard local settings.
 4. **Ollama Configuration** -- defaults to `http://localhost:11434`. Use **Test Connection** to verify. Change only if Ollama is running on another machine.
-5. Click **Install** -- files are copied to `Program Files\SaddleRAG\SaddleRAG.Mcp`, your connection settings are written to `appsettings.json`, and the **SaddleRAGMcp** Windows service starts automatically.
+5. **Optional Document Ingestion** -- enter a user-managed, unauthenticated Docling Serve endpoint and click **Test Docling**. The page links to current Docling and Tesseract setup guidance but never installs or controls either product and never collects secrets. You can continue without Docling when PDF/DOCX ingestion is not needed.
+6. Click **Install** -- files are copied to `Program Files\SaddleRAG\SaddleRAG.Mcp`, your connection settings are written to `appsettings.json`, and the **SaddleRAGMcp** Windows service starts automatically.
 
-> **Don't have the prerequisites yet?** The installer includes **Download** buttons on each configuration page that open your browser to the MongoDB and Ollama download pages. Install them, then click **Test Connection** to verify before proceeding.
+> **Don't have the prerequisites yet?** The installer opens the official MongoDB, Ollama, Docling, and Tesseract guidance in your browser. You remain in control of every external installation. Return to the installer and use its connection tests when ready.
 
-### Step 4: Connect Your AI Assistant
+### Step 5: Connect Your AI Assistant
 
 The MSI installer wires SaddleRAG into all your installed AI tools automatically:
 
@@ -99,7 +120,7 @@ The MSI installer wires SaddleRAG into all your installed AI tools automatically
 
 No manual `.mcp.json` editing required. If a tool is not installed, its registration is skipped silently. Re-running the installer or `SaddleRAG.Cli register-clients` updates existing entries in place, refreshes the local VS Code SaddleRAG plugin, and replaces same-name SaddleRAG skill files with the current packaged content.
 
-### Step 5: Verify
+### Step 6: Verify
 
 Open your AI assistant and ask it to list libraries:
 
@@ -128,6 +149,8 @@ If you want to build and run from source instead of the MSI:
 | [.NET SDK](https://dotnet.microsoft.com/download) | 10.0+ | Build and run |
 | [MongoDB](https://www.mongodb.com/try/download/community) | 6.0+ | Document storage (port 27017) |
 | [Ollama](https://ollama.com) | Latest | Local LLM for embeddings (port 11434) |
+| [Docling Serve](https://docling-project.github.io/docling/usage/api_server/deployment/) | Optional; latest release must pass SaddleRAG's probe | PDF and DOCX extraction (port 5001 by default) |
+| [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation.html) | Optional | User-configured OCR engine; installing it alone does not select it for SaddleRAG or Docling |
 
 ### Build and Run
 
@@ -560,7 +583,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The CI pipeline builds the solution, runs tests, packages the MSI, and attaches it to a GitHub Release automatically.
+The tag workflow builds and tests Windows and Linux, packages the MSI, desktop extension, and Linux archive, pushes the release container images, and uploads the assets to a **draft** GitHub Release. Verify the workflow and assets, then publish that draft.
 
 ## Project Structure
 

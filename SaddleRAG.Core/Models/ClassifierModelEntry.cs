@@ -73,11 +73,10 @@ public class ClassifierModelEntry
     public float Temperature { get; set; } = DefaultTemperature;
 
     /// <summary>
-    ///     Stop token appended by the model to signal end of a structured
-    ///     response. Generation halts when this token is produced.
-    ///     Default is <c>"&lt;/json&gt;"</c>, which pairs with a prompt
-    ///     that asks the model to wrap its answer in
-    ///     <c>&lt;json&gt;...&lt;/json&gt;</c> tags.
+    ///     Stop token appended by the model to signal the end of its assistant
+    ///     turn. Generation halts before this token is returned to callers.
+    ///     The default is Phi-3's <c>&lt;|end|&gt;</c> turn terminator, matching
+    ///     the chat template used by the built-in classifier models.
     /// </summary>
     public string Stop { get; set; } = DefaultStop;
 
@@ -91,5 +90,5 @@ public class ClassifierModelEntry
     public const float DefaultTemperature = 0.0f;
 
     /// <summary>Default value for <see cref="Stop" />.</summary>
-    public const string DefaultStop = "</json>";
+    public const string DefaultStop = "<|end|>";
 }

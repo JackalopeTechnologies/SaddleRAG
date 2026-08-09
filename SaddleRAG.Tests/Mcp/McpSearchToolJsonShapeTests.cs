@@ -107,6 +107,27 @@ public sealed class McpSearchToolJsonShapeTests
 
         libraryRepo.GetLibraryAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
                    .Returns(Task.FromResult<LibraryRecord?>(library is null ? null : NewLibrary(library, version)));
+        libraryRepo.GetVersionAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                   .Returns(call =>
+                            {
+                                if (library is null)
+                                    return Task.FromResult<LibraryVersionRecord?>(null);
+                                var requestedLibrary = call.ArgAt<string>(0);
+                                var requestedVersion = call.ArgAt<string>(1);
+                                return Task.FromResult<LibraryVersionRecord?>(new LibraryVersionRecord
+                                    {
+                                        Id = $"{requestedLibrary}/{requestedVersion}",
+                                        LibraryId = requestedLibrary,
+                                        Version = requestedVersion,
+                                        ScrapedAt = DateTime.UtcNow,
+                                        PageCount = 1,
+                                        ChunkCount = 1,
+                                        EmbeddingProviderId = "stub",
+                                        EmbeddingModelName = "stub-model",
+                                        EmbeddingDimensions = 4,
+                                        PublicationState = VersionPublicationState.Published
+                                    });
+                            });
         libraryIndexRepo.GetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                         .Returns(Task.FromResult<LibraryIndex?>(null));
 
@@ -144,7 +165,7 @@ public sealed class McpSearchToolJsonShapeTests
                                                 version: null,
                                                 maxResults: 5,
                                                 profile: null,
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         var root = JsonNode.Parse(json) as JsonObject;
@@ -189,7 +210,7 @@ public sealed class McpSearchToolJsonShapeTests
                                                 version: null,
                                                 maxResults: 5,
                                                 profile: null,
-                                                TestContext.Current.CancellationToken
+                                                ct: TestContext.Current.CancellationToken
                                                );
 
         var root = JsonNode.Parse(json) as JsonObject;

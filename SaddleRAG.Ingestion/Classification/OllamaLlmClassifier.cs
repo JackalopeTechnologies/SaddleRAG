@@ -25,7 +25,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     All Ollama generate calls are routed through <see cref="IOllamaGenerateClient" />
 ///     so the generate path is unit-testable without a live Ollama instance.
 /// </summary>
-public class OllamaLlmClassifier : ILlmClassifier
+public class OllamaLlmClassifier : ILlmClassifier, IClassifierTextGenerator
 {
     /// <summary>
     ///     Primary constructor: builds a real <see cref="OllamaApiClient" /> from
@@ -103,21 +103,8 @@ public class OllamaLlmClassifier : ILlmClassifier
 
         try
         {
-            var request = new GenerateRequest
-                              {
-                                  Model = mSettings.GetActiveClassificationModel().Name,
-                                  Prompt = prompt,
-                                  Stream = true
-                              };
-
-            var responseBuilder = new StringBuilder();
-            await foreach(var token in mGenerateClient.GenerateAsync(request, ct))
-            {
-                if (responseBuilder.Length < MaxResponseChars)
-                    responseBuilder.Append(token?.Response ?? string.Empty);
-            }
-
-            var parsed = ParseClassificationResponse(responseBuilder.ToString().Trim());
+            string responseText = await GenerateAsync(prompt, ct);
+            var parsed = ParseClassificationResponse(responseText.Trim());
             category = parsed.Category;
             confidence = parsed.Confidence;
 
@@ -133,6 +120,30 @@ public class OllamaLlmClassifier : ILlmClassifier
         }
 
         return (category, confidence);
+    }
+
+    /// <inheritdoc />
+    public async Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(prompt);
+        var request = new GenerateRequest
+                          {
+                              Model = mSettings.GetActiveClassificationModel().Name,
+                              Prompt = prompt,
+                              Stream = true
+                          };
+        var responseBuilder = new StringBuilder();
+        await foreach(var token in mGenerateClient.GenerateAsync(request, ct))
+        {
+            if (responseBuilder.Length < MaxResponseChars)
+            {
+                string response = token?.Response ?? string.Empty;
+                int remaining = MaxResponseChars - responseBuilder.Length;
+                responseBuilder.Append(response.Length <= remaining ? response : response[..remaining]);
+            }
+        }
+
+        return responseBuilder.ToString();
     }
 
     /// <summary>
@@ -194,7 +205,7 @@ public class OllamaLlmClassifier : ILlmClassifier
     }
 
     private const string OllamaUnconfiguredModel = "(unconfigured)";
-    private const int MaxResponseChars = 4096;
+    private const int MaxResponseChars = 32768;
     private const string JsonCodeFenceOpen = "```json";
     private const string CodeFence = "```";
     private const string CategoryKey = "category";

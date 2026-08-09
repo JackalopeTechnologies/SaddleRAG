@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Database.Repositories;
 
 #endregion
 
@@ -28,15 +29,19 @@ namespace SaddleRAG.Ingestion.Crawling;
 /// </summary>
 public class GitHubRepoScraper
 {
-    public GitHubRepoScraper(IPageRepository pageRepository, ILogger<GitHubRepoScraper> logger)
+    public GitHubRepoScraper(IPageRepository pageRepository,
+                             ILogger<GitHubRepoScraper> logger,
+                             RepositoryFactory? repositoryFactory = null)
     {
         mPageRepository = pageRepository;
         mLogger = logger;
+        mRepositoryFactory = repositoryFactory;
     }
 
     private readonly ILogger<GitHubRepoScraper> mLogger;
 
     private readonly IPageRepository mPageRepository;
+    private readonly RepositoryFactory? mRepositoryFactory;
 
     /// <summary>
     ///     Try to parse a GitHub URL into (owner, repo).
@@ -244,7 +249,10 @@ public class GitHubRepoScraper
                                          ContentHash = contentHash
                                      };
 
-                await mPageRepository.UpsertPageAsync(pageRecord, ct);
+                IPageRepository pages = string.IsNullOrEmpty(job.DatabaseProfile) || mRepositoryFactory == null
+                                            ? mPageRepository
+                                            : mRepositoryFactory.GetPageRepository(job.DatabaseProfile);
+                await pages.UpsertPageAsync(pageRecord, ct);
                 if (output != null)
                     await output.WriteAsync(pageRecord, ct);
                 result = true;

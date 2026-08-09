@@ -62,6 +62,27 @@ public sealed class CategoryAwareChunkerTests
                    );
     }
 
+    [Fact]
+    public void LocalDocumentProvenanceIsCopiedToEveryBoundedChunk()
+    {
+        var provenance = new DocumentProvenance
+                             {
+                                 DocumentId = "document-id",
+                                 RevisionId = "revision-id",
+                                 SourceUri = "saddlerag://library/manual-library/documents/document-id",
+                                 RelativePath = "manuals/guide.md",
+                                 Heading = "Setup"
+                             };
+        var content = "# Setup\n" + new string(c: 'x', count: 5000);
+        var page = MakePage(content, DocCategory.HowTo) with { DocumentSource = provenance };
+        var chunker = new CategoryAwareChunker(new SymbolExtractor());
+
+        var chunks = chunker.Chunk(page);
+
+        Assert.True(chunks.Count > 1);
+        Assert.All(chunks, chunk => Assert.Same(provenance, chunk.DocumentSource));
+    }
+
     private static PageRecord MakePage(string content, DocCategory category) =>
         new PageRecord
             {

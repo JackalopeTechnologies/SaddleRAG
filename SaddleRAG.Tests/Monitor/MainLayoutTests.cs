@@ -29,4 +29,42 @@ public sealed class MainLayoutTests
         layout.InvokeToggle();
         Assert.True(layout.DrawerOpenForTest);
     }
+
+    [Fact]
+    public void NavigationShellUsesResponsiveDrawerAndHidesDesktopLinksOnSmallScreens()
+    {
+        string root = ResolveRepositoryRoot();
+        string razor = File.ReadAllText(Path.Combine(root,
+                                                     "SaddleRAG.Mcp",
+                                                     "Monitor",
+                                                     "MainLayout.razor"));
+        string styles = File.ReadAllText(Path.Combine(root,
+                                                      "SaddleRAG.Mcp",
+                                                      "Monitor",
+                                                      "MainLayout.razor.css"));
+        string app = File.ReadAllText(Path.Combine(root,
+                                                   "SaddleRAG.Mcp",
+                                                   "Monitor",
+                                                   "App.razor"));
+        string program = File.ReadAllText(Path.Combine(root,
+                                                       "SaddleRAG.Mcp",
+                                                       "Program.cs"));
+
+        Assert.Contains("Variant=\"DrawerVariant.Responsive\"", razor, StringComparison.Ordinal);
+        Assert.Contains("Breakpoint=\"Breakpoint.Md\"", razor, StringComparison.Ordinal);
+        Assert.Contains("monitor-top-navigation", razor, StringComparison.Ordinal);
+        Assert.Contains("@media (max-width: 959.98px)", styles, StringComparison.Ordinal);
+        Assert.Contains("display: none", styles, StringComparison.Ordinal);
+        Assert.Contains("SaddleRAG.Mcp.styles.css", app, StringComparison.Ordinal);
+        Assert.Contains("app.MapStaticAssets();", program, StringComparison.Ordinal);
+    }
+
+    private static string ResolveRepositoryRoot()
+    {
+        DirectoryInfo? current = new(AppContext.BaseDirectory);
+        while (current != null && !File.Exists(Path.Combine(current.FullName, "SaddleRAG.slnx")))
+            current = current.Parent;
+        Assert.NotNull(current);
+        return current.FullName;
+    }
 }

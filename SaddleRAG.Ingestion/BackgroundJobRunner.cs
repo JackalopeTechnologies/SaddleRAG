@@ -106,6 +106,8 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         Action<int, int> onProgress = (processed, total) => ProgressTick(jobRecord, jobRepo, processed, total);
 
         var jobType = LegacyJobTypeToEnum(jobRecord.JobType);
+        string? initialLibraryId = jobRecord.LibraryId;
+        string? initialVersion = jobRecord.Version;
         CancellationTokenSource? cts = null;
         CancellationToken executeToken;
         if (jobType.IsCancellable())
@@ -120,15 +122,15 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         try
         {
             await execute(jobRecord, onProgress, executeToken);
-            await MarkCompletedAsync(jobRecord, jobRepo);
+            await MarkCompletedAsync(jobRecord, jobRepo, initialLibraryId, initialVersion);
         }
         catch(OperationCanceledException)
         {
-            await MarkCancelledAsync(jobRecord, jobRepo);
+            await MarkCancelledAsync(jobRecord, jobRepo, initialLibraryId, initialVersion);
         }
         catch(Exception ex)
         {
-            await MarkFailedAsync(jobRecord, jobRepo, ex);
+            await MarkFailedAsync(jobRecord, jobRepo, initialLibraryId, initialVersion, ex);
         }
         finally
         {
@@ -150,8 +152,12 @@ public class BackgroundJobRunner : IBackgroundJobRunner
             mBroadcaster.RecordJobProgress(jobRecord.Id, processed, total, jobRecord.ItemsLabel);
     }
 
-    private async Task MarkCompletedAsync(BackgroundJobRecord jobRecord, IJobRepository jobRepo)
+    private async Task MarkCompletedAsync(BackgroundJobRecord jobRecord,
+                                          IJobRepository jobRepo,
+                                          string? initialLibraryId,
+                                          string? initialVersion)
     {
+        await ReconcilePersistedIdentityAsync(jobRecord, jobRepo, initialLibraryId, initialVersion);
         jobRecord.Status = ScrapeJobStatus.Completed;
         jobRecord.PipelineState = nameof(ScrapeJobStatus.Completed);
         jobRecord.CompletedAt = DateTime.UtcNow;
@@ -165,13 +171,17 @@ public class BackgroundJobRunner : IBackgroundJobRunner
                               );
     }
 
-    private async Task MarkCancelledAsync(BackgroundJobRecord jobRecord, IJobRepository jobRepo)
+    private async Task MarkCancelledAsync(BackgroundJobRecord jobRecord,
+                                          IJobRepository jobRepo,
+                                          string? initialLibraryId,
+                                          string? initialVersion)
     {
         mLogger.LogInformation("Background job {JobId} ({JobType}) was cancelled",
                                jobRecord.Id,
                                jobRecord.JobType
                               );
 
+        await ReconcilePersistedIdentityAsync(jobRecord, jobRepo, initialLibraryId, initialVersion);
         jobRecord.Status = ScrapeJobStatus.Cancelled;
         jobRecord.PipelineState = nameof(ScrapeJobStatus.Cancelled);
         jobRecord.CancelledAt = DateTime.UtcNow;
@@ -181,10 +191,15 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         mBroadcaster.RecordJobCancelled(jobRecord.Id);
     }
 
-    private async Task MarkFailedAsync(BackgroundJobRecord jobRecord, IJobRepository jobRepo, Exception ex)
+    private async Task MarkFailedAsync(BackgroundJobRecord jobRecord,
+                                       IJobRepository jobRepo,
+                                       string? initialLibraryId,
+                                       string? initialVersion,
+                                       Exception ex)
     {
         mLogger.LogError(ex, "Background job {JobId} ({JobType}) failed", jobRecord.Id, jobRecord.JobType);
 
+        await ReconcilePersistedIdentityAsync(jobRecord, jobRepo, initialLibraryId, initialVersion);
         jobRecord.Status = ScrapeJobStatus.Failed;
         jobRecord.ErrorMessage = ex.Message;
         jobRecord.PipelineState = nameof(ScrapeJobStatus.Failed);
@@ -192,6 +207,21 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         await jobRepo.UpsertAsync(Project(jobRecord));
 
         mBroadcaster.RecordJobFailed(jobRecord.Id, ex.Message);
+    }
+
+    private static async Task ReconcilePersistedIdentityAsync(BackgroundJobRecord jobRecord,
+                                                               IJobRepository jobRepo,
+                                                               string? initialLibraryId,
+                                                               string? initialVersion)
+    {
+        JobRecord? persisted = await jobRepo.GetAsync(jobRecord.Id);
+        if (persisted != null)
+        {
+            if (jobRecord.LibraryId == initialLibraryId && persisted.LibraryId != initialLibraryId)
+                jobRecord.LibraryId = persisted.LibraryId;
+            if (jobRecord.Version == initialVersion && persisted.Version != initialVersion)
+                jobRecord.Version = persisted.Version;
+        }
     }
 
     private static JobRecord Project(BackgroundJobRecord source) => new()
