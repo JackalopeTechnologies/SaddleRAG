@@ -535,10 +535,105 @@ public sealed class DoclingClientTests
         Assert.Equal(expected: 2, handler.Requests.Count);
     }
 
-    private static DoclingClientLease MakeClient(HttpMessageHandler handler, DoclingSettings? settings = null)
+    [Fact]
+    public async Task LongRunningConversionSurvivesPastTheLegacyTenMinuteBudget()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        var time = new MutableDoclingTimeProvider(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
+        for(var i = 0; i < 400; i++)
+        {
+            handler.Enqueue((_, _) =>
+                            {
+                                time.Advance(TimeSpan.FromSeconds(value: 5));
+                                return Task.FromResult(
+                                    DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                                    TaskStatus(StartedTaskStatus)));
+                            });
+        }
+
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        using var client = MakeClient(handler, FastSettings(), time);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task ContinuousPollFailuresPastTheStallWindowReportStalled()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        var time = new MutableDoclingTimeProvider(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
+        for(var i = 0; i < 200; i++)
+        {
+            handler.Enqueue((_, _) =>
+                            {
+                                time.Advance(TimeSpan.FromSeconds(value: 5));
+                                return Task.FromResult(
+                                    DoclingTestSupport.JsonResponse(HttpStatusCode.BadGateway, "{}"));
+                            });
+        }
+
+        using var client = MakeClient(handler, FastSettings(), time);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ConversionStalled, result.ReasonCode);
+    }
+
+    [Fact]
+    public async Task TransientPollFailureFollowedByRecoveryStillSucceeds()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        var time = new MutableDoclingTimeProvider(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
+        handler.Enqueue((_, _) =>
+                        {
+                            time.Advance(TimeSpan.FromSeconds(value: 30));
+                            return Task.FromResult(
+                                DoclingTestSupport.JsonResponse(HttpStatusCode.ServiceUnavailable, "{}"));
+                        });
+        handler.Enqueue((_, _) => throw new HttpRequestException("connection reset"));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        using var client = MakeClient(handler, FastSettings(), time);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task DefinitiveTaskFailureAbortsWithoutWaitingForTheStallWindow()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        var time = new MutableDoclingTimeProvider(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.UnprocessableEntity,
+                                                        "{\"detail\":\"bad request\"}"));
+        using var client = MakeClient(handler, FastSettings(), time);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ApiIncompatible, result.ReasonCode);
+    }
+
+    private static DoclingClientLease MakeClient(HttpMessageHandler handler,
+                                                 DoclingSettings? settings = null,
+                                                 TimeProvider? timeProvider = null)
     {
         var httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
-        var client = new DoclingClient(httpClient, settings ?? FastSettings(), new DoclingDocumentMapper());
+        var client = new DoclingClient(httpClient,
+                                       settings ?? FastSettings(),
+                                       new DoclingDocumentMapper(),
+                                       timeProvider);
         return new DoclingClientLease(httpClient, client);
     }
 

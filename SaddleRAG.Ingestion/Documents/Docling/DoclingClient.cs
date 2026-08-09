@@ -19,7 +19,10 @@ namespace SaddleRAG.Ingestion.Documents.Docling;
 /// </summary>
 public sealed class DoclingClient : IDoclingClient
 {
-    public DoclingClient(HttpClient httpClient, DoclingSettings settings, DoclingDocumentMapper mapper)
+    public DoclingClient(HttpClient httpClient,
+                         DoclingSettings settings,
+                         DoclingDocumentMapper mapper,
+                         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(settings);
@@ -28,11 +31,13 @@ public sealed class DoclingClient : IDoclingClient
         mHttpClient = httpClient;
         mSettings = settings;
         mMapper = mapper;
+        mTimeProvider = timeProvider ?? TimeProvider.System;
     }
 
     private readonly HttpClient mHttpClient;
     private readonly DoclingDocumentMapper mMapper;
     private readonly DoclingSettings mSettings;
+    private readonly TimeProvider mTimeProvider;
 
     public Task<DoclingServiceObservation> CheckHealthAsync(CancellationToken cancellationToken = default) =>
         CheckStatusAsync(HealthPath,
@@ -208,47 +213,91 @@ public sealed class DoclingClient : IDoclingClient
         {
             var taskStatus = statusResult.Status
                              ?? throw new InvalidOperationException(TaskStatusMissingDetail);
-            while (IsInProgress(taskStatus.Status))
+            var stallWindow = TimeSpan.FromSeconds(mSettings.ConversionStallTimeoutSeconds);
+            var lastLiveness = mTimeProvider.GetUtcNow();
+            DoclingConversionResult? abort = null;
+            while (abort == null && IsInProgress(taskStatus.Status))
             {
-                await Task.Delay(mSettings.ConversionPollIntervalMilliseconds, cancellationToken);
-                statusResult = await PollTaskAsync(endpoint, taskStatus.TaskId, cancellationToken);
-                if (statusResult.Failure != null)
-                    break;
-                taskStatus = statusResult.Status
-                             ?? throw new InvalidOperationException(TaskStatusMissingDetail);
+                await Task.Delay(TimeSpan.FromMilliseconds(mSettings.ConversionPollIntervalMilliseconds),
+                                 mTimeProvider,
+                                 cancellationToken);
+                var outcome = await PollOnceAsync(endpoint, taskStatus.TaskId, cancellationToken);
+                taskStatus = outcome.Status ?? taskStatus;
+                lastLiveness = outcome.Status == null ? lastLiveness : mTimeProvider.GetUtcNow();
+                abort = ResolveAbort(outcome, lastLiveness, stallWindow);
             }
 
-            result = statusResult.Failure
-                     ?? await CompleteTaskAsync(endpoint, taskStatus, cancellationToken);
+            result = abort ?? await CompleteTaskAsync(endpoint, taskStatus, cancellationToken);
         }
 
         return result;
     }
 
-    private async Task<DoclingTaskStatusResult> PollTaskAsync(Uri endpoint,
-                                                              string taskId,
-                                                              CancellationToken cancellationToken)
+    private async Task<DoclingTaskPollOutcome> PollOnceAsync(Uri endpoint,
+                                                             string taskId,
+                                                             CancellationToken cancellationToken)
     {
+        DoclingTaskPollOutcome result;
         var escapedTaskId = Uri.EscapeDataString(taskId);
         var path = $"{PollPathPrefix}{escapedTaskId}?{PollWaitParameter}={PollWaitSeconds}";
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(endpoint, path));
         AddApiKey(request);
-        var response = await SendAsync(request, cancellationToken);
-        var result = response switch
+        try
         {
-            { StatusCode: HttpStatusCode.NotFound } =>
-                DoclingTaskStatusResult.FromStatus(new DoclingTaskStatus(taskId,
-                                                                         SuccessTaskStatus,
-                                                                         response.Body)),
-            { Succeeded: false } =>
-                DoclingTaskStatusResult.FromFailure(
-                    MapConversionFailure(response.StatusCode, response.Body)
-                ),
-            _ => ReadTaskStatus(response.Body, taskId)
-        };
+            var response = await SendAsync(request, cancellationToken);
+            result = MapPollResponse(taskId, response);
+        }
+        catch(HttpRequestException)
+        {
+            // A conversion that outlives a transient network fault is the ordinary case here; the
+            // stall window, not a single failed poll, decides whether the conversion is abandoned.
+            result = DoclingTaskPollOutcome.Transient();
+        }
 
         return result;
     }
+
+    private DoclingConversionResult? ResolveAbort(DoclingTaskPollOutcome outcome,
+                                                  DateTimeOffset lastLiveness,
+                                                  TimeSpan stallWindow) =>
+        outcome switch
+        {
+            { Status: not null } => null,
+            { Definitive: not null } => outcome.Definitive,
+            _ when mTimeProvider.GetUtcNow() - lastLiveness > stallWindow =>
+                DoclingConversionResult.Failure(DoclingReasonCodes.ConversionStalled, ConversionStalledDetail),
+            _ => null
+        };
+
+    private DoclingTaskPollOutcome MapPollResponse(string taskId, DoclingHttpResponse response) =>
+        response switch
+        {
+            // Docling drops a finished task from the poll surface; the result endpoint is authoritative.
+            { StatusCode: HttpStatusCode.NotFound } =>
+                DoclingTaskPollOutcome.FromStatus(new DoclingTaskStatus(taskId, SuccessTaskStatus, response.Body)),
+            { Succeeded: false } when IsTransientStatus(response.StatusCode) =>
+                DoclingTaskPollOutcome.Transient(),
+            { Succeeded: false } =>
+                DoclingTaskPollOutcome.FromDefinitive(MapConversionFailure(response.StatusCode, response.Body)),
+            _ => MapParsedPollStatus(taskId, response.Body)
+        };
+
+    private DoclingTaskPollOutcome MapParsedPollStatus(string taskId, string body)
+    {
+        var parsed = ReadTaskStatus(body, taskId);
+        return parsed.Failure != null
+            ? DoclingTaskPollOutcome.FromDefinitive(parsed.Failure)
+            : DoclingTaskPollOutcome.FromStatus(parsed.Status
+                                                 ?? throw new InvalidOperationException(TaskStatusMissingDetail));
+    }
+
+    private static bool IsTransientStatus(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.RequestTimeout
+            or HttpStatusCode.TooManyRequests
+            or HttpStatusCode.InternalServerError
+            or HttpStatusCode.BadGateway
+            or HttpStatusCode.ServiceUnavailable
+            or HttpStatusCode.GatewayTimeout;
 
     private async Task<DoclingConversionResult> CompleteTaskAsync(Uri endpoint,
                                                                   DoclingTaskStatus taskStatus,
@@ -682,6 +731,7 @@ public sealed class DoclingClient : IDoclingClient
     private const string HealthRequestTimeoutDetail = "The Docling health request timed out.";
     private const string ReadinessTimeoutDetail = "The Docling model-readiness request timed out.";
     private const string ConversionTimeoutDetail = "The Docling conversion request timed out.";
+    private const string ConversionStalledDetail = "Docling stopped responding to conversion status polls.";
     private const string TaskStatusMissingDetail = "A validated Docling task status was unavailable.";
     private const string InvalidTaskStatusDetail = "Docling returned an invalid asynchronous task status.";
     private const string MalformedTaskStatusPrefix = "Docling returned malformed asynchronous task JSON:";
@@ -695,6 +745,23 @@ public sealed class DoclingClient : IDoclingClient
     private const string EmptyResponseDetail = "Docling returned an empty error response.";
 
     private sealed record DoclingTaskStatus(string TaskId, string Status, string ResponseJson);
+
+    private sealed record DoclingTaskPollOutcome(DoclingTaskStatus? Status, DoclingConversionResult? Definitive)
+    {
+        public static DoclingTaskPollOutcome FromStatus(DoclingTaskStatus status)
+        {
+            ArgumentNullException.ThrowIfNull(status);
+            return new DoclingTaskPollOutcome(status, null);
+        }
+
+        public static DoclingTaskPollOutcome FromDefinitive(DoclingConversionResult failure)
+        {
+            ArgumentNullException.ThrowIfNull(failure);
+            return new DoclingTaskPollOutcome(null, failure);
+        }
+
+        public static DoclingTaskPollOutcome Transient() => new(null, null);
+    }
 
     private sealed record DoclingTaskStatusResult(DoclingTaskStatus? Status, DoclingConversionResult? Failure)
     {
