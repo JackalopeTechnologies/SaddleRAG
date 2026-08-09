@@ -24,6 +24,7 @@ namespace SaddleRAG.Tests.Crawling;
 ///     boundary so the source-neutral ingestion processor remains the only
 ///     classify/chunk/embed/index/finalize path.
 /// </summary>
+[Trait("Category", "Integration")]
 public sealed class DocumentLinkRoutingTests
 {
     [Fact]
@@ -175,11 +176,10 @@ public sealed class DocumentLinkRoutingTests
                                                                     CancellationToken ct)
     {
         Channel<PageRecord> channel = Channel.CreateUnbounded<PageRecord>();
-        Task crawl = ((IPageCrawler)crawler).CrawlAsync(Job(rootUrl), channel.Writer, ct: ct);
+        await ((IPageCrawler)crawler).CrawlAsync(Job(rootUrl), channel.Writer, ct: ct);
         var pages = new List<PageRecord>();
         await foreach(PageRecord page in channel.Reader.ReadAllAsync(ct))
             pages.Add(page);
-        await crawl;
         return pages;
     }
 

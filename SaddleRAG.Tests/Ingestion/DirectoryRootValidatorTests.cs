@@ -91,9 +91,11 @@ public sealed class DirectoryRootValidatorTests
                                                       minute: 0,
                                                       second: 0,
                                                       DateTimeKind.Utc);
-    private const string MissingRoot = "C:\\missing-manuals";
-    private const string DeniedRoot = "C:\\denied-manuals";
-    private const string FileRoot = "C:\\manual.pdf";
-    private const string ReparseRoot = "C:\\linked-manuals";
-    private const string ValidRoot = "C:\\manuals";
+    private static readonly string TestRoot = Path.GetFullPath(
+        Path.Combine(Path.GetTempPath(), "saddlerag-scripted-tests"));
+    private static readonly string MissingRoot = Path.Combine(TestRoot, "missing-manuals");
+    private static readonly string DeniedRoot = Path.Combine(TestRoot, "denied-manuals");
+    private static readonly string FileRoot = Path.Combine(TestRoot, "manual.pdf");
+    private static readonly string ReparseRoot = Path.Combine(TestRoot, "linked-manuals");
+    private static readonly string ValidRoot = Path.Combine(TestRoot, "manuals");
 }

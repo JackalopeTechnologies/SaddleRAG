@@ -344,7 +344,8 @@ public sealed class DirectoryLibraryToolsTests
     }
 
     private static readonly DateTimeOffset RegisteredAt = new(2026, 8, 4, 12, 0, 0, TimeSpan.Zero);
-    private const string RootPath = "C:\\owned-manuals";
+    private static readonly string RootPath = Path.GetFullPath(
+        Path.Combine(Path.GetTempPath(), "saddlerag-scripted-tests", "owned-manuals"));
     private const string ExclusionPattern = "**/bin/**";
     private const string LibraryId = "manual-library";
     private const string ProfileName = "team-profile";

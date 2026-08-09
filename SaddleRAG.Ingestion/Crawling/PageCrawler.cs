@@ -406,16 +406,9 @@ public class PageCrawler : IPageCrawler
                                Profile = job.DatabaseProfile
                            };
 
-        using var playwright = await Playwright.CreateAsync();
-        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-                                                                            {
-                                                                                Headless = true,
-                                                                                Args =
-                                                                                    [
-                                                                                        $"--user-agent={BrowserUserAgent}"
-                                                                                    ]
-                                                                            }
-                                                                       );
+        var launchedBrowser = await LaunchBrowserAsync(output);
+        using var playwright = launchedBrowser.Playwright;
+        await using var browser = launchedBrowser.Browser;
 
         var rootUri = new Uri(job.RootUrl);
         var rootScope = ComputeRootScope(rootUri);
@@ -554,6 +547,35 @@ public class PageCrawler : IPageCrawler
             output.TryComplete(ex);
             throw;
         }
+    }
+
+    private static async Task<(IPlaywright Playwright, IBrowser Browser)> LaunchBrowserAsync(
+        ChannelWriter<PageRecord> output)
+    {
+        IPlaywright? playwright = null;
+        (IPlaywright Playwright, IBrowser Browser) result;
+        try
+        {
+            playwright = await Playwright.CreateAsync();
+            IBrowser browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                                                                         {
+                                                                             Headless = true,
+                                                                             Args =
+                                                                                 [
+                                                                                     $"--user-agent={BrowserUserAgent}"
+                                                                                 ]
+                                                                         }
+                                                                    );
+            result = (playwright, browser);
+        }
+        catch(Exception error)
+        {
+            output.TryComplete(error);
+            playwright?.Dispose();
+            throw;
+        }
+
+        return result;
     }
 
     /// <summary>

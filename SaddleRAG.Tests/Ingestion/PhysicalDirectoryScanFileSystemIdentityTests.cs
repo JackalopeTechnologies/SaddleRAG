@@ -108,12 +108,14 @@ public sealed class PhysicalDirectoryScanFileSystemIdentityTests
     public void SymbolicLinkAncestorRetainsReparsePointClassification()
     {
         using var fixture = new PhysicalIdentityFixture();
+        string targetContainer = Path.Combine(fixture.ContainerPath, "real-container");
+        Directory.CreateDirectory(Path.Combine(targetContainer, "root"));
         string linkPath = Path.Combine(fixture.ContainerPath, "linked-container");
         try
         {
             try
             {
-                Directory.CreateSymbolicLink(linkPath, fixture.ContainerPath);
+                Directory.CreateSymbolicLink(linkPath, targetContainer);
             }
             catch(Exception error) when (error is IOException
                                          or UnauthorizedAccessException

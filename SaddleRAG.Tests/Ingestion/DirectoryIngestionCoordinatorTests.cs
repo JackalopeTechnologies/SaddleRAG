@@ -594,12 +594,13 @@ public sealed class DirectoryIngestionCoordinatorTests
                                                              progress.Add,
                                                              TestContext.Current.CancellationToken);
 
+        string expectedGuidePath = DirectoryPathIdentity.Platform.NormalizeRelativePath("Guide.md");
         Assert.Equal(DirectoryScanStatus.Completed, report.Status);
         Assert.Contains(progress,
                         item => item.FilesDiscovered == 3
                                 && item.SupportedDocuments == 2
                                 && item.DocumentsCompleted == 1
-                                && item.CurrentRelativePath == "guide.md");
+                                && item.CurrentRelativePath == expectedGuidePath);
         DirectoryScanProgress terminal = progress[^1];
         Assert.Equal(3, terminal.FilesDiscovered);
         Assert.Equal(2, terminal.SupportedDocuments);
@@ -918,12 +919,13 @@ public sealed class DirectoryIngestionCoordinatorTests
 
     private static readonly DateTimeOffset QueuedAt = new(2026, 8, 4, 23, 55, 0, TimeSpan.FromHours(-6));
     private static readonly LibraryDeletionResult EmptyDeletionResult = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    private static readonly string RootPath = Path.GetFullPath(
+        Path.Combine(Path.GetTempPath(), "saddlerag-scripted-tests", "manuals"));
     private const string LibraryId = "manual-library";
     private const string PriorVersion = "2026-08-03";
     private const string Version = "2026-08-04";
     private const string NextVersion = "2026-08-05";
     private const string ScanRunId = "scan-20260804";
     private const string RegistrationIncarnationId = "registration-incarnation";
-    private const string RootPath = "C:\\manuals";
     private const long RegistrationRevision = 7;
 }

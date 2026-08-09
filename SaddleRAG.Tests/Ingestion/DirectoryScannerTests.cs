@@ -123,19 +123,25 @@ public sealed class DirectoryScannerTests
 
         var firstJson = JsonSerializer.Serialize(first);
         var secondJson = JsonSerializer.Serialize(second);
+        DirectoryPathIdentity identity = DirectoryPathIdentity.Platform;
+        string notesPath = identity.NormalizeRelativePath("Notes.txt");
+        string duplicatePath = identity.NormalizeRelativePath("Nested/Duplicate.txt");
         Assert.Equal(firstJson, secondJson);
         Assert.DoesNotContain(fixture.RootPath, firstJson, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(["guide.md",
-                      "manual.docx",
-                      "manual.pdf",
-                      "nested/duplicate.txt",
-                      "notes.txt",
-                      "page.html"],
+        Assert.Equal(new[]
+                         {
+                             "Guide.md",
+                             "Manual.docx",
+                             "Manual.pdf",
+                             "Nested/Duplicate.txt",
+                             "Notes.txt",
+                             "Page.html"
+                         }.Select(identity.NormalizeRelativePath),
                      first.Entries.Where(entry => entry.Status == DirectoryScanEntryStatus.Extracted)
                           .Select(entry => entry.RelativePath));
         Assert.Equal(6, first.ExtractedCount);
-        Assert.Equal(1, first.Entries.Count(entry => entry.RelativePath == "notes.txt"));
-        Assert.Equal(1, first.Entries.Count(entry => entry.RelativePath == "nested/duplicate.txt"));
+        Assert.Equal(1, first.Entries.Count(entry => entry.RelativePath == notesPath));
+        Assert.Equal(1, first.Entries.Count(entry => entry.RelativePath == duplicatePath));
         Assert.Equal(DirectoryScanReasonCodes.FileUnsupportedType,
                      Assert.Single(first.Entries,
                                    entry => entry.RelativePath == "unsupported.bin").ReasonCode);
@@ -240,7 +246,7 @@ public sealed class DirectoryScannerTests
                                  Identity = new DirectoryEntryIdentity(VolumeId: 7,
                                                                        FileIdHigh: 0,
                                                                        FileIdLow: 21),
-                                 ResolvedPath = "C:\\outside\\redirected.txt"
+                                 ResolvedPath = Path.Combine(OutsideRootPath, "redirected.txt")
                              };
         fileSystem.SetEnumeration(RootPath, Enumeration(redirected));
         var intake = SuccessfulIntake();
@@ -267,7 +273,7 @@ public sealed class DirectoryScannerTests
                                   {
                                       Attributes = FileAttributes.Directory | FileAttributes.ReparsePoint
                                   };
-        var escaped = new DirectoryEntrySnapshot("C:\\outside\\escape.md",
+        var escaped = new DirectoryEntrySnapshot(Path.Combine(OutsideRootPath, "escape.md"),
                                                  FileAttributes.Normal,
                                                  4,
                                                  SourceTime);
@@ -532,7 +538,10 @@ public sealed class DirectoryScannerTests
                                                           minute: 0,
                                                           second: 0,
                                                           TimeSpan.Zero);
-    private const string RootPath = "C:\\manuals";
+    private static readonly string TestRoot = Path.GetFullPath(
+        Path.Combine(Path.GetTempPath(), "saddlerag-scripted-tests"));
+    private static readonly string RootPath = Path.Combine(TestRoot, "manuals");
+    private static readonly string OutsideRootPath = Path.Combine(TestRoot, "outside");
     private const string LibraryId = "manual-library";
     private const string ScanRunId = "scan-run-123";
     private const long MaxFileBytes = 1024;
