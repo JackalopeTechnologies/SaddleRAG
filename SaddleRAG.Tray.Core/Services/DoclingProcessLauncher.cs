@@ -23,7 +23,7 @@ namespace SaddleRAG.Tray.Services;
 ///         environment — a different context from the one the user validated.
 ///     </para>
 /// </summary>
-public sealed class DoclingProcessLauncher
+public sealed class DoclingProcessLauncher : IDoclingLauncher
 {
     public DoclingProcessLauncher(HttpClient httpClient,
                                   ExternalToolRegistry registry,
