@@ -124,7 +124,9 @@ internal static class PatchAppSettingsTestDriver
                                                  string StandardOutput,
                                                  string StandardError);
 
-    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
+    // See the note on PatchAppSettingsTests.smWaitForExitTimeout: this budget exists to stop
+    // a hung interpreter from wedging the suite, not to time the script.
+    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(120);
 
     private const string WindowsOnlySkipReason = "The Windows MSI settings patch requires Windows.";
     private const string RepositoryMissingSkipReason = "The repository source tree is not available.";

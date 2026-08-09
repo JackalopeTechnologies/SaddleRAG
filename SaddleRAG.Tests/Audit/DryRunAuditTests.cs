@@ -5,6 +5,7 @@
 
 #region Usings
 
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
@@ -33,8 +34,13 @@ public sealed class DryRunAuditTests
 {
     private sealed class SpyAuditWriter : IScrapeAuditWriter
     {
-        public List<AuditContext> FetchedCalls { get; } = [];
-        public List<AuditContext> SkippedCalls { get; } = [];
+        // Concurrent crawl workers call in here directly; see the matching note in
+        // FileScrapeAuditTests. A plain List loses entries under that load.
+        private readonly ConcurrentQueue<AuditContext> mFetchedCalls = new();
+        private readonly ConcurrentQueue<AuditContext> mSkippedCalls = new();
+
+        public IReadOnlyCollection<AuditContext> FetchedCalls => mFetchedCalls.ToArray();
+        public IReadOnlyCollection<AuditContext> SkippedCalls => mSkippedCalls.ToArray();
 
         public void RecordSkipped(AuditContext ctx,
                                   string url,
@@ -43,14 +49,14 @@ public sealed class DryRunAuditTests
                                   int depth,
                                   AuditSkipReason reason,
                                   string? detail)
-            => SkippedCalls.Add(ctx);
+            => mSkippedCalls.Enqueue(ctx);
 
         public void RecordFetched(AuditContext ctx,
                                   string url,
                                   string? parentUrl,
                                   string host,
                                   int depth)
-            => FetchedCalls.Add(ctx);
+            => mFetchedCalls.Enqueue(ctx);
 
         public void RecordFailed(AuditContext ctx,
                                  string url,

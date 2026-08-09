@@ -7,6 +7,7 @@ using System.Xml.Linq;
 
 namespace SaddleRAG.Tests.Installer;
 
+[Collection(PowerShellScriptCollection.Name)]
 public sealed class PatchAppSettingsDoclingTests
 {
     [Fact]
