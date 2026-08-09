@@ -20,11 +20,30 @@ public sealed class DoclingSettingsTests
 
         Assert.Equal("http://localhost:5001", settings.Endpoint);
         Assert.Equal(expected: 120, settings.StartupGracePeriodSeconds);
-        Assert.Equal(expected: 600, settings.ConversionTimeoutSeconds);
+        Assert.Equal(expected: 14400, settings.ConversionTimeoutSeconds);
+        Assert.Equal(expected: 300, settings.ConversionStallTimeoutSeconds);
         Assert.Equal(expected: 5000, settings.ConversionPollIntervalMilliseconds);
         Assert.Equal(expected: 2000, settings.ConversionResultRetryBaseMilliseconds);
         Assert.Empty(settings.ApiKey);
         Assert.True(settings.Validate().IsValid);
+    }
+
+    [Fact]
+    public void NonPositiveStallTimeoutIsInvalid()
+    {
+        var settings = new DoclingSettings { ConversionStallTimeoutSeconds = 0 };
+
+        var validation = settings.Validate();
+
+        Assert.False(validation.IsValid);
+        Assert.Equal(DoclingReasonCodes.InvalidEndpoint, validation.ReasonCode);
+    }
+
+    [Fact]
+    public void StalledReasonCodeIsDistinctFromTimeout()
+    {
+        Assert.Equal("DOCLING_CONVERSION_STALLED", DoclingReasonCodes.ConversionStalled);
+        Assert.NotEqual(DoclingReasonCodes.ConversionTimeout, DoclingReasonCodes.ConversionStalled);
     }
 
     [Fact]

@@ -25,8 +25,11 @@ public sealed class DoclingSettings
     /// <summary>Timeout for one model-readiness request.</summary>
     public int ReadinessTimeoutSeconds { get; set; } = DefaultReadinessTimeoutSeconds;
 
-    /// <summary>Timeout for one conversion request, including cold model initialization.</summary>
+    /// <summary>Backstop for one conversion, including cold model initialization.</summary>
     public int ConversionTimeoutSeconds { get; set; } = DefaultConversionTimeoutSeconds;
+
+    /// <summary>Maximum uninterrupted run of failed status polls before a conversion is abandoned.</summary>
+    public int ConversionStallTimeoutSeconds { get; set; } = DefaultConversionStallTimeoutSeconds;
 
     /// <summary>Delay between bounded cold-start observations.</summary>
     public int StartupPollIntervalMilliseconds { get; set; } = DefaultStartupPollIntervalMilliseconds;
@@ -63,6 +66,7 @@ public sealed class DoclingSettings
                                 && HealthTimeoutSeconds > 0
                                 && ReadinessTimeoutSeconds > 0
                                 && ConversionTimeoutSeconds > 0
+                                && ConversionStallTimeoutSeconds > 0
                                 && StartupPollIntervalMilliseconds > 0
                                 && ConversionPollIntervalMilliseconds is > 0 and <= MaximumPollIntervalMilliseconds
                                 && ConversionResultRetryBaseMilliseconds is > 0 and <= MaximumPollIntervalMilliseconds;
@@ -86,7 +90,8 @@ public sealed class DoclingSettings
     public const int DefaultStartupGracePeriodSeconds = 120;
     public const int DefaultHealthTimeoutSeconds = 10;
     public const int DefaultReadinessTimeoutSeconds = 30;
-    public const int DefaultConversionTimeoutSeconds = 600;
+    public const int DefaultConversionTimeoutSeconds = 14400;
+    public const int DefaultConversionStallTimeoutSeconds = 300;
     public const int DefaultStartupPollIntervalMilliseconds = 1000;
     public const int DefaultConversionPollIntervalMilliseconds = 5000;
     public const int DefaultConversionResultRetryBaseMilliseconds = 2000;
@@ -96,6 +101,6 @@ public sealed class DoclingSettings
     private const string InvalidEndpointDetail =
         "The Docling endpoint must be an absolute HTTP or HTTPS URL without embedded credentials, query, or fragment.";
     private const string InvalidTimeoutDetail =
-        "Docling grace and request timeouts must be greater than zero; poll intervals must be between 1 and 60000 milliseconds.";
+        "Docling grace, request, and stall timeouts must be greater than zero; poll intervals must be between 1 and 60000 milliseconds.";
     private const string ValidDetail = "Docling configuration is valid.";
 }
