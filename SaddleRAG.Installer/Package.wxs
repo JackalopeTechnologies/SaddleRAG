@@ -90,6 +90,14 @@
 
         <!-- Short aliases keep the PatchAppSettings Type 51 action below the MSI -->
         <!-- CustomAction.Target S255 limit. They are populated only after escaping. -->
+        <!-- Optional external-tool locations captured on ExternalToolsDlg. All blank by     -->
+        <!-- default: blank means "auto-detect", and detection only ever supplies a default. -->
+        <!-- These record paths. Nothing here downloads, installs, or licenses anything.     -->
+        <Property Id="DOCLINGCOMMAND" Secure="yes" />
+        <Property Id="DOCLINGARGS" Secure="yes" />
+        <Property Id="TESSERACTDIR" Secure="yes" />
+        <Property Id="TESSDATADIR" Secure="yes" />
+
         <Property Id="MONGO_C" Secure="yes" />
         <Property Id="MONGO_D" Secure="yes" />
         <Property Id="OLLAMA_E" Secure="yes" />
@@ -467,6 +475,23 @@
                       Return="ignore"
                       Impersonate="yes" />
 
+        <!-- Record the user's Docling/Tesseract locations. Impersonate="yes" is load-bearing: -->
+        <!-- the registry lives under the user's %LOCALAPPDATA%, and PatchAppSettings above    -->
+        <!-- runs Impersonate="no" as SYSTEM, where that path is the service profile instead.  -->
+        <!-- Blank properties are passed through and the CLI falls back to detection. Routed   -->
+        <!-- through cmd /c for the same %TEMP% expansion reason as RegisterAiClients.         -->
+        <SetProperty Id="RegisterExternalTools"
+                     Before="RegisterExternalTools"
+                     Sequence="execute"
+                     Value="&quot;[%ComSpec]&quot; /c &quot;&quot;[MCPFOLDER]SaddleRAG.Cli.exe&quot; register-external-tools --quiet --docling-command &quot;[DOCLINGCOMMAND]&quot; --docling-arguments &quot;[DOCLINGARGS]&quot; --tesseract-directory &quot;[TESSERACTDIR]&quot; --tessdata-directory &quot;[TESSDATADIR]&quot;&quot;" />
+
+        <CustomAction Id="RegisterExternalTools"
+                      BinaryRef="Wix4UtilCA_X86"
+                      DllEntry="WixQuietExec"
+                      Execute="deferred"
+                      Return="ignore"
+                      Impersonate="yes" />
+
         <!-- Unregister SaddleRAG from all nine AI tools on uninstall. With no per-agent  -->
         <!-- flags, unregister-clients targets the full set (claude-code, claude-desktop, -->
         <!-- vscode-mcp, copilot-cli, codex, cursor, gemini-cli, windsurf, visual-studio);-->
@@ -617,6 +642,7 @@
             <Custom Action="EscapeAppSettingsProperties" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="PatchAppSettings" After="SetPatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="RegisterExternalTools" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="SetOllamaKeepAlive" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="ConfigureCrashCapture" After="SetOllamaKeepAlive" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="EnsurePlaywrightChromium" After="ConfigureCrashCapture" Condition="NOT Installed OR REINSTALL" />
@@ -848,6 +874,54 @@
                     <Publish Event="NewDialog" Value="OllamaDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
+                    <Publish Event="NewDialog" Value="ExternalToolsDlg" />
+                </Control>
+                <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+            </Dialog>
+
+            <!-- Optional: record where Docling and Tesseract already live so the SaddleRAG   -->
+            <!-- tray can start Docling for the user later. Every field is optional and blank  -->
+            <!-- means auto-detect. This captures paths only — it never downloads, installs,   -->
+            <!-- licenses, or configures either product.                                       -->
+            <Dialog Id="ExternalToolsDlg" Width="370" Height="270" Title="Optional Document Tools">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+                <Control Id="Title" Type="Text" X="20" Y="10" Width="290" Height="14"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="{\WixUI_Font_Title}Register Docling and Tesseract" />
+
+                <Control Id="Description" Type="Text" X="25" Y="53" Width="320" Height="32"
+                         Transparent="yes" NoPrefix="yes"
+                         Text="All fields are optional. Leave a field blank to auto-detect it. SaddleRAG never installs, licenses, configures, or upgrades Docling or Tesseract; it only records what you tell it to run." />
+
+                <Control Id="DoclingCommandLabel" Type="Text" X="25" Y="90" Width="320" Height="12"
+                         Text="Docling launch command:" />
+                <Control Id="DoclingCommandEdit" Type="Edit" X="25" Y="103" Width="320" Height="18"
+                         Property="DOCLINGCOMMAND" />
+
+                <Control Id="DoclingArgsLabel" Type="Text" X="25" Y="125" Width="320" Height="12"
+                         Text="Docling launch arguments:" />
+                <Control Id="DoclingArgsEdit" Type="Edit" X="25" Y="138" Width="320" Height="18"
+                         Property="DOCLINGARGS" />
+
+                <Control Id="TesseractDirLabel" Type="Text" X="25" Y="160" Width="320" Height="12"
+                         Text="Tesseract program directory:" />
+                <Control Id="TesseractDirEdit" Type="Edit" X="25" Y="173" Width="320" Height="18"
+                         Property="TESSERACTDIR" />
+
+                <Control Id="TessdataDirLabel" Type="Text" X="25" Y="195" Width="320" Height="12"
+                         Text="tessdata directory (blank uses the tessdata folder beside Tesseract):" />
+                <Control Id="TessdataDirEdit" Type="Edit" X="25" Y="208" Width="320" Height="18"
+                         Property="TESSDATADIR" />
+
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+                <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
+                    <Publish Event="NewDialog" Value="DoclingDlg" />
+                </Control>
+                <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="ExecutionModeDlg" />
                 </Control>
                 <Control Id="Cancel" Type="PushButton" X="304" Y="247" Width="56" Height="17" Cancel="yes" Text="Cancel">
@@ -896,7 +970,7 @@
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
-                    <Publish Event="NewDialog" Value="DoclingDlg" />
+                    <Publish Event="NewDialog" Value="ExternalToolsDlg" />
                 </Control>
                 <Control Id="Next" Type="PushButton" X="236" Y="247" Width="56" Height="17" Default="yes" Text="&amp;Next">
                     <Publish Event="NewDialog" Value="AiClientsDlg" />

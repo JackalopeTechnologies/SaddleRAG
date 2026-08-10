@@ -16,7 +16,7 @@ public sealed class PackageWxsDoclingDialogTests
 
         Assert.Equal("DoclingDlg", NavigationTarget(ollama, ns, "Next"));
         Assert.Equal("OllamaDlg", NavigationTarget(docling, ns, "Back"));
-        Assert.Equal("ExecutionModeDlg", NavigationTarget(docling, ns, "Next"));
+        Assert.Equal("ExternalToolsDlg", NavigationTarget(docling, ns, "Next"));
 
         XElement next = Control(docling, ns, "Next");
         Assert.DoesNotContain(next.Descendants(ns + "Publish"),
@@ -58,6 +58,52 @@ public sealed class PackageWxsDoclingDialogTests
                      "OpenTesseractInstructions", "TestDocling"
                  })
             _ = Control(dialog, ns, controlId);
+    }
+
+    [Fact]
+    public void ExternalToolsDialogCapturesPathsOnlyAndTreatsBlankAsAutoDetect()
+    {
+        XDocument package = LoadPackage();
+        XNamespace ns = WixNamespace;
+        XElement dialog = Dialog(package, ns, "ExternalToolsDlg");
+        string text = string.Join('\n',
+                                  dialog.Descendants(ns + "Control")
+                                        .Select(c => (string?)c.Attribute("Text") ?? string.Empty));
+        string[] boundProperties = dialog.Descendants(ns + "Control")
+                                         .Select(c => (string?)c.Attribute("Property") ?? string.Empty)
+                                         .ToArray();
+
+        Assert.Equal("DoclingDlg", NavigationTarget(dialog, ns, "Back"));
+        Assert.Equal("ExecutionModeDlg", NavigationTarget(dialog, ns, "Next"));
+        Assert.Contains("DOCLINGCOMMAND", boundProperties);
+        Assert.Contains("DOCLINGARGS", boundProperties);
+        Assert.Contains("TESSERACTDIR", boundProperties);
+        Assert.Contains("TESSDATADIR", boundProperties);
+        Assert.Contains("auto-detect", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("never installs, licenses, configures, or upgrades", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("optional", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ExternalToolRegistrationRunsAsTheInstallingUserAndOnlyRecordsPaths()
+    {
+        XDocument package = LoadPackage();
+        XNamespace ns = WixNamespace;
+        XElement action = package.Descendants(ns + "CustomAction")
+                                 .Single(e => (string?)e.Attribute("Id") == "RegisterExternalTools");
+
+        // The MSI's own config step runs as SYSTEM, where %LOCALAPPDATA% is the service
+        // profile. This one must impersonate or the registry never reaches the user.
+        Assert.Equal("yes", (string?)action.Attribute("Impersonate"));
+        Assert.Equal("deferred", (string?)action.Attribute("Execute"));
+        Assert.Equal("ignore", (string?)action.Attribute("Return"));
+
+        XElement command = package.Descendants(ns + "SetProperty")
+                                  .Single(e => (string?)e.Attribute("Id") == "RegisterExternalTools");
+        string value = (string?)command.Attribute("Value") ?? string.Empty;
+        Assert.Contains("register-external-tools", value, StringComparison.Ordinal);
+        Assert.Contains("[DOCLINGCOMMAND]", value, StringComparison.Ordinal);
+        Assert.Contains("[TESSERACTDIR]", value, StringComparison.Ordinal);
     }
 
     [Fact]

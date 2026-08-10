@@ -571,6 +571,7 @@ rootCommand.Subcommands.Add(inspectCommand);
 rootCommand.Subcommands.Add(reclassifyCommand);
 rootCommand.Subcommands.Add(RegisterClientsCommand.Build());
 rootCommand.Subcommands.Add(UnregisterClientsCommand.Build());
+rootCommand.Subcommands.Add(RegisterExternalToolsCommand.Build());
 rootCommand.Subcommands.Add(StatusCommand.Build());
 rootCommand.Subcommands.Add(scanCommand);
 rootCommand.Subcommands.Add(listCommand);
