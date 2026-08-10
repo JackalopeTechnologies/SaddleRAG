@@ -34,6 +34,18 @@ public sealed record DirectoryLibraryMonitorRow
 
     public string? LatestJobStatus { get; init; }
 
+    /// <summary>When the latest scan started running, or null while it is still queued.</summary>
+    public DateTime? LatestJobStartedAt { get; init; }
+
+    /// <summary>
+    ///     When the latest scan last moved. A running job whose last progress is old is
+    ///     stuck, which "Running" alone never showed.
+    /// </summary>
+    public DateTime? LatestJobLastProgressAt { get; init; }
+
+    /// <summary>Why the latest scan stopped, when it stopped badly.</summary>
+    public string? LatestJobError { get; init; }
+
     public DirectoryScanJobProgress? Progress { get; init; }
 
     public IReadOnlyList<DirectoryScanFileFailure> FileFailures { get; init; } = [];
