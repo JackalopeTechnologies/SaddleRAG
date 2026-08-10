@@ -20,10 +20,16 @@ public sealed class DoclingTuningGuideTests
                                                                   "Resources",
                                                                   "docling-tuning.md"));
 
-        Assert.Contains("never\ninstalls, licenses, configures, starts, stops, or upgrades it",
+        // Deliberately within one line: the guide is checked out with CRLF on Windows and LF
+        // on Linux, so any expected substring spanning a line break passes on one CI leg and
+        // fails on the other.
+        Assert.Contains("installs, licenses, configures, starts, stops, or upgrades it",
                         guide,
                         StringComparison.Ordinal);
-        Assert.Contains("--index-url https://download.pytorch.org/whl/cu128", guide, StringComparison.Ordinal);
+        // The index, not just the flag: a reader who copies one CUDA index blindly can
+        // silently downgrade PyTorch, so the guide has to teach querying the index first.
+        Assert.Contains("pip index versions torch --index-url", guide, StringComparison.Ordinal);
+        Assert.Contains("the version you already", guide, StringComparison.Ordinal);
         Assert.Contains("torch.cuda.is_available()", guide, StringComparison.Ordinal);
         Assert.Contains("Tesseract is a CPU-only", guide, StringComparison.Ordinal);
         Assert.Contains("DOCLING_DEVICE", guide, StringComparison.Ordinal);

@@ -59,24 +59,48 @@ prints something like `2.13.0+cu128` and `CUDA available: True`.
 conversion and can leave a half-installed environment. Wait for any SaddleRAG document scan
 to finish — the Directories page shows what is running.
 
+**Pick the index before you uninstall anything.** Each CUDA index carries a different set of
+PyTorch versions, and the newest PyTorch is often absent from the older index. Note the
+version you have now, then ask each index what it actually offers:
+
+```powershell
+& "$env:USERPROFILE\Applications\Docling\venv\Scripts\python.exe" -m pip index versions torch --index-url https://download.pytorch.org/whl/cu130
+```
+
+Swap `cu130` for `cu128` and compare. Choose the index that carries **the version you already
+have**, so you replace a CPU build with the CUDA build of the same release rather than
+silently downgrading PyTorch underneath `docling-ibm-models` and `transformers`.
+
+A real example: a machine on `torch 2.13.0+cpu` found that `cu128` stopped at `2.11.0`, while
+`cu130` carried `2.13.0+cu130` exactly. `cu128` would have meant a two-release downgrade for
+no reason. `nvidia-smi` tells you the highest CUDA version your driver supports; anything at
+or below that works.
+
+Then, with Docling stopped:
+
 ```powershell
 & "$env:USERPROFILE\Applications\Docling\venv\Scripts\python.exe" -m pip uninstall -y torch torchvision
 ```
 
 ```powershell
-& "$env:USERPROFILE\Applications\Docling\venv\Scripts\python.exe" -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+& "$env:USERPROFILE\Applications\Docling\venv\Scripts\python.exe" -m pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu130
 ```
 
-The `--index-url` is the whole point — without it pip serves the CPU-only build again.
-Use `cu128` for CUDA 12.8 or `cu130` for CUDA 13.0; a recent driver supports both, and
-`nvidia-smi` shows which CUDA version your driver advertises.
+Substitute your own versions and index. The `--index-url` is the whole point — without it pip
+serves the CPU-only build again. Pinning the versions means that if the index does not have
+them, pip stops and changes nothing.
 
-Pin the versions you already had if you want to avoid pulling a newer PyTorch that
-`docling-ibm-models` has not been tested against — for example
-`pip install torch==2.13.0 torchvision==0.28.0 --index-url ...`. If those versions are not
-available on that index, pip stops and changes nothing.
+The download is large — roughly 2 GB for the CUDA build — so expect it to take a while.
 
 Then verify, and expect a large speedup on layout detection immediately.
+
+### If pip leaves a `~orch` folder behind
+
+A message like `Failed to remove contents in a temporary directory ...\~orch` means a process
+still had PyTorch's DLLs loaded while pip was working. **Docling Serve is not the only
+candidate** — the Docling MCP server runs out of the same virtual environment and holds the
+same DLLs. Stop that too, then delete the leftover `~orch` directory by hand. It is pip's own
+orphaned scratch folder and nothing reads it.
 
 ### The catch nobody mentions: OCR may not use the GPU at all
 
