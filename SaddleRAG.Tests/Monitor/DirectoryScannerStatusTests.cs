@@ -23,28 +23,61 @@ namespace SaddleRAG.Tests.Monitor;
 public sealed class DirectoryScannerStatusTests
 {
     [Fact]
-    public async Task PageReportsScannerStatusFromTheCachedReadWithoutProbingOnLoad()
+    public async Task PageTrustsAReadyCachedStatusAndDoesNotProbeOnLoad()
     {
         var capability = Substitute.For<IDoclingCapabilityService>();
-        capability.CurrentStatus.Returns(Unavailable(DoclingReasonCodes.EndpointUnreachable,
-                                                     "connection refused"));
+        capability.CurrentStatus.Returns(Ready());
         TestablePage page = Page(capability, Row());
 
         await page.InitializeAsync();
 
-        Assert.Equal(DoclingCapabilityState.Unavailable, page.ScannerStatusForTest.State);
-        Assert.Equal(DoclingReasonCodes.EndpointUnreachable, page.ScannerStatusForTest.ReasonCode);
-        Assert.Equal("connection refused", page.ScannerStatusForTest.Detail);
+        Assert.Equal(DoclingCapabilityState.Ready, page.ScannerStatusForTest.State);
+        Assert.False(page.ScanBlockedForTest);
         await capability.DidNotReceiveWithAnyArgs()
                         .GetStatusAsync(default, TestContext.Current.CancellationToken);
     }
 
     [Fact]
-    public async Task ScanIsRefusedWhileTheScannerIsDownForALibraryThatAcceptsDocumentFormats()
+    public async Task PageReprobesANotReadyCachedStatusSoAStaleFailureCannotStickTheScanButton()
+    {
+        // The capability service keeps a recorded failure until a refresh clears it, so a
+        // scanner that died and was restarted still reads Unavailable from cache. Blocking
+        // on that value alone left Scan permanently grey with no hint beyond one button.
+        var capability = Substitute.For<IDoclingCapabilityService>();
+        capability.CurrentStatus.Returns(Unavailable(DoclingReasonCodes.EndpointUnreachable,
+                                                     "connection refused"));
+        capability.GetStatusAsync(true, Arg.Any<CancellationToken>()).Returns(Ready());
+        TestablePage page = Page(capability, Row());
+
+        await page.InitializeAsync();
+
+        await capability.Received(1).GetStatusAsync(true, Arg.Any<CancellationToken>());
+        Assert.Equal(DoclingCapabilityState.Ready, page.ScannerStatusForTest.State);
+        Assert.False(page.ScanBlockedForTest);
+    }
+
+    [Fact]
+    public async Task PageKeepsTheObservedFailureWhenTheReprobeAlsoFails()
     {
         var capability = Substitute.For<IDoclingCapabilityService>();
-        capability.CurrentStatus.Returns(Unavailable(DoclingReasonCodes.ModelsUnavailable,
-                                                     "Docling responded, but its models are unavailable."));
+        capability.CurrentStatus.Returns(Unavailable(DoclingReasonCodes.EndpointUnreachable, "stale"));
+        capability.GetStatusAsync(true, Arg.Any<CancellationToken>())
+                  .Returns(Unavailable(DoclingReasonCodes.HealthTimeout, "connection refused"));
+        TestablePage page = Page(capability, Row());
+
+        await page.InitializeAsync();
+
+        Assert.Equal(DoclingReasonCodes.HealthTimeout, page.ScannerStatusForTest.ReasonCode);
+        Assert.Equal("connection refused", page.ScannerStatusForTest.Detail);
+        Assert.True(page.ScanBlockedForTest);
+    }
+
+    [Fact]
+    public async Task ScanIsRefusedWhileTheScannerIsDownForALibraryThatAcceptsDocumentFormats()
+    {
+        IDoclingCapabilityService capability =
+            PersistentlyUnavailable(DoclingReasonCodes.ModelsUnavailable,
+                                    "Docling responded, but its models are unavailable.");
         var commands = Substitute.For<IDirectoryLibraryMonitorCommands>();
         TestablePage page = Page(capability, Row(), commands);
         await page.InitializeAsync();
@@ -64,8 +97,8 @@ public sealed class DirectoryScannerStatusTests
     [Fact]
     public async Task ScanIsAllowedWhileTheScannerIsDownForALibraryWithNoDocumentFormats()
     {
-        var capability = Substitute.For<IDoclingCapabilityService>();
-        capability.CurrentStatus.Returns(Unavailable(DoclingReasonCodes.EndpointUnreachable, "refused"));
+        IDoclingCapabilityService capability =
+            PersistentlyUnavailable(DoclingReasonCodes.EndpointUnreachable, "refused");
         var commands = Substitute.For<IDirectoryLibraryMonitorCommands>();
         commands.ScanAsync(LibraryId, null, Arg.Any<CancellationToken>())
                 .Returns(new DirectoryScanQueueResult(DirectoryScanQueueStatuses.Queued,
@@ -106,17 +139,21 @@ public sealed class DirectoryScannerStatusTests
     [Fact]
     public async Task RecheckingTheScannerForcesAProbeAndAdoptsTheNewStatus()
     {
+        // Starts Ready so loading the page does not probe; the only probe in this test is
+        // the operator's, and it comes back with a different answer that has to be adopted.
         var capability = Substitute.For<IDoclingCapabilityService>();
-        capability.CurrentStatus.Returns(Unavailable(DoclingReasonCodes.EndpointUnreachable, "refused"));
-        capability.GetStatusAsync(true, Arg.Any<CancellationToken>()).Returns(Ready());
+        capability.CurrentStatus.Returns(Ready());
+        capability.GetStatusAsync(true, Arg.Any<CancellationToken>())
+                  .Returns(Unavailable(DoclingReasonCodes.EndpointUnreachable, "refused"));
         TestablePage page = Page(capability, Row());
         await page.InitializeAsync();
+        Assert.False(page.ScanBlockedForTest);
 
         await page.InvokeRecheckScannerAsync();
 
         await capability.Received(1).GetStatusAsync(true, Arg.Any<CancellationToken>());
-        Assert.Equal(DoclingCapabilityState.Ready, page.ScannerStatusForTest.State);
-        Assert.False(page.ScanBlockedForTest);
+        Assert.Equal(DoclingReasonCodes.EndpointUnreachable, page.ScannerStatusForTest.ReasonCode);
+        Assert.True(page.ScanBlockedForTest);
     }
 
     [Fact]
@@ -162,6 +199,20 @@ public sealed class DirectoryScannerStatusTests
                     "@ScannerStatus.Endpoint", "Re-check", "ScanBlocked", "CurrentRelativePath"
                 })
             Assert.Contains(required, razor, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     A scanner that is down and stays down: the page reprobes any non-Ready cached
+    ///     status on load, so a fixture that only stubs the cache would have the reprobe
+    ///     answer with a null status rather than the failure under test.
+    /// </summary>
+    private static IDoclingCapabilityService PersistentlyUnavailable(string reasonCode, string detail)
+    {
+        var capability = Substitute.For<IDoclingCapabilityService>();
+        DoclingCapabilityStatus status = Unavailable(reasonCode, detail);
+        capability.CurrentStatus.Returns(status);
+        capability.GetStatusAsync(true, Arg.Any<CancellationToken>()).Returns(status);
+        return capability;
     }
 
     private static TestablePage Page(IDoclingCapabilityService capability,

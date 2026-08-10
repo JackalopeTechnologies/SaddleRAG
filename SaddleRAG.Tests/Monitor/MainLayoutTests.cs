@@ -5,6 +5,7 @@
 
 #region Usings
 
+using System.Text.RegularExpressions;
 using SaddleRAG.Core;
 using SaddleRAG.Mcp.Monitor;
 
@@ -79,8 +80,13 @@ public sealed class MainLayoutTests
                                                      "Monitor",
                                                      "MainLayout.razor"));
 
-        Assert.Contains("@ServerVersion", razor, StringComparison.Ordinal);
         Assert.Contains("@ServerVersionDetail", razor, StringComparison.Ordinal);
+
+        // Razor treats word@word as an email address and emits it verbatim, so a chip
+        // reading "v@ServerVersion" renders the expression as literal text instead of the
+        // version. Any @ServerVersion preceded by a word character is that bug.
+        Assert.DoesNotMatch(new Regex(@"\w@ServerVersion"), razor);
+        Assert.Contains("@(ServerVersion)", razor, StringComparison.Ordinal);
     }
 
     private static string ResolveRepositoryRoot()

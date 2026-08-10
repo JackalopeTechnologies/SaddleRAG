@@ -77,11 +77,41 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase
     {
         ArgumentNullException.ThrowIfNull(DataService);
         ArgumentNullException.ThrowIfNull(Capability);
-        ScannerStatus = Capability.CurrentStatus;
+        await AdoptScannerStatusAsync();
         Rows = await DataService.ListAsync(profile: null);
         DirectoryLibraryMonitorRow? first = Rows.FirstOrDefault();
         if (first != null)
             SelectRow(first);
+    }
+
+    /// <summary>
+    ///     Takes the cached status, and verifies it when it is not Ready.
+    ///     <para>
+    ///         The capability service holds a recorded failure until a refresh clears it, so a
+    ///         scanner that died and was restarted still reads Unavailable from cache. Blocking
+    ///         Scan on that value alone left the button permanently grey. A stale <em>failure</em>
+    ///         is the only reading that costs the operator anything — a stale Ready is caught by
+    ///         the scan runner's own preflight — so only that case is worth a probe, and opening
+    ///         this page is a deliberate act rather than a poll.
+    ///     </para>
+    /// </summary>
+    private async Task AdoptScannerStatusAsync()
+    {
+        ArgumentNullException.ThrowIfNull(Capability);
+        DoclingCapabilityStatus cached = Capability.CurrentStatus;
+        ScannerStatus = cached;
+        if (cached.State != DoclingCapabilityState.Ready)
+        {
+            try
+            {
+                ScannerStatus = await Capability.GetStatusAsync(refresh: true);
+            }
+            catch(Exception)
+            {
+                // The cached failure already stands, and it is the more useful of the two
+                // readings; the panel shows it with its reason code and Re-check.
+            }
+        }
     }
 
     /// <summary>
