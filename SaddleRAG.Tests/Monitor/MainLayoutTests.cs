@@ -5,6 +5,7 @@
 
 #region Usings
 
+using SaddleRAG.Core;
 using SaddleRAG.Mcp.Monitor;
 
 #endregion
@@ -16,6 +17,8 @@ public sealed class MainLayoutTests
     private sealed class TestableMainLayout : MainLayoutBase
     {
         public bool DrawerOpenForTest => DrawerOpen;
+        public string ServerVersionForTest => ServerVersion;
+        public string ServerVersionDetailForTest => ServerVersionDetail;
         public void InvokeToggle() => ToggleDrawer();
     }
 
@@ -57,6 +60,27 @@ public sealed class MainLayoutTests
         Assert.Contains("display: none", styles, StringComparison.Ordinal);
         Assert.Contains("SaddleRAG.Mcp.styles.css", app, StringComparison.Ordinal);
         Assert.Contains("app.MapStaticAssets();", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShellShowsTheRunningBuildWithTheFullVersionAvailableForSupport()
+    {
+        var layout = new TestableMainLayout();
+
+        Assert.Equal(SaddleRagVersion.Display, layout.ServerVersionForTest);
+        Assert.Equal(SaddleRagVersion.Informational, layout.ServerVersionDetailForTest);
+    }
+
+    [Fact]
+    public void ShellRendersTheRunningVersionInTheApplicationBar()
+    {
+        string razor = File.ReadAllText(Path.Combine(ResolveRepositoryRoot(),
+                                                     "SaddleRAG.Mcp",
+                                                     "Monitor",
+                                                     "MainLayout.razor"));
+
+        Assert.Contains("@ServerVersion", razor, StringComparison.Ordinal);
+        Assert.Contains("@ServerVersionDetail", razor, StringComparison.Ordinal);
     }
 
     private static string ResolveRepositoryRoot()

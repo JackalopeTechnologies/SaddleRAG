@@ -15,6 +15,7 @@ using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using MudBlazor.Services;
+using SaddleRAG.Core;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
@@ -180,8 +181,11 @@ builder.Services.AddSingleton(levelSwitch);
 
 builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
 
-// Monitor Logs page + error badge (issue #143) read the same log files.
+// Monitor Logs page + error badge (issue #143) read the same log files. The badge
+// counts only what the Logs page has not already shown, so both surfaces share one
+// acknowledgement singleton (MainLayout lives in this project, LogsPage in Monitor).
 builder.Services.AddSingleton<IServerLogReader>(new FileServerLogTailReader(logDirectory));
+builder.Services.AddSingleton<IServerLogAcknowledgement, ServerLogAcknowledgement>();
 builder.Services.AddSingleton(runSentinel);
 
 // Crash triage (issue #140): get_crash_report aggregates event-log records,
@@ -490,15 +494,12 @@ builder.Services.AddSingleton<IDocUrlResolver, PipDocUrlResolver>();
 builder.Services.AddSingleton<DependencyIndexer>();
 
 
-// MCP server version — sourced from AssemblyInformationalVersion which the
-// build workflow stamps from the git tag (e.g. "0.1.0-alpha.3"). Local dev
-// builds get the Directory.Build.props default ("0.0.0-dev") so clients can
-// tell they're not running a tagged release.
-const string DefaultDevVersion = "0.0.0-dev";
-var serverVersion = Assembly.GetExecutingAssembly()
-                            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                            ?.InformationalVersion ??
-                    DefaultDevVersion;
+// MCP server version — SaddleRagVersion reads the AssemblyInformationalVersion that
+// the build workflow stamps from the git tag (e.g. "0.1.0-alpha.3"); local dev builds
+// get the Directory.Build.props default ("0.0.0-dev") so clients can tell they're not
+// running a tagged release. Directory.Build.props stamps every project alike, so the
+// Monitor shell and the CLI report the identical string from the same helper.
+string serverVersion = SaddleRagVersion.Informational;
 
 // Server-level instructions returned in the MCP initialize response. Every compliant
 // client folds this into the model's context, so it is the one client-agnostic lever
@@ -507,7 +508,10 @@ var serverVersion = Assembly.GetExecutingAssembly()
 // Claude Code gets as a file. This is a deliberately condensed summary of the same guidance
 // as SaddleRAG.ClientIntegration/Resources/saddlerag-first.md (they intentionally differ in
 // length); update both when the SaddleRAG-first workflow changes.
-const string SaddleRagServerInstructions = """
+string SaddleRagServerInstructions = $"""
+    This server is SaddleRAG {SaddleRagVersion.Informational}. Report that string verbatim when
+    the user asks which SaddleRAG they are running, and include it in any bug report.
+
     SaddleRAG provides indexed, current documentation for libraries, frameworks, and APIs —
     often more current than an LLM's training data and authoritative for niche or
     post-cutoff topics.
@@ -566,7 +570,7 @@ builder.Services
                          options.ServerInfo = new Implementation
 
                                                   {
-                                                      Name = "SaddleRAG â€” Documentation RAG MCP Server",
+                                                      Name = "SaddleRAG — Documentation RAG MCP Server",
 
                                                       Version = serverVersion
                                                   };

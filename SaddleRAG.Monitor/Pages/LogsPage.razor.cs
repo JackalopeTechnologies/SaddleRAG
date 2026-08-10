@@ -27,6 +27,9 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
     [Inject]
     private IServerLogReader? LogReader { get; set; }
 
+    [Inject]
+    private IServerLogAcknowledgement? Acknowledgement { get; set; }
+
     /// <summary>
     ///     Most recent successfully read snapshot; null until the first read.
     /// </summary>
@@ -107,11 +110,25 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
         {
             Snapshot = LogReader.Read(MaxEntries);
             ReadError = null;
+            AcknowledgeSnapshot(Snapshot);
         }
         catch(Exception ex) when(ex is IOException or UnauthorizedAccessException)
         {
             ReadError = ex.Message;
         }
+    }
+
+    /// <summary>
+    ///     Answers the Logs nav badge. Acknowledging through the newest entry actually
+    ///     read — rather than through "now" — leaves anything written after this snapshot
+    ///     still counted, so a failure that lands mid-view is not silently dismissed.
+    ///     A failed read never gets here, and so never acknowledges what it could not show.
+    /// </summary>
+    private void AcknowledgeSnapshot(ServerLogSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(Acknowledgement);
+        if (snapshot.Entries.Count > 0)
+            Acknowledgement.AcknowledgeThrough(snapshot.Entries.Max(entry => entry.Timestamp));
     }
 
     protected static Color LevelColor(ServerLogLevel level) => level switch
