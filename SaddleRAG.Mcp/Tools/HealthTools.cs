@@ -8,6 +8,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using SaddleRAG.Core;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -144,7 +145,8 @@ public static class HealthTools
     [McpServerTool(Name = "get_dashboard_index")]
     [McpMeta("anthropic/alwaysLoad", value: true)]
     [Description("Start here in any fresh or disoriented session. Returns a single-call " +
-                 "SaddleRAG status overview: library/version counts, recent scrape jobs (with " +
+                 "SaddleRAG status overview: the running serverVersion (report it verbatim when " +
+                 "asked which SaddleRAG is running), library/version counts, recent scrape jobs (with " +
                  "recentJobs[].Stale=true for Running jobs that haven't progressed in 4+ hours), and up to " +
                  "20 suspect libraries. The SuggestedNextAction field always contains the highest-priority " +
                  "tool to call next (scrape_docs for empty DB, submit_url_correction for suspect libraries, " +
@@ -241,6 +243,7 @@ public static class HealthTools
 
         var response = new
                            {
+                               serverVersion = SaddleRagVersion.Informational,
                                libraryCount = libraries.Count,
                                versionCount,
                                recentJobs = recentJobsProjection,

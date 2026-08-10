@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Ingestion.Documents.Docling;
 using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Monitor.Pages;
 using SaddleRAG.Monitor.Services;
@@ -99,6 +100,7 @@ public sealed class DirectoryLibrariesPageTests
         {
             SetInjected("DataService", data);
             SetInjected("Commands", commands);
+            SetInjected("Capability", ReadyScanner());
         }
 
         public IReadOnlyList<DirectoryLibraryMonitorRow> RowsForTest => Rows;
@@ -119,6 +121,22 @@ public sealed class DirectoryLibrariesPageTests
             Assert.NotNull(property);
             property.SetValue(this, value);
         }
+    }
+
+    /// <summary>
+    ///     These tests are about the manual-action contract, not the document scanner, so
+    ///     they run against a scanner that is ready and never blocks a scan.
+    /// </summary>
+    private static IDoclingCapabilityService ReadyScanner()
+    {
+        var capability = Substitute.For<IDoclingCapabilityService>();
+        capability.CurrentStatus.Returns(new DoclingCapabilityStatus(DoclingCapabilityState.Ready,
+                                                                     DoclingReasonCodes.Ready,
+                                                                     "Docling is ready.",
+                                                                     "http://localhost:5001",
+                                                                     DateTimeOffset.UtcNow,
+                                                                     string.Empty));
+        return capability;
     }
 
     private static bool MatchesEditedRegistration(DirectoryRegistrationRequest? request) =>

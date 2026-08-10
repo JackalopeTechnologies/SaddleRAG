@@ -27,6 +27,9 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
     [Inject]
     private IServerLogReader? LogReader { get; set; }
 
+    [Inject]
+    private IServerLogAcknowledgement? Acknowledgement { get; set; }
+
     /// <summary>
     ///     Most recent successfully read snapshot; null until the first read.
     /// </summary>
@@ -59,9 +62,16 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
     protected IReadOnlyList<ServerLogEntry> FilteredEntries =>
         Snapshot == null ? [] : ServerLogFilter.Apply(Snapshot.Entries, LevelFilter, FilterText);
 
-    private readonly HashSet<ServerLogEntry> mExpanded = new(ReferenceEqualityComparer.Instance);
+    private readonly ServerLogExpansionState mExpansion = new();
 
     private Timer? mTimer;
+
+    /// <summary>
+    ///     True while auto-refresh is deliberately held. Reading a stack trace is impossible if
+    ///     the list reflows underneath it every two seconds, so an expanded row pauses the poll
+    ///     until it is collapsed again.
+    /// </summary>
+    protected bool RefreshHeldForReading => AutoRefresh && mExpansion.ExpandedCount > 0;
 
     /// <inheritdoc />
     public void Dispose()
@@ -75,7 +85,7 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
         RefreshNow();
         mTimer = new Timer(_ => InvokeAsync(() =>
                                             {
-                                                if (AutoRefresh)
+                                                if (AutoRefresh && mExpansion.ExpandedCount == 0)
                                                 {
                                                     RefreshNow();
                                                     StateHasChanged();
@@ -89,13 +99,9 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
         return Task.CompletedTask;
     }
 
-    protected bool IsExpanded(ServerLogEntry entry) => mExpanded.Contains(entry);
+    protected bool IsExpanded(ServerLogEntry entry) => mExpansion.IsExpanded(entry);
 
-    protected void ToggleExpanded(ServerLogEntry entry)
-    {
-        if (!mExpanded.Remove(entry))
-            mExpanded.Add(entry);
-    }
+    protected void ToggleExpanded(ServerLogEntry entry) => mExpansion.Toggle(entry);
 
     protected void RefreshNow()
     {
@@ -104,11 +110,25 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
         {
             Snapshot = LogReader.Read(MaxEntries);
             ReadError = null;
+            AcknowledgeSnapshot(Snapshot);
         }
         catch(Exception ex) when(ex is IOException or UnauthorizedAccessException)
         {
             ReadError = ex.Message;
         }
+    }
+
+    /// <summary>
+    ///     Answers the Logs nav badge. Acknowledging through the newest entry actually
+    ///     read — rather than through "now" — leaves anything written after this snapshot
+    ///     still counted, so a failure that lands mid-view is not silently dismissed.
+    ///     A failed read never gets here, and so never acknowledges what it could not show.
+    /// </summary>
+    private void AcknowledgeSnapshot(ServerLogSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(Acknowledgement);
+        if (snapshot.Entries.Count > 0)
+            Acknowledgement.AcknowledgeThrough(snapshot.Entries.Max(entry => entry.Timestamp));
     }
 
     protected static Color LevelColor(ServerLogLevel level) => level switch

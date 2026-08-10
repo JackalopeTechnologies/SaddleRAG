@@ -18,6 +18,39 @@
     </MudStack>
 </MudPaper>
 
+<MudPaper Class="pa-4 mb-5 directory-library-panel" Outlined="true">
+    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center"
+              Justify="Justify.SpaceBetween" Spacing="2">
+        <div>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudText Typo="Typo.h6">Document scanner</MudText>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                         Color="@ScannerColor">@ScannerStatus.State</MudChip>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                    @ScannerStatus.ReasonCode
+                </MudChip>
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mt-1">@ScannerStatus.Detail</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Endpoint @ScannerStatus.Endpoint · @FormatScannerCheckedAt()
+            </MudText>
+            @if (!string.IsNullOrWhiteSpace(ScannerStatus.Remediation))
+            {
+                <MudText Typo="Typo.body2" Class="mt-1">@ScannerStatus.Remediation</MudText>
+            }
+        </div>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.NetworkCheck"
+                   Disabled="@IsBusy" OnClick="@RecheckScannerAsync">
+            Re-check
+        </MudButton>
+    </MudStack>
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
+        Docling is user-managed: SaddleRAG reads its status and never installs, starts, or configures it.
+        PDF and DOCX need it; text, Markdown, and HTML do not.
+    </MudText>
+</MudPaper>
+
 <MudGrid Spacing="3">
     <MudItem xs="12" lg="5">
         <MudPaper Class="pa-5 directory-library-panel" Outlined="true">
@@ -73,10 +106,19 @@
                     </MudButton>
                     <MudButton Variant="Variant.Filled" Color="Color.Secondary"
                                StartIcon="@Icons.Material.Filled.PlayArrow"
-                               Disabled="@IsBusy" OnClick="@ScanAsync">
+                               Disabled="@(IsBusy || ScanBlocked)" OnClick="@ScanAsync">
                         Scan
                     </MudButton>
                 </MudStack>
+
+                @if (ScanBlocked)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                        Scanning is held: this library accepts PDF or DOCX and the document scanner
+                        reports <strong>@ScannerStatus.ReasonCode</strong>. Start the scanner and select
+                        Re-check, or restrict this library to text, Markdown, and HTML.
+                    </MudAlert>
+                }
 
                 @if (AccessResult is not null)
                 {
@@ -104,7 +146,18 @@
                 @if (!string.IsNullOrWhiteSpace(FailureMessage))
                 {
                     <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
-                        @FailureMessage
+                        <div>@FailureMessage</div>
+                        @if (!string.IsNullOrWhiteSpace(ScanRecoveryInstallUrl))
+                        {
+                            <div class="mt-1">
+                                <MudLink Href="@ScanRecoveryInstallUrl" Target="_blank">Official install guide</MudLink>
+                                @if (!string.IsNullOrWhiteSpace(ScanRecoveryReleaseUrl))
+                                {
+                                    <span> · </span>
+                                    <MudLink Href="@ScanRecoveryReleaseUrl" Target="_blank">Latest release</MudLink>
+                                }
+                            </div>
+                        }
                     </MudAlert>
                 }
             </MudStack>
@@ -149,15 +202,38 @@
                         </MudTd>
                         <MudTd DataLabel="Last successful">@FormatLastSuccessful(row)</MudTd>
                         <MudTd DataLabel="Progress">
-                            <MudText Typo="Typo.body2">@FormatProgress(row)</MudText>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                @if (!string.IsNullOrWhiteSpace(row.LatestJobStatus))
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                             Color="@JobColor(row.LatestJobStatus)">@row.LatestJobStatus</MudChip>
+                                }
+                                <MudText Typo="Typo.body2">@FormatProgress(row)</MudText>
+                            </MudStack>
                             @if (row.Progress is not null)
                             {
                                 <MudProgressLinear Value="@ProgressPercent(row.Progress)"
                                                    Color="Color.Primary" Rounded="true" Class="mt-1"/>
+                                <MudText Typo="Typo.caption" Class="d-block">@FormatDiscovery(row.Progress)</MudText>
+                                @if (!string.IsNullOrWhiteSpace(row.Progress.CurrentRelativePath))
+                                {
+                                    <MudText Typo="Typo.caption" Class="d-block directory-library-current-file">
+                                        Converting @row.Progress.CurrentRelativePath
+                                    </MudText>
+                                }
                             }
-                            @if (!string.IsNullOrWhiteSpace(row.LatestJobStatus))
+                            <MudText Typo="Typo.caption" Class="d-block">@FormatJobTiming(row)</MudText>
+                            @if (row.FileFailures.Count > 0)
                             {
-                                <MudText Typo="Typo.caption">@row.LatestJobStatus</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block">
+                                    @row.FileFailures.Count file failures
+                                </MudText>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(row.LatestJobError))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block">
+                                    @row.LatestJobError
+                                </MudText>
                             }
                         </MudTd>
                         <MudTd>

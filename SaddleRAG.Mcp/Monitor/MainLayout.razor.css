@@ -4,6 +4,21 @@
     white-space: nowrap;
 }
 
+.monitor-server-version {
+    opacity: 0.75;
+}
+
+.monitor-drawer-footer {
+    border-top: 1px solid var(--mud-palette-divider);
+    margin-top: auto;
+}
+
+/* The +sha build metadata has no natural break; wrap it rather than clip it,
+   because a support request needs the whole string. */
+.monitor-server-version-detail {
+    overflow-wrap: anywhere;
+}
+
 @media (max-width: 959.98px) {
     .monitor-top-navigation {
         display: none;

@@ -95,6 +95,9 @@ public sealed class DirectoryLibraryMonitorDataService : IDirectoryLibraryMonito
                 LastSuccessfulAt = publishedVersion?.ScrapedAt ?? definition.LastPublishedAtUtc,
                 LatestJobId = latestJob?.Id,
                 LatestJobStatus = latestJob?.Status.ToString(),
+                LatestJobStartedAt = latestJob?.StartedAt,
+                LatestJobLastProgressAt = latestJob?.LastProgressAt,
+                LatestJobError = SanitizeOptionalDetail(latestJob?.ErrorMessage, definition.RootPath),
                 Progress = latestJob?.DirectoryScanProgress,
                 FileFailures = SanitizeFailures(latestJob?.DirectoryScanFailures, definition.RootPath)
             };
@@ -120,6 +123,16 @@ public sealed class DirectoryLibraryMonitorDataService : IDirectoryLibraryMonito
                        || candidate.Split('/', StringSplitOptions.RemoveEmptyEntries)
                                    .Any(segment => segment == ParentDirectorySegment);
         string result = invalid ? InvalidRelativePathDisplay : candidate.TrimStart('/');
+        return result;
+    }
+
+    /// <summary>
+    ///     A job's own error text can name the absolute registered root, which never leaves
+    ///     this machine's projection; empty text becomes null so the view can skip the row.
+    /// </summary>
+    private static string? SanitizeOptionalDetail(string? detail, string rootPath)
+    {
+        string? result = string.IsNullOrWhiteSpace(detail) ? null : SanitizeDetail(detail, rootPath);
         return result;
     }
 

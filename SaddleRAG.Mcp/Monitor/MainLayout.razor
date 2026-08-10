@@ -11,6 +11,10 @@
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
                        OnClick="@ToggleDrawer"/>
         <MudText Typo="Typo.h6" Class="ml-2">SaddleRAG Monitor</MudText>
+        <MudTooltip Text="@ServerVersionDetail">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
+                     Class="ml-2 monitor-server-version">v@ServerVersion</MudChip>
+        </MudTooltip>
         <MudSpacer/>
         <div class="monitor-top-navigation">
             <MudLink Href="/monitor" Color="Color.Inherit" Class="mx-2">Libraries</MudLink>
@@ -37,6 +41,10 @@
                 <MudNavLink Href="/monitor/logs" Icon="@Icons.Material.Filled.Article">Logs</MudNavLink>
             </MudBadge>
         </MudNavMenu>
+        <div class="monitor-drawer-footer pa-3">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Server version</MudText>
+            <MudText Typo="Typo.body2" Class="monitor-server-version-detail">@ServerVersionDetail</MudText>
+        </div>
     </MudDrawer>
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.False" Class="pa-4">
