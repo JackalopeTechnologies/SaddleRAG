@@ -59,9 +59,16 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
     protected IReadOnlyList<ServerLogEntry> FilteredEntries =>
         Snapshot == null ? [] : ServerLogFilter.Apply(Snapshot.Entries, LevelFilter, FilterText);
 
-    private readonly HashSet<ServerLogEntry> mExpanded = new(ReferenceEqualityComparer.Instance);
+    private readonly ServerLogExpansionState mExpansion = new();
 
     private Timer? mTimer;
+
+    /// <summary>
+    ///     True while auto-refresh is deliberately held. Reading a stack trace is impossible if
+    ///     the list reflows underneath it every two seconds, so an expanded row pauses the poll
+    ///     until it is collapsed again.
+    /// </summary>
+    protected bool RefreshHeldForReading => AutoRefresh && mExpansion.ExpandedCount > 0;
 
     /// <inheritdoc />
     public void Dispose()
@@ -75,7 +82,7 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
         RefreshNow();
         mTimer = new Timer(_ => InvokeAsync(() =>
                                             {
-                                                if (AutoRefresh)
+                                                if (AutoRefresh && mExpansion.ExpandedCount == 0)
                                                 {
                                                     RefreshNow();
                                                     StateHasChanged();
@@ -89,13 +96,9 @@ public abstract class LogsPageBase : ComponentBase, IDisposable
         return Task.CompletedTask;
     }
 
-    protected bool IsExpanded(ServerLogEntry entry) => mExpanded.Contains(entry);
+    protected bool IsExpanded(ServerLogEntry entry) => mExpansion.IsExpanded(entry);
 
-    protected void ToggleExpanded(ServerLogEntry entry)
-    {
-        if (!mExpanded.Remove(entry))
-            mExpanded.Add(entry);
-    }
+    protected void ToggleExpanded(ServerLogEntry entry) => mExpansion.Toggle(entry);
 
     protected void RefreshNow()
     {

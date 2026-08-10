@@ -47,6 +47,10 @@ else
         {
             <text> (older entries beyond the 512 KB tail window are not shown)</text>
         }
+        @if (RefreshHeldForReading)
+        {
+            <text> — auto-refresh paused while a row is expanded</text>
+        }
     </MudText>
 
     <MudTable Items="@FilteredEntries" Dense="true" Hover="true" T="ServerLogEntry"
