@@ -69,14 +69,17 @@ public sealed class ExternalToolDetectorTests
     [Fact]
     public void FallsBackToDoclingServeOnThePath()
     {
+        // Built with Path.Combine rather than a literal: the suite also runs on Linux, where a
+        // backslash is an ordinary filename character and Path.GetDirectoryName returns empty.
+        string executable = Path.Combine(Path.GetTempPath(), "tools", "docling-serve.exe");
         FakeProbe probe = new();
-        probe.PathEntries["docling-serve.exe"] = @"C:\tools\docling-serve.exe";
+        probe.PathEntries["docling-serve.exe"] = executable;
         ExternalToolDetector detector = new(probe);
 
         DoclingRegistration? detected = detector.DetectDocling();
 
         Assert.NotNull(detected);
-        Assert.Equal(@"C:\tools\docling-serve.exe", detected.Command);
+        Assert.Equal(executable, detected.Command);
     }
 
     [Fact]
@@ -120,14 +123,15 @@ public sealed class ExternalToolDetectorTests
     [Fact]
     public void FallsBackToTesseractOnThePath()
     {
+        string installDirectory = Path.Combine(Path.GetTempPath(), "tools", "tess");
         FakeProbe probe = new();
-        probe.PathEntries["tesseract.exe"] = @"C:\tools\tess\tesseract.exe";
+        probe.PathEntries["tesseract.exe"] = Path.Combine(installDirectory, "tesseract.exe");
         ExternalToolDetector detector = new(probe);
 
         TesseractRegistration? detected = detector.DetectTesseract();
 
         Assert.NotNull(detected);
-        Assert.Equal(@"C:\tools\tess", detected.ExecutableDirectory);
+        Assert.Equal(installDirectory, detected.ExecutableDirectory);
     }
 
     [Fact]

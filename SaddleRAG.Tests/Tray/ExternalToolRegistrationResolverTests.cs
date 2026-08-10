@@ -41,18 +41,23 @@ public sealed class ExternalToolRegistrationResolverTests
     [Fact]
     public void AnExplicitDoclingCommandWinsOverDetection()
     {
+        // Built with Path.Combine rather than a literal: the suite also runs on Linux, where a
+        // backslash is an ordinary filename character and Path.GetDirectoryName returns empty.
+        string commandDirectory = Path.Combine(Path.GetTempPath(), "custom");
+        string command = Path.Combine(commandDirectory, "docling.exe");
+
         ExternalToolRegistration resolved = ExternalToolRegistrationResolver.Resolve(
             ExternalToolRegistration.Empty,
             DetectorThatFinds(DetectableStartScript),
-            doclingCommand: @"C:\custom\docling.exe",
+            command,
             doclingArguments: "run --port 5001",
             tesseractDirectory: null,
             tessdataDirectory: null);
 
         Assert.NotNull(resolved.Docling);
-        Assert.Equal(@"C:\custom\docling.exe", resolved.Docling.Command);
+        Assert.Equal(command, resolved.Docling.Command);
         Assert.Equal("run --port 5001", resolved.Docling.Arguments);
-        Assert.Equal(@"C:\custom", resolved.Docling.WorkingDirectory);
+        Assert.Equal(commandDirectory, resolved.Docling.WorkingDirectory);
     }
 
     [Fact]
