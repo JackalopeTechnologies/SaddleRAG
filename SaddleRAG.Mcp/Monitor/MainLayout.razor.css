@@ -4,8 +4,10 @@
     white-space: nowrap;
 }
 
+/* Legible rather than decorative: this is the string a support request quotes. */
 .monitor-server-version {
-    opacity: 0.75;
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 
 .monitor-drawer-footer {

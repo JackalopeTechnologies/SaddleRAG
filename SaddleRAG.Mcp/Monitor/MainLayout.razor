@@ -11,9 +11,12 @@
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
                        OnClick="@ToggleDrawer"/>
         <MudText Typo="Typo.h6" Class="ml-2">SaddleRAG Monitor</MudText>
+        @* Parenthesised on purpose: an expression written directly against a preceding
+           letter looks like an email address to Razor, which then emits it as literal
+           text instead of evaluating it. *@
         <MudTooltip Text="@ServerVersionDetail">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Inherit"
-                     Class="ml-2 monitor-server-version">v@ServerVersion</MudChip>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Inherit"
+                     Class="ml-2 monitor-server-version">v@(ServerVersion)</MudChip>
         </MudTooltip>
         <MudSpacer/>
         <div class="monitor-top-navigation">
