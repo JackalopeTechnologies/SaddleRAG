@@ -22,6 +22,7 @@ public static class DoclingReasonCodes
     public const string ArtifactsUnavailable = "DOCLING_ARTIFACTS_UNAVAILABLE";
     public const string ModelsUnavailable = "DOCLING_MODELS_UNAVAILABLE";
     public const string ConversionTimeout = "DOCLING_CONVERSION_TIMEOUT";
+    public const string ConversionStalled = "DOCLING_CONVERSION_STALLED";
     public const string PartialConversion = "DOCLING_PARTIAL_CONVERSION";
     public const string ConversionFailed = "DOCLING_CONVERSION_FAILED";
     public const string OutputInvalid = "DOCLING_OUTPUT_INVALID";

@@ -5,6 +5,7 @@
 
 #region Usings
 
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
@@ -309,8 +310,15 @@ public sealed class FileScrapeAuditTests
 
     private sealed class SpyAuditWriter : IScrapeAuditWriter
     {
-        public List<AuditCall> FetchedCalls { get; } = [];
-        public List<AuditCall> SkippedCalls { get; } = [];
+        // PageCrawler.RunWorkerPoolAsync drives several crawl workers concurrently, and each
+        // calls straight into this writer. The production ScrapeAuditWriter absorbs that with
+        // an unbounded Channel; a plain List would drop entries under the same load, so the
+        // double honors the same contract.
+        private readonly ConcurrentQueue<AuditCall> mFetchedCalls = new();
+        private readonly ConcurrentQueue<AuditCall> mSkippedCalls = new();
+
+        public IReadOnlyCollection<AuditCall> FetchedCalls => mFetchedCalls.ToArray();
+        public IReadOnlyCollection<AuditCall> SkippedCalls => mSkippedCalls.ToArray();
 
         public void RecordSkipped(AuditContext ctx,
                                   string url,
@@ -319,14 +327,14 @@ public sealed class FileScrapeAuditTests
                                   int depth,
                                   AuditSkipReason reason,
                                   string? detail)
-            => SkippedCalls.Add(new AuditCall(ctx, url, host, reason));
+            => mSkippedCalls.Enqueue(new AuditCall(ctx, url, host, reason));
 
         public void RecordFetched(AuditContext ctx,
                                   string url,
                                   string? parentUrl,
                                   string host,
                                   int depth)
-            => FetchedCalls.Add(new AuditCall(ctx, url, host, Reason: null));
+            => mFetchedCalls.Enqueue(new AuditCall(ctx, url, host, Reason: null));
 
         public void RecordFailed(AuditContext ctx,
                                  string url,

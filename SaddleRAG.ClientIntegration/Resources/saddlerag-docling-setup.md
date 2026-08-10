@@ -5,7 +5,7 @@ description: Guide a user through installing, configuring, validating, and recov
 
 # SaddleRAG Docling setup protocol
 
-Treat Docling Serve, Docling MCP, and Tesseract as user-owned optional software. SaddleRAG consumes a configured Docling HTTP endpoint; it never installs, licenses, starts, stops, restarts, upgrades, or otherwise manages Docling or Tesseract.
+Treat Docling Serve, Docling MCP, and Tesseract as user-owned optional software. SaddleRAG consumes a configured Docling HTTP endpoint and never installs, licenses, configures, or upgrades Docling or Tesseract. If the user registers a Docling start command in the SaddleRAG tray, the tray can run that command as the user, at the user's request; the SaddleRAG MCP service never starts, stops, or restarts anything.
 
 ## Preserve the ownership boundary
 
@@ -54,7 +54,7 @@ $env:TORCH_COMPILE_DISABLE = "1"
 
 Set `PYTHONUTF8=1` and `TORCH_COMPILE_DISABLE=1` in the environment of the user-owned Docling process. Do not change machine-wide environment variables or create a startup task unless the user explicitly authorizes that separate change.
 
-Tesseract is optional. SaddleRAG currently requests OCR but does not send Docling an OCR-engine or preset selection, so Docling uses its own configured/default OCR behavior. Installing Tesseract alone does not make SaddleRAG or Docling use it. If the user deliberately configures the user-owned Docling environment to use Tesseract, follow the official Tesseract guide to the current UB Mannheim installer, include the required language data, add the Tesseract program directory to `PATH` when necessary, and set `TESSDATA_PREFIX` to the installed `tessdata` directory with a trailing path separator (for example, `C:\Program Files\Tesseract-OCR\tessdata\`). Restart the user-owned Docling process after changing its OCR environment.
+Tesseract is optional. SaddleRAG requests OCR and sends Docling an OCR-engine selection only when you set `DocumentIngestion:Docling:OcrEngine`; while that setting is empty the request omits the field entirely and Docling uses its own configured/default OCR behavior, so installing Tesseract alone does not change how documents are converted. If the user deliberately configures the user-owned Docling environment to use Tesseract, follow the official Tesseract guide to the current UB Mannheim installer, include the required language data, add the Tesseract program directory to `PATH` when necessary, and set `TESSDATA_PREFIX` to the installed `tessdata` directory with a trailing path separator (for example, `C:\Program Files\Tesseract-OCR\tessdata\`). Restart the user-owned Docling process after changing its OCR environment.
 
 The default SaddleRAG endpoint is `http://localhost:5001`. Configure `DocumentIngestion:Docling:Endpoint` to the user-selected absolute HTTP or HTTPS root URL without embedded credentials, query, or fragment. The Windows installer's **Test Docling** action is deliberately limited to unauthenticated endpoints and never asks for, collects, or stores secrets. For an API-key-protected endpoint, keep `DocumentIngestion:Docling:ApiKey` in an access-restricted runtime configuration source and verify it with `get_document_ingestion_status(refresh=true)` after installation.
 

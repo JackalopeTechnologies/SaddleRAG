@@ -7,8 +7,10 @@
 
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using H.NotifyIcon;
 using Microsoft.Extensions.Logging;
 using SaddleRAG.ClientIntegration;
@@ -62,11 +64,40 @@ public partial class App : Application
     private const string LogDirName = "SaddleRAG";
     private const string LogFileName = "tray.log";
 
+    private const string DocumentScanningMenuName = "DocumentScanningMenu";
+    private const string DoclingStatusItemName = "DoclingStatusItem";
+
+    // Slow on purpose. The tray is an idle controller running under EcoQoS, and the
+    // Monitor answers this flag from cached capability state, so one localhost GET on
+    // this cadence stays far cheaper than the work it saves the user.
+    private const int DoclingPollIntervalSeconds = 10;
+
+    private const string DoclingRegisterIntro =
+        "Record the command that starts your Docling Serve install. SaddleRAG runs it as you, on request.";
+    private const string TesseractRegisterIntro =
+        "Record where your separately licensed Tesseract install lives. SaddleRAG never installs or licenses it.";
+    private const string DoclingCommandLabel = "Command (for example pwsh, or a full path to an executable)";
+    private const string DoclingArgumentsLabel = "Arguments";
+    private const string TesseractDirectoryLabel = "Tesseract program directory";
+    private const string TessdataDirectoryLabel = "tessdata directory";
+    private const string StartingDoclingMessage = "Starting Docling";
+    private const string RegisteringDoclingMessage = "Registering Docling";
+    private const string RegisteringTesseractMessage = "Registering Tesseract";
+    private const string DoclingLaunchLogMessage = "Docling launch attempt finished: {Outcome}";
+    private const string DoclingPollFailedLogMessage = "Docling launch poll failed";
+
     private TaskbarIcon? mTrayIcon;
     private McpServiceMenuModel? mMenuModel;
     private ILogger<App>? mLog;
     private ILoggerFactory? mLoggerFactory;
     private readonly TrayClientService mClientService = new();
+
+    private readonly HttpClient mDoclingHttpClient = new();
+    private readonly ExternalToolRegistry mToolRegistry = new(ExternalToolRegistry.DefaultPath);
+    private readonly ExternalToolDetector mToolDetector = new(new FileSystemProbe());
+    private DoclingProcessLauncher? mDoclingLauncher;
+    private DoclingLaunchCoordinator? mDoclingCoordinator;
+    private DispatcherTimer? mDoclingTimer;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -91,6 +122,12 @@ public partial class App : Application
             mTrayIcon.ForceCreate(enablesEfficiencyMode: true);
 
             PopulateClientMenus();
+
+            // Double-click is the gesture users reach for first, so give it the same
+            // dashboard action the menu item runs rather than a parallel implementation.
+            mTrayIcon.DoubleClickCommand = new RelayCommand(OpenDashboardGuarded);
+
+            StartDoclingLaunchPolling();
 
             mTrayIcon.ContextMenu.Opened += (_, _) => SyncMenu();
             SyncMenu();
@@ -134,6 +171,8 @@ public partial class App : Application
     {
         // Clean exit auto-disposes via DisposeAfterExit; this explicit call mirrors the
         // official sample and is the recommended "cleaner" path.
+        mDoclingTimer?.Stop();
+        mDoclingHttpClient.Dispose();
         mTrayIcon?.Dispose();
         mLoggerFactory?.Dispose();
         base.OnExit(e);
@@ -234,11 +273,141 @@ public partial class App : Application
             RunGuarded(model.Stop, StoppingMessage);
     }
 
-    private void OnOpenDashboard(object sender, RoutedEventArgs e)
+    private void OnOpenDashboard(object sender, RoutedEventArgs e) => OpenDashboardGuarded();
+
+    private void OpenDashboardGuarded()
     {
         RunGuarded(
             () => Process.Start(new ProcessStartInfo(DashboardUrl) { UseShellExecute = true }),
             OpeningDashboardMessage);
+    }
+
+    private void StartDoclingLaunchPolling()
+    {
+        mDoclingLauncher = new DoclingProcessLauncher(mDoclingHttpClient,
+                                                      mToolRegistry,
+                                                      new ProcessStarter(),
+                                                      new FileSystemProbe(),
+                                                      DoclingLaunchSettings.CreateDefault(),
+                                                      mLoggerFactory?.CreateLogger<DoclingProcessLauncher>());
+        mDoclingCoordinator = new DoclingLaunchCoordinator(
+            new MonitorDoclingLaunchRequestProbe(mDoclingHttpClient, new Uri(DashboardUrl)),
+            mDoclingLauncher,
+            mLoggerFactory?.CreateLogger<DoclingLaunchCoordinator>());
+
+        mDoclingTimer = new DispatcherTimer(DispatcherPriority.Background)
+                            {
+                                Interval = TimeSpan.FromSeconds(DoclingPollIntervalSeconds)
+                            };
+        mDoclingTimer.Tick += (_, _) => _ = PollDoclingLaunchRequestAsync();
+        mDoclingTimer.Start();
+    }
+
+    private async Task PollDoclingLaunchRequestAsync()
+    {
+        DoclingLaunchCoordinator? coordinator = mDoclingCoordinator;
+        if (coordinator is not null)
+        {
+            try
+            {
+                DoclingLaunchOutcome? outcome = await coordinator.PollOnceAsync(CancellationToken.None);
+                if (outcome is not null)
+                {
+                    mLog?.LogInformation(DoclingLaunchLogMessage, outcome);
+                    UpdateDoclingStatus(outcome.Value.ToString());
+                }
+            }
+            catch (Exception ex)
+            {
+                // The coordinator already absorbs the expected transport failures. Anything
+                // reaching here is unexpected, but a timer tick must never take down the tray.
+                mLog?.LogWarning(ex, DoclingPollFailedLogMessage);
+            }
+        }
+    }
+
+    private void UpdateDoclingStatus(string status)
+    {
+        MenuItem? statusItem = FindDoclingStatusItem();
+        if (statusItem is not null)
+            statusItem.Header = $"Docling — {status}";
+    }
+
+    private MenuItem? FindDoclingStatusItem()
+    {
+        MenuItem? scanningMenu = mTrayIcon?.ContextMenu?.Items.OfType<MenuItem>()
+                                          .FirstOrDefault(m => m.Name == DocumentScanningMenuName);
+        return scanningMenu?.Items.OfType<MenuItem>().FirstOrDefault(m => m.Name == DoclingStatusItemName);
+    }
+
+    private async void OnStartDocling(object sender, RoutedEventArgs e)
+    {
+        DoclingProcessLauncher? launcher = mDoclingLauncher;
+        if (launcher is not null)
+        {
+            try
+            {
+                DoclingLaunchOutcome outcome = await launcher.EnsureRunningAsync(CancellationToken.None);
+                mLog?.LogInformation(DoclingLaunchLogMessage, outcome);
+                UpdateDoclingStatus(outcome.ToString());
+                ShowBalloon($"Docling — {outcome}");
+            }
+            catch (Exception ex)
+            {
+                mLog?.LogWarning(ex, ActionFailedLogMessage, StartingDoclingMessage);
+                ShowBalloon($"{StartingDoclingMessage}{ActionFailedSuffix}{ex.Message}");
+            }
+        }
+    }
+
+    private void OnRegisterDocling(object sender, RoutedEventArgs e)
+    {
+        RunGuarded(RegisterDocling, RegisteringDoclingMessage);
+    }
+
+    private void RegisterDocling()
+    {
+        ExternalToolRegistration current = mToolRegistry.Read();
+        DoclingRegistration? detected = current.Docling ?? mToolDetector.DetectDocling();
+        RegistrationDialog dialog = new(DoclingRegisterIntro,
+                                        DoclingCommandLabel,
+                                        detected?.Command ?? string.Empty,
+                                        DoclingArgumentsLabel,
+                                        detected?.Arguments ?? string.Empty);
+        if (dialog.ShowDialog() == true)
+        {
+            DoclingRegistration? updated = string.IsNullOrWhiteSpace(dialog.FirstEntry)
+                                               ? null
+                                               : new DoclingRegistration(dialog.FirstEntry,
+                                                                         dialog.SecondEntry,
+                                                                         Path.GetDirectoryName(dialog.FirstEntry)
+                                                                         ?? string.Empty,
+                                                                         detected?.Environment);
+            mToolRegistry.Write(current with { Docling = updated });
+        }
+    }
+
+    private void OnRegisterTesseract(object sender, RoutedEventArgs e)
+    {
+        RunGuarded(RegisterTesseract, RegisteringTesseractMessage);
+    }
+
+    private void RegisterTesseract()
+    {
+        ExternalToolRegistration current = mToolRegistry.Read();
+        TesseractRegistration? detected = current.Tesseract ?? mToolDetector.DetectTesseract();
+        RegistrationDialog dialog = new(TesseractRegisterIntro,
+                                        TesseractDirectoryLabel,
+                                        detected?.ExecutableDirectory ?? string.Empty,
+                                        TessdataDirectoryLabel,
+                                        detected?.TessdataDirectory ?? string.Empty);
+        if (dialog.ShowDialog() == true)
+        {
+            TesseractRegistration? updated = string.IsNullOrWhiteSpace(dialog.FirstEntry)
+                                                 ? null
+                                                 : new TesseractRegistration(dialog.FirstEntry, dialog.SecondEntry);
+            mToolRegistry.Write(current with { Tesseract = updated });
+        }
     }
 
     private async void OnInstallClient(object sender, RoutedEventArgs e)

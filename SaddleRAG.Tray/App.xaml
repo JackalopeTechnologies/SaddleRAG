@@ -24,6 +24,14 @@
                     <MenuItem x:Name="UninstallMenu" Header="Uninstall from"/>
                     <MenuItem x:Name="StatusItem" Header="Status…" Click="OnStatus"/>
                     <Separator/>
+                    <MenuItem x:Name="DocumentScanningMenu" Header="Document scanning">
+                        <MenuItem x:Name="DoclingStatusItem" Header="Docling — not checked" IsEnabled="False"/>
+                        <Separator/>
+                        <MenuItem Header="Register Docling…"   Click="OnRegisterDocling"/>
+                        <MenuItem Header="Register Tesseract…" Click="OnRegisterTesseract"/>
+                        <MenuItem Header="Start Docling"       Click="OnStartDocling"/>
+                    </MenuItem>
+                    <Separator/>
                     <MenuItem Header="Exit" Click="OnExitClicked"/>
                 </ContextMenu>
             </tb:TaskbarIcon.ContextMenu>

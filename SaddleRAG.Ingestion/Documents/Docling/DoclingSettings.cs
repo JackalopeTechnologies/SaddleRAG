@@ -16,6 +16,14 @@ public sealed class DoclingSettings
     /// <summary>Optional Docling Serve API key.</summary>
     public string ApiKey { get; set; } = string.Empty;
 
+    /// <summary>
+    ///     OCR engine Docling should use, for example <c>tesseract</c>. Empty by default,
+    ///     and when empty the request omits the field entirely so Docling keeps its own
+    ///     default. Selecting an engine is the user's explicit, reversible decision —
+    ///     installing Tesseract does not silently change how documents are converted.
+    /// </summary>
+    public string OcrEngine { get; set; } = string.Empty;
+
     /// <summary>Cold-start grace period before a transient startup state becomes unavailable.</summary>
     public int StartupGracePeriodSeconds { get; set; } = DefaultStartupGracePeriodSeconds;
 
@@ -25,8 +33,11 @@ public sealed class DoclingSettings
     /// <summary>Timeout for one model-readiness request.</summary>
     public int ReadinessTimeoutSeconds { get; set; } = DefaultReadinessTimeoutSeconds;
 
-    /// <summary>Timeout for one conversion request, including cold model initialization.</summary>
+    /// <summary>Backstop for one conversion, including cold model initialization.</summary>
     public int ConversionTimeoutSeconds { get; set; } = DefaultConversionTimeoutSeconds;
+
+    /// <summary>Maximum uninterrupted run of failed status polls before a conversion is abandoned.</summary>
+    public int ConversionStallTimeoutSeconds { get; set; } = DefaultConversionStallTimeoutSeconds;
 
     /// <summary>Delay between bounded cold-start observations.</summary>
     public int StartupPollIntervalMilliseconds { get; set; } = DefaultStartupPollIntervalMilliseconds;
@@ -63,6 +74,7 @@ public sealed class DoclingSettings
                                 && HealthTimeoutSeconds > 0
                                 && ReadinessTimeoutSeconds > 0
                                 && ConversionTimeoutSeconds > 0
+                                && ConversionStallTimeoutSeconds > 0
                                 && StartupPollIntervalMilliseconds > 0
                                 && ConversionPollIntervalMilliseconds is > 0 and <= MaximumPollIntervalMilliseconds
                                 && ConversionResultRetryBaseMilliseconds is > 0 and <= MaximumPollIntervalMilliseconds;
@@ -86,7 +98,8 @@ public sealed class DoclingSettings
     public const int DefaultStartupGracePeriodSeconds = 120;
     public const int DefaultHealthTimeoutSeconds = 10;
     public const int DefaultReadinessTimeoutSeconds = 30;
-    public const int DefaultConversionTimeoutSeconds = 600;
+    public const int DefaultConversionTimeoutSeconds = 14400;
+    public const int DefaultConversionStallTimeoutSeconds = 300;
     public const int DefaultStartupPollIntervalMilliseconds = 1000;
     public const int DefaultConversionPollIntervalMilliseconds = 5000;
     public const int DefaultConversionResultRetryBaseMilliseconds = 2000;
@@ -96,6 +109,6 @@ public sealed class DoclingSettings
     private const string InvalidEndpointDetail =
         "The Docling endpoint must be an absolute HTTP or HTTPS URL without embedded credentials, query, or fragment.";
     private const string InvalidTimeoutDetail =
-        "Docling grace and request timeouts must be greater than zero; poll intervals must be between 1 and 60000 milliseconds.";
+        "Docling grace, request, and stall timeouts must be greater than zero; poll intervals must be between 1 and 60000 milliseconds.";
     private const string ValidDetail = "Docling configuration is valid.";
 }

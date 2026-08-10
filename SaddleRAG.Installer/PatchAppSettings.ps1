@@ -75,6 +75,12 @@ $DefaultDatabaseName     = 'SaddleRAG'
 $DefaultOllamaEndpoint   = 'http://localhost:11434'
 $DefaultDoclingEndpoint  = 'http://localhost:5001'
 
+# 600 was the original conversion budget and is too small for OCR-heavy scanned PDFs; it is the only
+# value treated as legacy, so a deliberately customised timeout survives an upgrade untouched.
+$LegacyConversionTimeoutSeconds  = 600
+$DefaultConversionTimeoutSeconds = 14400
+$DefaultConversionStallSeconds   = 300
+
 # Resolve a config value with a three-tier fallback: the provided installer value
 # wins when non-blank; otherwise keep whatever the shipped template already holds;
 # otherwise fall back to the built-in default. Never returns an empty string.
@@ -141,8 +147,9 @@ try
     $json.Ollama.Endpoint                         = Resolve-ConfigValue -Provided $OllamaEndpoint    -Existing ([string]$json.Ollama.Endpoint)                         -Default $DefaultOllamaEndpoint
 
     # Older installations predate the optional document-ingestion section. Add
-    # only the missing object hierarchy, leaving existing API keys, timeouts,
-    # and every unrelated setting untouched.
+    # only the missing object hierarchy, leaving existing API keys and every
+    # unrelated setting untouched. The conversion timeouts are the one exception,
+    # converged below.
     $documentIngestionProperty = $json.PSObject.Properties['DocumentIngestion']
     if ($null -eq $documentIngestionProperty)
     {
@@ -171,6 +178,24 @@ try
     else
     {
         $json.DocumentIngestion.Docling.Endpoint = $effectiveDoclingEndpoint
+    }
+
+    # The conversion timeouts previously reached a machine only through the shipped template, so an
+    # upgrade that preserved appsettings.json kept the old 10-minute budget and abandoned long OCR
+    # conversions the server went on to complete. Converge the one known-bad legacy value and seed the
+    # stall timeout when absent; any other existing value is a deliberate choice and is preserved.
+    $conversionProperty = $json.DocumentIngestion.Docling.PSObject.Properties['ConversionTimeoutSeconds']
+    if ($null -eq $conversionProperty -or [int]$conversionProperty.Value -eq $LegacyConversionTimeoutSeconds)
+    {
+        $json.DocumentIngestion.Docling | Add-Member -MemberType NoteProperty `
+            -Name ConversionTimeoutSeconds -Value $DefaultConversionTimeoutSeconds -Force
+    }
+
+    $stallProperty = $json.DocumentIngestion.Docling.PSObject.Properties['ConversionStallTimeoutSeconds']
+    if ($null -eq $stallProperty)
+    {
+        $json.DocumentIngestion.Docling | Add-Member -MemberType NoteProperty `
+            -Name ConversionStallTimeoutSeconds -Value $DefaultConversionStallSeconds -Force
     }
 
     $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider) -or

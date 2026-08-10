@@ -24,6 +24,7 @@ namespace SaddleRAG.Tests.Installer;
 ///     Skips on non-Windows hosts (SaddleRAG ships only on Windows, but
 ///     contributors occasionally run the test suite from WSL / macOS).
 /// </summary>
+[Collection(PowerShellScriptCollection.Name)]
 public sealed class PatchAppSettingsTests
 {
     [Fact]
@@ -669,7 +670,10 @@ private static JsonNode LoadJson(string path)
         return proc.ExitCode;
     }
 
-    private static readonly TimeSpan smWaitForExitTimeout = TimeSpan.FromSeconds(seconds: 30);
+    // Generous on purpose: the assertion under test is that the script produces the right
+    // JSON, not that Windows PowerShell 5.1 starts quickly. A tight budget buys nothing and
+    // costs false failures when the suite runs on a busy machine.
+    private static readonly TimeSpan smWaitForExitTimeout = TimeSpan.FromSeconds(seconds: 120);
     private static readonly TimeSpan smDiagnosticDrainTimeout = TimeSpan.FromSeconds(seconds: 2);
 
     private const string WindowsOnlySkipReason =
