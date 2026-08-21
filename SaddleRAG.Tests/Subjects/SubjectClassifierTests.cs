@@ -182,7 +182,6 @@ public sealed class SubjectClassifierTests
     }
 
     [Theory]
-    [InlineData("{not-json}")]
     [InlineData("{\"primary\":{\"subjectId\":\"subject-unknown\",\"confidence\":0.9,\"evidence\":[]},\"secondary\":[]}")]
     [InlineData("{\"primary\":{\"subjectId\":\"id\",\"confidence\":0.9,\"evidence\":[\"pump\"]},\"secondary\":[]}")]
     [InlineData("{\"primary\":{\"subjectId\":\"existing-id-or-null\",\"confidence\":0.9,\"evidence\":[\"pump\"]},\"secondary\":[]}")]
@@ -208,6 +207,58 @@ public sealed class SubjectClassifierTests
                                                            TestContext.Current.CancellationToken));
 
         Assert.Empty(repository.Persisted);
+    }
+
+    [Fact]
+    public async Task TerminalUnparseableReplySurfacesTheRawReplyWithoutPersistence()
+    {
+        const string rawReply = "totally not json";
+        var generator = new ScriptedSubjectGenerator(rawReply, rawReply);
+        var repository = new InMemorySubjectAssignmentRepository();
+        var classifier = new SubjectClassifier(generator, new FixedSubjectTimeProvider());
+
+        SubjectClassificationException failure =
+            await Assert.ThrowsAsync<SubjectClassificationException>(() =>
+                classifier.ClassifyAsync(repository,
+                                         SubjectTestData.Descriptor(),
+                                         SubjectTestData.Catalog(),
+                                         "2026-08-04",
+                                         "scan-unparseable",
+                                         TestContext.Current.CancellationToken));
+
+        Assert.Equal(2, generator.Prompts.Count);
+        Assert.Equal(rawReply, failure.RawResponse);
+        Assert.Contains(rawReply, failure.Message, StringComparison.Ordinal);
+        Assert.Empty(repository.Persisted);
+    }
+
+    [Fact]
+    public async Task AssignFallbackUsesFirstCatalogConceptFlaggedForReviewWithoutCallingTheModel()
+    {
+        var generator = new ScriptedSubjectGenerator();
+        var repository = new InMemorySubjectAssignmentRepository();
+        var classifier = new SubjectClassifier(generator, new FixedSubjectTimeProvider());
+
+        SubjectAssignmentRecord result = await classifier.AssignFallbackAsync(
+                                               repository,
+                                               SubjectTestData.Descriptor(),
+                                               SubjectTestData.Catalog(),
+                                               "2026-08-04",
+                                               "scan-fallback",
+                                               TestContext.Current.CancellationToken);
+
+        Assert.Equal("subject-hydraulics", result.Primary.SubjectId);
+        Assert.True(result.NeedsReview);
+        Assert.Empty(result.Secondary);
+        Assert.Equal("manual-library", result.LibraryId);
+        Assert.Equal("document-hydraulics", result.DocumentId);
+        Assert.Equal("revision-hydraulics", result.DocumentRevisionId);
+        Assert.Equal("scan-fallback", result.ScanRunId);
+        Assert.Equal("taxonomy-000001", result.TaxonomyVersion);
+        Assert.Equal("scripted", result.Provenance.Backend);
+        Assert.Equal(SubjectTestData.GeneratedAtUtc, result.Provenance.GeneratedAtUtc);
+        Assert.Empty(generator.Prompts);
+        Assert.Same(result, Assert.Single(repository.Persisted));
     }
 
     [Fact]

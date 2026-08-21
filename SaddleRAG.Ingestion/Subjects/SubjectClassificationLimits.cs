@@ -18,6 +18,7 @@ public static class SubjectClassificationLimits
     public const int MaxStratifiedSectionCharacters = 1200;
     public const int MaxEvidenceCount = 6;
     public const int MaxEvidenceCharacters = 512;
+    public const int MaxRawResponsePreviewCharacters = 256;
     public const int MaxSecondarySubjects = 3;
     public const float NeedsReviewConfidenceThreshold = 0.65f;
     public const double InferredSubjectBoost = 0.05;
