@@ -12,42 +12,36 @@ using Microsoft.Playwright;
 namespace SaddleRAG.Ingestion.Crawling;
 
 /// <summary>
-///     Content extractor with SPA-aware selector priority. Strategy:
+///     Content extractor with SPA-aware selector priority, guarded by a dominance gate so a
+///     small framework-hydrated widget can never masquerade as the whole page. Strategy:
 ///     <list type="number">
 ///         <item>
-///             User-supplied <c>waitForSelector</c> (when non-null) — the
-///             power-user override. They asserted where the content is;
-///             trust that first.
+///             User-supplied <c>waitForSelector</c> (when non-null) — the power-user override.
+///             They asserted where the content is, so it is returned verbatim, ungated.
 ///         </item>
 ///         <item>
-///             Framework fast-path selectors for the SPA frameworks with
-///             stable DOM signatures: MudBlazor, React (data-reactroot
-///             root), Vue (data-v-app root). Tried in priority order;
-///             first hit wins.
+///             The biggest-text-container heuristic runs first as the page's content
+///             <em>baseline</em>: both the dominance reference every fast-path match is
+///             measured against and the fallback when no gated selector qualifies. It strips
+///             nav / footer / sidebar / dialog chrome and boilerplate widgets from the text it
+///             returns.
 ///         </item>
 ///         <item>
-///             Existing SSR selectors (main, article, [role='main'], etc.)
-///             so static documentation sites still extract via the same
-///             cheap path they always did.
-///         </item>
-///         <item>
-///             Biggest-text-container heuristic — single JS evaluation
-///             that walks block-level containers, excludes nav / footer /
-///             sidebar / dialog chrome, and returns the deepest node with
-///             the longest non-link text. Language-agnostic safety net.
+///             Framework fast-path selectors (MudBlazor, React <c>[data-reactroot]</c>, Vue
+///             <c>[data-v-app]</c>, Next.js <c>#__next</c>, generic <c>#app</c>) and SSR
+///             selectors (<c>main</c>, <c>article</c>, <c>[role='main']</c>, then generic
+///             content classes) are tried in priority order. A match is admitted only when it
+///             is not a boilerplate widget and holds a dominant share of the baseline's text —
+///             lenient for semantic landmarks and framework roots, strict for the ambiguous
+///             generic content classes.
 ///         </item>
 ///     </list>
 ///     <para>
-///         Framework strategy summary (which path each framework uses
-///         when no user selector is supplied):
-///         <br />Fast-path: Blazor WASM (MudBlazor variant), React CSR
-///         via <c>[data-reactroot]</c>, Vue CSR via <c>[data-v-app]</c>,
-///         Next.js CSR via <c>#__next</c>, and the generic <c>#app</c>
-///         shell.
-///         <br />Heuristic only: Angular CSR, SvelteKit CSR, Nuxt CSR —
-///         their DOM patterns vary too widely across apps for a reliable
-///         fast-path selector (named outlets, nested lazy-loaded modules,
-///         custom shell components).
+///         The dominance gate replaces the earlier enclosure probe, which could only demote a
+///         widget that a standard SSR container happened to enclose. On a landmark-free page
+///         (no <c>&lt;main&gt;</c>/<c>&lt;article&gt;</c>/<c>.content</c>) a Vue-mounted rating
+///         box carries <c>data-v-app</c> and enclosed nothing, so the probe let it win. Measured
+///         against the baseline it is plainly sub-dominant, so the gate rejects it.
 ///     </para>
 /// </summary>
 public static class SpaAwareContentExtractor
@@ -59,110 +53,162 @@ public static class SpaAwareContentExtractor
         ArgumentNullException.ThrowIfNull(page);
         ct.ThrowIfCancellationRequested();
 
+        // 1. User-supplied selector — the power-user override. Returned verbatim, ungated by
+        //    the widget and dominance checks below.
         string result = string.Empty;
-
         if (!string.IsNullOrEmpty(waitForSelector))
-            result = await TrySelectorAsync(page, waitForSelector);
+            result = await TrySelectorTextAsync(page, waitForSelector);
 
+        // 2/3/4. Otherwise compute the content baseline and pick the first gated selector that
+        //        beats it, falling back to the baseline itself.
         if (string.IsNullOrEmpty(result))
-            result = await TryFrameworkSelectorsAsync(page);
-
-        if (string.IsNullOrEmpty(result))
-            result = await TryStandardSelectorsAsync(page);
-
-        if (string.IsNullOrEmpty(result))
-            result = await TryBiggestContainerAsync(page);
+        {
+            string baseline = await ComputeBaselineAsync(page);
+            result = await SelectDominantAsync(page, baseline);
+        }
 
         return result;
     }
 
-    private static async Task<string> TrySelectorAsync(IPage page, string selector)
+    private static async Task<string> SelectDominantAsync(IPage page, string baseline)
+    {
+        string result = string.Empty;
+        int baselineLength = baseline.Length;
+
+        foreach(GatedSelector candidate in smGatedSelectors.Where(_ => result == string.Empty))
+        {
+            IElementHandle? element = await TrySelectorHandleAsync(page, candidate.Selector);
+            if (element is not null)
+            {
+                string text = await TryInnerTextAsync(element);
+                bool accepted = !string.IsNullOrEmpty(text) &&
+                                !await IsWidgetSignpostedAsync(element, text) &&
+                                (baselineLength == 0 || text.Length >= baselineLength * candidate.DominanceRatio);
+                if (accepted)
+                    result = text;
+            }
+        }
+
+        if (result == string.Empty)
+            result = baseline;
+
+        return result;
+    }
+
+    private static async Task<string> TrySelectorTextAsync(IPage page, string selector)
+    {
+        IElementHandle? element = await TrySelectorHandleAsync(page, selector);
+        string result = element is null ? string.Empty : await TryInnerTextAsync(element);
+        return result;
+    }
+
+    private static async Task<IElementHandle?> TrySelectorHandleAsync(IPage page, string selector)
+    {
+        IElementHandle? result = null;
+        try
+        {
+            result = await page.QuerySelectorAsync(selector);
+        }
+        catch(PlaywrightException)
+        {
+            // selector may be invalid or the element detached
+        }
+
+        return result;
+    }
+
+    private static async Task<string> TryInnerTextAsync(IElementHandle element)
     {
         string result = string.Empty;
         try
         {
-            var element = await page.QuerySelectorAsync(selector);
-            if (element != null)
-            {
-                string text = await element.InnerTextAsync();
-                if (!string.IsNullOrWhiteSpace(text))
-                    result = text.Trim();
-            }
+            string text = await element.InnerTextAsync();
+            if (!string.IsNullOrWhiteSpace(text))
+                result = text.Trim();
         }
         catch(PlaywrightException)
         {
-            // selector may be invalid or element detached
-        }
-
-        return result;
-    }
-
-    private static async Task<string> TryFrameworkSelectorsAsync(IPage page)
-    {
-        string result = string.Empty;
-        foreach(string selector in smFrameworkSelectors.Where(_ => result == string.Empty))
-        {
-            string text = await TrySelectorAsync(page, selector);
-            bool isAppRoot = !string.IsNullOrEmpty(text) &&
-                             !await IsEnclosedByStandardContainerAsync(page, selector);
-            if (isAppRoot)
-                result = text;
+            // element may have detached between selection and read
         }
 
         return result;
     }
 
     /// <summary>
-    ///     True when <paramref name="selector" /> matches an element nested *inside* one of
-    ///     the SSR content containers. Containment is what separates the two cases the fast
-    ///     path cannot otherwise tell apart: a genuine SPA root encloses the page's content
-    ///     region, whereas a framework-rendered widget is enclosed by it. Static sites that
-    ///     mount a single small component — a rating box, a search field, a cookie banner —
-    ///     otherwise hijack the fast path and yield that widget's text as the entire page.
-    ///     Answering <see langword="false" /> on a page that cannot be evaluated keeps the
-    ///     framework hit, so the probe only ever demotes a match it positively identifies.
+    ///     Runs the biggest-text-container heuristic and returns the winner's text with chrome
+    ///     and boilerplate-widget subtrees stripped. Returns empty when the page cannot be
+    ///     evaluated, in which case selector matches stand ungated rather than the page silently
+    ///     losing its content.
     /// </summary>
-    private static async Task<bool> IsEnclosedByStandardContainerAsync(IPage page, string selector)
-    {
-        bool result = false;
-        try
-        {
-            result = await page.EvaluateAsync<bool>(EnclosedByStandardContainerScript,
-                                                    new { selector, containers = smStandardSelectors }
-                                                   );
-        }
-        catch(PlaywrightException)
-        {
-            // An un-evaluable page cannot disprove the fast path; let the match stand.
-        }
-
-        return result;
-    }
-
-    private static async Task<string> TryStandardSelectorsAsync(IPage page)
-    {
-        string result = string.Empty;
-        foreach(string selector in smStandardSelectors.Where(_ => result == string.Empty))
-            result = await TrySelectorAsync(page, selector);
-        return result;
-    }
-
-    private static async Task<string> TryBiggestContainerAsync(IPage page)
+    private static async Task<string> ComputeBaselineAsync(IPage page)
     {
         string result = string.Empty;
         try
         {
-            string text = await page.EvaluateAsync<string>(BiggestContainerScript);
+            string text = await page.EvaluateAsync<string>(BaselineContentScript,
+                                                           new { excludeTokens = smBaselineExcludeTokens }
+                                                          );
             if (!string.IsNullOrWhiteSpace(text))
                 result = text.Trim();
         }
         catch(PlaywrightException)
         {
-            // page may have navigated away or been detached
+            // an un-evaluable page yields no baseline; selector matches then stand ungated
         }
 
         return result;
     }
+
+    /// <summary>
+    ///     True when the matched element reads as a boilerplate widget rather than main content:
+    ///     an id/class token in the widget denylist (language-tolerant, since these are technical
+    ///     component names), or structurally a small vote form (a radio/checkbox control with
+    ///     little accompanying text). An un-inspectable element is treated as content, matching
+    ///     the fast path's bias toward keeping a match it cannot positively disqualify.
+    /// </summary>
+    private static async Task<bool> IsWidgetSignpostedAsync(IElementHandle element, string text)
+    {
+        bool result = false;
+        try
+        {
+            result = HasWidgetToken(await element.GetAttributeAsync(IdAttribute)) ||
+                     HasWidgetToken(await element.GetAttributeAsync(ClassAttribute));
+
+            if (!result && text.Length < WidgetFormMaxTextLength)
+            {
+                IElementHandle? voteControl = await element.QuerySelectorAsync(VoteControlSelector);
+                result = voteControl is not null;
+            }
+        }
+        catch(PlaywrightException)
+        {
+            // an un-inspectable element is treated as content, not a widget
+        }
+
+        return result;
+    }
+
+    private static bool HasWidgetToken(string? attributeValue)
+    {
+        bool result = false;
+        if (!string.IsNullOrEmpty(attributeValue))
+        {
+            string[] tokens = attributeValue.Split(smTokenSeparators,
+                                                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach(string token in tokens.Where(_ => !result))
+                result = smWidgetTokenSet.Contains(token.ToLowerInvariant());
+        }
+
+        return result;
+    }
+
+    private readonly record struct GatedSelector(string Selector, double DominanceRatio);
+
+    // A semantic landmark or a genuine SPA shell holds ~all the page text, so trust it when it
+    // reaches even a small fraction of the baseline. A generic content class easily matches a
+    // widget subtree, so hold it to half the baseline.
+    private const double LenientDominanceRatio = 0.15;
+    private const double StrictDominanceRatio = 0.5;
 
     private const string MudMainContentSelector = ".mud-main-content";
     private const string MudContainerSelector = ".mud-container";
@@ -170,17 +216,6 @@ public static class SpaAwareContentExtractor
     private const string VueAppSelector = "[data-v-app]";
     private const string NextRootSelector = "#__next";
     private const string GenericAppSelector = "#app";
-
-    private static readonly string[] smFrameworkSelectors =
-        [
-            MudMainContentSelector,
-            MudContainerSelector,
-            ReactRootSelector,
-            VueAppSelector,
-            NextRootSelector,
-            GenericAppSelector,
-        ];
-
     private const string SelectorMain = "main";
     private const string SelectorArticle = "article";
     private const string SelectorRoleMain = "[role='main']";
@@ -190,47 +225,79 @@ public static class SpaAwareContentExtractor
     private const string SelectorIdContent = "#content";
     private const string SelectorIdMainContent = "#main-content";
 
-    private static readonly string[] smStandardSelectors =
+    private static readonly GatedSelector[] smGatedSelectors =
         [
-            SelectorMain,
-            SelectorArticle,
-            SelectorRoleMain,
-            SelectorContent,
-            SelectorDocContent,
-            SelectorDocumentation,
-            SelectorIdContent,
-            SelectorIdMainContent,
+            new(MudMainContentSelector, LenientDominanceRatio),
+            new(MudContainerSelector, LenientDominanceRatio),
+            new(ReactRootSelector, LenientDominanceRatio),
+            new(VueAppSelector, LenientDominanceRatio),
+            new(NextRootSelector, LenientDominanceRatio),
+            new(GenericAppSelector, LenientDominanceRatio),
+            new(SelectorMain, LenientDominanceRatio),
+            new(SelectorArticle, LenientDominanceRatio),
+            new(SelectorRoleMain, LenientDominanceRatio),
+            new(SelectorContent, StrictDominanceRatio),
+            new(SelectorDocContent, StrictDominanceRatio),
+            new(SelectorDocumentation, StrictDominanceRatio),
+            new(SelectorIdContent, StrictDominanceRatio),
+            new(SelectorIdMainContent, StrictDominanceRatio),
         ];
 
-    private const string EnclosedByStandardContainerScript =
+    private const int WidgetFormMaxTextLength = 400;
+    private const string VoteControlSelector = "input[type=radio], input[type=checkbox]";
+    private const string IdAttribute = "id";
+    private const string ClassAttribute = "class";
+
+    // Widget/boilerplate id/class tokens used to reject a signposted selector match. These are
+    // technical component names, not English prose, so they are language-tolerant: a French or
+    // Japanese site still names its element rating-component / feedback / disqus.
+    private const string WidgetTokenListA = "rating feedback helpful survey poll";
+    private const string WidgetTokenListB = "share social breadcrumb breadcrumbs newsletter";
+    private const string WidgetTokenListC = "subscribe cookie consent comments disqus";
+    private const string WidgetTokenListD = "related promo banner cta gdpr";
+
+    // Nav-chrome tokens the heuristic has always excluded (now id-aware, closing a class-only
+    // blind spot). Combined with the widget tokens for the baseline script.
+    private const string ChromeTokenList = "sidebar toc navbar menu";
+
+    private const char TokenListSeparator = ' ';
+
+    private static readonly char[] smTokenSeparators = [' ', '\t', '\n', '\r', '-', '_'];
+
+    private static readonly string[] smWidgetTokens =
+        [
+            .. WidgetTokenListA.Split(TokenListSeparator),
+            .. WidgetTokenListB.Split(TokenListSeparator),
+            .. WidgetTokenListC.Split(TokenListSeparator),
+            .. WidgetTokenListD.Split(TokenListSeparator),
+        ];
+
+    private static readonly HashSet<string> smWidgetTokenSet = new(smWidgetTokens, StringComparer.Ordinal);
+
+    private static readonly string[] smBaselineExcludeTokens =
+        [.. ChromeTokenList.Split(TokenListSeparator), .. smWidgetTokens];
+
+    private const string BaselineContentScript =
         """
         (args) => {
-            const el = document.querySelector(args.selector);
-            if (!el) return false;
-            return args.containers.some(sel => {
-                const container = document.querySelector(sel);
-                return !!container && container !== el && container.contains(el);
-            });
-        }
-        """;
-
-    private const string BiggestContainerScript =
-        """
-        (() => {
             const MIN_TEXT = 200;
             const MAX_LINK_RATIO = 0.7;
-            const EXCLUDE = ['nav', 'footer', 'aside'];
+            const EXCLUDE_TAGS = ['nav', 'footer', 'aside'];
             const EXCLUDE_ROLES = ['navigation', 'contentinfo', 'dialog'];
-            const EXCLUDE_CLASSES = ['sidebar', 'toc', 'navbar', 'menu'];
+            const EXCLUDE_TOKENS = args.excludeTokens || [];
+
+            function tokens(value) {
+                return (value || '').toString().toLowerCase().split(/[\s_-]+/).filter(Boolean);
+            }
 
             function isExcluded(el) {
                 const tag = el.tagName ? el.tagName.toLowerCase() : '';
-                if (EXCLUDE.includes(tag)) return true;
+                if (EXCLUDE_TAGS.includes(tag)) return true;
                 const role = el.getAttribute && el.getAttribute('role');
                 if (role && EXCLUDE_ROLES.includes(role.toLowerCase())) return true;
-                const cls = (el.className || '') + '';
-                for (const c of EXCLUDE_CLASSES) {
-                    if (cls.toLowerCase().includes(c)) return true;
+                const toks = tokens(el.id).concat(tokens(el.getAttribute && el.getAttribute('class')));
+                for (const t of toks) {
+                    if (EXCLUDE_TOKENS.includes(t)) return true;
                 }
                 return false;
             }
@@ -252,7 +319,24 @@ public static class SpaAwareContentExtractor
                     best = el;
                 }
             }
-            return best ? best.innerText.trim() : '';
-        })()
+
+            if (!best) return '';
+
+            // Return the winner's text with chrome/widget subtrees removed. The clone is appended
+            // off-screen so innerText has layout to work from, then discarded — the live DOM is
+            // left intact so downstream link discovery still sees the navigation.
+            const clone = best.cloneNode(true);
+            for (const el of Array.from(clone.querySelectorAll('*'))) {
+                if (isExcluded(el)) el.remove();
+            }
+            clone.style.position = 'absolute';
+            clone.style.left = '-99999px';
+            clone.style.top = '0';
+            clone.setAttribute('aria-hidden', 'true');
+            document.body.appendChild(clone);
+            const cleaned = (clone.innerText || '').trim();
+            clone.remove();
+            return cleaned || best.innerText.trim();
+        }
         """;
 }
