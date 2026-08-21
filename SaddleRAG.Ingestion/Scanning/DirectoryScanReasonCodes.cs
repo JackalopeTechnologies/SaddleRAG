@@ -13,6 +13,7 @@ public static class DirectoryScanReasonCodes
     public const string ScanFailed = "SCAN_FAILED";
     public const string LibraryNotRegistered = "LIBRARY_NOT_REGISTERED";
     public const string LibraryNotBound = "LIBRARY_NOT_BOUND";
+    public const string ScannerPreflightFailed = "SCANNER_PREFLIGHT_FAILED";
     public const string RootPathRequired = "ROOT_PATH_REQUIRED";
     public const string RootPathNotAbsolute = "ROOT_PATH_NOT_ABSOLUTE";
     public const string RootNotFound = "ROOT_NOT_FOUND";
