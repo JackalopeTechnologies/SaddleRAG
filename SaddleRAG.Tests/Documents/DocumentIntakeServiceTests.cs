@@ -59,6 +59,63 @@ public sealed class DocumentIntakeServiceTests
         Assert.Empty(docling.ReceivedCalls());
     }
 
+    [Fact]
+    public async Task LandmarkFreeHtmlSelectsDominantContentAndDropsSiblingAndWidgetChrome()
+    {
+        const string articleBody =
+            "REAL_ARTICLE_MARKER Installer analytics reports which machines ran your installer, which "
+            + "prerequisites were present, and how long each conversion stage took, so teams can prioritize "
+            + "the environments customers actually use in production every day.";
+        string html = "<html><head><title>Fallback</title></head><body>"
+                      + "<header>MASTHEAD_MARKER Acme Corporation global site header</header>"
+                      + "<div class=\"sidebar\"><ul><li>Home</li><li>SIDEBAR_MARKER</li></ul></div>"
+                      + "<div id=\"rating-component\"><p>Did you find this page useful? RATING_MARKER</p></div>"
+                      + $"<div id=\"tracking-software-docs\"><h1>Installer Analytics</h1><p>{articleBody}</p></div>"
+                      + "</body></html>";
+
+        string content = await ReadHtmlContentAsync(html);
+
+        Assert.Contains("# Installer Analytics", content, StringComparison.Ordinal);
+        Assert.Contains("REAL_ARTICLE_MARKER", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("SIDEBAR_MARKER", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("RATING_MARKER", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("MASTHEAD_MARKER", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HtmlSelectsTheDominantArticleOverASmallTeaser()
+    {
+        const string mainBody =
+            "MAIN_ARTICLE_MARKER This is the full guide body. It explains the whole workflow in detail across "
+            + "several sentences so that it clearly dominates the short teaser card that precedes it in document "
+            + "order, which a first-match selector would otherwise have picked instead.";
+        string html = "<html><head><title>Fallback</title></head><body>"
+                      + "<article>Short teaser TEASER_MARKER blurb.</article>"
+                      + $"<article><h1>Main Guide</h1><p>{mainBody}</p></article>"
+                      + "</body></html>";
+
+        DocumentIntakeResult result = await ReadHtmlAsync(html);
+        string content = string.Join('\n', result.Sections.Select(section => section.Content));
+
+        Assert.Equal("Main Guide", result.Title);
+        Assert.Contains("MAIN_ARTICLE_MARKER", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("TEASER_MARKER", content, StringComparison.Ordinal);
+    }
+
+    private static async Task<DocumentIntakeResult> ReadHtmlAsync(string html)
+    {
+        var service = new DocumentIntakeService(Substitute.For<IDoclingClient>());
+        return await service.ReadAsync(Request("page.html", "text/html", Encoding.UTF8.GetBytes(html)),
+                                       TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<string> ReadHtmlContentAsync(string html)
+    {
+        DocumentIntakeResult result = await ReadHtmlAsync(html);
+        Assert.True(result.Succeeded);
+        return string.Join('\n', result.Sections.Select(section => section.Content));
+    }
+
     [Theory]
     [InlineData("manual.pdf", "application/pdf")]
     [InlineData("manual.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
