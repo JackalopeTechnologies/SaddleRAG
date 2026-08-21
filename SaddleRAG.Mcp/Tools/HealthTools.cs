@@ -30,9 +30,11 @@ public static class HealthTools
 {
     [McpServerTool(Name = "get_library_health")]
     [Description("Per-version diagnostic snapshot. Returns chunk count, hostname " +
-                 "distribution, language mix, boundary-issue rate, and suspect markers. " +
-                 "Also returns a SuggestedNextAction field (submit_url_correction if suspect, " +
-                 "rechunk_library if boundaryIssuePct ≥ 10%, reextract_library if parser is stale, " +
+                 "distribution, language mix, boundary-issue rate, suspect markers, and " +
+                 "duplicateContentPct with a contentSuspect flag (near-identical content across " +
+                 "pages - the extractor likely captured a boilerplate widget). Also returns a " +
+                 "suggestedNextAction field (rescrape_library if contentSuspect, " +
+                 "submit_url_correction if suspect, rechunk_library if boundaryIssuePct >= 10%, " +
                  "null if healthy). For the actual library content, use get_library_overview instead."
                 )]
     public static async Task<string> GetLibraryHealth(RepositoryFactory repositoryFactory,
@@ -109,7 +111,14 @@ public static class HealthTools
     {
         var languageMix = await chunkRepo.GetLanguageMixAsync(library, resolvedVersion, ct);
         var hostnames = await chunkRepo.GetHostnameDistributionAsync(library, resolvedVersion, ct);
+        var contentSample = await chunkRepo.GetContentSampleAsync(library,
+                                                                  resolvedVersion,
+                                                                  DuplicateContentSampleCap,
+                                                                  ct);
         (string? boundaryHint, string? boundaryHintMessage) = ResolveBoundaryHint(versionRecord.BoundaryIssuePct);
+        (double duplicateContentPct, int contentSampleSize, bool contentSuspect) =
+            EvaluateContentDuplication(contentSample);
+        object suggestedNextAction = ResolveSuggestedNextAction(contentSuspect, versionRecord);
 
         var hostnamesProjection = hostnames.OrderByDescending(kv => kv.Value)
                                            .Take(MaxHostnamesReturned)
@@ -130,7 +139,11 @@ public static class HealthTools
                                boundaryIssuePct = versionRecord.BoundaryIssuePct,
                                suspect = versionRecord.Suspect,
                                suspectReasons = versionRecord.SuspectReasons,
-                               boundaryHint = new { hint = boundaryHint, message = boundaryHintMessage }
+                               boundaryHint = new { hint = boundaryHint, message = boundaryHintMessage },
+                               duplicateContentPct = Math.Round(duplicateContentPct, 1),
+                               contentSampleSize,
+                               contentSuspect,
+                               suggestedNextAction
                            };
         return JsonSerializer.Serialize(response, smJsonOptions);
     }
@@ -141,6 +154,50 @@ public static class HealthTools
             >= BoundaryHintMayHelpThreshold => (BoundaryHintMayHelpKey, BoundaryHintMayHelpMessage),
             var _ => (null, null)
         };
+
+    /// <summary>
+    ///     Fraction of the sampled chunks whose whitespace-normalized text is a duplicate of
+    ///     another sampled chunk, plus a contentSuspect verdict. A library whose every page was
+    ///     reduced to the same boilerplate widget clusters to one distinct text, so the fraction
+    ///     approaches 100%. Computed from a bounded sample, so it catches libraries mis-ingested
+    ///     under an older extractor without re-scraping them.
+    /// </summary>
+    private static (double duplicatePct, int sampleSize, bool contentSuspect) EvaluateContentDuplication(
+        IReadOnlyList<string>? sample)
+    {
+        double duplicatePct = 0;
+        int sampleSize = sample?.Count ?? 0;
+        bool contentSuspect = false;
+        if (sample is { Count: > 0 })
+        {
+            var distinct = new HashSet<string>(StringComparer.Ordinal);
+            foreach(string content in sample)
+                distinct.Add(NormalizeWhitespace(content));
+            duplicatePct = 100.0 * (sampleSize - distinct.Count) / sampleSize;
+            contentSuspect = sampleSize >= MinContentSampleForSuspect &&
+                             duplicatePct >= DuplicateContentSuspectThreshold;
+        }
+
+        return (duplicatePct, sampleSize, contentSuspect);
+    }
+
+    private static string NormalizeWhitespace(string content)
+    {
+        string[] parts = content.Split((char[]?) null, StringSplitOptions.RemoveEmptyEntries);
+        string result = string.Join(' ', parts);
+        return result;
+    }
+
+    private static object ResolveSuggestedNextAction(bool contentSuspect, LibraryVersionRecord versionRecord) =>
+        (contentSuspect,
+         versionRecord.Suspect,
+         versionRecord.BoundaryIssuePct >= BoundaryHintRecommendThreshold) switch
+            {
+                (true, var _, var _) => new { tool = (string?) SuggestToolRescrape, message = ContentSuspectSuggestion },
+                (var _, true, var _) => new { tool = (string?) SuggestToolCorrectUrl, message = SuspectSuggestion },
+                (var _, var _, true) => new { tool = (string?) SuggestToolRechunk, message = BoundaryRechunkSuggestion },
+                var _ => new { tool = (string?) null, message = HealthySuggestion }
+            };
 
     [McpServerTool(Name = "get_dashboard_index")]
     [McpMeta("anthropic/alwaysLoad", value: true)]
@@ -284,6 +341,15 @@ public static class HealthTools
     private const string SuggestToolCancelScrape = "cancel_job";
     private const string SuggestMessageHealthy = "All libraries look healthy.";
     private const string WarmupStatusFailed = "Failed";
+    private const int DuplicateContentSampleCap = 200;
+    private const int MinContentSampleForSuspect = 5;
+    private const double DuplicateContentSuspectThreshold = 60.0;
+    private const string SuggestToolRescrape = "rescrape_library";
+    private const string SuggestToolRechunk = "rechunk_library";
+    private const string ContentSuspectSuggestion = "Most pages hold near-identical content - extraction likely captured a boilerplate widget instead of the article. Raw HTML is not retained, so reextract/rechunk cannot recover it; rescrape (scrape_docs force=true, optionally with contentSelector) to re-run extraction.";
+    private const string SuspectSuggestion = "Library is marked suspect - review the source and call submit_url_correction with a corrected URL.";
+    private const string BoundaryRechunkSuggestion = "Chunk boundary issues are high - rechunk_library is recommended.";
+    private const string HealthySuggestion = "Library looks healthy.";
 
     private static readonly JsonSerializerOptions smJsonOptions = new JsonSerializerOptions { WriteIndented = true };
 }

@@ -369,6 +369,80 @@ public sealed class HealthToolsTests
         Assert.Contains("\"tool\": \"cancel_job\"", json);
     }
 
+    // Every page reduced to the same boilerplate widget: a bounded content sample is nearly all
+    // identical, so get_library_health must flag contentSuspect and steer to a rescrape.
+    [Fact]
+    public async Task GetLibraryHealthFlagsContentSuspectWhenChunksAreDuplicated()
+    {
+        (var factory, var libraryRepo, var chunkRepo, var _) = MakeFactory();
+        StubLibraryAndVersion(libraryRepo, boundaryIssuePct: 0.0);
+        chunkRepo.GetLanguageMixAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                 .Returns(new Dictionary<string, double>());
+        chunkRepo.GetHostnameDistributionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                 .Returns(new Dictionary<string, int>());
+        chunkRepo.GetContentSampleAsync("foo", "1.0", Arg.Any<int>(), Arg.Any<CancellationToken>())
+                 .Returns(Enumerable.Repeat("Did you find this page useful?", 50).ToList());
+
+        var json = await HealthTools.GetLibraryHealth(factory,
+                                                      "foo",
+                                                      version: null,
+                                                      profile: null,
+                                                      TestContext.Current.CancellationToken
+                                                     );
+
+        Assert.Contains("\"contentSuspect\": true", json);
+        Assert.Contains("rescrape_library", json);
+    }
+
+    // A healthy, varied library: distinct content per page, so contentSuspect is false and the
+    // action does not steer to a rescrape.
+    [Fact]
+    public async Task GetLibraryHealthNotContentSuspectWhenChunksVary()
+    {
+        (var factory, var libraryRepo, var chunkRepo, var _) = MakeFactory();
+        StubLibraryAndVersion(libraryRepo, boundaryIssuePct: 0.0);
+        chunkRepo.GetLanguageMixAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                 .Returns(new Dictionary<string, double>());
+        chunkRepo.GetHostnameDistributionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                 .Returns(new Dictionary<string, int>());
+        chunkRepo.GetContentSampleAsync("foo", "1.0", Arg.Any<int>(), Arg.Any<CancellationToken>())
+                 .Returns(Enumerable.Range(0, 50).Select(i => $"distinct article body number {i}").ToList());
+
+        var json = await HealthTools.GetLibraryHealth(factory,
+                                                      "foo",
+                                                      version: null,
+                                                      profile: null,
+                                                      TestContext.Current.CancellationToken
+                                                     );
+
+        Assert.Contains("\"contentSuspect\": false", json);
+        Assert.DoesNotContain("rescrape_library", json);
+    }
+
+    private static void StubLibraryAndVersion(ILibraryRepository libraryRepo, double boundaryIssuePct)
+    {
+        libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
+                   .Returns(new LibraryRecord
+                                {
+                                    Id = "foo", Name = "f", Hint = "h",
+                                    CurrentVersion = "1.0",
+                                    AllVersions = ["1.0"]
+                                }
+                           );
+        libraryRepo.GetVersionAsync("foo", "1.0", Arg.Any<CancellationToken>())
+                   .Returns(new LibraryVersionRecord
+                                {
+                                    Id = "foo/1.0", LibraryId = "foo", Version = "1.0",
+                                    ScrapedAt = DateTime.UtcNow,
+                                    PageCount = 50, ChunkCount = 50,
+                                    EmbeddingProviderId = "ollama",
+                                    EmbeddingModelName = "nomic-embed-text",
+                                    EmbeddingDimensions = 768,
+                                    BoundaryIssuePct = boundaryIssuePct
+                                }
+                           );
+    }
+
     private static JobRecord MakeJobRecord(string id,
                                            string library,
                                            string version,

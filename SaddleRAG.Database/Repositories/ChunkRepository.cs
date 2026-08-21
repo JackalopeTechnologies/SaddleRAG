@@ -303,6 +303,25 @@ public class ChunkRepository : IChunkRepository
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetContentSampleAsync(string libraryId,
+                                                                   string version,
+                                                                   int limit,
+                                                                   CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+
+        var filter = Builders<DocChunk>.Filter.And(Builders<DocChunk>.Filter.Eq(c => c.LibraryId, libraryId),
+                                                   Builders<DocChunk>.Filter.Eq(c => c.Version, version)
+                                                  );
+        var contents = await mContext.Chunks.Find(filter)
+                                     .Project(c => c.Content)
+                                     .Limit(limit)
+                                     .ToListAsync(ct);
+        return contents;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
         CancellationToken ct = default)
     {
