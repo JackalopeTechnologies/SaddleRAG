@@ -41,6 +41,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     private InMemoryBruteForceVectorSearch mVector = null!;
     private MutableDirectoryTimeProvider mClock = null!;
     private DirectoryLibraryFixtureTree mFixture = null!;
+    private ScriptedSubjectTextGenerator mSubjectGenerator = null!;
 
     public async ValueTask InitializeAsync()
     {
@@ -51,6 +52,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
         mDocling = new ScriptedDoclingClient();
         mEmbedding = new CountingEmbeddingProvider();
         mVector = new InMemoryBruteForceVectorSearch();
+        mSubjectGenerator = new ScriptedSubjectTextGenerator();
         IConfiguration configuration = new ConfigurationBuilder()
                                           .AddInMemoryCollection(new Dictionary<string, string?>
                                                                      {
@@ -71,7 +73,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
         services.AddSingleton<TimeProvider>(mClock);
         services.AddSingleton<IDoclingClient>(mDocling);
         services.AddSingleton<ILlmClassifier, ScriptedFormClassifier>();
-        services.AddSingleton<IClassifierTextGenerator, ScriptedSubjectTextGenerator>();
+        services.AddSingleton<IClassifierTextGenerator>(mSubjectGenerator);
         services.AddSingleton<ISubjectIdGenerator, FixedSubjectIdGenerator>();
         services.AddSingleton<IEmbeddingProvider>(mEmbedding);
         services.AddSingleton<IVectorSearchProvider>(mVector);
@@ -240,6 +242,37 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
                                                                  TestContext.Current.CancellationToken);
         Assert.DoesNotContain(revisions, revision => revision.State == DocumentRevisionState.Candidate);
         await AssertSearchCitationAsync(PdfMarker, "Manual.pdf", "Owned PDF heading", expectedPage: 2);
+    }
+
+    [Fact]
+    public async Task UnparseableSubjectReplyDegradesToReviewFlaggedFallbackAndStillPublishes()
+    {
+        await RegisterRequiredAsync();
+        mSubjectGenerator.AssignmentReplyOverride = "not valid json";
+
+        DirectoryIngestionResult result = await ScanAsync(FirstVersion, "scan-fallback");
+
+        Assert.Equal(DirectoryIngestionStatuses.Completed, result.Status);
+        LibraryRecord library = Assert.IsType<LibraryRecord>(await Libraries.GetLibraryAsync(
+                                                                  LibraryId,
+                                                                  TestContext.Current.CancellationToken));
+        Assert.Equal(FirstVersion, library.CurrentVersion);
+        // The completed OCR is not discarded: every document still publishes and stays searchable.
+        await AssertSearchCitationAsync(PdfMarker, "Manual.pdf", "Owned PDF heading", expectedPage: 2);
+        // Each document received the review-flagged fallback subject instead of aborting the scan.
+        IReadOnlyList<DocumentRevisionRecord> revisions = await Sources.GetRevisionsAsync(
+                                                                LibraryId,
+                                                                FirstVersion,
+                                                                TestContext.Current.CancellationToken);
+        Assert.NotEmpty(revisions);
+        IReadOnlyList<SubjectAssignmentRecord> assignments = await mFactory
+            .GetSubjectAssignmentRepository(profile: null)
+            .GetByDocumentRevisionIdsAsync(revisions.Select(revision => revision.Id).ToList(),
+                                           TestContext.Current.CancellationToken);
+        Assert.Equal(revisions.Count, assignments.Count);
+        Assert.All(assignments, assignment => Assert.True(assignment.NeedsReview));
+        Assert.All(assignments,
+                   assignment => Assert.Equal("subject-owned-manuals", assignment.Primary.SubjectId));
     }
 
     [Fact]
@@ -783,6 +816,13 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
 
     private sealed class ScriptedSubjectTextGenerator : IClassifierTextGenerator
     {
+        /// <summary>
+        ///     When set, every per-document assignment prompt returns this reply
+        ///     instead of a valid one, reproducing an unparseable classifier reply.
+        ///     Catalog prompts are unaffected so catalog reconciliation still succeeds.
+        /// </summary>
+        public string? AssignmentReplyOverride { get; set; }
+
         public string BackendName => "scripted";
 
         public string ModelId => "scripted-subject-v1";
@@ -793,7 +833,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
             bool catalogPrompt = prompt.Contains(SubjectCatalogPrompt.PromptVersion, StringComparison.Ordinal);
             string response = catalogPrompt
                                   ? CatalogResponse(prompt)
-                                  : AssignmentResponse;
+                                  : (AssignmentReplyOverride ?? AssignmentResponse);
             return Task.FromResult(response);
         }
 
