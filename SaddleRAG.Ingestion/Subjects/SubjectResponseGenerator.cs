@@ -45,11 +45,32 @@ internal static class SubjectResponseGenerator
         {
             string retryPrompt = string.Concat(RetryInstruction, prompt);
             response = await generator.GenerateAsync(retryPrompt, ct);
-            TResponse parsed = SubjectJson.Deserialize<TResponse>(response);
+            TResponse parsed = DeserializeCapturingRaw<TResponse>(response);
             result = validate(parsed);
         }
 
         return result;
+    }
+
+    /// <summary>
+    ///     Parses the terminal reply, converting an unparseable result into a
+    ///     <see cref="SubjectClassificationException" /> that carries the raw text.
+    ///     A semantic validation failure downstream stays a sanitized
+    ///     <see cref="InvalidDataException" />.
+    /// </summary>
+    private static TResponse DeserializeCapturingRaw<TResponse>(string response)
+    {
+        TResponse parsed;
+        try
+        {
+            parsed = SubjectJson.Deserialize<TResponse>(response);
+        }
+        catch(InvalidDataException ex)
+        {
+            throw new SubjectClassificationException(response, ex);
+        }
+
+        return parsed;
     }
 
     internal const string RetryInstruction =
