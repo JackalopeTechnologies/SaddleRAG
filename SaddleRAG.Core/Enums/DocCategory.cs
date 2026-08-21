@@ -30,13 +30,13 @@ public enum DocCategory
 
 
     /// <summary>
-    ///     Source code â€” library implementation files (not usage examples).
+    ///     Source code — library implementation files (not usage examples).
     /// </summary>
     Code,
 
 
     /// <summary>
-    ///     API reference â€” class, method, property, event documentation.
+    ///     API reference — class, method, property, event documentation.
     /// </summary>
     ApiReference,
 
