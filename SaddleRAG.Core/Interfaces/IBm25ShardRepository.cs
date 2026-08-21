@@ -77,6 +77,16 @@ public interface IBm25ShardRepository
                            CancellationToken ct = default);
 
     /// <summary>
+    ///     Count the shard documents stored for (libraryId, version) without
+    ///     loading them, using the same filter as <see cref="DeleteAsync" /> so a
+    ///     delete dry-run reports the true shard count rather than assuming one
+    ///     shard per version.
+    /// </summary>
+    Task<long> CountShardsAsync(string libraryId,
+                                string version,
+                                CancellationToken ct = default);
+
+    /// <summary>
     ///     Return every distinct (LibraryId, Version) tuple for which at
     ///     least one BM25 shard exists. Used by orphan detection to compare
     ///     child pairs against the parent <see cref="LibraryRecord" /> set.

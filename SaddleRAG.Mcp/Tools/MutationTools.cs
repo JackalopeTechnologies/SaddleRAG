@@ -413,6 +413,10 @@ public static class MutationTools
                                        ? await repositoryFactory.GetProjectProfileRepository(profile)
                                                                 .CountIngestedPackageReferencesAsync(library, ct)
                                        : 0L;
+            long bm25Shards = await repositoryFactory.GetBm25ShardRepository(profile)
+                                                     .CountShardsAsync(library, version, ct);
+            long excludedSymbols = await repositoryFactory.GetExcludedSymbolsRepository(profile)
+                                                          .CountAsync(library, version, ct);
 
             var preview = new
                               {
@@ -424,8 +428,8 @@ public static class MutationTools
                                                         Pages = pages,
                                                         Profiles = 1,
                                                         Indexes = 1,
-                                                         Bm25Shards = 1,
-                                                         ExcludedSymbols = 1,
+                                                         Bm25Shards = bm25Shards,
+                                                         ExcludedSymbols = excludedSymbols,
                                                          documents.DirectoryLibraries,
                                                          documents.SourceDocuments,
                                                          documents.DocumentRevisions,
@@ -585,12 +589,18 @@ public static class MutationTools
     {
         IChunkRepository chunkRepo = repositoryFactory.GetChunkRepository(profile);
         IPageRepository pageRepo = repositoryFactory.GetPageRepository(profile);
+        IBm25ShardRepository bm25Repo = repositoryFactory.GetBm25ShardRepository(profile);
+        IExcludedSymbolsRepository excludedRepo = repositoryFactory.GetExcludedSymbolsRepository(profile);
         long totalChunks = 0;
         long totalPages = 0;
+        long totalBm25Shards = 0;
+        long totalExcludedSymbols = 0;
         foreach(var v in lib.AllVersions)
         {
             totalChunks += await chunkRepo.GetChunkCountAsync(library, v, ct);
             totalPages += await pageRepo.GetPageCountAsync(library, v, ct);
+            totalBm25Shards += await bm25Repo.CountShardsAsync(library, v, ct);
+            totalExcludedSymbols += await excludedRepo.CountAsync(library, v, ct);
         }
 
         var documents = await GetDocumentDeletionPreviewAsync(repositoryFactory,
@@ -619,8 +629,8 @@ public static class MutationTools
                                                     Pages = totalPages,
                                                     Profiles = lib.AllVersions.Count,
                                                     Indexes = lib.AllVersions.Count,
-                                                     Bm25Shards = lib.AllVersions.Count,
-                                                     ExcludedSymbols = lib.AllVersions.Count,
+                                                     Bm25Shards = totalBm25Shards,
+                                                     ExcludedSymbols = totalExcludedSymbols,
                                                      documents.DirectoryLibraries,
                                                      documents.SourceDocuments,
                                                      documents.DocumentRevisions,
