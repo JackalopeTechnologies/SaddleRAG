@@ -140,6 +140,18 @@ public interface IChunkRepository
                                                      CancellationToken ct = default);
 
     /// <summary>
+    ///     Returns up to <paramref name="limit" /> chunk Content values from the
+    ///     (libraryId, version), in no particular order and WITHOUT de-duplication.
+    ///     Used by get_library_health to detect near-duplicate extraction — e.g.
+    ///     every page reduced to the same boilerplate widget — from a bounded
+    ///     sample without loading the full corpus.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetContentSampleAsync(string libraryId,
+                                                      string version,
+                                                      int limit,
+                                                      CancellationToken ct = default);
+
+    /// <summary>
     ///     Return every distinct (LibraryId, Version) tuple for which at
     ///     least one chunk exists. Used by orphan detection to compare child
     ///     pairs against the parent <see cref="LibraryRecord" /> set.

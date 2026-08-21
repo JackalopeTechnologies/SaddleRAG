@@ -109,6 +109,15 @@ public static class ScrapeDocsTools
                                                              "for MudBlazor). Carried forward on resume."
                                                             )]
                                                 string? waitForSelector = null,
+                                                [Description("CSS selector for the container the content extractor should read " +
+                                                             "as the page's main content, overriding auto-detection. Unlike " +
+                                                             "waitForSelector this does NOT change navigation or render timing — " +
+                                                             "it only tells the extractor where the article is. Use when a scrape " +
+                                                             "extracted the wrong block (e.g. a landmark-free site whose extractor " +
+                                                             "picked a widget). Auto-detection is the default; leave null unless " +
+                                                             "needed. Carried forward on resume."
+                                                            )]
+                                                string? contentSelector = null,
                                                 [Description("Extra milliseconds to wait after NetworkIdle for slow-hydrating " +
                                                              "SPAs. Added on top of the built-in 300ms settle. Omit (null) " +
                                                              "on resume to carry forward the previous job's value; pass 0 to " +
@@ -205,6 +214,7 @@ public static class ScrapeDocsTools
                                          ForceClean = force,
                                          AdditionalRateLimitStatusCodes = parsedAdditionalRateLimitStatusCodes ?? previousJob.AdditionalRateLimitStatusCodes,
                                          WaitForSelector = waitForSelector ?? previousJob.WaitForSelector,
+                                         ContentSelector = contentSelector ?? previousJob.ContentSelector,
                                          SpaWaitMs = spaWaitMs ?? previousJob.SpaWaitMs
                                      };
                 }
@@ -241,6 +251,7 @@ public static class ScrapeDocsTools
                                               parsedAdditionalRateLimitStatusCodes,
                                               parsedSeedUrls,
                                               waitForSelector,
+                                              contentSelector,
                                               spaWaitMs ?? 0
                                              );
                 var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
@@ -292,6 +303,7 @@ public static class ScrapeDocsTools
                                             int[]? additionalRateLimitStatusCodes,
                                             string[]? seedUrls,
                                             string? waitForSelector,
+                                            string? contentSelector,
                                             int spaWaitMs)
     {
         ScrapeJob job;
@@ -311,6 +323,7 @@ public static class ScrapeDocsTools
                           AdditionalRateLimitStatusCodes = additionalRateLimitStatusCodes,
                           SeedUrls = seedUrls,
                           WaitForSelector = waitForSelector,
+                          ContentSelector = contentSelector,
                           SpaWaitMs = spaWaitMs
                       };
         }
@@ -327,8 +340,8 @@ public static class ScrapeDocsTools
                                                 );
             if (seedUrls is { Length: > 0 })
                 job = job with { SeedUrls = seedUrls };
-            if (!string.IsNullOrEmpty(waitForSelector) || spaWaitMs > 0)
-                job = job with { WaitForSelector = waitForSelector, SpaWaitMs = spaWaitMs };
+            if (!string.IsNullOrEmpty(waitForSelector) || !string.IsNullOrEmpty(contentSelector) || spaWaitMs > 0)
+                job = job with { WaitForSelector = waitForSelector, ContentSelector = contentSelector, SpaWaitMs = spaWaitMs };
         }
 
         return job;

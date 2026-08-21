@@ -1444,7 +1444,7 @@ public class PageCrawler : IPageCrawler
         var sw = Stopwatch.StartNew();
         string title = await page.TitleAsync();
         await ExpandCollapsibleNavigationAsync(page);
-        string content = await ExtractMainContentAsync(page, ctx.Job.WaitForSelector, ctx.Token);
+        string content = await ExtractMainContentAsync(page, ctx.Job.EffectiveContentSelector, ctx.Token);
         var links = await ExtractLinksAsync(page);
 
         string contentHash = ComputeHash(content);
