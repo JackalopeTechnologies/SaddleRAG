@@ -17,4 +17,16 @@ public interface ISubjectClassifier
                                                 string version,
                                                 string scanRunId,
                                                 CancellationToken ct = default);
+
+    /// <summary>
+    ///     Persists a deterministic, review-flagged fallback assignment (the
+    ///     catalog's first concept) for a document whose classification could not
+    ///     be parsed, so a completed scan still publishes instead of aborting.
+    /// </summary>
+    Task<SubjectAssignmentRecord> AssignFallbackAsync(ISubjectAssignmentRepository repository,
+                                                      SubjectDescriptor descriptor,
+                                                      SubjectCatalogRecord catalog,
+                                                      string version,
+                                                      string scanRunId,
+                                                      CancellationToken ct = default);
 }

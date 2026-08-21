@@ -41,10 +41,12 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
         mCatalogBuilder = catalogBuilder;
         mSubjectClassifier = subjectClassifier;
         mPageProcessor = pageProcessor;
+        mLogger = logger;
     }
 
     private readonly SubjectCatalogBuilder mCatalogBuilder;
     private readonly SubjectDescriptorBuilder mDescriptorBuilder;
+    private readonly ILogger<DirectoryIngestionPipeline> mLogger;
     private readonly DirectoryPageProducer mPageProducer;
     private readonly IngestionPageProcessor mPageProcessor;
     private readonly RepositoryFactory mRepositories;
@@ -139,12 +141,12 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
             await foreach(PendingDirectoryDocument document in sink.ReadDocumentsAsync(ct))
             {
                 ct.ThrowIfCancellationRequested();
-                SubjectAssignmentRecord assignment = await mSubjectClassifier.ClassifyAsync(assignmentRepository,
-                                                                                             descriptors[index],
-                                                                                             catalog,
-                                                                                             request.Version,
-                                                                                             request.ScanRunId,
-                                                                                             ct);
+                SubjectAssignmentRecord assignment = await ClassifyOrFallbackAsync(assignmentRepository,
+                                                                                    descriptors[index],
+                                                                                    catalog,
+                                                                                    request,
+                                                                                    document,
+                                                                                    ct);
                 IReadOnlyList<PageRecord> projected = mPageProducer.ProjectPages(document, assignment);
                 Func<IReadOnlyList<DocChunk>, IReadOnlyList<DocChunk>>? reuse =
                     reuseEmbeddings && document.ReusedExtraction
@@ -170,6 +172,41 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
         }
 
         return result;
+    }
+
+    private async Task<SubjectAssignmentRecord> ClassifyOrFallbackAsync(
+        ISubjectAssignmentRepository assignmentRepository,
+        SubjectDescriptor descriptor,
+        SubjectCatalogRecord catalog,
+        DirectoryIngestionRequest request,
+        PendingDirectoryDocument document,
+        CancellationToken ct)
+    {
+        SubjectAssignmentRecord assignment;
+        try
+        {
+            assignment = await mSubjectClassifier.ClassifyAsync(assignmentRepository,
+                                                                descriptor,
+                                                                catalog,
+                                                                request.Version,
+                                                                request.ScanRunId,
+                                                                ct);
+        }
+        catch(SubjectClassificationException ex)
+        {
+            mLogger.LogWarning(ex,
+                               FallbackAssignmentLogTemplate,
+                               document.Source.DisplayRelativePath,
+                               ex.RawResponsePreview);
+            assignment = await mSubjectClassifier.AssignFallbackAsync(assignmentRepository,
+                                                                      descriptor,
+                                                                      catalog,
+                                                                      request.Version,
+                                                                      request.ScanRunId,
+                                                                      ct);
+        }
+
+        return assignment;
     }
 
     private static IReadOnlyList<DocChunk>? TryReuseEmbeddings(IReadOnlyList<DocChunk> generated,
@@ -283,6 +320,10 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
         if (request.Definition.BindingStatus != DirectoryLibraryBindingStatus.Bound)
             throw new ArgumentException("The captured directory definition must be bound.", nameof(request));
     }
+
+    private const string FallbackAssignmentLogTemplate =
+        "Subject classification for document {DocumentPath} returned an unparseable reply; "
+        + "assigning a review-flagged fallback subject. Raw reply preview: {Preview}";
 
     private sealed record PipelineDocuments(int PageCount,
                                             int ChunkCount,
