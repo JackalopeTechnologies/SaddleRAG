@@ -113,13 +113,9 @@ public sealed class DocumentIntakeService : IDocumentIntake, IDocumentIntakeFing
     {
         var parser = new HtmlParser();
         var document = parser.ParseDocument(html);
-        foreach(var removable in document.QuerySelectorAll(RemovableHtmlSelector).ToArray())
-            removable.Remove();
+        RemoveBoilerplate(document);
 
-        var container = document.QuerySelector(MainElementSelector)
-                        ?? document.QuerySelector(ArticleElementSelector)
-                        ?? document.QuerySelector("[role=main]")
-                        ?? document.Body;
+        IElement? container = SelectContentContainer(document);
         var extracted = container == null ? string.Empty : ExtractVisibleHtml(container);
         var normalized = NormalizeLineEndings(extracted).Trim();
         DocumentIntakeResult result;
@@ -137,6 +133,70 @@ public sealed class DocumentIntakeService : IDocumentIntake, IDocumentIntakeFing
                              CreateBoundedSections(title, normalized, null, null),
                              fingerprint,
                              rawArtifact: null);
+        }
+
+        return result;
+    }
+
+    // Strips chrome and boilerplate-widget subtrees so a landmark-free page cannot leave nav,
+    // footer, sidebar, or rating/feedback widgets sitting next to the real content. Mirrors the
+    // web crawler's SpaAwareContentExtractor policy for this synchronous AngleSharp path: the
+    // same structural tags, ARIA roles, and id/class token denylist. <header> is deliberately
+    // left in place — HTML5 reuses it for article headers, and page mastheads are excluded by
+    // the dominance selection below rather than by tag.
+    private static void RemoveBoilerplate(IDocument document)
+    {
+        foreach(IElement removable in document.QuerySelectorAll(RemovableHtmlSelector).ToArray())
+            removable.Remove();
+
+        IElement? body = document.Body;
+        if (body != null)
+        {
+            foreach(IElement element in body.QuerySelectorAll(AllElementsSelector).ToArray())
+            {
+                if (HasBoilerplateToken(element.Id) || HasBoilerplateToken(element.ClassName))
+                    element.Remove();
+            }
+        }
+    }
+
+    // Picks the biggest real-text container so a small hydrated widget or a teaser card can never
+    // masquerade as the whole page. Falls back to the (already de-chromed) body when no container
+    // clears the minimum-text and link-density gates — the shape of a short, flat document.
+    private static IElement? SelectContentContainer(IDocument document)
+    {
+        IElement? best = null;
+        int bestLength = 0;
+        foreach(IElement candidate in document.QuerySelectorAll(ContentCandidateSelector))
+        {
+            int length = CollapseWhitespace(candidate.TextContent).Length;
+            if (length >= MinimumContentLength && length > bestLength && !IsLinkHeavy(candidate, length))
+            {
+                bestLength = length;
+                best = candidate;
+            }
+        }
+
+        return best ?? document.Body;
+    }
+
+    private static bool IsLinkHeavy(IElement element, int textLength)
+    {
+        var linkLength = 0;
+        foreach(IElement link in element.QuerySelectorAll(LinkSelector))
+            linkLength += CollapseWhitespace(link.TextContent).Length;
+        return textLength > 0 && (double)linkLength / textLength >= MaximumLinkRatio;
+    }
+
+    private static bool HasBoilerplateToken(string? value)
+    {
+        var result = false;
+        if (!string.IsNullOrEmpty(value))
+        {
+            string[] tokens = value.Split(smTokenSeparators,
+                                          StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach(string token in tokens.Where(_ => !result))
+                result = smBoilerplateTokens.Contains(token.ToLowerInvariant());
         }
 
         return result;
@@ -543,18 +603,34 @@ public sealed class DocumentIntakeService : IDocumentIntake, IDocumentIntakeFing
     private static readonly byte[] smUtf16LittleEndianBom = [0xff, 0xfe];
     private static readonly byte[] smUtf16BigEndianBom = [0xfe, 0xff];
     private static readonly byte[] smPdfSignature = "%PDF-"u8.ToArray();
+    private static readonly char[] smTokenSeparators = [' ', '\t', '\n', '\r', '-', '_'];
+    private static readonly HashSet<string> smBoilerplateTokens =
+        new([.. ChromeTokenList.Split(TokenListSeparator, StringSplitOptions.RemoveEmptyEntries),
+             .. WidgetTokenList.Split(TokenListSeparator, StringSplitOptions.RemoveEmptyEntries)],
+            StringComparer.Ordinal);
 
     private const string ContentTypesEntry = "[Content_Types].xml";
     private const string WordDocumentEntry = "word/document.xml";
-    private const string MainElementSelector = "main";
-    private const string ArticleElementSelector = "article";
     private const string PrimaryHeadingSelector = "h1";
     private const string CodeElementName = "code";
     private const string PreformattedElementName = "pre";
     private const string TableCellSeparator = " | ";
     private const string MarkdownHeadingPrefix = "# ";
-    private const string RemovableHtmlSelector = "script, style, noscript, nav, footer, aside";
+    private const string RemovableHtmlSelector =
+        "script, style, noscript, nav, footer, aside, [role=navigation], [role=contentinfo], [role=dialog]";
     private const string HtmlContentSelector = "h1, h2, h3, h4, h5, h6, p, li, pre, code, table";
+    private const string ContentCandidateSelector = "main, article, section, div";
+    private const string AllElementsSelector = "*";
+    private const string LinkSelector = "a[href]";
+    private const int MinimumContentLength = 200;
+    private const double MaximumLinkRatio = 0.7;
+    // Chrome + widget id/class tokens that mark a subtree as boilerplate. Technical component
+    // names, so they are language-tolerant (a French or Japanese site still names its element
+    // rating / feedback / disqus). Mirrors SpaAwareContentExtractor's denylist.
+    private const string ChromeTokenList = "sidebar toc navbar menu breadcrumb breadcrumbs";
+    private const string WidgetTokenList =
+        "rating feedback helpful survey poll share social newsletter subscribe cookie consent comments disqus related promo banner cta gdpr";
+    private const char TokenListSeparator = ' ';
     private const string JsonMediaType = "application/json";
     private const string LocalExtractorName = "SaddleRAG.LocalText";
     private const string HtmlExtractorName = "SaddleRAG.AngleSharp";
@@ -563,7 +639,7 @@ public sealed class DocumentIntakeService : IDocumentIntake, IDocumentIntakeFing
     private const string ExtractorVersion = "1";
     private const string ConfigurationSchema = "saddlerag-document-extraction-v1";
     private const string LocalExtractionContract = "strict-text;lf;markdown-title;json-sections-v1";
-    private const string HtmlExtractionContract = "anglesharp;visible-main-content;json-sections-v1";
+    private const string HtmlExtractionContract = "anglesharp;dominant-content;boilerplate-stripped;json-sections-v1";
     private const string DoclingExtractionContract =
         "serve-v1;markdown+json+text;ocr=true;table=accurate;pipeline=standard;images=placeholder;enrichment=false;abort=false;mapper=v1";
     private const string UnsupportedExtractionContract = "unsupported";

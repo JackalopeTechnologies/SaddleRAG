@@ -1773,7 +1773,7 @@ public class PageCrawler : IPageCrawler
     }
 
     /// <summary>
-    ///     Compute the "scope" of the root URL â€” same domain plus path-prefix.
+    ///     Compute the "scope" of the root URL — same domain plus path-prefix.
     ///     A page is considered in-scope if its host matches AND its path
     ///     starts with the root's parent path.
     ///     Example: root https://docs.foo.com/v2/intro/quick-start.html
@@ -1803,7 +1803,7 @@ public class PageCrawler : IPageCrawler
         }
         catch
         {
-            // Malformed URL â€” treat as out of scope
+            // Malformed URL — treat as out of scope
         }
 
         return result;
@@ -1827,7 +1827,7 @@ public class PageCrawler : IPageCrawler
         }
         catch
         {
-            // Malformed URL â€” treat as off-site
+            // Malformed URL — treat as off-site
         }
 
         return result;
@@ -1914,7 +1914,7 @@ public class PageCrawler : IPageCrawler
         IFrame? bestFrame = null;
         var bestScore = 0f;
 
-        // Skip frame[0] â€” it's the main page itself
+        // Skip frame[0] — it's the main page itself
         foreach(var frame in page.Frames.Where(f => f != page.MainFrame))
         {
             float score = await ScoreFrameAsync(frame);
@@ -2104,7 +2104,7 @@ public class PageCrawler : IPageCrawler
         }
         catch
         {
-            // Best effort â€” if expansion fails, the crawl still proceeds with
+            // Best effort — if expansion fails, the crawl still proceeds with
             // whatever links are currently visible.
         }
     }

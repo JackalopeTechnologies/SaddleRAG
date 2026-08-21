@@ -80,17 +80,63 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
                                                       Detail: LibraryNotBoundDetail);
                 break;
             default:
-                DocumentCapabilityPreflightResult preflight = await mCapabilityPreflight.EvaluateAsync(
-                                                                   definition,
-                                                                   ct);
-                result = preflight.Allowed
-                    ? await QueueBoundLibraryAsync(libraryId, profile, definition, ct)
-                    : BlockedResult(libraryId, preflight);
+                result = await QueueWithPreflightAsync(libraryId, profile, definition, ct);
                 break;
         }
 
         return result;
     }
+
+    private async Task<DirectoryScanQueueResult> QueueWithPreflightAsync(
+        string libraryId,
+        string? profile,
+        DirectoryLibraryDefinition definition,
+        CancellationToken cancellationToken)
+    {
+        DocumentCapabilityPreflightResult? preflight = await TryEvaluatePreflightAsync(definition,
+                                                                                       libraryId,
+                                                                                       cancellationToken);
+        DirectoryScanQueueResult result = preflight == null
+            ? PreflightFaultedResult(libraryId)
+            : preflight.Allowed
+                ? await QueueBoundLibraryAsync(libraryId, profile, definition, cancellationToken)
+                : BlockedResult(libraryId, preflight);
+        return result;
+    }
+
+    private async Task<DocumentCapabilityPreflightResult?> TryEvaluatePreflightAsync(
+        DirectoryLibraryDefinition definition,
+        string libraryId,
+        CancellationToken cancellationToken)
+    {
+        DocumentCapabilityPreflightResult? result;
+        try
+        {
+            result = await mCapabilityPreflight.EvaluateAsync(definition, cancellationToken);
+        }
+        catch(Exception error)
+        {
+            // The preflight walks the filesystem and probes the user-managed Docling
+            // endpoint on the request thread. A fault there — a probe error, or a probe
+            // interrupted before it reaches a verdict — must surface as a bounded,
+            // reported queue failure, never an unhandled exception the host renders as a
+            // raw 500. Docling being unavailable is an expected, recovered condition, so
+            // this is a Warning rather than an Error.
+            mLogger.LogWarning(error,
+                               "The document scanner preflight for {LibraryId} did not reach a verdict; reporting a bounded scan-queue failure.",
+                               libraryId);
+            result = null;
+        }
+
+        return result;
+    }
+
+    private static DirectoryScanQueueResult PreflightFaultedResult(string libraryId) =>
+        new(DirectoryScanQueueStatuses.Failed,
+            libraryId,
+            string.Empty,
+            ReasonCode: DirectoryScanReasonCodes.ScannerPreflightFailed,
+            Detail: ScannerPreflightFailedDetail);
 
     private async Task<DirectoryScanQueueResult> QueueBoundLibraryAsync(
         string libraryId,
@@ -337,6 +383,8 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
         "Register the directory library before requesting a manual scan.";
     private const string LibraryNotBoundDetail =
         "Bind the imported directory library to an explicit local root before requesting a manual scan.";
+    private const string ScannerPreflightFailedDetail =
+        "The document scanner readiness check could not be completed. Confirm the scanner is running, then request the scan again.";
     private const string DocumentsLabel = "documents";
     private const string CancelledStatus = "CANCELLED";
     private const string InvalidRelativePathDisplay = "(invalid relative path)";
