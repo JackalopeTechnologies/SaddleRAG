@@ -29,10 +29,10 @@ public static class VersionTools
                 )]
     public static async Task<string> GetVersionChanges(RepositoryFactory repositoryFactory,
                                                        [Description("Library identifier")] string library,
-                                                       [Description("Older version to compare from â€” defaults to previous"
+                                                       [Description("Older version to compare from — defaults to previous"
                                                                    )]
                                                        string? fromVersion = null,
-                                                       [Description("Newer version to compare to â€” defaults to current"
+                                                       [Description("Newer version to compare to — defaults to current"
                                                                    )]
                                                        string? toVersion = null,
                                                        [Description("Optional database profile name")]
