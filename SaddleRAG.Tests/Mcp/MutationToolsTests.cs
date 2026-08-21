@@ -149,6 +149,8 @@ public sealed class MutationToolsTests
         var pageRepo = Substitute.For<IPageRepository>();
         var jobRepo = Substitute.For<IJobRepository>();
         var projectProfiles = Substitute.For<IProjectProfileRepository>();
+        var bm25Repo = Substitute.For<IBm25ShardRepository>();
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
@@ -156,6 +158,8 @@ public sealed class MutationToolsTests
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
         factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         factory.GetProjectProfileRepository(Arg.Any<string?>()).Returns(projectProfiles);
+        factory.GetBm25ShardRepository(Arg.Any<string?>()).Returns(bm25Repo);
+        factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excludedRepo);
         jobRepo.CountDeleteCandidatesAsync(jobType: null,
                                             status: null,
                                             libraryId: "foo",
@@ -178,6 +182,10 @@ public sealed class MutationToolsTests
                            );
         chunkRepo.GetChunkCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 123);
         pageRepo.GetPageCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 45);
+        // A version is written as many BM25 shard documents, and may have zero excluded symbols —
+        // the dry-run must report those true store counts, not "one per version".
+        bm25Repo.CountShardsAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(6L);
+        excludedRepo.CountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 0);
 
         var json = await MutationTools.DeleteVersion(factory,
                                                      MakeNoopRunner(),
@@ -194,6 +202,8 @@ public sealed class MutationToolsTests
         Assert.Contains("\"Pages\": 45", json);
         Assert.Contains("\"Jobs\": 7", json);
         Assert.Contains("\"ProjectProfiles\": 2", json);
+        Assert.Contains("\"Bm25Shards\": 6", json);
+        Assert.Contains("\"ExcludedSymbols\": 0", json);
         await chunkRepo.DidNotReceive()
                        .DeleteChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -254,6 +264,8 @@ public sealed class MutationToolsTests
         var pageRepo = Substitute.For<IPageRepository>();
         var jobRepo = Substitute.For<IJobRepository>();
         var projectProfiles = Substitute.For<IProjectProfileRepository>();
+        var bm25Repo = Substitute.For<IBm25ShardRepository>();
+        var excludedRepo = Substitute.For<IExcludedSymbolsRepository>();
         var factory = Substitute.For<RepositoryFactory>([null!]);
 
         factory.GetChunkRepository(Arg.Any<string?>()).Returns(chunkRepo);
@@ -261,6 +273,8 @@ public sealed class MutationToolsTests
         factory.GetLibraryRepository(Arg.Any<string?>()).Returns(libraryRepo);
         factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         factory.GetProjectProfileRepository(Arg.Any<string?>()).Returns(projectProfiles);
+        factory.GetBm25ShardRepository(Arg.Any<string?>()).Returns(bm25Repo);
+        factory.GetExcludedSymbolsRepository(Arg.Any<string?>()).Returns(excludedRepo);
         jobRepo.CountDeleteCandidatesAsync(jobType: null,
                                             status: null,
                                             libraryId: "foo",
@@ -285,6 +299,13 @@ public sealed class MutationToolsTests
         chunkRepo.GetChunkCountAsync("foo", "2.0", Arg.Any<CancellationToken>()).Returns(returnThis: 100);
         pageRepo.GetPageCountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 10);
         pageRepo.GetPageCountAsync("foo", "2.0", Arg.Any<CancellationToken>()).Returns(returnThis: 20);
+        // Shard documents per version differ (5 + 18 = 23, the observed real delete); excluded
+        // symbols may be present on one version and absent on another (0 + 4). The dry-run must sum
+        // the true store counts across versions, not report AllVersions.Count (which would say 2/2).
+        bm25Repo.CountShardsAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(5L);
+        bm25Repo.CountShardsAsync("foo", "2.0", Arg.Any<CancellationToken>()).Returns(18L);
+        excludedRepo.CountAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(returnThis: 0);
+        excludedRepo.CountAsync("foo", "2.0", Arg.Any<CancellationToken>()).Returns(returnThis: 4);
 
         var json = await MutationTools.DeleteLibrary(factory,
                                                      MakeNoopRunner(),
@@ -300,6 +321,8 @@ public sealed class MutationToolsTests
         Assert.Contains("\"Pages\": 30", json);
         Assert.Contains("\"Jobs\": 8", json);
         Assert.Contains("\"ProjectProfiles\": 3", json);
+        Assert.Contains("\"Bm25Shards\": 23", json);
+        Assert.Contains("\"ExcludedSymbols\": 4", json);
     }
 
     [Fact]
