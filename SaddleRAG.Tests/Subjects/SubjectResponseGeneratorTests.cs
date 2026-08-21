@@ -68,21 +68,29 @@ public sealed class SubjectResponseGeneratorTests
     }
 
     [Fact]
-    public async Task TwoInvalidResponsesRemainTerminalSanitizedAndBounded()
+    public async Task TwoInvalidResponsesSurfaceABoundedRawPreviewAndCarryTheFullReply()
     {
-        const string sensitiveMarker = "PRIVATE-SYNTHETIC-DOCUMENT-CONTENT";
-        string invalidResponse = $"{{\"value\":\"{sensitiveMarker}\"";
+        const string marker = "PRIVATE-SYNTHETIC-DOCUMENT-CONTENT";
+        string invalidResponse = string.Concat("{\"value\":\"",
+                                               marker,
+                                               new string('x',
+                                                          SubjectClassificationLimits.MaxRawResponsePreviewCharacters));
         var generator = new ScriptedSubjectGenerator(invalidResponse, invalidResponse);
 
-        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            SubjectResponseGenerator.GenerateAsync<Dictionary<string, JsonElement>>(
-                generator,
-                "Classify the synthetic document.",
-                TestContext.Current.CancellationToken));
+        SubjectClassificationException failure =
+            await Assert.ThrowsAsync<SubjectClassificationException>(() =>
+                SubjectResponseGenerator.GenerateAsync<Dictionary<string, JsonElement>>(
+                    generator,
+                    "Classify the synthetic document.",
+                    TestContext.Current.CancellationToken));
 
         Assert.Equal(2, generator.Prompts.Count);
-        Assert.DoesNotContain(sensitiveMarker, failure.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(sensitiveMarker, failure.ToString(), StringComparison.Ordinal);
+        // The complete reply is captured for local diagnosis.
+        Assert.Equal(invalidResponse, failure.RawResponse);
+        // A preview of the reply is now surfaced (the deliberate reversal of the old guarantee) ...
+        Assert.Contains(marker, failure.Message, StringComparison.Ordinal);
+        // ... but only a bounded preview: the full reply is never rendered into the message.
+        Assert.DoesNotContain(invalidResponse, failure.Message, StringComparison.Ordinal);
     }
 
     private static string ValidateValue(JsonElement value)
