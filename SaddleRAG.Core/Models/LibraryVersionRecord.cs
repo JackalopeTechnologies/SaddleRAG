@@ -88,7 +88,7 @@ public record LibraryVersionRecord
 
     /// <summary>
     ///     Specific model name used for embeddings.
-    ///     Example: "nomic-embed-text" â€” used to ensure the same
+    ///     Example: "nomic-embed-text" — used to ensure the same
     ///     model is loaded at query time.
     /// </summary>
     public required string EmbeddingModelName { get; init; }

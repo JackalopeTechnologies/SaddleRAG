@@ -697,7 +697,7 @@ if (prewarmMode)
 else
 
 {
-    app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” HTTP server starting", startupSw.Elapsed.TotalSeconds);
+    app.Logger.LogInformation("[Startup] T+{Sec:F1}s — HTTP server starting", startupSw.Elapsed.TotalSeconds);
 
     // Engage the crash black box for real runs only: prewarm's start/stop
     // cycle must not leave (or clear) a running marker. A leftover marker
@@ -729,7 +729,7 @@ else
                 {
                     firstRequestLogged = true;
 
-                    app.Logger.LogInformation("[Startup] T+{Sec:F1}s â€” First request: {Method} {Path}",
+                    app.Logger.LogInformation("[Startup] T+{Sec:F1}s — First request: {Method} {Path}",
                                               startupSw.Elapsed.TotalSeconds,
                                               context.Request.Method,
                                               context.Request.Path
@@ -742,7 +742,7 @@ else
            );
 
 
-    // HTTPS redirection â€” enabled only when an HTTPS endpoint is configured
+    // HTTPS redirection — enabled only when an HTTPS endpoint is configured
 
     var httpsEndpointUrl = app.Configuration[KestrelHttpsEndpointKey];
 

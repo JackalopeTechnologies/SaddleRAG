@@ -38,7 +38,7 @@ public sealed class SubjectClassifier : ISubjectClassifier
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(scanRunId);
         if (catalog.Concepts.Count == 0)
-            throw new ArgumentException("The subject catalog cannot be empty.", nameof(catalog));
+            throw new ArgumentException(CatalogEmptyMessage, nameof(catalog));
 
         string prompt = SubjectClassificationPrompt.Build(descriptor, catalog);
         var knownIds = catalog.Concepts.Select(concept => concept.Id).ToHashSet(StringComparer.Ordinal);
@@ -79,6 +79,60 @@ public sealed class SubjectClassifier : ISubjectClassifier
         await repository.PersistAsync(assignment, ct);
         return assignment;
     }
+
+    public async Task<SubjectAssignmentRecord> AssignFallbackAsync(
+        ISubjectAssignmentRepository repository,
+        SubjectDescriptor descriptor,
+        SubjectCatalogRecord catalog,
+        string version,
+        string scanRunId,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(scanRunId);
+        if (catalog.Concepts.Count == 0)
+            throw new ArgumentException(CatalogEmptyMessage, nameof(catalog));
+
+        SubjectConcept fallbackConcept = catalog.Concepts[0];
+        var primary = new SubjectSelection
+                          {
+                              SubjectId = fallbackConcept.Id,
+                              Confidence = FallbackConfidence,
+                              Evidence = [FallbackEvidence]
+                          };
+        var assignment = new SubjectAssignmentRecord
+                             {
+                                 Id = SubjectAssignmentRepository.MakeId(catalog.LibraryId,
+                                                                         version,
+                                                                         descriptor.DocumentRevisionId),
+                                 LibraryId = catalog.LibraryId,
+                                 Version = version,
+                                 ScanRunId = scanRunId,
+                                 DocumentId = descriptor.DocumentId,
+                                 DocumentRevisionId = descriptor.DocumentRevisionId,
+                                 TaxonomyVersion = catalog.TaxonomyVersion,
+                                 Primary = primary,
+                                 Secondary = [],
+                                 NeedsReview = true,
+                                 Provenance = new SubjectClassifierProvenance
+                                                  {
+                                                      Backend = mGenerator.BackendName,
+                                                      ModelId = mGenerator.ModelId,
+                                                      PromptVersion = SubjectClassificationPrompt.PromptVersion,
+                                                      GeneratedAtUtc = mTimeProvider.GetUtcNow().UtcDateTime
+                                                  }
+                             };
+        await repository.PersistAsync(assignment, ct);
+        return assignment;
+    }
+
+    private const string CatalogEmptyMessage = "The subject catalog cannot be empty.";
+    private const float FallbackConfidence = 0f;
+    private const string FallbackEvidence =
+        "Automatic fallback subject: the classifier reply could not be parsed; assignment flagged for review.";
 
     private static ValidatedClassification ValidateResponse(SubjectClassificationResponse response,
                                                             IReadOnlySet<string> knownIds)
