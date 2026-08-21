@@ -137,6 +137,20 @@ public class Bm25ShardRepository : IBm25ShardRepository
     }
 
     /// <inheritdoc />
+    public async Task<long> CountShardsAsync(string libraryId,
+                                             string version,
+                                             CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+
+        long result = await mContext.Bm25Shards
+                                    .CountDocumentsAsync(s => s.LibraryId == libraryId && s.Version == version,
+                                                         cancellationToken: ct);
+        return result;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<LibraryVersionKey>> GetDistinctLibraryVersionPairsAsync(
         CancellationToken ct = default)
     {

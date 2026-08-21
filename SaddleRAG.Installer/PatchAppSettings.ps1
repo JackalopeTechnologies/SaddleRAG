@@ -81,6 +81,17 @@ $LegacyConversionTimeoutSeconds  = 600
 $DefaultConversionTimeoutSeconds = 14400
 $DefaultConversionStallSeconds   = 300
 
+# Logging:LogLevel entries the shipped template carries. Like the conversion
+# timeouts, these reach a machine only through the template, so an upgrade that
+# preserves appsettings.json never gains a newly added level (e.g. the
+# System.Net.Http.HttpClient HTTP-spam suppression). Seeded when absent below; a
+# level the operator has deliberately set for any key is preserved.
+$DesiredLogLevels = [ordered]@{
+    'Default'                    = 'Information'
+    'Microsoft.AspNetCore'       = 'Warning'
+    'System.Net.Http.HttpClient' = 'Warning'
+}
+
 # Resolve a config value with a three-tier fallback: the provided installer value
 # wins when non-blank; otherwise keep whatever the shipped template already holds;
 # otherwise fall back to the built-in default. Never returns an empty string.
@@ -196,6 +207,27 @@ try
     {
         $json.DocumentIngestion.Docling | Add-Member -MemberType NoteProperty `
             -Name ConversionStallTimeoutSeconds -Value $DefaultConversionStallSeconds -Force
+    }
+
+    # Converge the Logging:LogLevel block. Create the Logging / LogLevel objects
+    # if the preserved file predates them, then seed each shipped level whose key
+    # is missing. An existing key is left untouched so a deliberately tuned level
+    # survives the upgrade, exactly like the conversion timeouts above.
+    if ($null -eq $json.PSObject.Properties['Logging'])
+    {
+        $json | Add-Member -MemberType NoteProperty -Name Logging -Value ([pscustomobject]@{})
+    }
+    if ($null -eq $json.Logging.PSObject.Properties['LogLevel'])
+    {
+        $json.Logging | Add-Member -MemberType NoteProperty -Name LogLevel -Value ([pscustomobject]@{})
+    }
+    foreach ($logLevelName in $DesiredLogLevels.Keys)
+    {
+        if ($null -eq $json.Logging.LogLevel.PSObject.Properties[$logLevelName])
+        {
+            $json.Logging.LogLevel | Add-Member -MemberType NoteProperty `
+                -Name $logLevelName -Value $DesiredLogLevels[$logLevelName]
+        }
     }
 
     $effectiveProvider = if ([string]::IsNullOrWhiteSpace($ExecutionProvider) -or

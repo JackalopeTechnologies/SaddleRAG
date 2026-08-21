@@ -14,7 +14,7 @@ using ModelContextProtocol.Server;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tools for server diagnostics â€” log access and startup stats.
+///     MCP tools for server diagnostics — log access and startup stats.
 /// </summary>
 [McpServerToolType]
 public static class DiagnosticTools
