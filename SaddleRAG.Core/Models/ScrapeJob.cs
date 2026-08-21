@@ -151,13 +151,32 @@ public record ScrapeJob
     ///     navigator, escalation fires after that observation, and the URL
     ///     is requeued for re-fetch under the SPA navigator. Subsequent
     ///     fetches use the SPA navigator (NetworkIdle + 300 ms settle +
-    ///     optional <see cref="SpaWaitMs" /> + selector wait) and the
-    ///     selector is also tried first by the content extractor.
+    ///     optional <see cref="SpaWaitMs" /> + selector wait) and, unless
+    ///     <see cref="ContentSelector" /> overrides it, the selector is also
+    ///     tried first by the content extractor.
     ///     Use for known SPA documentation sites (e.g.
     ///     <c>.mud-main-content</c> for MudBlazor). Null means "auto-detect
     ///     via shell sniffing on the first 3 pages".
     /// </summary>
     public string? WaitForSelector { get; init; }
+
+    /// <summary>
+    ///     CSS selector for the container the content extractor should read as the page's main
+    ///     content, overriding auto-detection. Unlike <see cref="WaitForSelector" /> this affects
+    ///     ONLY extraction, not page navigation or render timing — the SPA navigator keys off
+    ///     <see cref="WaitForSelector" /> alone. Use when a page's real content is mis-detected
+    ///     (e.g. a landmark-free site whose extractor otherwise picks a widget). Null means
+    ///     "auto-detect", which is the default for nearly every site.
+    /// </summary>
+    public string? ContentSelector { get; init; }
+
+    /// <summary>
+    ///     The selector the content extractor should try first: the explicit
+    ///     <see cref="ContentSelector" /> override when set, otherwise
+    ///     <see cref="WaitForSelector" />. Distinct from render timing, which keys off
+    ///     <see cref="WaitForSelector" /> alone.
+    /// </summary>
+    public string? EffectiveContentSelector => ContentSelector ?? WaitForSelector;
 
     /// <summary>
     ///     Additional milliseconds to wait after the SPA navigator's NetworkIdle
