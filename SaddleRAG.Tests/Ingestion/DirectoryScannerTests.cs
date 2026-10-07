@@ -18,6 +18,41 @@ namespace SaddleRAG.Tests.Ingestion;
 public sealed class DirectoryScannerTests
 {
     [Fact]
+    public async Task CurrentFileIsReportedBeforeExtractionAndFailureBeforeTheNextFile()
+    {
+        var fileSystem = RootedFileSystem();
+        var first = FileAt(RootPath, "a.pdf", "pdf");
+        var second = FileAt(RootPath, "b.pdf", "pdf");
+        fileSystem.SetEnumeration(RootPath, Enumeration(first.Snapshot, second.Snapshot));
+        fileSystem.SetRead(first.Snapshot.FullPath, first.Read);
+        fileSystem.SetRead(second.Snapshot.FullPath, second.Read);
+        var updates = new List<DirectoryScanProgress>();
+        var intake = Substitute.For<IDocumentIntake>();
+        var failed = new DocumentIntakeResult(false, "CONVERSION_FAILED", "A page could not be read.",
+            string.Empty, [], ReadOnlyMemory<byte>.Empty, string.Empty, null);
+        var calls = 0;
+        intake.ReadAsync(Arg.Any<DocumentIntakeRequest>(), Arg.Any<CancellationToken>()).Returns(_ =>
+            {
+                DirectoryScanProgress current = updates[^1];
+                Assert.Equal(calls == 0 ? "a.pdf" : "b.pdf", current.CurrentRelativePath);
+                Assert.Equal(ScanTime.UtcDateTime, current.CurrentFileStartedAtUtc);
+                Assert.Equal(0, current.DocumentsCompleted);
+                Assert.Equal(calls, current.FileFailures.Count);
+                calls++;
+                return Task.FromResult(failed);
+            });
+        var engine = new DirectoryScanEngine(fileSystem, intake, NullLogger<DirectoryScanEngine>.Instance,
+            new FixedDirectoryScanTimeProvider(ScanTime));
+
+        await engine.ScanAsync(Request(recursive: false), Substitute.For<IDirectoryScanSink>(), updates.Add,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, calls);
+        Assert.Equal(2, updates[^1].FileFailures.Count);
+        Assert.Null(updates[^1].CurrentRelativePath);
+    }
+
+    [Fact]
     public async Task NonRecursivePreviewReadsOnlyRootFilesAndAlwaysCleansItsEphemeralWorkspace()
     {
         var fileSystem = RootedFileSystem();

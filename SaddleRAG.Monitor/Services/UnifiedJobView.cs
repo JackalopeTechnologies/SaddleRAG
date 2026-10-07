@@ -102,7 +102,9 @@ public sealed class UnifiedJobView : IUnifiedJobView
                        ItemsTotal     = (int) r.ItemsTotal,
                        ItemsLabel     = r.ItemsLabel,
                        ErrorCount     = r.ErrorCount,
-                       ErrorMessage   = r.ErrorMessage
+                       ErrorMessage   = r.ErrorMessage,
+                       DirectoryScanProgress = r.DirectoryScanProgress,
+                       DirectoryScanFailures = r.DirectoryScanFailures
                    };
     }
 

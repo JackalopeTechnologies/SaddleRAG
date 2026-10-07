@@ -15,7 +15,7 @@ using SaddleRAG.Monitor.Services;
 namespace SaddleRAG.Monitor.Pages;
 
 /// <summary>Code-behind for explicit, user-controlled directory library actions.</summary>
-public abstract class DirectoryLibrariesPageBase : ComponentBase
+public abstract class DirectoryLibrariesPageBase : ComponentBase, IAsyncDisposable
 {
     [Inject]
     private IDirectoryLibraryMonitorDataService? DataService { get; set; }
@@ -25,6 +25,20 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase
 
     [Inject]
     private IDoclingCapabilityService? Capability { get; set; }
+
+    private readonly CancellationTokenSource mRefreshCancellation = new();
+    private Task? mRefreshTask;
+    protected string? ProgressRefreshError { get; private set; }
+
+    /// <summary>Stops progress polling when the page closes.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        await mRefreshCancellation.CancelAsync();
+        if (mRefreshTask != null)
+            await mRefreshTask;
+        mRefreshCancellation.Dispose();
+        GC.SuppressFinalize(this);
+    }
 
     /// <summary>
     ///     Last observed document-scanner status. Read from the cached
@@ -82,6 +96,47 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase
         DirectoryLibraryMonitorRow? first = Rows.FirstOrDefault();
         if (first != null)
             SelectRow(first);
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            mRefreshTask = RefreshProgressAsync(mRefreshCancellation.Token);
+        return Task.CompletedTask;
+    }
+
+    private async Task RefreshProgressAsync(CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(DataService);
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(ProgressRefreshSeconds));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                try
+                {
+                    IReadOnlyList<DirectoryLibraryMonitorRow> rows = await DataService.ListAsync(profile: null, ct);
+                    await InvokeAsync(() =>
+                        {
+                            Rows = rows;
+                            ProgressRefreshError = null;
+                            StateHasChanged();
+                        });
+                }
+                catch(Exception ex) when(ex is not OperationCanceledException)
+                {
+                    await InvokeAsync(() =>
+                        {
+                            ProgressRefreshError = ProgressRefreshFailure;
+                            StateHasChanged();
+                        });
+                }
+            }
+        }
+        catch(OperationCanceledException) when(ct.IsCancellationRequested)
+        {
+            // Closing the page cancels only its read-only progress polling.
+        }
     }
 
     /// <summary>
@@ -322,7 +377,7 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase
         ArgumentNullException.ThrowIfNull(row);
         string result = row.Progress == null
                             ? NoProgressDisplay
-                            : $"{row.Progress.DocumentsCompleted} of {row.Progress.SupportedDocuments} documents";
+                            : row.Progress.Phase;
         return result;
     }
 
@@ -393,7 +448,7 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase
     protected static double ProgressPercent(DirectoryScanJobProgress? progress)
     {
         double result = progress is { SupportedDocuments: > 0 }
-                            ? progress.DocumentsCompleted * PercentScale / progress.SupportedDocuments
+                            ? progress.DisplayCompleted * PercentScale / progress.SupportedDocuments
                             : 0;
         return result;
     }
@@ -428,6 +483,8 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase
             string.Empty);
 
     private const double PercentScale = 100.0;
+    private const int ProgressRefreshSeconds = 3;
+    private const string ProgressRefreshFailure = "Could not refresh scan progress. Retrying automatically.";
     private const int SecondsPerMinute = 60;
     private const int MinutesPerHour = 60;
     private const int HoursPerDay = 24;

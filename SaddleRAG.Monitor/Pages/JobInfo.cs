@@ -6,6 +6,7 @@
 #region Usings
 
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Core.Models;
 
 #endregion
 
@@ -24,4 +25,6 @@ public sealed record JobInfo
     public DateTime? StartedAt { get; init; }
     public DateTime? CompletedAt { get; init; }
     public string? ErrorMessage { get; init; }
+    public DirectoryScanJobProgress? DirectoryScanProgress { get; init; }
+    public IReadOnlyList<DirectoryScanFileFailure> DirectoryScanFailures { get; init; } = [];
 }

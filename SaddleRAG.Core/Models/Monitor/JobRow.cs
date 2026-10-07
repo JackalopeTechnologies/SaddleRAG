@@ -35,6 +35,8 @@ public sealed record JobRow
 
     public int ErrorCount { get; init; }
     public string? ErrorMessage { get; init; }
+    public DirectoryScanJobProgress? DirectoryScanProgress { get; init; }
+    public IReadOnlyList<DirectoryScanFileFailure> DirectoryScanFailures { get; init; } = [];
 
     public TimeSpan? Duration =>
         StartedAt is null ? null : (CompletedAt ?? DateTime.UtcNow) - StartedAt.Value;

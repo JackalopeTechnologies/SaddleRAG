@@ -170,13 +170,16 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
                                 if (!mDisposed)
                                 {
                                     HubConnected = true;
-                                    TryCancelFallback();
+                                    if (Info?.Type != JobType.DirectoryScan)
+                                        TryCancelFallback();
                                     await InvokeAsync(StateHasChanged);
                                 }
                             };
 
         await mHub.StartAsync();
         await mHub.InvokeAsync(SubscribeJobMethod, JobId);
+        if (Info?.Type == JobType.DirectoryScan)
+            StartFallbackPolling();
 
         if (!IsActive)
             await LoadTerminalFeedsAsync();
@@ -251,16 +254,37 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
 
     private async Task PollOnceAsync(CancellationToken ct)
     {
-        if (WriteService is not null)
+        if (Info?.Type == JobType.DirectoryScan && DataService is not null)
         {
-            var snap = await WriteService.GetJobSnapshotAsync(JobId, ct);
-            if (snap is not null)
+            JobInfo? updated = await DataService.GetJobInfoAsync(JobId, ct);
+            await InvokeAsync(() =>
+                {
+                    Info = updated;
+                    StateHasChanged();
+                });
+            if (!IsActive)
             {
-                var tick = SnapshotToTick(snap);
-                CurrentTick = tick;
-                Rates = mRates.Update(tick.Counters, tick.At);
-                IngestTick(tick);
-                await InvokeAsync(StateHasChanged);
+                TryCancelFallback();
+                if (mElapsedTimer is not null)
+                {
+                    await mElapsedTimer.DisposeAsync();
+                    mElapsedTimer = null;
+                }
+            }
+        }
+        else
+        {
+            if (WriteService is not null)
+            {
+                var snap = await WriteService.GetJobSnapshotAsync(JobId, ct);
+                if (snap is not null)
+                {
+                    var tick = SnapshotToTick(snap);
+                    CurrentTick = tick;
+                    Rates = mRates.Update(tick.Counters, tick.At);
+                    IngestTick(tick);
+                    await InvokeAsync(StateHasChanged);
+                }
             }
         }
     }

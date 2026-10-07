@@ -90,6 +90,7 @@ public static class BackgroundJobTools
                                    job.ItemsTotal,
                                    job.ItemsLabel,
                                    job.DirectoryScanProgress,
+                                   job.DirectoryScanFailures,
                                    job.ErrorMessage,
                                    Result = parsedResult,
                                    BoundaryHint = boundaryHint,

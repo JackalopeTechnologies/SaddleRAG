@@ -125,6 +125,15 @@ public sealed class DirectoryScanEngine
                                                           StringComparer.Ordinal))
             {
                 ct.ThrowIfCancellationRequested();
+                if (IsSupported(request, file.CanonicalPath))
+                {
+                    progress = progress with
+                        {
+                            CurrentRelativePath = file.NormalizedRelativePath,
+                            CurrentFileStartedAtUtc = mTimeProvider.GetUtcNow().UtcDateTime
+                        };
+                    onProgress?.Invoke(progress);
+                }
                 FileProcessingResult processed = await ProcessFileAsync(request,
                                                                          sink,
                                                                          budget,
@@ -132,15 +141,17 @@ public sealed class DirectoryScanEngine
                                                                          file,
                                                                          ct);
                 entries.Add(processed.Entry);
-                progress = processed.Completed
-                    ? progress with
-                        {
-                            DocumentsCompleted = progress.DocumentsCompleted + 1,
-                            CurrentRelativePath = file.NormalizedRelativePath
-                        }
-                    : IsSupported(request, file.CanonicalPath)
-                        ? progress with { CurrentRelativePath = file.NormalizedRelativePath }
-                        : progress;
+                progress = progress with
+                    {
+                        DocumentsCompleted = progress.DocumentsCompleted + (processed.Completed ? 1 : 0),
+                        CurrentRelativePath = null,
+                        CurrentFileStartedAtUtc = null,
+                        FileFailures = entries.Where(entry => entry.Status == DirectoryScanEntryStatus.Failed
+                                                              || entry.ReasonCode is DirectoryScanReasonCodes.FileTooLarge
+                                                                  or DirectoryScanReasonCodes.FileEmpty)
+                                              .Select(entry => new DirectoryScanFileFailure(entry.RelativePath,
+                                                  entry.ReasonCode, entry.Detail)).ToArray()
+                    };
                 onProgress?.Invoke(progress);
             }
 

@@ -9,4 +9,10 @@ namespace SaddleRAG.Core.Models;
 public sealed record DirectoryScanProgress(int FilesDiscovered,
                                            int SupportedDocuments,
                                            int DocumentsCompleted,
-                                           string? CurrentRelativePath);
+                                           string? CurrentRelativePath)
+{
+    public string Phase { get; init; } = DirectoryScanPhases.Extracting;
+    public int PhaseDocumentsCompleted { get; init; }
+    public DateTime? CurrentFileStartedAtUtc { get; init; }
+    public IReadOnlyList<DirectoryScanFileFailure> FileFailures { get; init; } = [];
+}

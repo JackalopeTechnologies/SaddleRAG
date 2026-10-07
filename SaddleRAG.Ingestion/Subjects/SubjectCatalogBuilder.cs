@@ -57,7 +57,8 @@ public sealed class SubjectCatalogBuilder
         string libraryId,
         string scanRunId,
         IReadOnlyList<SubjectDescriptor> descriptors,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Action<string, int>? onProgress = null)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
@@ -77,6 +78,7 @@ public sealed class SubjectCatalogBuilder
                                                                      StringComparer.Ordinal))
         {
             var elapsed = Stopwatch.StartNew();
+            onProgress?.Invoke(descriptor.RelativePath, documents.Count);
             mLogger.LogInformation("Subject labeling started for {DocumentPath} using {Backend}/{Model}",
                 descriptor.RelativePath, mGenerator.BackendName, mGenerator.ModelId);
             string prompt = SubjectCatalogPrompt.Build(descriptor);
@@ -101,6 +103,7 @@ public sealed class SubjectCatalogBuilder
                                    });
             }
             documents.Add(descriptor.DocumentRevisionId, (descriptor.DocumentId, selections));
+            onProgress?.Invoke(descriptor.RelativePath, documents.Count);
             mLogger.LogInformation("Subject labeling completed for {DocumentPath} in {ElapsedSeconds:F1}s; {Completed}/{Total} documents",
                 descriptor.RelativePath, elapsed.Elapsed.TotalSeconds, documents.Count, descriptors.Count);
         }

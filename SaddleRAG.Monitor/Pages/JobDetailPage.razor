@@ -39,6 +39,9 @@ else
         <MudAlert Severity="Severity.Warning" Class="mb-2">Live connection lost — polling for updates.</MudAlert>
     }
 
+    <DirectoryScanProgressPanel Progress="@Info.DirectoryScanProgress"
+                                Failures="@Info.DirectoryScanFailures" Active="@IsActive" />
+
     @if (IsActive)
     {
         @if (MonitorTypeFormatting.IsCrawlerJob(Info.Type))

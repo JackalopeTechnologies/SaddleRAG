@@ -42,7 +42,7 @@ public sealed class DirectoryScanJobTests
         Assert.Equal(Version, completed.Version);
         Assert.Equal(JobStatus.Completed, completed.Status);
         Assert.Equal("documents", completed.ItemsLabel);
-        Assert.Equal(2, completed.ItemsProcessed);
+        Assert.Equal(4, completed.ItemsProcessed);
         Assert.Equal(4, completed.ItemsTotal);
         Assert.NotNull(completed.DirectoryScanProgress);
         Assert.Equal(5, completed.DirectoryScanProgress.FilesDiscovered);
@@ -82,6 +82,11 @@ public sealed class DirectoryScanJobTests
         Assert.Equal(4, progress["SupportedDocuments"]!.GetValue<int>());
         Assert.Equal(2, progress["DocumentsCompleted"]!.GetValue<int>());
         Assert.Equal("nested/manual.pdf", progress["CurrentRelativePath"]!.GetValue<string>());
+        Assert.Equal(DirectoryScanPhases.Labeling, progress["Phase"]!.GetValue<string>());
+        Assert.Equal(1, progress["PhaseDocumentsCompleted"]!.GetValue<int>());
+        string failure = Assert.Single(root["DirectoryScanFailures"]!.AsArray())!.ToJsonString();
+        Assert.Contains("broken.pdf", failure, StringComparison.Ordinal);
+        Assert.DoesNotContain(RootPath, failure, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -138,7 +143,14 @@ public sealed class DirectoryScanJobTests
                                                                            SupportedDocuments: 4,
                                                                            DocumentsCompleted: 2,
                                                                            CurrentRelativePath:
-                                                                           "nested/manual.pdf"));
+                                                                           "nested/manual.pdf")
+                                    {
+                                        Phase = DirectoryScanPhases.Labeling,
+                                        PhaseDocumentsCompleted = 1,
+                                        CurrentFileStartedAtUtc = QueuedAt.UtcDateTime,
+                                        FileFailures = [new DirectoryScanFileFailure("broken.pdf", "TEST_FAILURE",
+                                            $"Could not read {RootPath}")]
+                                    });
                                 return Task.FromResult(new DirectoryIngestionResult(
                                                            DirectoryIngestionStatuses.Completed,
                                                            LibraryId,
@@ -189,7 +201,8 @@ public sealed class DirectoryScanJobTests
             CompletedAt = source.CompletedAt,
             LastProgressAt = source.LastProgressAt,
             CancelledAt = source.CancelledAt,
-            DirectoryScanProgress = source.DirectoryScanProgress
+            DirectoryScanProgress = source.DirectoryScanProgress,
+            DirectoryScanFailures = source.DirectoryScanFailures
         };
 
     private sealed class FixedQueueTimeProvider : TimeProvider

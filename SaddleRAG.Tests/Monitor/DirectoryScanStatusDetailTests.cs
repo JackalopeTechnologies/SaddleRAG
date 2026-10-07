@@ -25,6 +25,21 @@ namespace SaddleRAG.Tests.Monitor;
 public sealed class DirectoryScanStatusDetailTests
 {
     [Fact]
+    public void LabelingCountDoesNotClaimAllExtractedDocumentsAreFinished()
+    {
+        var progress = new DirectoryScanJobProgress
+            {
+                SupportedDocuments = 27,
+                DocumentsCompleted = 27,
+                Phase = DirectoryScanPhases.Labeling,
+                PhaseDocumentsCompleted = 3
+            };
+
+        Assert.Equal(3, progress.DisplayCompleted);
+        Assert.Equal(27, (progress with { Phase = DirectoryScanPhases.Extracting }).DisplayCompleted);
+    }
+
+    [Fact]
     public async Task RowCarriesTheJobTimingAndErrorNeededToJudgeARunningScan()
     {
         var factory = Substitute.For<RepositoryFactory>([null!]);

@@ -19,4 +19,13 @@ public sealed record DirectoryScanJobProgress
     public int DocumentsCompleted { get; init; }
 
     public string? CurrentRelativePath { get; init; }
+
+    public string Phase { get; init; } = DirectoryScanPhases.Extracting;
+    public int PhaseDocumentsCompleted { get; init; }
+    public DateTime? CurrentFileStartedAtUtc { get; init; }
+
+    /// <summary>Completed documents within the displayed stage, including older extraction records.</summary>
+    public int DisplayCompleted => Phase == DirectoryScanPhases.Extracting
+        ? DocumentsCompleted
+        : PhaseDocumentsCompleted;
 }

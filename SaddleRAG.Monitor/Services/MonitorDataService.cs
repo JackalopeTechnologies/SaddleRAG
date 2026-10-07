@@ -194,7 +194,9 @@ public sealed class MonitorDataService
                              Status = row.Status.ToString(),
                              StartedAt = row.StartedAt,
                              CompletedAt = row.CompletedAt,
-                             ErrorMessage = row.ErrorMessage
+                             ErrorMessage = row.ErrorMessage,
+                             DirectoryScanProgress = row.DirectoryScanProgress,
+                             DirectoryScanFailures = row.DirectoryScanFailures
                          };
         }
 

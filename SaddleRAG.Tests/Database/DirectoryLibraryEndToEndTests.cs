@@ -99,11 +99,24 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     {
         DirectoryRegistrationResult registration = await RegisterRequiredAsync();
 
-        DirectoryIngestionResult first = await ScanAsync(FirstVersion, "scan-first");
+        var progress = new List<DirectoryScanProgress>();
+        DirectoryIngestionResult first = await ScanAsync(FirstVersion, "scan-first", onProgress: progress.Add);
 
         Assert.Equal(DirectoryRegistrationStatuses.Registered, registration.Status);
         Assert.Equal(DirectoryIngestionStatuses.Completed, first.Status);
         Assert.Equal(FirstVersion, first.Version);
+        Assert.Equal(new[] { DirectoryScanPhases.Extracting, DirectoryScanPhases.Labeling,
+            DirectoryScanPhases.PreparingSearch, DirectoryScanPhases.BuildingIndex, DirectoryScanPhases.Publishing },
+            progress.Select(update => update.Phase).Distinct());
+        Assert.Contains(progress, update => update.Phase == DirectoryScanPhases.Extracting
+                                            && update.DocumentsCompleted == 0
+                                            && update.CurrentRelativePath != null
+                                            && update.CurrentFileStartedAtUtc != null);
+        Assert.Contains(progress, update => update.Phase == DirectoryScanPhases.Labeling
+                                            && update.PhaseDocumentsCompleted == 0
+                                            && update.CurrentRelativePath != null);
+        Assert.Contains(progress, update => update.Phase == DirectoryScanPhases.PreparingSearch
+                                            && update.PhaseDocumentsCompleted == first.DocumentsProcessed);
         LibraryRecord library = Assert.IsType<LibraryRecord>(await Libraries.GetLibraryAsync(
                                                                   LibraryId,
                                                                   TestContext.Current.CancellationToken));
@@ -582,7 +595,8 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
 
     private async Task<DirectoryIngestionResult> ScanAsync(string version,
                                                            string scanRunId,
-                                                           string? profile = null)
+                                                           string? profile = null,
+                                                           Action<DirectoryScanProgress>? onProgress = null)
     {
         ISourceDocumentRepository sources = mFactory.GetSourceDocumentRepository(profile);
         DirectoryLibraryDefinition? definition = await sources.GetDirectoryDefinitionAsync(
@@ -600,7 +614,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
                               Profile = profile
                           };
         DirectoryIngestionResult result = await mCoordinator.RunAsync(request,
-                                                                       onProgress: null,
+                                                                       onProgress,
                                                                        TestContext.Current.CancellationToken);
         return result;
     }

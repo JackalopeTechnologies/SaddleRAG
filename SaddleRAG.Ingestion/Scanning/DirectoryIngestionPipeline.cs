@@ -72,15 +72,31 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
                                   MaxFileBytes = DirectoryScanLimits.DefaultMaxFileBytes
                               };
 
-        DirectoryScanReport report = await mScanEngine.ScanAsync(scanRequest, sink, onProgress, ct);
+        var progress = new DirectoryScanProgress(0, 0, 0, null);
+        DirectoryScanReport report = await mScanEngine.ScanAsync(scanRequest, sink, update =>
+            {
+                progress = update;
+                onProgress?.Invoke(update);
+            }, ct);
         EnsureComplete(report);
         string libraryHint = string.IsNullOrWhiteSpace(library?.Hint) ? request.LibraryId : library.Hint;
         PipelineDocuments processed = await ProcessDocumentsAsync(request,
                                                                   sink,
                                                                   priorManifest,
                                                                   libraryHint,
+                                                                  progress,
+                                                                  onProgress,
                                                                   ct);
+        progress = progress with
+            {
+                Phase = DirectoryScanPhases.BuildingIndex,
+                PhaseDocumentsCompleted = sink.DocumentCount,
+                CurrentRelativePath = null,
+                CurrentFileStartedAtUtc = null
+            };
+        onProgress?.Invoke(progress);
         await PersistIndexesAsync(request, processed.ChunkCount, ct);
+        onProgress?.Invoke(progress with { Phase = DirectoryScanPhases.Publishing });
         return new DirectoryIngestionPipelineResult(sink.DocumentCount,
                                                     processed.PageCount,
                                                     processed.ChunkCount,
@@ -97,6 +113,8 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
         DirectoryPublishingSink sink,
         LibraryVersionRecord? priorManifest,
         string libraryHint,
+        DirectoryScanProgress progress,
+        Action<DirectoryScanProgress>? onProgress,
         CancellationToken ct)
     {
         PipelineDocuments result;
@@ -122,7 +140,19 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
                                                                                  request.LibraryId,
                                                                                  request.ScanRunId,
                                                                                  descriptors,
-                                                                                 ct);
+                                                                                 ct,
+                (path, completed) =>
+                {
+                    progress = progress with
+                        {
+                            Phase = DirectoryScanPhases.Labeling,
+                            PhaseDocumentsCompleted = completed,
+                            CurrentFileStartedAtUtc = progress.CurrentRelativePath == path
+                                ? progress.CurrentFileStartedAtUtc : DateTime.UtcNow,
+                            CurrentRelativePath = path
+                        };
+                    onProgress?.Invoke(progress);
+                });
             var pageCount = 0;
             var chunkBudget = new DirectoryChunkBudget(DirectoryScanLimits.DefaultMaxChunkCount);
             IPageRepository pageRepository = mRepositories.GetPageRepository(request.Profile);
@@ -132,6 +162,14 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
             await foreach(PendingDirectoryDocument document in sink.ReadDocumentsAsync(ct))
             {
                 ct.ThrowIfCancellationRequested();
+                progress = progress with
+                    {
+                        Phase = DirectoryScanPhases.PreparingSearch,
+                        PhaseDocumentsCompleted = index,
+                        CurrentRelativePath = document.Source.DisplayRelativePath,
+                        CurrentFileStartedAtUtc = DateTime.UtcNow
+                    };
+                onProgress?.Invoke(progress);
                 SubjectAssignmentRecord assignment = await reconciliation.PersistAssignmentAsync(assignmentRepository,
                     descriptors[index], request.Version, request.ScanRunId, ct);
                 IReadOnlyList<PageRecord> projected = mPageProducer.ProjectPages(document, assignment);
@@ -151,6 +189,13 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
                                                       ct);
                 pageCount += batch.Pages.Count;
                 index++;
+                progress = progress with
+                    {
+                        PhaseDocumentsCompleted = index,
+                        CurrentRelativePath = null,
+                        CurrentFileStartedAtUtc = null
+                    };
+                onProgress?.Invoke(progress);
             }
 
             if (index != descriptors.Count)
