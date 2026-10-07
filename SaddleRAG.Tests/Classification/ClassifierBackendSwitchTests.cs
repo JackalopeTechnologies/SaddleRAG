@@ -117,6 +117,35 @@ public sealed class ClassifierBackendSwitchTests
     #endregion
 
     [Fact]
+    public async Task ConfiguredOllamaBackendIsRestoredWithoutInvokingOnnx()
+    {
+        var onnxFake = new FakeClassifier();
+        var ollamaFake = new FakeClassifier { BackendName = "ollama", ReturnCategory = DocCategory.HowTo };
+        var subject = new ClassifierBackendSwitch(NewOnnxClassifier(onnxFake),
+                                                  ollamaFake,
+                                                  new FakeOllamaProbe(),
+                                                  NullLogger<ClassifierBackendSwitch>.Instance,
+                                                  "ollama");
+
+        var result = await subject.ClassifyAsync(NewPage(), "lib", TestContext.Current.CancellationToken);
+
+        Assert.Equal(DocCategory.HowTo, result.Category);
+        Assert.Equal(0, onnxFake.CallCount);
+        Assert.Equal(1, ollamaFake.CallCount);
+        Assert.Equal("ollama", subject.ActiveBackendName);
+    }
+
+    [Fact]
+    public void UnknownConfiguredBackendIsRejected()
+    {
+        Assert.Throws<ArgumentException>(() => new ClassifierBackendSwitch(NewOnnxClassifier(),
+                                                                           new FakeClassifier(),
+                                                                           new FakeOllamaProbe(),
+                                                                           NullLogger<ClassifierBackendSwitch>.Instance,
+                                                                           "unknown"));
+    }
+
+    [Fact]
     public async Task DefaultsToOnnxBackend()
     {
         var onnxFake = new FakeClassifier { ReturnCategory = DocCategory.Overview };

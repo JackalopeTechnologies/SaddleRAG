@@ -352,7 +352,9 @@ builder.Services.AddSingleton<ClassifierBackendSwitch>(sp =>
     new ClassifierBackendSwitch(sp.GetRequiredService<OnnxLlmClassifier>(),
                                 sp.GetRequiredService<OllamaLlmClassifier>(),
                                 sp.GetRequiredService<IOllamaProbe>(),
-                                sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>()
+                                sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>(),
+                                builder.Configuration[ClassifierBackendSwitch.BackendConfigurationPath]
+                                ?? ClassifierBackendNames.Onnx
                                )
 );
 builder.Services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());

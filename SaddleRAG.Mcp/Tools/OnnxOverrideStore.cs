@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 
 #endregion
@@ -177,9 +178,38 @@ public class OnnxOverrideStore
             JsonObject root = LoadExistingOrEmpty();
             JsonObject onnxSection = EnsureOnnxSection(root);
             onnxSection[key] = value;
+            if (key == ActiveClassifierModelKey)
+                SetBackendSection(root, ClassifierBackendNames.Onnx);
             WriteAtomic(root);
             mLogger.LogInformation("Wrote Onnx override: {Key}={Value} -> {Path}", key, value, mFilePath);
         }
+    }
+
+    /// <summary>Persists the classifier backend without changing any selected models.</summary>
+    public void SetClassifierBackend(string backend)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(backend);
+        string canonical = backend.ToLowerInvariant();
+        if (canonical is not (ClassifierBackendNames.Onnx or ClassifierBackendNames.Ollama))
+            throw new ArgumentException(InvalidClassifierBackendMessage, nameof(backend));
+
+        lock (mWriteLock)
+        {
+            JsonObject root = LoadExistingOrEmpty();
+            SetBackendSection(root, canonical);
+            WriteAtomic(root);
+        }
+    }
+
+    private static void SetBackendSection(JsonObject root, string backend)
+    {
+        if (root[ClassifierBackendSwitch.ConfigurationSectionName] is not JsonObject section)
+        {
+            section = new JsonObject();
+            root[ClassifierBackendSwitch.ConfigurationSectionName] = section;
+        }
+
+        section[ClassifierBackendSwitch.BackendConfigurationKey] = backend;
     }
 
     private JsonObject LoadExistingOrEmpty()
@@ -265,6 +295,7 @@ public class OnnxOverrideStore
     }
 
     private const string ActiveEmbeddingModelKey = "ActiveEmbeddingModel";
+    private const string InvalidClassifierBackendMessage = "Classifier backend must be 'onnx' or 'ollama'.";
     private const string ActiveRerankerModelKey = "ActiveRerankerModel";
     private const string ActiveClassifierModelKey = "ActiveClassifierModel";
     private const string ExecutionProviderKey = "ExecutionProvider";

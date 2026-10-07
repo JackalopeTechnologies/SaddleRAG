@@ -176,6 +176,8 @@ public sealed class ClassifierToolsTests : IDisposable
         Assert.True(root["BackendSwitchedLive"]?.GetValue<bool>());
         Assert.NotNull(root["OverridesFile"]?.GetValue<string>());
         Assert.Equal(OnnxSettings.Phi3MiniCpuName, settings.ActiveClassifierModel);
+        var saved = JsonNode.Parse(await File.ReadAllTextAsync(store.FilePath, TestContext.Current.CancellationToken));
+        Assert.Equal("onnx", saved?["Classification"]?["Backend"]?.GetValue<string>());
     }
 
     [Fact]
@@ -221,6 +223,8 @@ public sealed class ClassifierToolsTests : IDisposable
         Assert.Equal("ollama", root["ActiveBackend"]?.GetValue<string>());
         Assert.False(root["RequiresRestartForOnnxModelReload"]?.GetValue<bool>() ?? true);
         Assert.True(root["BackendSwitchedLive"]?.GetValue<bool>());
+        var saved = JsonNode.Parse(await File.ReadAllTextAsync(store.FilePath, TestContext.Current.CancellationToken));
+        Assert.Equal("ollama", saved?["Classification"]?["Backend"]?.GetValue<string>());
     }
 
     [Fact]
@@ -260,6 +264,8 @@ public sealed class ClassifierToolsTests : IDisposable
         Assert.NotNull(root);
         Assert.Equal("onnx", root["ActiveBackend"]?.GetValue<string>());
         Assert.False(root["RequiresRestartForOnnxModelReload"]?.GetValue<bool>() ?? true);
+        var saved = JsonNode.Parse(await File.ReadAllTextAsync(store.FilePath, TestContext.Current.CancellationToken));
+        Assert.Equal("onnx", saved?["Classification"]?["Backend"]?.GetValue<string>());
     }
 
     #endregion

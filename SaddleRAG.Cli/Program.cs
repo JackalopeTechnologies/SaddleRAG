@@ -176,7 +176,9 @@ services.AddSingleton<ClassifierBackendSwitch>(sp =>
     new ClassifierBackendSwitch(sp.GetRequiredService<OnnxLlmClassifier>(),
                                 sp.GetRequiredService<OllamaLlmClassifier>(),
                                 sp.GetRequiredService<IOllamaProbe>(),
-                                sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>()
+                                sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>(),
+                                configuration[ClassifierBackendSwitch.BackendConfigurationPath]
+                                ?? ClassifierBackendNames.Onnx
                                ));
 services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());
 services.AddSingleton<SymbolExtractor>();

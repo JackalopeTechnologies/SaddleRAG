@@ -122,6 +122,23 @@ public sealed class OllamaLlmClassifierTests
     }
 
     [Fact]
+    public async Task StructuredGenerationRequestsJsonWithDeterministicSampling()
+    {
+        const string reply = "{\"concepts\":[]}";
+        var client = new FakeGenerateClient { Response = reply };
+        var classifier = NewClassifier(client);
+
+        string result = await classifier.GenerateAsync("Return a subject catalog as JSON.",
+                                                       TestContext.Current.CancellationToken);
+
+        Assert.Equal(reply, result);
+        Assert.NotNull(client.ReceivedRequest);
+        Assert.Equal("json", client.ReceivedRequest.Format);
+        Assert.NotNull(client.ReceivedRequest.Options);
+        Assert.Equal(0f, client.ReceivedRequest.Options.Temperature);
+    }
+
+    [Fact]
     public async Task PassesExpectedPromptToOllama()
     {
         var client = new FakeGenerateClient

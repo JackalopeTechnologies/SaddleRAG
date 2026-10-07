@@ -41,9 +41,9 @@ internal static class SubjectResponseGenerator
             TResponse parsed = SubjectJson.Deserialize<TResponse>(response);
             result = validate(parsed);
         }
-        catch(InvalidDataException)
+        catch(InvalidDataException ex)
         {
-            string retryPrompt = string.Concat(RetryInstruction, prompt);
+            string retryPrompt = string.Concat(RetryInstruction, ValidationFailurePrefix, ex.Message, RetryPromptSeparator, prompt);
             response = await generator.GenerateAsync(retryPrompt, ct);
             TResponse parsed = DeserializeCapturingRaw<TResponse>(response);
             result = validate(parsed);
@@ -81,4 +81,6 @@ internal static class SubjectResponseGenerator
         Do not use Markdown fences, XML wrappers, comments, or explanatory prose.
 
         """;
+    private const string ValidationFailurePrefix = "Validation failure to correct: ";
+    private const string RetryPromptSeparator = "\n\n";
 }

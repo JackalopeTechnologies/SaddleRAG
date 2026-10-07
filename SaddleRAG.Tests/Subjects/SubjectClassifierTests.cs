@@ -262,6 +262,34 @@ public sealed class SubjectClassifierTests
     }
 
     [Fact]
+    public async Task OversizedEvidenceRetryExplainsTheBoundAndPersistsOnlyTheCorrection()
+    {
+        string evidence = new('x', SubjectClassificationLimits.MaxEvidenceCharacters + 1);
+        string response = $$"""
+                            {"primary":{"subjectId":"subject-hydraulics","confidence":0.9,"evidence":["{{evidence}}"]},"secondary":[]}
+                            """;
+        var generator = new ScriptedSubjectGenerator(response,
+            """{"primary":{"subjectId":"subject-hydraulics","confidence":0.9,"evidence":["pump service"]},"secondary":[]} """);
+        var repository = new InMemorySubjectAssignmentRepository();
+        var classifier = new SubjectClassifier(generator, new FixedSubjectTimeProvider());
+
+        SubjectAssignmentRecord result = await classifier.ClassifyAsync(repository,
+                                                                         SubjectTestData.Descriptor(),
+                                                                         SubjectTestData.Catalog(),
+                                                                         "2026-08-04",
+                                                                         "scan-evidence-retry",
+                                                                         TestContext.Current.CancellationToken);
+
+        Assert.Equal(["pump service"], result.Primary.Evidence);
+        Assert.Same(result, Assert.Single(repository.Persisted));
+        Assert.Equal(2, generator.Prompts.Count);
+        Assert.Contains("1 to 512 characters", generator.Prompts[index: 0], StringComparison.Ordinal);
+        Assert.Contains("Subject evidence is empty or exceeds the configured bound.",
+                        generator.Prompts[index: 1], StringComparison.Ordinal);
+        Assert.DoesNotContain(evidence, generator.Prompts[index: 1], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task OversizedEvidenceIsRejectedWithoutPersistence()
     {
         string evidence = new('x', SubjectClassificationLimits.MaxEvidenceCharacters + 1);

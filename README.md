@@ -512,6 +512,12 @@ Every MCP tool accepts an optional `profile` parameter to target a specific data
 
 ### Ollama Settings
 
+The service defaults to the ONNX classifier. Use `set_active_classifier_model`
+with `ollama` to select the configured Ollama classifier, or `onnx` to switch
+back. The selection takes effect immediately and is saved as
+`Classification.Backend` in `runtime-overrides.json`, so service restarts retain
+it. Ollama must be running when selected and when classifying documents.
+
 ```json
 {
   "Ollama": {

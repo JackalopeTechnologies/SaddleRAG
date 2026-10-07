@@ -65,6 +65,9 @@ public sealed class SubjectResponseGeneratorTests
         Assert.Contains("use only identifiers explicitly allowed",
                         generator.Prompts[index: 1],
                         StringComparison.Ordinal);
+        Assert.Contains("Validation failure to correct: The synthetic value is not allowed.",
+                        generator.Prompts[index: 1],
+                        StringComparison.Ordinal);
     }
 
     [Fact]

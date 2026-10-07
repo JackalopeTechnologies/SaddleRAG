@@ -11,7 +11,7 @@ namespace SaddleRAG.Ingestion.Subjects;
 /// <summary>Versioned prompt for assigning stable catalog identifiers.</summary>
 public static class SubjectClassificationPrompt
 {
-    public const string PromptVersion = "subject-assignment-v4";
+    public const string PromptVersion = "subject-assignment-v5";
 
     public static string Build(SubjectDescriptor descriptor, SubjectCatalogRecord catalog)
     {
@@ -60,6 +60,7 @@ public static class SubjectClassificationPrompt
                                       Every secondary array element must be a full JSON object with subjectId, confidence, and evidence fields.
                                       Never put a bare subjectId string in secondary. Use an empty secondary array when no secondary subject applies.
                                       For every selected subject, evidence must be a JSON array containing 1 to {{SubjectClassificationLimits.MaxEvidenceCount}} short strings supported by the descriptor.
+                                      Each evidence string must contain 1 to {{SubjectClassificationLimits.MaxEvidenceCharacters}} characters. Summarize supporting evidence in one short sentence; never copy a whole section.
                                       Return exactly one JSON object. This example uses real allowed catalog ids:
                                       {{responseExample}}
                                       Do not use Markdown, XML tags, or commentary. End the response immediately after the closing brace.

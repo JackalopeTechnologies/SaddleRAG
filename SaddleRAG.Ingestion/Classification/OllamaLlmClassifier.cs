@@ -130,6 +130,8 @@ public class OllamaLlmClassifier : ILlmClassifier, IClassifierTextGenerator
                           {
                               Model = mSettings.GetActiveClassificationModel().Name,
                               Prompt = prompt,
+                              Format = JsonFormat,
+                              Options = new RequestOptions { Temperature = 0f },
                               Stream = true
                           };
         var responseBuilder = new StringBuilder();
@@ -205,6 +207,7 @@ public class OllamaLlmClassifier : ILlmClassifier, IClassifierTextGenerator
     }
 
     private const string OllamaUnconfiguredModel = "(unconfigured)";
+    private const string JsonFormat = "json";
     private const int MaxResponseChars = 32768;
     private const string JsonCodeFenceOpen = "```json";
     private const string CodeFence = "```";
