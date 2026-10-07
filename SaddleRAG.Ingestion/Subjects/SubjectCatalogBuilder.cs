@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -16,7 +19,8 @@ public sealed class SubjectCatalogBuilder
 {
     public SubjectCatalogBuilder(IClassifierTextGenerator generator,
                                  ISubjectIdGenerator idGenerator,
-                                 TimeProvider timeProvider)
+                                 TimeProvider timeProvider,
+                                 ILogger<SubjectCatalogBuilder>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(generator);
         ArgumentNullException.ThrowIfNull(idGenerator);
@@ -24,11 +28,13 @@ public sealed class SubjectCatalogBuilder
         mGenerator = generator;
         mIdGenerator = idGenerator;
         mTimeProvider = timeProvider;
+        mLogger = logger ?? NullLogger<SubjectCatalogBuilder>.Instance;
     }
 
     private readonly IClassifierTextGenerator mGenerator;
     private readonly ISubjectIdGenerator mIdGenerator;
     private readonly TimeProvider mTimeProvider;
+    private readonly ILogger<SubjectCatalogBuilder> mLogger;
 
     public async Task<SubjectCatalogRecord> ReconcileAsync(ISubjectCatalogRepository repository,
                                                            string libraryId,
@@ -70,6 +76,9 @@ public sealed class SubjectCatalogBuilder
         foreach(SubjectDescriptor descriptor in descriptors.OrderBy(item => item.DocumentId,
                                                                      StringComparer.Ordinal))
         {
+            var elapsed = Stopwatch.StartNew();
+            mLogger.LogInformation("Subject labeling started for {DocumentPath} using {Backend}/{Model}",
+                descriptor.RelativePath, mGenerator.BackendName, mGenerator.ModelId);
             string prompt = SubjectCatalogPrompt.Build(descriptor);
             IReadOnlyList<ValidatedProposal> proposals =
                 await SubjectResponseGenerator.GenerateValidatedAsync<SubjectCatalogResponse,
@@ -92,6 +101,8 @@ public sealed class SubjectCatalogBuilder
                                    });
             }
             documents.Add(descriptor.DocumentRevisionId, (descriptor.DocumentId, selections));
+            mLogger.LogInformation("Subject labeling completed for {DocumentPath} in {ElapsedSeconds:F1}s; {Completed}/{Total} documents",
+                descriptor.RelativePath, elapsed.Elapsed.TotalSeconds, documents.Count, descriptors.Count);
         }
 
         if (concepts.Count == 0)
