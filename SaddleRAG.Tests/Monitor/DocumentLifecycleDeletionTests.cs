@@ -440,8 +440,9 @@ public sealed class DocumentLifecycleDeletionTests : IAsyncLifetime
             LibraryId = libraryId,
             Version = version,
             Status = JobStatus.Completed,
-            CreatedAt = RecordedAt,
-            CompletedAt = RecordedAt
+            // Completed jobs have a database expiry index; keep these fixtures live for the test.
+            CreatedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow
         };
 
     private async Task PersistRevisionAsync(DocumentRevisionRecord revision,

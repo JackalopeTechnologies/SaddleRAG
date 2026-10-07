@@ -196,9 +196,13 @@ public sealed class DirectoryScannerStatusTests
         foreach(string required in new[]
                 {
                     "Document scanner", "@ScannerStatus.ReasonCode", "@ScannerStatus.Detail",
-                    "@ScannerStatus.Endpoint", "Re-check", "ScanBlocked", "CurrentRelativePath"
+                    "@ScannerStatus.Endpoint", "Re-check", "ScanBlocked", "DirectoryScanProgressPanel"
                 })
             Assert.Contains(required, razor, StringComparison.Ordinal);
+        string panel = File.ReadAllText(Path.Combine(ResolveRepositoryRoot(),
+            "SaddleRAG.Monitor", "Components", "DirectoryScanProgressPanel.razor"));
+        Assert.Contains("CurrentRelativePath", panel, StringComparison.Ordinal);
+        Assert.Contains("Progress.Phase", panel, StringComparison.Ordinal);
     }
 
     /// <summary>
