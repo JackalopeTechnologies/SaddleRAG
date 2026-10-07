@@ -7,6 +7,8 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
+using SaddleRAG.Ingestion.Subjects;
+using SaddleRAG.Tests.Subjects;
 
 namespace SaddleRAG.Tests.Classification;
 
@@ -40,13 +42,20 @@ public sealed class OnnxClassifierGenAiSmokeTests
         Assert.SkipUnless(File.Exists(Path.Combine(modelDirectory, GenAiConfigFileName)), MissingModelMessage);
 
         using var generator = new OnnxClassifierGenerator(modelDirectory, entry);
-        string output = await generator.GenerateAsync(Prompt, TestContext.Current.CancellationToken);
+        var classifier = new OnnxLlmClassifier(generator,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnnxLlmClassifier>.Instance);
+        var subjectClassifier = new SubjectClassifier(classifier, new FixedSubjectTimeProvider());
+        var assignments = new InMemorySubjectAssignmentRepository();
+        SubjectAssignmentRecord result = await subjectClassifier.ClassifyAsync(assignments,
+            SubjectTestData.Descriptor(), SubjectTestData.Catalog(), "smoke-test", "native-generation",
+            TestContext.Current.CancellationToken);
 
-        Assert.False(string.IsNullOrWhiteSpace(output));
+        Assert.Equal("subject-hydraulics", result.Primary.SubjectId);
+        Assert.DoesNotContain(result.Secondary, selection => selection.SubjectId == "subject-electrical");
+        Assert.NotEmpty(result.Primary.Evidence);
+        Assert.Same(result, Assert.Single(assignments.Persisted));
     }
 
-    private const string Prompt =
-        "Classify the following document into one subject. Respond with a single JSON object.";
     private const string GenAiConfigFileName = "genai_config.json";
     private const string MissingModelMessage =
         "The Phi-3 GenAI classifier model is not staged for this execution provider; skipping the GenAI native smoke test.";

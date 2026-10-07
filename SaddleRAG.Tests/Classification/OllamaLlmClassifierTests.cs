@@ -44,6 +44,7 @@ public sealed class OllamaLlmClassifierTests
             if (ToThrow != null)
                 throw ToThrow;
 
+            ct.ThrowIfCancellationRequested();
             foreach(string chunk in Chunks ?? [Response])
             {
                 ReadChunks++;
@@ -191,6 +192,21 @@ public sealed class OllamaLlmClassifierTests
             TestContext.Current.CancellationToken));
 
         Assert.False(client.ReadPastAnswer);
+    }
+
+    [Fact]
+    public async Task JobCancellationStopsStructuredGeneration()
+    {
+        var client = new FakeGenerateClient();
+        using var classifier = NewClassifier(client);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        using JsonDocument schema = JsonDocument.Parse("{\"type\":\"object\"}");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => classifier.GenerateAsync("Return JSON.",
+            schema.RootElement, cancellation.Token));
+
+        Assert.Equal(0, client.ReadChunks);
     }
 
     [Fact]

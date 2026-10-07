@@ -25,7 +25,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     All Ollama generate calls are routed through <see cref="IOllamaGenerateClient" />
 ///     so the generate path is unit-testable without a live Ollama instance.
 /// </summary>
-public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGenerator
+public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGenerator, IDisposable
 {
     /// <summary>
     ///     Primary constructor: builds a real <see cref="OllamaApiClient" /> from
@@ -37,7 +37,15 @@ public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGene
     {
         mSettings = settings.Value;
         mLogger = logger;
-        mGenerateClient = new OllamaApiClientAdapter(new OllamaApiClient(new Uri(mSettings.Endpoint)));
+        mOwnedHttpClient = new HttpClient
+                               {
+                                   BaseAddress = new Uri(mSettings.Endpoint),
+                                   // Model loading and prompt processing can take longer than the
+                                   // default response-header timeout. The ingestion job owns cancellation.
+                                   Timeout = Timeout.InfiniteTimeSpan
+                               };
+        mOwnedApiClient = new OllamaApiClient(mOwnedHttpClient);
+        mGenerateClient = new OllamaApiClientAdapter(mOwnedApiClient);
     }
 
     /// <summary>
@@ -56,6 +64,16 @@ public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGene
     private readonly IOllamaGenerateClient mGenerateClient;
     private readonly ILogger<OllamaLlmClassifier> mLogger;
     private readonly OllamaSettings mSettings;
+    private readonly HttpClient? mOwnedHttpClient;
+    private readonly OllamaApiClient? mOwnedApiClient;
+
+    /// <summary>Releases the transport owned by the production constructor.</summary>
+    public void Dispose()
+    {
+        mOwnedApiClient?.Dispose();
+        mOwnedHttpClient?.Dispose();
+        GC.SuppressFinalize(this);
+    }
 
     /// <inheritdoc />
     public string BackendName => ClassifierBackendNames.Ollama;
