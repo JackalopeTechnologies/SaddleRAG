@@ -56,7 +56,7 @@ public sealed class SubjectCatalogBuilder
                                                    prompt,
                                                    response => ValidateProposals(response, descriptor),
                                                    ct,
-                                                   SubjectResponseSchema.Catalog());
+                                                   SubjectResponseSchema.Catalog(descriptor));
             foreach(SubjectConcept proposal in proposals)
                 ReconcileProposal(concepts, proposal);
         }

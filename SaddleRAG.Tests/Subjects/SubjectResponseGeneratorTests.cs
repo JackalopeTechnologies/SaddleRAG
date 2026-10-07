@@ -17,7 +17,7 @@ public sealed class SubjectResponseGeneratorTests
         var generator = Substitute.For<IStructuredClassifierTextGenerator>();
         generator.GenerateAsync(Arg.Any<string>(), Arg.Any<JsonElement>(), Arg.Any<CancellationToken>())
                  .Returns("{\"value\":\"unknown\"}", "{\"value\":\"accepted\"}");
-        JsonElement schema = SubjectResponseSchema.Catalog();
+        JsonElement schema = SubjectResponseSchema.Catalog(SubjectTestData.Descriptor());
 
         string result = await SubjectResponseGenerator.GenerateValidatedAsync<Dictionary<string, JsonElement>, string>(
             generator, "Classify this document.", response => ValidateValue(response["value"]),

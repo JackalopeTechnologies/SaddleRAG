@@ -11,26 +11,28 @@ namespace SaddleRAG.Ingestion.Subjects;
 /// <summary>Generation-time bounds shared with subject response validation.</summary>
 internal static class SubjectResponseSchema
 {
-    public static JsonElement Catalog()
+    public static JsonElement Catalog(SubjectDescriptor descriptor)
     {
+        ArgumentNullException.ThrowIfNull(descriptor);
         string schema = $$"""
             {"type":"object","properties":{"concepts":{"type":"array","minItems":1,"maxItems":{{SubjectClassificationLimits.MaxSecondarySubjects + 1}},
             "items":{"type":"object","properties":{
             "label":{{Text(SubjectClassificationLimits.MaxHeadingCharacters)}},
             "aliases":{"type":"array","maxItems":{{SubjectClassificationLimits.MaxHeadingCount}},"items":{{Text(SubjectClassificationLimits.MaxHeadingCharacters)}}},
-            "description":{{Text(SubjectClassificationLimits.MaxSummaryCharacters)}},"evidence":{{Evidence()}}},
+            "description":{{Text(SubjectClassificationLimits.MaxSummaryCharacters)}},"evidence":{{Evidence(descriptor)}}},
             "required":["label","aliases","description","evidence"],"additionalProperties":false} } },"required":["concepts"],"additionalProperties":false}
             """;
         return Parse(schema);
     }
 
-    public static JsonElement Assignment(SubjectCatalogRecord catalog)
+    public static JsonElement Assignment(SubjectCatalogRecord catalog, SubjectDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentNullException.ThrowIfNull(descriptor);
         string identifiers = SubjectJson.Serialize(catalog.Concepts.Select(concept => concept.Id).ToArray());
         string selection = $$"""
             {"type":"object","properties":{"subjectId":{"type":"string","enum":{{identifiers}}},
-            "confidence":{"type":"number","minimum":0,"maximum":1},"evidence":{{Evidence()}}},
+            "confidence":{"type":"number","minimum":0,"maximum":1},"evidence":{{Evidence(descriptor)}}},
             "required":["subjectId","confidence","evidence"],"additionalProperties":false}
             """;
         string schema = $$"""
@@ -41,8 +43,11 @@ internal static class SubjectResponseSchema
         return Parse(schema);
     }
 
-    private static string Evidence() =>
-        $$"""{"type":"array","minItems":1,"maxItems":{{SubjectClassificationLimits.MaxEvidenceCount}},"items":{{Text(SubjectClassificationLimits.MaxEvidenceCharacters)}}} """;
+    private static string Evidence(SubjectDescriptor descriptor)
+    {
+        string sourceIds = SubjectJson.Serialize(SubjectEvidence.Sources(descriptor).Keys.ToArray());
+        return $$"""{"type":"array","minItems":1,"maxItems":{{SubjectClassificationLimits.MaxEvidenceCount}},"items":{"type":"string","enum":{{sourceIds}} } } """;
+    }
 
     private static string Text(int maximumCharacters) =>
         $$"""{"type":"string","minLength":1,"maxLength":{{maximumCharacters}}} """;

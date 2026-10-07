@@ -290,6 +290,41 @@ public sealed class SubjectClassifierTests
     }
 
     [Fact]
+    public async Task SelectedExcerptPersistsTheActualSourceIncludingBrokenWords()
+    {
+        const string original = "Make sure this inst ruction manual is received before us ing the communication function.";
+        SubjectDescriptor descriptor = SubjectTestData.Descriptor() with { Summary = original };
+        string sourceId = SubjectEvidence.Sources(descriptor).Single(source => source.Value == original).Key;
+        string reply = SubjectJson.Serialize(new
+        {
+            Primary = new { SubjectId = "subject-hydraulics", Confidence = 0.9f, Evidence = new[] { sourceId } },
+            Secondary = Array.Empty<object>()
+        });
+        var repository = new InMemorySubjectAssignmentRepository();
+        var classifier = new SubjectClassifier(new ScriptedSubjectGenerator(reply), new FixedSubjectTimeProvider());
+
+        SubjectAssignmentRecord result = await classifier.ClassifyAsync(repository, descriptor, SubjectTestData.Catalog(),
+            "2026-10-07", "scan-excerpts", TestContext.Current.CancellationToken);
+
+        Assert.Equal([original], result.Primary.Evidence);
+        Assert.Same(result, Assert.Single(repository.Persisted));
+    }
+
+    [Fact]
+    public async Task InventedExcerptReferenceIsRejectedWithoutPersistence()
+    {
+        const string reply = """{"primary":{"subjectId":"subject-hydraulics","confidence":0.9,"evidence":["source-999999"]},"secondary":[]}""";
+        var repository = new InMemorySubjectAssignmentRepository();
+        var classifier = new SubjectClassifier(new ScriptedSubjectGenerator(reply, reply), new FixedSubjectTimeProvider());
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => classifier.ClassifyAsync(repository,
+            SubjectTestData.Descriptor(), SubjectTestData.Catalog(), "2026-10-07", "scan-invented-excerpt",
+            TestContext.Current.CancellationToken));
+
+        Assert.Empty(repository.Persisted);
+    }
+
+    [Fact]
     public async Task InventedEvidenceFromAnotherCatalogEntryIsRejectedDespiteHighConfidence()
     {
         const string response = """{"primary":{"subjectId":"subject-electrical","confidence":0.99,"evidence":["Electrical control systems."]},"secondary":[]}""";
