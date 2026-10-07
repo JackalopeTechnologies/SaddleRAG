@@ -67,13 +67,13 @@ public sealed class SubjectCatalogBuilderTests
     public async Task ModelSuppliedIdentityCannotRenameAnotherManual(string returnedId)
     {
         var generator = new ScriptedSubjectGenerator(
-            """{"concepts":[{"label":"VF-S9 Communications","aliases":["inverter"],"description":"VF-S9 protocol.","evidence":["VF-S9"]}]}""",
-            $$"""{"concepts":[{"subjectId":"{{returnedId}}","label":"VF-AS3 Instructions","aliases":["inverter"],"description":"VF-AS3 operation.","evidence":["VF-AS3"]}]}""");
+            """{"concepts":[{"label":"VF-S9 Communications","aliases":["inverter"],"confidence":0.95,"evidence":["VF-S9"]}]}""",
+            $$"""{"concepts":[{"subjectId":"{{returnedId}}","label":"VF-AS3 Instructions","aliases":["inverter"],"confidence":0.95,"evidence":["VF-AS3"]}]}""");
         var repository = new InMemorySubjectCatalogRepository();
         var builder = new SubjectCatalogBuilder(generator,
             new SequenceSubjectIdGenerator("subject-first", "subject-second"), new FixedSubjectTimeProvider());
-        SubjectDescriptor first = SubjectTestData.Descriptor("document-1") with { Title = "VF-S9 Communications" };
-        SubjectDescriptor second = SubjectTestData.Descriptor("document-2") with { Title = "VF-AS3 Instructions" };
+        SubjectDescriptor first = SubjectTestData.Descriptor("document-1", "revision-1") with { Title = "VF-S9 Communications" };
+        SubjectDescriptor second = SubjectTestData.Descriptor("document-2", "revision-2") with { Title = "VF-AS3 Instructions" };
 
         SubjectCatalogRecord result = await builder.ReconcileAsync(repository, LibraryId, "scan-models",
             [first, second], TestContext.Current.CancellationToken);
@@ -90,7 +90,7 @@ public sealed class SubjectCatalogBuilderTests
         var repository = new InMemorySubjectCatalogRepository();
         repository.Seed(SubjectTestData.Catalog());
         var generator = new ScriptedSubjectGenerator(
-            """{"concepts":[{"label":"Pump maintenance","aliases":["Safety"],"description":"Pump service.","evidence":["Pump service"]}]}""");
+            """{"concepts":[{"label":"Pump maintenance","aliases":["Safety"],"confidence":0.95,"evidence":["Pump service"]}]}""");
         var builder = new SubjectCatalogBuilder(generator,
             new SequenceSubjectIdGenerator("subject-pump"), new FixedSubjectTimeProvider());
 
@@ -142,8 +142,8 @@ public sealed class SubjectCatalogBuilderTests
     [Theory]
     [InlineData("{\"concepts\":[null]}")]
     [InlineData("{\"concepts\":[]}")]
-    [InlineData("{\"concepts\":[{\"label\":\"Inverter\",\"description\":\"Not in this document.\",\"evidence\":[\"VF-S15 instruction manual\"]}]}")]
-    [InlineData("{\"concepts\":[{\"label\":\"Pump\",\"description\":\"Pump service.\"}]}")]
+    [InlineData("{\"concepts\":[{\"label\":\"Inverter\",\"confidence\":0.95,\"evidence\":[\"VF-S15 instruction manual\"]}]}")]
+    [InlineData("{\"concepts\":[{\"label\":\"Pump\",\"confidence\":0.95}]}")]
     public async Task InvalidOrInventedEvidenceIsRetriedAndNeverPublished(string response)
     {
         var repository = new InMemorySubjectCatalogRepository();
@@ -162,7 +162,7 @@ public sealed class SubjectCatalogBuilderTests
     {
         var repository = new InMemorySubjectCatalogRepository();
         var generator = new ScriptedSubjectGenerator(
-            """{"concepts":[{"label":"Safety","description":"Safe service.","evidence":["safety"]},null]}""",
+            """{"concepts":[{"label":"Safety","confidence":0.95,"evidence":["safety"]},null]}""",
             Proposal("Hydraulics"));
         var builder = new SubjectCatalogBuilder(generator,
             new SequenceSubjectIdGenerator("subject-only"), new FixedSubjectTimeProvider());
@@ -179,7 +179,7 @@ public sealed class SubjectCatalogBuilderTests
     private static string Proposal(string label, string description = "Hydraulic pump service.") =>
         SubjectJson.Serialize(new
         {
-            Concepts = new[] { new { Label = label, Aliases = Array.Empty<string>(), Description = description, Evidence = new[] { "pump" } } }
+            Concepts = new[] { new { Label = label, Aliases = Array.Empty<string>(), Description = description, Confidence = 0.95f, Evidence = new[] { "pump" } } }
         });
 
     private const string LibraryId = "manual-library";

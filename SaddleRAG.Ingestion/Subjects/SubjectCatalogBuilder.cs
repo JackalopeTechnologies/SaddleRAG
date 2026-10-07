@@ -40,37 +40,77 @@ public sealed class SubjectCatalogBuilder
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(scanRunId);
         ArgumentNullException.ThrowIfNull(descriptors);
+        SubjectCatalogReconciliation reconciliation = await ReconcileDocumentsAsync(repository,
+            libraryId, scanRunId, descriptors, ct);
+        return reconciliation.Catalog;
+    }
+
+    /// <summary>Discovers subjects once and retains each document's selections for publication.</summary>
+    public async Task<SubjectCatalogReconciliation> ReconcileDocumentsAsync(
+        ISubjectCatalogRepository repository,
+        string libraryId,
+        string scanRunId,
+        IReadOnlyList<SubjectDescriptor> descriptors,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(repository);
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(scanRunId);
+        ArgumentNullException.ThrowIfNull(descriptors);
         if (descriptors.Count == 0)
             throw new ArgumentException("At least one subject descriptor is required.", nameof(descriptors));
+        if (descriptors.Select(descriptor => descriptor.DocumentRevisionId).Distinct(StringComparer.Ordinal).Count()
+            != descriptors.Count)
+            throw new ArgumentException("Every document revision must be unique.", nameof(descriptors));
 
         SubjectCatalogRecord? existing = await repository.GetLatestAsync(libraryId, ct);
         var concepts = existing?.Concepts.Select(CloneConcept).ToList() ?? [];
+        var documents = new Dictionary<string, (string DocumentId, IReadOnlyList<SubjectSelection> Selections)>(StringComparer.Ordinal);
 
         foreach(SubjectDescriptor descriptor in descriptors.OrderBy(item => item.DocumentId,
                                                                      StringComparer.Ordinal))
         {
             string prompt = SubjectCatalogPrompt.Build(descriptor);
-            IReadOnlyList<SubjectConcept> proposals =
+            IReadOnlyList<ValidatedProposal> proposals =
                 await SubjectResponseGenerator.GenerateValidatedAsync<SubjectCatalogResponse,
-                    IReadOnlyList<SubjectConcept>>(mGenerator,
+                    IReadOnlyList<ValidatedProposal>>(mGenerator,
                                                    prompt,
                                                    response => ValidateProposals(response, descriptor),
                                                    ct,
                                                    SubjectResponseSchema.Catalog(descriptor));
-            foreach(SubjectConcept proposal in proposals)
-                ReconcileProposal(concepts, proposal);
+            var selections = new List<SubjectSelection>();
+            foreach(ValidatedProposal proposal in proposals)
+            {
+                string subjectId = ReconcileProposal(concepts, proposal.Concept);
+                if (selections.Any(selection => selection.SubjectId.Equals(subjectId, StringComparison.Ordinal)))
+                    throw new InvalidDataException("A document cannot select the same subject more than once.");
+                selections.Add(new SubjectSelection
+                                   {
+                                       SubjectId = subjectId,
+                                       Confidence = proposal.Confidence,
+                                       Evidence = proposal.Evidence
+                                   });
+            }
+            documents.Add(descriptor.DocumentRevisionId, (descriptor.DocumentId, selections));
         }
 
         if (concepts.Count == 0)
             throw new InvalidDataException("Subject catalog reconciliation produced an empty catalog.");
-        SubjectCatalogRecord result;
+        var provenance = new SubjectClassifierProvenance
+                             {
+                                 Backend = mGenerator.BackendName,
+                                 ModelId = mGenerator.ModelId,
+                                 PromptVersion = SubjectCatalogPrompt.PromptVersion,
+                                 GeneratedAtUtc = mTimeProvider.GetUtcNow().UtcDateTime
+                             };
+        SubjectCatalogRecord catalog;
         if (existing != null && AreSemanticallyEqual(existing.Concepts, concepts))
-            result = existing;
+            catalog = existing;
         else
         {
             int revision = (existing?.Revision ?? 0) + 1;
             string taxonomyVersion = $"taxonomy-{revision:D6}";
-            var catalog = new SubjectCatalogRecord
+            catalog = new SubjectCatalogRecord
                               {
                                   Id = SubjectCatalogRepository.MakeId(libraryId, taxonomyVersion),
                                   LibraryId = libraryId,
@@ -80,23 +120,17 @@ public sealed class SubjectCatalogBuilder
                                   PublicationState = SubjectCatalogPublicationState.Candidate,
                                   PreviousTaxonomyVersion = existing?.TaxonomyVersion,
                                   Concepts = concepts.Select(CloneConcept).ToList(),
-                                  Provenance = new SubjectClassifierProvenance
-                                                   {
-                                                       Backend = mGenerator.BackendName,
-                                                       ModelId = mGenerator.ModelId,
-                                                       PromptVersion = SubjectCatalogPrompt.PromptVersion,
-                                                       GeneratedAtUtc = mTimeProvider.GetUtcNow().UtcDateTime
-                                                   },
+                                  Provenance = provenance,
                                   CreatedAtUtc = mTimeProvider.GetUtcNow().UtcDateTime
                               };
             await repository.InsertRevisionAsync(catalog, ct);
-            result = catalog;
         }
 
+        var result = new SubjectCatalogReconciliation(catalog, documents, provenance);
         return result;
     }
 
-    private static IReadOnlyList<SubjectConcept> ValidateProposals(SubjectCatalogResponse response,
+    private static IReadOnlyList<ValidatedProposal> ValidateProposals(SubjectCatalogResponse response,
                                                                    SubjectDescriptor descriptor)
     {
         if (response.Concepts is not { Count: > 0 })
@@ -108,7 +142,7 @@ public sealed class SubjectCatalogBuilder
         return result;
     }
 
-    private static SubjectConcept ValidateProposal(SubjectConceptResponse? proposal,
+    private static ValidatedProposal ValidateProposal(SubjectConceptResponse? proposal,
                                                      SubjectDescriptor descriptor)
     {
         if (proposal == null)
@@ -116,11 +150,11 @@ public sealed class SubjectCatalogBuilder
 
         string label = SubjectText.Bounded(proposal.Label,
                                            SubjectClassificationLimits.MaxHeadingCharacters);
-        string description = SubjectText.Bounded(proposal.Description,
-                                                 SubjectClassificationLimits.MaxSummaryCharacters);
-        if (label.Length == 0 || description.Length == 0)
-            throw new InvalidDataException("Every subject concept requires a label and description.");
-        SubjectEvidence.Validate(proposal.Evidence, descriptor);
+        if (label.Length == 0)
+            throw new InvalidDataException("Every subject concept requires a label.");
+        if (proposal.Confidence is not { } confidence || !float.IsFinite(confidence) || confidence is < 0f or > 1f)
+            throw new InvalidDataException("Every subject requires confidence between 0 and 1.");
+        IReadOnlyList<string> evidence = SubjectEvidence.Validate(proposal.Evidence, descriptor);
 
         var aliases = (proposal.Aliases ?? [])
                      .Select(alias => SubjectText.Bounded(alias,
@@ -131,10 +165,11 @@ public sealed class SubjectCatalogBuilder
                      .ThenBy(alias => alias, StringComparer.Ordinal)
                      .Take(SubjectClassificationLimits.MaxHeadingCount)
                      .ToList();
-        return new SubjectConcept { Id = string.Empty, Label = label, Aliases = aliases, Description = description };
+        var concept = new SubjectConcept { Id = string.Empty, Label = label, Aliases = aliases, Description = evidence[0] };
+        return new ValidatedProposal(concept, confidence, evidence);
     }
 
-    private void ReconcileProposal(List<SubjectConcept> concepts, SubjectConcept proposal)
+    private string ReconcileProposal(List<SubjectConcept> concepts, SubjectConcept proposal)
     {
         IReadOnlyList<int> matches = FindSemanticMatches(concepts, proposal.Label);
         if (matches.Count > 1)
@@ -144,6 +179,8 @@ public sealed class SubjectCatalogBuilder
         // Model-supplied identifiers and aliases are never authority to replace a concept.
         if (matches.Count == 0)
             concepts.Add(proposal with { Id = mIdGenerator.CreateId() });
+        string result = matches.Count == 0 ? concepts[^1].Id : concepts[matches[0]].Id;
+        return result;
     }
 
     private static IReadOnlyList<int> FindSemanticMatches(IReadOnlyList<SubjectConcept> concepts,
@@ -213,8 +250,12 @@ public sealed class SubjectCatalogBuilder
 
         public IReadOnlyList<string>? Aliases { get; init; }
 
-        public string? Description { get; init; }
+        public float? Confidence { get; init; }
 
         public IReadOnlyList<string>? Evidence { get; init; }
     }
+
+    private sealed record ValidatedProposal(SubjectConcept Concept,
+                                            float Confidence,
+                                            IReadOnlyList<string> Evidence);
 }

@@ -246,21 +246,17 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UnparseableSubjectReplyDegradesToReviewFlaggedFallbackAndStillPublishes()
+    public async Task DiscoverySelectionsPublishWithoutASecondSubjectGenerationPass()
     {
         await RegisterRequiredAsync();
-        mSubjectGenerator.AssignmentReplyOverride = "not valid json";
-
-        DirectoryIngestionResult result = await ScanAsync(FirstVersion, "scan-fallback");
+        DirectoryIngestionResult result = await ScanAsync(FirstVersion, "scan-single-pass");
 
         Assert.Equal(DirectoryIngestionStatuses.Completed, result.Status);
         LibraryRecord library = Assert.IsType<LibraryRecord>(await Libraries.GetLibraryAsync(
                                                                   LibraryId,
                                                                   TestContext.Current.CancellationToken));
         Assert.Equal(FirstVersion, library.CurrentVersion);
-        // The completed OCR is not discarded: every document still publishes and stays searchable.
         await AssertSearchCitationAsync(PdfMarker, "Manual.pdf", "Owned PDF heading", expectedPage: 2);
-        // Each document received the review-flagged fallback subject instead of aborting the scan.
         IReadOnlyList<DocumentRevisionRecord> revisions = await Sources.GetRevisionsAsync(
                                                                 LibraryId,
                                                                 FirstVersion,
@@ -271,9 +267,12 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
             .GetByDocumentRevisionIdsAsync(revisions.Select(revision => revision.Id).ToList(),
                                            TestContext.Current.CancellationToken);
         Assert.Equal(revisions.Count, assignments.Count);
-        Assert.All(assignments, assignment => Assert.True(assignment.NeedsReview));
+        Assert.Equal(revisions.Count, mSubjectGenerator.RequestCount);
+        Assert.All(assignments, assignment => Assert.False(assignment.NeedsReview));
         Assert.All(assignments,
                    assignment => Assert.Equal("subject-owned-manuals", assignment.Primary.SubjectId));
+        Assert.All(assignments,
+                   assignment => Assert.Equal(SubjectCatalogPrompt.PromptVersion, assignment.Provenance.PromptVersion));
     }
 
     [Fact]
@@ -817,12 +816,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
 
     private sealed class ScriptedSubjectTextGenerator : IClassifierTextGenerator
     {
-        /// <summary>
-        ///     When set, every per-document assignment prompt returns this reply
-        ///     instead of a valid one, reproducing an unparseable classifier reply.
-        ///     Catalog prompts are unaffected so catalog reconciliation still succeeds.
-        /// </summary>
-        public string? AssignmentReplyOverride { get; set; }
+        public int RequestCount { get; private set; }
 
         public string BackendName => "scripted";
 
@@ -832,23 +826,18 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
         {
             ct.ThrowIfCancellationRequested();
             bool catalogPrompt = prompt.Contains(SubjectCatalogPrompt.PromptVersion, StringComparison.Ordinal);
+            Assert.True(catalogPrompt, "A directory import must retain its discovery selections instead of generating assignments again.");
+            RequestCount++;
             Assert.True(ClassifierPromptEvidence.TrySplit(prompt, out _, out string evidence, out _));
             using JsonDocument document = JsonDocument.Parse(evidence);
             string title = document.RootElement.GetProperty("descriptor").GetProperty("title").GetString() ?? string.Empty;
-            string response = catalogPrompt
-                                  ? SubjectJson.Serialize(new
+            string response = SubjectJson.Serialize(new
                                   {
-                                      Concepts = new[] { new { Label = "Owned manuals", Aliases = new[] { "manual" }, Description = "Owned manual fixture documents.", Evidence = new[] { title } } }
-                                  })
-                                  : (AssignmentReplyOverride ?? SubjectJson.Serialize(new
-                                  {
-                                      Primary = new { SubjectId, Confidence = 0.99f, Evidence = new[] { title } },
-                                      Secondary = Array.Empty<object>()
-                                  }));
+                                      Concepts = new[] { new { Label = "Owned manuals", Aliases = new[] { "manual" }, Confidence = 0.99f, Evidence = new[] { title } } }
+                                  });
             return Task.FromResult(response);
         }
 
-        private const string SubjectId = "subject-owned-manuals";
     }
 
     private sealed class FixedSubjectIdGenerator : ISubjectIdGenerator

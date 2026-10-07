@@ -19,8 +19,8 @@ internal static class SubjectResponseSchema
             "items":{"type":"object","properties":{
             "label":{{Text(SubjectClassificationLimits.MaxHeadingCharacters)}},
             "aliases":{"type":"array","maxItems":{{SubjectClassificationLimits.MaxHeadingCount}},"items":{{Text(SubjectClassificationLimits.MaxHeadingCharacters)}}},
-            "description":{{Text(SubjectClassificationLimits.MaxSummaryCharacters)}},"evidence":{{Evidence(descriptor)}}},
-            "required":["label","aliases","description","evidence"],"additionalProperties":false} } },"required":["concepts"],"additionalProperties":false}
+            "confidence":{"type":"number","minimum":0,"maximum":1},"evidence":{{Evidence(descriptor)}}},
+            "required":["label","aliases","confidence","evidence"],"additionalProperties":false} } },"required":["concepts"],"additionalProperties":false}
             """;
         return Parse(schema);
     }

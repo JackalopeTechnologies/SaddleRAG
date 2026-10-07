@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
-using Microsoft.Extensions.Logging;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
@@ -22,36 +21,28 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
                                       RepositoryFactory repositories,
                                       SubjectDescriptorBuilder descriptorBuilder,
                                       SubjectCatalogBuilder catalogBuilder,
-                                      ISubjectClassifier subjectClassifier,
-                                      IngestionPageProcessor pageProcessor,
-                                      ILogger<DirectoryIngestionPipeline> logger)
+                                      IngestionPageProcessor pageProcessor)
     {
         ArgumentNullException.ThrowIfNull(scanEngine);
         ArgumentNullException.ThrowIfNull(pageProducer);
         ArgumentNullException.ThrowIfNull(repositories);
         ArgumentNullException.ThrowIfNull(descriptorBuilder);
         ArgumentNullException.ThrowIfNull(catalogBuilder);
-        ArgumentNullException.ThrowIfNull(subjectClassifier);
         ArgumentNullException.ThrowIfNull(pageProcessor);
-        ArgumentNullException.ThrowIfNull(logger);
         mScanEngine = scanEngine;
         mPageProducer = pageProducer;
         mRepositories = repositories;
         mDescriptorBuilder = descriptorBuilder;
         mCatalogBuilder = catalogBuilder;
-        mSubjectClassifier = subjectClassifier;
         mPageProcessor = pageProcessor;
-        mLogger = logger;
     }
 
     private readonly SubjectCatalogBuilder mCatalogBuilder;
     private readonly SubjectDescriptorBuilder mDescriptorBuilder;
-    private readonly ILogger<DirectoryIngestionPipeline> mLogger;
     private readonly DirectoryPageProducer mPageProducer;
     private readonly IngestionPageProcessor mPageProcessor;
     private readonly RepositoryFactory mRepositories;
     private readonly DirectoryScanEngine mScanEngine;
-    private readonly ISubjectClassifier mSubjectClassifier;
 
     public async Task<DirectoryIngestionPipelineResult> ExecuteAsync(
         DirectoryIngestionRequest request,
@@ -127,7 +118,7 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
                 mRepositories.GetSubjectCatalogRepository(request.Profile);
             ISubjectAssignmentRepository assignmentRepository =
                 mRepositories.GetSubjectAssignmentRepository(request.Profile);
-            SubjectCatalogRecord catalog = await mCatalogBuilder.ReconcileAsync(catalogRepository,
+            SubjectCatalogReconciliation reconciliation = await mCatalogBuilder.ReconcileDocumentsAsync(catalogRepository,
                                                                                  request.LibraryId,
                                                                                  request.ScanRunId,
                                                                                  descriptors,
@@ -141,12 +132,8 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
             await foreach(PendingDirectoryDocument document in sink.ReadDocumentsAsync(ct))
             {
                 ct.ThrowIfCancellationRequested();
-                SubjectAssignmentRecord assignment = await ClassifyOrFallbackAsync(assignmentRepository,
-                                                                                    descriptors[index],
-                                                                                    catalog,
-                                                                                    request,
-                                                                                    document,
-                                                                                    ct);
+                SubjectAssignmentRecord assignment = await reconciliation.PersistAssignmentAsync(assignmentRepository,
+                    descriptors[index], request.Version, request.ScanRunId, ct);
                 IReadOnlyList<PageRecord> projected = mPageProducer.ProjectPages(document, assignment);
                 Func<IReadOnlyList<DocChunk>, IReadOnlyList<DocChunk>>? reuse =
                     reuseEmbeddings && document.ReusedExtraction
@@ -168,45 +155,10 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
 
             if (index != descriptors.Count)
                 throw new InvalidDataException("The pending-document spool changed between processing passes.");
-            result = new PipelineDocuments(pageCount, chunkBudget.ChunkCount, catalog.TaxonomyVersion);
+            result = new PipelineDocuments(pageCount, chunkBudget.ChunkCount, reconciliation.Catalog.TaxonomyVersion);
         }
 
         return result;
-    }
-
-    private async Task<SubjectAssignmentRecord> ClassifyOrFallbackAsync(
-        ISubjectAssignmentRepository assignmentRepository,
-        SubjectDescriptor descriptor,
-        SubjectCatalogRecord catalog,
-        DirectoryIngestionRequest request,
-        PendingDirectoryDocument document,
-        CancellationToken ct)
-    {
-        SubjectAssignmentRecord assignment;
-        try
-        {
-            assignment = await mSubjectClassifier.ClassifyAsync(assignmentRepository,
-                                                                descriptor,
-                                                                catalog,
-                                                                request.Version,
-                                                                request.ScanRunId,
-                                                                ct);
-        }
-        catch(SubjectClassificationException ex)
-        {
-            mLogger.LogWarning(ex,
-                               FallbackAssignmentLogTemplate,
-                               document.Source.DisplayRelativePath,
-                               ex.RawResponsePreview);
-            assignment = await mSubjectClassifier.AssignFallbackAsync(assignmentRepository,
-                                                                      descriptor,
-                                                                      catalog,
-                                                                      request.Version,
-                                                                      request.ScanRunId,
-                                                                      ct);
-        }
-
-        return assignment;
     }
 
     private static IReadOnlyList<DocChunk>? TryReuseEmbeddings(IReadOnlyList<DocChunk> generated,
@@ -320,10 +272,6 @@ public sealed class DirectoryIngestionPipeline : IDirectoryIngestionPipeline
         if (request.Definition.BindingStatus != DirectoryLibraryBindingStatus.Bound)
             throw new ArgumentException("The captured directory definition must be bound.", nameof(request));
     }
-
-    private const string FallbackAssignmentLogTemplate =
-        "Subject classification for document {DocumentPath} returned an unparseable reply; "
-        + "assigning a review-flagged fallback subject. Raw reply preview: {Preview}";
 
     private sealed record PipelineDocuments(int PageCount,
                                             int ChunkCount,
