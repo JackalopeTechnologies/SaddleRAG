@@ -6,6 +6,7 @@
 #region Usings
 
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using OllamaSharp.Models;
 using SaddleRAG.Core.Enums;
@@ -28,8 +29,11 @@ public sealed class OllamaLlmClassifierTests
     private sealed class FakeGenerateClient : IOllamaGenerateClient
     {
         public string Response { get; set; } = string.Empty;
+        public IReadOnlyList<string>? Chunks { get; set; }
         public Exception? ToThrow { get; set; }
         public GenerateRequest? ReceivedRequest { get; private set; }
+        public bool ReadPastAnswer { get; private set; }
+        public int ReadChunks { get; private set; }
 
         public async IAsyncEnumerable<GenerateResponseStream?> GenerateAsync(
             GenerateRequest request,
@@ -40,7 +44,13 @@ public sealed class OllamaLlmClassifierTests
             if (ToThrow != null)
                 throw ToThrow;
 
-            yield return new GenerateResponseStream { Response = Response };
+            foreach(string chunk in Chunks ?? [Response])
+            {
+                ReadChunks++;
+                yield return new GenerateResponseStream { Response = chunk };
+            }
+
+            ReadPastAnswer = true;
 
             await Task.CompletedTask;
         }
@@ -136,6 +146,51 @@ public sealed class OllamaLlmClassifierTests
         Assert.Equal("json", client.ReceivedRequest.Format);
         Assert.NotNull(client.ReceivedRequest.Options);
         Assert.Equal(0f, client.ReceivedRequest.Options.Temperature);
+        Assert.False(client.ReadPastAnswer);
+    }
+
+    [Fact]
+    public async Task StructuredGenerationPassesTheSchemaAndStopsWhenTheAnswerIsComplete()
+    {
+        using JsonDocument schema = JsonDocument.Parse("""{"type":"object","properties":{"subject":{"type":"string","maxLength":256}},"required":["subject"]}""");
+        const string reply = """{"subject":"motor"}""";
+        var client = new FakeGenerateClient { Response = reply };
+        var classifier = NewClassifier(client);
+
+        string result = await classifier.GenerateAsync("Classify a motor datasheet.", schema.RootElement,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(reply, result);
+        Assert.NotNull(client.ReceivedRequest);
+        JsonElement sentSchema = Assert.IsType<JsonElement>(client.ReceivedRequest.Format);
+        Assert.Equal(schema.RootElement.GetRawText(), sentSchema.GetRawText());
+        Assert.False(client.ReadPastAnswer);
+    }
+
+    [Fact]
+    public async Task ClosingBraceInsideAStringDoesNotEndAnIncompleteAnswer()
+    {
+        var client = new FakeGenerateClient { Chunks = ["{\"subject\":\"motor }", " datasheet\"}", "discarded trailing text"] };
+        var classifier = NewClassifier(client);
+
+        string result = await classifier.GenerateAsync("Return JSON.", TestContext.Current.CancellationToken);
+
+        Assert.Equal("{\"subject\":\"motor } datasheet\"}", result);
+        Assert.Equal(2, client.ReadChunks);
+        Assert.False(client.ReadPastAnswer);
+    }
+
+    [Fact]
+    public async Task OversizedGenerationFailsWithoutConsumingTheRestOfTheStream()
+    {
+        const int oversizedCharacters = 32769;
+        var client = new FakeGenerateClient { Response = new string('x', oversizedCharacters) };
+        var classifier = NewClassifier(client);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => classifier.GenerateAsync("Return JSON.",
+            TestContext.Current.CancellationToken));
+
+        Assert.False(client.ReadPastAnswer);
     }
 
     [Fact]

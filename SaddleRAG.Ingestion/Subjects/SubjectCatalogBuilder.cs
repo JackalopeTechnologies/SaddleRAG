@@ -55,7 +55,8 @@ public sealed class SubjectCatalogBuilder
                     IReadOnlyList<SubjectConcept>>(mGenerator,
                                                    prompt,
                                                    response => ValidateProposals(response, descriptor),
-                                                   ct);
+                                                   ct,
+                                                   SubjectResponseSchema.Catalog());
             foreach(SubjectConcept proposal in proposals)
                 ReconcileProposal(concepts, proposal);
         }

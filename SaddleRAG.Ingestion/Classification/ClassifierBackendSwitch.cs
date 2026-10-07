@@ -25,7 +25,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     <see langword="volatile" /> ensures the new value is visible to all
 ///     threads immediately.
 /// </summary>
-public sealed class ClassifierBackendSwitch : ILlmClassifier, IClassifierTextGenerator
+public sealed class ClassifierBackendSwitch : ILlmClassifier, IStructuredClassifierTextGenerator
 {
     /// <summary>
     ///     Initializes a new <see cref="ClassifierBackendSwitch" /> with the configured backend.
@@ -156,4 +156,13 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier, IClassifierTextGen
     }
 
     private const string OllamaNotReachableMessage = "Cannot switch to Ollama classifier: Ollama is not reachable. Install and run Ollama from https://ollama.com, then retry.";
+
+    /// <inheritdoc />
+    public Task<string> GenerateAsync(string prompt, System.Text.Json.JsonElement responseSchema, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(prompt);
+        return mActive is IStructuredClassifierTextGenerator structured
+                   ? structured.GenerateAsync(prompt, responseSchema, ct)
+                   : GenerateAsync(prompt, ct);
+    }
 }

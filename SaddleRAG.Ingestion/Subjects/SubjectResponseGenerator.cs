@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.Text.Json;
 using SaddleRAG.Ingestion.Classification;
 
 namespace SaddleRAG.Ingestion.Subjects;
@@ -28,29 +29,38 @@ internal static class SubjectResponseGenerator
         IClassifierTextGenerator generator,
         string prompt,
         Func<TResponse, TResult> validate,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        JsonElement? responseSchema = null)
     {
         ArgumentNullException.ThrowIfNull(generator);
         ArgumentException.ThrowIfNullOrEmpty(prompt);
         ArgumentNullException.ThrowIfNull(validate);
 
-        string response = await generator.GenerateAsync(prompt, ct);
         TResult result;
         try
         {
+            string response = await GenerateReplyAsync(generator, prompt, responseSchema, ct);
             TResponse parsed = SubjectJson.Deserialize<TResponse>(response);
             result = validate(parsed);
         }
         catch(InvalidDataException ex)
         {
             string retryPrompt = string.Concat(RetryInstruction, ValidationFailurePrefix, ex.Message, RetryPromptSeparator, prompt);
-            response = await generator.GenerateAsync(retryPrompt, ct);
+            string response = await GenerateReplyAsync(generator, retryPrompt, responseSchema, ct);
             TResponse parsed = DeserializeCapturingRaw<TResponse>(response);
             result = validate(parsed);
         }
 
         return result;
     }
+
+    private static Task<string> GenerateReplyAsync(IClassifierTextGenerator generator,
+                                                    string prompt,
+                                                    JsonElement? responseSchema,
+                                                    CancellationToken ct) =>
+        responseSchema.HasValue && generator is IStructuredClassifierTextGenerator structured
+            ? structured.GenerateAsync(prompt, responseSchema.Value, ct)
+            : generator.GenerateAsync(prompt, ct);
 
     /// <summary>
     ///     Parses the terminal reply, converting an unparseable result into a

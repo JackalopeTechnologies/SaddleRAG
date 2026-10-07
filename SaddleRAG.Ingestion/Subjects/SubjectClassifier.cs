@@ -47,7 +47,8 @@ public sealed class SubjectClassifier : ISubjectClassifier
                 ValidatedClassification>(mGenerator,
                                          prompt,
                                          response => ValidateResponse(response, knownIds, descriptor),
-                                         ct);
+                                         ct,
+                                         SubjectResponseSchema.Assignment(catalog));
         SubjectSelection primary = validated.Primary;
         List<SubjectSelection> secondary = validated.Secondary;
 

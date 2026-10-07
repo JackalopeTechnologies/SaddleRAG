@@ -25,7 +25,7 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     All Ollama generate calls are routed through <see cref="IOllamaGenerateClient" />
 ///     so the generate path is unit-testable without a live Ollama instance.
 /// </summary>
-public class OllamaLlmClassifier : ILlmClassifier, IClassifierTextGenerator
+public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGenerator
 {
     /// <summary>
     ///     Primary constructor: builds a real <see cref="OllamaApiClient" /> from
@@ -123,29 +123,61 @@ public class OllamaLlmClassifier : ILlmClassifier, IClassifierTextGenerator
     }
 
     /// <inheritdoc />
-    public async Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
+    public Task<string> GenerateAsync(string prompt, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(prompt);
+        return GenerateCoreAsync(prompt, JsonFormat, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<string> GenerateAsync(string prompt, JsonElement responseSchema, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(prompt);
+        if (responseSchema.ValueKind != JsonValueKind.Object)
+            throw new ArgumentException("The response schema must be a JSON object.", nameof(responseSchema));
+        return GenerateCoreAsync(prompt, responseSchema, ct);
+    }
+
+    private async Task<string> GenerateCoreAsync(string prompt, object format, CancellationToken ct)
+    {
         var request = new GenerateRequest
                           {
                               Model = mSettings.GetActiveClassificationModel().Name,
                               Prompt = prompt,
-                              Format = JsonFormat,
+                              Format = format,
                               Options = new RequestOptions { Temperature = 0f },
                               Stream = true
                           };
         var responseBuilder = new StringBuilder();
         await foreach(var token in mGenerateClient.GenerateAsync(request, ct))
         {
-            if (responseBuilder.Length < MaxResponseChars)
-            {
-                string response = token?.Response ?? string.Empty;
-                int remaining = MaxResponseChars - responseBuilder.Length;
-                responseBuilder.Append(response.Length <= remaining ? response : response[..remaining]);
-            }
+            string response = token?.Response ?? string.Empty;
+            if (response.Length > MaxResponseChars - responseBuilder.Length)
+                throw new InvalidDataException("The local classifier exceeded the maximum response size.");
+            responseBuilder.Append(response);
+            // A complete JSON object is the answer. Disposing the stream here avoids
+            // spending time generating trailing whitespace or additional objects.
+            if (response.Contains('}') && IsCompleteJsonObject(responseBuilder))
+                break;
         }
 
         return responseBuilder.ToString();
+    }
+
+    private static bool IsCompleteJsonObject(StringBuilder response)
+    {
+        bool result;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(response.ToString());
+            result = document.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch(JsonException)
+        {
+            result = false;
+        }
+
+        return result;
     }
 
     /// <summary>
