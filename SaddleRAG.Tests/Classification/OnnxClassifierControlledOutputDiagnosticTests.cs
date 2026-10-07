@@ -44,20 +44,10 @@ public sealed class OnnxClassifierControlledOutputDiagnosticTests
 
         using var generator = new OnnxClassifierGenerator(modelDirectory, entry);
         SubjectDescriptor descriptor = SubjectTestData.Descriptor();
-        string catalogPrompt = SubjectCatalogPrompt.Build([], descriptor);
-        SubjectConcept existingConcept = new()
-                                             {
-                                                 Id = "subject-hydraulic-pump-safety",
-                                                 Label = descriptor.Title,
-                                                 Aliases = ["hydraulic-pump-safety"],
-                                                 Description = descriptor.Summary
-                                             };
-        string reuseCatalogPrompt = SubjectCatalogPrompt.Build([existingConcept], descriptor);
+        string catalogPrompt = SubjectCatalogPrompt.Build(descriptor);
         string assignmentPrompt = SubjectClassificationPrompt.Build(descriptor, SubjectTestData.Catalog());
         string catalogOutput = await generator.GenerateAsync(catalogPrompt,
                                                               TestContext.Current.CancellationToken);
-        string reuseCatalogOutput = await generator.GenerateAsync(reuseCatalogPrompt,
-                                                                   TestContext.Current.CancellationToken);
         string assignmentOutput = await generator.GenerateAsync(assignmentPrompt,
                                                                  TestContext.Current.CancellationToken);
 
@@ -69,30 +59,22 @@ public sealed class OnnxClassifierControlledOutputDiagnosticTests
                                             new
                                                 {
                                                     catalogOutput,
-                                                    reuseCatalogOutput,
                                                     assignmentOutput
                                                 },
                                             cancellationToken: TestContext.Current.CancellationToken);
 
         using JsonDocument catalogDocument = JsonDocument.Parse(catalogOutput);
-        using JsonDocument reuseCatalogDocument = JsonDocument.Parse(reuseCatalogOutput);
         using JsonDocument assignmentDocument = JsonDocument.Parse(assignmentOutput);
         Assert.Equal(JsonValueKind.Object, catalogDocument.RootElement.ValueKind);
-        JsonElement newConcept = Assert.Single(catalogDocument.RootElement
-                                                              .GetProperty("concepts")
-                                                              .EnumerateArray()
-                                                              .ToArray());
-        Assert.Equal(JsonValueKind.Null, newConcept.GetProperty("subjectId").ValueKind);
-
-        Assert.Equal(JsonValueKind.Object, reuseCatalogDocument.RootElement.ValueKind);
-        JsonElement reusedConcept = Assert.Single(reuseCatalogDocument.RootElement
-                                                                      .GetProperty("concepts")
-                                                                      .EnumerateArray()
-                                                                      .ToArray());
-        JsonElement reusedSubjectId = reusedConcept.GetProperty("subjectId");
-        Assert.True(reusedSubjectId.ValueKind is JsonValueKind.Null or JsonValueKind.String);
-        if (reusedSubjectId.ValueKind == JsonValueKind.String)
-            Assert.Equal(existingConcept.Id, reusedSubjectId.GetString());
+        JsonElement[] concepts = catalogDocument.RootElement.GetProperty("concepts").EnumerateArray().ToArray();
+        Assert.InRange(concepts.Length, 1, SubjectClassificationLimits.MaxSecondarySubjects + 1);
+        Assert.All(concepts, concept =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(concept.GetProperty("label").GetString()));
+            string[] quotations = concept.GetProperty("evidence").EnumerateArray()
+                                         .Select(item => item.GetString() ?? string.Empty).ToArray();
+            Assert.NotEmpty(SubjectEvidence.Validate(quotations, descriptor));
+        });
 
         Assert.Equal(JsonValueKind.Object, assignmentDocument.RootElement.ValueKind);
         var allowedIds = SubjectTestData.Catalog().Concepts.Select(concept => concept.Id)

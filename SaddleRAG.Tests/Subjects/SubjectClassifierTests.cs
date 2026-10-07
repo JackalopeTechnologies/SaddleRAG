@@ -36,7 +36,7 @@ public sealed class SubjectClassifierTests
         var generator = new ScriptedSubjectGenerator(
             """
             {"primary":{"subjectId":"subject-hydraulics","confidence":0.92,"evidence":["pump service"]},
-             "secondary":[{"subjectId":"subject-safety","confidence":0.76,"evidence":["lockout stored energy"]}]}
+             "secondary":[{"subjectId":"subject-safety","confidence":0.76,"evidence":["Lockout: isolate stored energy."]}]}
             """);
         var repository = new InMemorySubjectAssignmentRepository();
         var classifier = new SubjectClassifier(generator, new FixedSubjectTimeProvider());
@@ -53,7 +53,7 @@ public sealed class SubjectClassifierTests
         Assert.Equal(["pump service"], result.Primary.Evidence);
         SubjectSelection secondary = Assert.Single(result.Secondary);
         Assert.Equal("subject-safety", secondary.SubjectId);
-        Assert.Equal(["lockout stored energy"], secondary.Evidence);
+        Assert.Equal(["Lockout: isolate stored energy."], secondary.Evidence);
         Assert.False(result.NeedsReview);
         Assert.Equal("taxonomy-000001", result.TaxonomyVersion);
         Assert.Equal("scripted", result.Provenance.Backend);
@@ -287,6 +287,40 @@ public sealed class SubjectClassifierTests
         Assert.Contains("Subject evidence is empty or exceeds the configured bound.",
                         generator.Prompts[index: 1], StringComparison.Ordinal);
         Assert.DoesNotContain(evidence, generator.Prompts[index: 1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InventedEvidenceFromAnotherCatalogEntryIsRejectedDespiteHighConfidence()
+    {
+        const string response = """{"primary":{"subjectId":"subject-electrical","confidence":0.99,"evidence":["Electrical control systems."]},"secondary":[]}""";
+        var repository = new InMemorySubjectAssignmentRepository();
+        var generator = new ScriptedSubjectGenerator(response, response);
+        var classifier = new SubjectClassifier(generator, new FixedSubjectTimeProvider());
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() => classifier.ClassifyAsync(
+            repository, SubjectTestData.Descriptor(), SubjectTestData.Catalog(), "2026-10-07", "scan-grounding",
+            TestContext.Current.CancellationToken));
+
+        Assert.Contains("current document descriptor", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(2, generator.Prompts.Count);
+        Assert.Empty(repository.Persisted);
+    }
+
+    [Fact]
+    public async Task EvidenceRetryAcceptsOnlyTheCorrectedDocumentQuotation()
+    {
+        var generator = new ScriptedSubjectGenerator(
+            """{"primary":{"subjectId":"subject-hydraulics","confidence":0.99,"evidence":["Invented pump specification"]},"secondary":[]}""",
+            """{"primary":{"subjectId":"subject-hydraulics","confidence":0.9,"evidence":["Pump   service: inspect\n the pump."]},"secondary":[]}""");
+        var repository = new InMemorySubjectAssignmentRepository();
+        var classifier = new SubjectClassifier(generator, new FixedSubjectTimeProvider());
+
+        SubjectAssignmentRecord result = await classifier.ClassifyAsync(repository, SubjectTestData.Descriptor(),
+            SubjectTestData.Catalog(), "2026-10-07", "scan-corrected", TestContext.Current.CancellationToken);
+
+        Assert.Equal(["Pump service: inspect the pump."], result.Primary.Evidence);
+        Assert.Same(result, Assert.Single(repository.Persisted));
+        Assert.Equal(2, generator.Prompts.Count);
     }
 
     [Fact]

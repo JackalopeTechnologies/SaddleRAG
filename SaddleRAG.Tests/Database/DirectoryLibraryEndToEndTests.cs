@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -831,23 +832,22 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
         {
             ct.ThrowIfCancellationRequested();
             bool catalogPrompt = prompt.Contains(SubjectCatalogPrompt.PromptVersion, StringComparison.Ordinal);
+            Assert.True(ClassifierPromptEvidence.TrySplit(prompt, out _, out string evidence, out _));
+            using JsonDocument document = JsonDocument.Parse(evidence);
+            string title = document.RootElement.GetProperty("descriptor").GetProperty("title").GetString() ?? string.Empty;
             string response = catalogPrompt
-                                  ? CatalogResponse(prompt)
-                                  : (AssignmentReplyOverride ?? AssignmentResponse);
+                                  ? SubjectJson.Serialize(new
+                                  {
+                                      Concepts = new[] { new { Label = "Owned manuals", Aliases = new[] { "manual" }, Description = "Owned manual fixture documents.", Evidence = new[] { title } } }
+                                  })
+                                  : (AssignmentReplyOverride ?? SubjectJson.Serialize(new
+                                  {
+                                      Primary = new { SubjectId, Confidence = 0.99f, Evidence = new[] { title } },
+                                      Secondary = Array.Empty<object>()
+                                  }));
             return Task.FromResult(response);
         }
 
-        private static string CatalogResponse(string prompt) =>
-            prompt.Contains(SubjectId, StringComparison.Ordinal)
-                ? ExistingCatalogResponse
-                : NewCatalogResponse;
-
-        private const string NewCatalogResponse =
-            "{\"concepts\":[{\"subjectId\":null,\"label\":\"Owned manuals\",\"aliases\":[\"manual\"],\"description\":\"Owned manual fixture documents.\"}]}";
-        private const string ExistingCatalogResponse =
-            "{\"concepts\":[{\"subjectId\":\"subject-owned-manuals\",\"label\":\"Owned manuals\",\"aliases\":[\"manual\"],\"description\":\"Owned manual fixture documents.\"}]}";
-        private const string AssignmentResponse =
-            "{\"primary\":{\"subjectId\":\"subject-owned-manuals\",\"confidence\":0.99,\"evidence\":[\"owned manual fixture\"]},\"secondary\":[]}";
         private const string SubjectId = "subject-owned-manuals";
     }
 

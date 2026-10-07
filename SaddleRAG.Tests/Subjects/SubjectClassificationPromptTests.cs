@@ -70,23 +70,22 @@ public sealed class SubjectClassificationPromptTests
     }
 
     [Fact]
-    public void CatalogPromptCarriesExistingIdsAndDescriptorEvidence()
+    public void CatalogPromptUsesOnlyCurrentDocumentAndLeavesIdentityToTheApplication()
     {
-        string prompt = SubjectCatalogPrompt.Build(SubjectTestData.Catalog().Concepts,
-                                                   SubjectTestData.Descriptor());
+        string prompt = SubjectCatalogPrompt.Build(SubjectTestData.Descriptor());
         Assert.True(ClassifierPromptEvidence.TrySplit(prompt,
                                                       out string instructions,
                                                       out _,
                                                       out _));
 
         Assert.Contains(SubjectCatalogPrompt.PromptVersion, prompt, StringComparison.Ordinal);
-        Assert.Contains("subject-hydraulics", prompt, StringComparison.Ordinal);
+        Assert.DoesNotContain("subject-hydraulics", prompt, StringComparison.Ordinal);
         Assert.Contains("Hydraulic pump safety", prompt, StringComparison.Ordinal);
-        Assert.Contains("copy subjectId exactly", prompt, StringComparison.Ordinal);
+        Assert.Contains("Do not assign identifiers", prompt, StringComparison.Ordinal);
         Assert.Contains("exactly one JSON object", prompt, StringComparison.Ordinal);
         Assert.Contains("End the response immediately", prompt, StringComparison.Ordinal);
-        Assert.Contains("existingConcepts[].id", instructions, StringComparison.Ordinal);
-        Assert.Contains("\"subjectId\":null", instructions, StringComparison.Ordinal);
+        Assert.DoesNotContain("existingConcepts", prompt, StringComparison.Ordinal);
+        Assert.Contains("exact short quotations", instructions, StringComparison.Ordinal);
         Assert.DoesNotContain("existing-id-or-null", prompt, StringComparison.Ordinal);
     }
 
@@ -99,7 +98,7 @@ public sealed class SubjectClassificationPromptTests
         string[] prompts =
         [
             SubjectClassificationPrompt.Build(descriptor, SubjectTestData.Catalog()),
-            SubjectCatalogPrompt.Build(SubjectTestData.Catalog().Concepts, descriptor)
+            SubjectCatalogPrompt.Build(descriptor)
         ];
 
         foreach(string prompt in prompts)
@@ -125,12 +124,11 @@ public sealed class SubjectClassificationPromptTests
     [Fact]
     public void OversizedCatalogPromptKeepsInstructionsAndValidJsonEvidence()
     {
-        SubjectCatalogRecord catalog = MakeOversizedCatalog();
         SubjectDescriptor descriptor = SubjectTestData.Descriptor() with
                                            {
                                                Summary = new string('S', OversizedSummaryCharacters)
                                            };
-        string prompt = SubjectCatalogPrompt.Build(catalog.Concepts, descriptor);
+        string prompt = SubjectCatalogPrompt.Build(descriptor);
 
         VerifyStructuredPromptCompaction(prompt);
     }

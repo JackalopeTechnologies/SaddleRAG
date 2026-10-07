@@ -49,15 +49,14 @@ public sealed class SubjectCatalogBuilder
         foreach(SubjectDescriptor descriptor in descriptors.OrderBy(item => item.DocumentId,
                                                                      StringComparer.Ordinal))
         {
-            string prompt = SubjectCatalogPrompt.Build(concepts, descriptor);
-            SubjectCatalogResponse response =
-                await SubjectResponseGenerator.GenerateAsync<SubjectCatalogResponse>(mGenerator,
-                                                                                       prompt,
-                                                                                       ct);
-            if (response.Concepts is not { Count: > 0 })
-                throw new InvalidDataException("The subject catalog response did not contain any concepts.");
-
-            foreach(SubjectConceptResponse? proposal in response.Concepts)
+            string prompt = SubjectCatalogPrompt.Build(descriptor);
+            IReadOnlyList<SubjectConcept> proposals =
+                await SubjectResponseGenerator.GenerateValidatedAsync<SubjectCatalogResponse,
+                    IReadOnlyList<SubjectConcept>>(mGenerator,
+                                                   prompt,
+                                                   response => ValidateProposals(response, descriptor),
+                                                   ct);
+            foreach(SubjectConcept proposal in proposals)
                 ReconcileProposal(concepts, proposal);
         }
 
@@ -96,7 +95,20 @@ public sealed class SubjectCatalogBuilder
         return result;
     }
 
-    private void ReconcileProposal(List<SubjectConcept> concepts, SubjectConceptResponse? proposal)
+    private static IReadOnlyList<SubjectConcept> ValidateProposals(SubjectCatalogResponse response,
+                                                                   SubjectDescriptor descriptor)
+    {
+        if (response.Concepts is not { Count: > 0 })
+            throw new InvalidDataException("The subject catalog response did not contain any concepts.");
+        if (response.Concepts.Count > SubjectClassificationLimits.MaxSecondarySubjects + 1)
+            throw new InvalidDataException("The subject catalog response contains too many concepts for one document.");
+
+        var result = response.Concepts.Select(proposal => ValidateProposal(proposal, descriptor)).ToList();
+        return result;
+    }
+
+    private static SubjectConcept ValidateProposal(SubjectConceptResponse? proposal,
+                                                     SubjectDescriptor descriptor)
     {
         if (proposal == null)
             throw new InvalidDataException("Subject concepts cannot be null.");
@@ -107,6 +119,7 @@ public sealed class SubjectCatalogBuilder
                                                  SubjectClassificationLimits.MaxSummaryCharacters);
         if (label.Length == 0 || description.Length == 0)
             throw new InvalidDataException("Every subject concept requires a label and description.");
+        SubjectEvidence.Validate(proposal.Evidence, descriptor);
 
         var aliases = (proposal.Aliases ?? [])
                      .Select(alias => SubjectText.Bounded(alias,
@@ -117,74 +130,39 @@ public sealed class SubjectCatalogBuilder
                      .ThenBy(alias => alias, StringComparer.Ordinal)
                      .Take(SubjectClassificationLimits.MaxHeadingCount)
                      .ToList();
-        IReadOnlyList<int> matches = FindSemanticMatches(concepts, label, aliases);
+        return new SubjectConcept { Id = string.Empty, Label = label, Aliases = aliases, Description = description };
+    }
+
+    private void ReconcileProposal(List<SubjectConcept> concepts, SubjectConcept proposal)
+    {
+        IReadOnlyList<int> matches = FindSemanticMatches(concepts, proposal.Label);
         if (matches.Count > 1)
             throw new InvalidDataException("The subject classifier returned a concept that ambiguously matches multiple published concepts.");
 
-        int semanticIndex = matches.Count == 1 ? matches[0] : -1;
-        string? proposedId = string.IsNullOrWhiteSpace(proposal.SubjectId)
-                                 ? null
-                                 : proposal.SubjectId.Trim();
-        int idIndex = proposedId == null
-                          ? -1
-                          : concepts.FindIndex(concept => string.Equals(concept.Id,
-                                                                         proposedId,
-                                                                         StringComparison.Ordinal));
-        int existingIndex;
-        string id;
-        if (semanticIndex >= 0)
-        {
-            SubjectConcept matched = concepts[semanticIndex];
-            if (idIndex >= 0 && idIndex != semanticIndex)
-            {
-                throw new InvalidDataException(
-                    "The subject classifier returned conflicting identity and semantic matches for a concept.");
-            }
-
-            existingIndex = semanticIndex;
-            id = matched.Id;
-        }
-        else
-        {
-            if (proposedId != null)
-            {
-                if (idIndex < 0)
-                    throw new InvalidDataException("The subject classifier returned an id outside the published catalog for a new concept.");
-
-                existingIndex = idIndex;
-                id = proposedId;
-            }
-            else
-            {
-                existingIndex = -1;
-                id = mIdGenerator.CreateId();
-            }
-        }
-
-        var reconciled = new SubjectConcept
-                             {
-                                 Id = id,
-                                 Label = label,
-                                 Aliases = aliases,
-                                 Description = description
-                             };
-        if (existingIndex >= 0)
-            concepts[existingIndex] = reconciled;
-        else
-            concepts.Add(reconciled);
+        // Discovery can add a subject, but cannot rewrite an existing subject's meaning.
+        // Model-supplied identifiers and aliases are never authority to replace a concept.
+        if (matches.Count == 0)
+            concepts.Add(proposal with { Id = mIdGenerator.CreateId() });
     }
 
     private static IReadOnlyList<int> FindSemanticMatches(IReadOnlyList<SubjectConcept> concepts,
-                                                           string label,
-                                                           IReadOnlyList<string> aliases)
+                                                           string label)
     {
-        var proposedTerms = aliases.Append(label).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var matches = new List<int>();
         for(var i = 0; i < concepts.Count; i++)
         {
             SubjectConcept concept = concepts[i];
-            if (concept.Aliases.Append(concept.Label).Any(proposedTerms.Contains))
+            if (string.Equals(concept.Label, label, StringComparison.OrdinalIgnoreCase))
                 matches.Add(i);
+        }
+
+        if (matches.Count == 0)
+        {
+            for(var i = 0; i < concepts.Count; i++)
+            {
+                if (concepts[i].Aliases.Contains(label, StringComparer.OrdinalIgnoreCase))
+                    matches.Add(i);
+            }
         }
 
         return matches;
@@ -230,12 +208,12 @@ public sealed class SubjectCatalogBuilder
 
     private sealed record SubjectConceptResponse
     {
-        public string? SubjectId { get; init; }
-
         public string? Label { get; init; }
 
         public IReadOnlyList<string>? Aliases { get; init; }
 
         public string? Description { get; init; }
+
+        public IReadOnlyList<string>? Evidence { get; init; }
     }
 }
