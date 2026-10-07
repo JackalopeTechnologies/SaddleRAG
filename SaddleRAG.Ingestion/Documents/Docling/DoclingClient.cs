@@ -242,10 +242,17 @@ public sealed class DoclingClient : IDoclingClient
         var path = $"{PollPathPrefix}{escapedTaskId}?{PollWaitParameter}={PollWaitSeconds}";
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(endpoint, path));
         AddApiKey(request);
+        using var pollTimeout = CreateTimeout(mSettings.ConversionStallTimeoutSeconds, cancellationToken);
         try
         {
-            var response = await SendAsync(request, cancellationToken);
+            var response = await SendAsync(request, pollTimeout.Token);
             result = MapPollResponse(taskId, response);
+        }
+        catch(OperationCanceledException) when(!cancellationToken.IsCancellationRequested)
+        {
+            // A status request that never answers must still reach the liveness check
+            // when the overall conversion duration is unlimited.
+            result = DoclingTaskPollOutcome.Transient();
         }
         catch(HttpRequestException)
         {
@@ -557,7 +564,8 @@ public sealed class DoclingClient : IDoclingClient
     private static CancellationTokenSource CreateTimeout(int timeoutSeconds, CancellationToken cancellationToken)
     {
         var result = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        result.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        if (timeoutSeconds > 0)
+            result.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         return result;
     }
 

@@ -20,7 +20,7 @@ public sealed class DoclingSettingsTests
 
         Assert.Equal("http://localhost:5001", settings.Endpoint);
         Assert.Equal(expected: 120, settings.StartupGracePeriodSeconds);
-        Assert.Equal(expected: 14400, settings.ConversionTimeoutSeconds);
+        Assert.Equal(expected: 0, settings.ConversionTimeoutSeconds);
         Assert.Equal(expected: 300, settings.ConversionStallTimeoutSeconds);
         Assert.Equal(expected: 5000, settings.ConversionPollIntervalMilliseconds);
         Assert.Equal(expected: 2000, settings.ConversionResultRetryBaseMilliseconds);
@@ -76,7 +76,7 @@ public sealed class DoclingSettingsTests
     [InlineData(0, 10, 30, 600, 1000, 5000, 2000)]
     [InlineData(120, 0, 30, 600, 1000, 5000, 2000)]
     [InlineData(120, 10, 0, 600, 1000, 5000, 2000)]
-    [InlineData(120, 10, 30, 0, 1000, 5000, 2000)]
+    [InlineData(120, 10, 30, -1, 1000, 5000, 2000)]
     [InlineData(120, 10, 30, 600, 0, 5000, 2000)]
     [InlineData(120, 10, 30, 600, 1000, 0, 2000)]
     [InlineData(120, 10, 30, 600, 1000, 5000, 0)]
