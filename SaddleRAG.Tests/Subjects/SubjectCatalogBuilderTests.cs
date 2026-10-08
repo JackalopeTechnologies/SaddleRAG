@@ -10,282 +10,177 @@ namespace SaddleRAG.Tests.Subjects;
 
 public sealed class SubjectCatalogBuilderTests
 {
-    [Fact]
-    public async Task SemanticNoOpReusesExistingTaxonomyWithoutInsert()
+    [Theory]
+    [InlineData("Hydraulics")]
+    [InlineData("hydraulic")]
+    public async Task KnownLabelOrAliasReusesIdentityAndPreservesPublishedMeaning(string label)
     {
         SubjectCatalogRecord existing = SubjectTestData.Catalog();
         var repository = new InMemorySubjectCatalogRepository();
         repository.Seed(existing);
-        var generator = new ScriptedSubjectGenerator(
-            """
-            {"concepts":[
-              {"subjectId":"subject-hydraulics","label":"Hydraulics","aliases":["hydraulic","fluid power"],"description":"Hydraulic power, pumps, and circuits."},
-              {"subjectId":"subject-safety","label":"Safety","aliases":["lockout","LOTO"],"description":"Safe work and energy isolation."},
-              {"subjectId":"subject-electrical","label":"Electrical controls","aliases":["controls"],"description":"Electrical control systems."}
-            ]}
-            """);
-        var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(),
-                                                new FixedSubjectTimeProvider());
+        var generator = new ScriptedSubjectGenerator(Proposal(label, "New description must not overwrite old meaning."));
+        var builder = new SubjectCatalogBuilder(generator, new SequenceSubjectIdGenerator(), new FixedSubjectTimeProvider());
 
-        SubjectCatalogRecord result = await builder.ReconcileAsync(repository,
-                                                                   "manual-library",
-                                                                   "scan-no-op",
-                                                                   [SubjectTestData.Descriptor()],
-                                                                   TestContext.Current.CancellationToken);
+        SubjectCatalogRecord result = await builder.ReconcileAsync(repository, LibraryId, "scan-no-op",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken);
 
         Assert.Same(existing, result);
         Assert.Single(repository.Inserted);
+        Assert.DoesNotContain("subject-hydraulics", Assert.Single(generator.Prompts), StringComparison.Ordinal);
+        Assert.DoesNotContain("Electrical control systems.", generator.Prompts[0], StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task LaterScanReusesOpaqueIdsAddsConceptAndPreservesPriorRevision()
+    public async Task LaterScanAddsConceptAndPreservesPriorRevisionAndProvenance()
     {
-        const string hydraulicsId = "subject-00000000000000000000000000000001";
-        const string safetyId = "subject-00000000000000000000000000000002";
-        const string electricalId = "subject-00000000000000000000000000000003";
-        var generator = new ScriptedSubjectGenerator(
-            """
-            {"concepts":[
-              {"subjectId":null,"label":"Hydraulics","aliases":["fluid power"],"description":"Pumps and circuits"},
-              {"subjectId":null,"label":"Safety","aliases":["lockout"],"description":"Safe work"}
-            ]}
-            """,
-            $$"""
-            {"concepts":[
-              {"subjectId":"{{hydraulicsId}}","label":"Hydraulics","aliases":["fluid power"],"description":"Pumps and circuits"},
-              {"subjectId":null,"label":"Electrical controls","aliases":["controls"],"description":"Electrical systems"}
-            ]}
-            """);
         var repository = new InMemorySubjectCatalogRepository();
+        var generator = new ScriptedSubjectGenerator(Proposal("Hydraulics"), Proposal("Safety"));
         var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(hydraulicsId, safetyId, electricalId),
-                                                new FixedSubjectTimeProvider());
+            new SequenceSubjectIdGenerator("subject-first", "subject-second"), new FixedSubjectTimeProvider());
 
-        SubjectCatalogRecord first = await builder.ReconcileAsync(repository,
-                                                                  "manual-library",
-                                                                  "scan-first",
-                                                                  [SubjectTestData.Descriptor()],
-                                                                  TestContext.Current.CancellationToken);
+        SubjectCatalogRecord first = await builder.ReconcileAsync(repository, LibraryId, "scan-first",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken);
         Assert.Equal(SubjectCatalogPublicationState.Candidate, first.PublicationState);
-        Assert.True(await repository.TryPublishCandidateAsync("manual-library",
-                                                               first.TaxonomyVersion,
-                                                               "scan-first",
-                                                               TestContext.Current.CancellationToken));
-        SubjectCatalogRecord second = await builder.ReconcileAsync(repository,
-                                                                   "manual-library",
-                                                                   "scan-second",
-                                                                   [SubjectTestData.Descriptor("document-controls",
-                                                                                               "revision-controls")],
-                                                                   TestContext.Current.CancellationToken);
+        Assert.True(await repository.TryPublishCandidateAsync(LibraryId, first.TaxonomyVersion, "scan-first",
+            TestContext.Current.CancellationToken));
+        SubjectCatalogRecord second = await builder.ReconcileAsync(repository, LibraryId, "scan-second",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken);
 
         Assert.Equal(1, first.Revision);
         Assert.Equal(2, second.Revision);
-        Assert.NotEqual(first.TaxonomyVersion, second.TaxonomyVersion);
         Assert.Equal(first.TaxonomyVersion, second.PreviousTaxonomyVersion);
-        Assert.Equal([hydraulicsId, safetyId], first.Concepts.Select(c => c.Id).ToArray());
-        Assert.Contains(second.Concepts, c => c.Id == hydraulicsId && c.Label == "Hydraulics");
-        Assert.Contains(second.Concepts, c => c.Id == safetyId && c.Label == "Safety");
-        Assert.Contains(second.Concepts, c => c.Id == electricalId && c.Label == "Electrical controls");
-        Assert.Equal(2, first.Concepts.Count);
+        Assert.Equal("subject-first", Assert.Single(first.Concepts).Id);
+        Assert.Equal(["subject-first", "subject-second"], second.Concepts.Select(concept => concept.Id));
         Assert.Equal(2, repository.Inserted.Count);
-        Assert.Equal("scan-first", first.ScanRunId);
-        Assert.Equal("scan-second", second.ScanRunId);
-        Assert.Equal(SubjectCatalogPublicationState.Candidate, second.PublicationState);
-        Assert.All(repository.Inserted,
-                   catalog =>
-                   {
-                       Assert.Equal("scripted", catalog.Provenance.Backend);
-                       Assert.Equal("scripted-subject-model", catalog.Provenance.ModelId);
-                       Assert.Equal(SubjectCatalogPrompt.PromptVersion, catalog.Provenance.PromptVersion);
-                       Assert.Equal(SubjectTestData.GeneratedAtUtc, catalog.Provenance.GeneratedAtUtc);
-                   });
+        Assert.All(repository.Inserted, catalog =>
+        {
+            Assert.Equal("scripted", catalog.Provenance.Backend);
+            Assert.Equal("scripted-subject-model", catalog.Provenance.ModelId);
+            Assert.Equal(SubjectCatalogPrompt.PromptVersion, catalog.Provenance.PromptVersion);
+            Assert.Equal(SubjectTestData.GeneratedAtUtc, catalog.Provenance.GeneratedAtUtc);
+        });
     }
 
-    [Fact]
-    public async Task JsonNullCreatesANewOpaqueConcept()
+    [Theory]
+    [InlineData("subject-first")]
+    [InlineData("invented-id")]
+    public async Task ModelSuppliedIdentityCannotRenameAnotherManual(string returnedId)
     {
-        const string generatedId = "subject-pneumatics";
-        var repository = new InMemorySubjectCatalogRepository();
-        repository.Seed(SubjectTestData.Catalog());
         var generator = new ScriptedSubjectGenerator(
-            """
-            {"concepts":[
-              {"subjectId":null,"label":"Pneumatics","aliases":["compressed air"],"description":"Pneumatic systems."}
-            ]}
-            """);
+            """{"concepts":[{"label":"VF-S9 Communications","aliases":["inverter"],"confidence":0.95,"evidence":["VF-S9"]}]}""",
+            $$"""{"concepts":[{"subjectId":"{{returnedId}}","label":"VF-AS3 Instructions","aliases":["inverter"],"confidence":0.95,"evidence":["VF-AS3"]}]}""");
+        var repository = new InMemorySubjectCatalogRepository();
         var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(generatedId),
-                                                new FixedSubjectTimeProvider());
+            new SequenceSubjectIdGenerator("subject-first", "subject-second"), new FixedSubjectTimeProvider());
+        SubjectDescriptor first = SubjectTestData.Descriptor("document-1", "revision-1") with { Title = "VF-S9 Communications" };
+        SubjectDescriptor second = SubjectTestData.Descriptor("document-2", "revision-2") with { Title = "VF-AS3 Instructions" };
 
-        SubjectCatalogRecord result = await builder.ReconcileAsync(repository,
-                                                                   "manual-library",
-                                                                   "scan-pneumatics",
-                                                                   [SubjectTestData.Descriptor()],
-                                                                   TestContext.Current.CancellationToken);
+        SubjectCatalogRecord result = await builder.ReconcileAsync(repository, LibraryId, "scan-models",
+            [first, second], TestContext.Current.CancellationToken);
 
-        Assert.Contains(result.Concepts,
-                        concept => concept.Id == generatedId && concept.Label == "Pneumatics");
+        Assert.Collection(result.Concepts,
+            concept => { Assert.Equal("subject-first", concept.Id); Assert.Equal("VF-S9 Communications", concept.Label); },
+            concept => { Assert.Equal("subject-second", concept.Id); Assert.Equal("VF-AS3 Instructions", concept.Label); });
+        Assert.DoesNotContain("VF-S9", generator.Prompts[1], StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task JsonNullForKnownLabelReusesExactExistingConceptIdentity()
+    public async Task IncomingAliasCannotReplaceAnExistingSubject()
     {
         var repository = new InMemorySubjectCatalogRepository();
         repository.Seed(SubjectTestData.Catalog());
         var generator = new ScriptedSubjectGenerator(
-            """
-            {"concepts":[
-              {"subjectId":null,"label":"Hydraulics","aliases":["fluid power"],"description":"Hydraulic systems."}
-            ]}
-            """);
+            """{"concepts":[{"label":"Pump maintenance","aliases":["Safety"],"confidence":0.95,"evidence":["Pump service"]}]}""");
         var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(),
-                                                new FixedSubjectTimeProvider());
+            new SequenceSubjectIdGenerator("subject-pump"), new FixedSubjectTimeProvider());
 
-        SubjectCatalogRecord result = await builder.ReconcileAsync(repository,
-                                                                   "manual-library",
-                                                                   "scan-null-reuse",
-                                                                   [SubjectTestData.Descriptor()],
-                                                                   TestContext.Current.CancellationToken);
+        SubjectCatalogRecord result = await builder.ReconcileAsync(repository, LibraryId, "scan-alias",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, result.Concepts.Count);
-        SubjectConcept hydraulics = Assert.Single(result.Concepts,
-                                                  concept => concept.Id == "subject-hydraulics");
-        Assert.Equal("Hydraulic systems.", hydraulics.Description);
+        Assert.Equal(4, result.Concepts.Count);
+        Assert.Contains(result.Concepts, concept => concept.Id == "subject-safety" && concept.Label == "Safety");
+        Assert.Contains(result.Concepts, concept => concept.Id == "subject-pump" && concept.Label == "Pump maintenance");
     }
 
     [Fact]
-    public async Task GeneratorInventedIdForKnownLabelReusesExactExistingIdWithoutDuplicate()
+    public async Task ExactLabelWinsOverAnAliasOnAnotherConcept()
     {
-        const string inventedId = "subject-generator-invented-id";
+        SubjectCatalogRecord existing = SubjectTestData.Catalog();
         var repository = new InMemorySubjectCatalogRepository();
-        repository.Seed(SubjectTestData.Catalog());
-        var generator = new ScriptedSubjectGenerator(
-            $$"""
-              {"concepts":[
-                {"subjectId":"{{inventedId}}","label":"Hydraulics","aliases":["fluid power"],"description":"Hydraulic systems from generator output."}
-              ]}
-              """);
-        var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(),
-                                                new FixedSubjectTimeProvider());
+        repository.Seed(existing with
+        {
+            Concepts = [existing.Concepts[0], existing.Concepts[1] with { Aliases = ["Hydraulics"] }]
+        });
+        var generator = new ScriptedSubjectGenerator(Proposal("Hydraulics"));
+        var builder = new SubjectCatalogBuilder(generator, new SequenceSubjectIdGenerator(), new FixedSubjectTimeProvider());
 
-        SubjectCatalogRecord result = await builder.ReconcileAsync(repository,
-                                                                   "manual-library",
-                                                                   "scan-invented-id-reuse",
-                                                                   [SubjectTestData.Descriptor()],
-                                                                   TestContext.Current.CancellationToken);
+        SubjectCatalogRecord result = await builder.ReconcileAsync(repository, LibraryId, "scan-exact",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken);
 
-        Assert.Equal(3, result.Concepts.Count);
-        SubjectConcept hydraulics = Assert.Single(result.Concepts,
-                                                  concept => concept.Id == "subject-hydraulics");
-        Assert.Equal("Hydraulic systems from generator output.", hydraulics.Description);
-        Assert.DoesNotContain(result.Concepts, concept => concept.Id == inventedId);
-    }
-
-    [Fact]
-    public async Task ExistingIdForDifferentSemanticMatchRemainsInvalid()
-    {
-        var repository = new InMemorySubjectCatalogRepository();
-        repository.Seed(SubjectTestData.Catalog());
-        var generator = new ScriptedSubjectGenerator(
-            """
-            {"concepts":[
-              {"subjectId":"subject-safety","label":"Hydraulics","aliases":["fluid power"],"description":"Conflicting identity."}
-            ]}
-            """);
-        var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(),
-                                                new FixedSubjectTimeProvider());
-
-        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            builder.ReconcileAsync(repository,
-                                   "manual-library",
-                                   "scan-conflicting-id",
-                                   [SubjectTestData.Descriptor()],
-                                   TestContext.Current.CancellationToken));
-
-        Assert.Equal("The subject classifier returned conflicting identity and semantic matches for a concept.",
-                     failure.Message);
-        Assert.DoesNotContain("subject-safety", failure.ToString(), StringComparison.Ordinal);
-        Assert.DoesNotContain("subject-hydraulics", failure.ToString(), StringComparison.Ordinal);
+        Assert.Equal(2, result.Concepts.Count);
         Assert.Single(repository.Inserted);
     }
 
     [Fact]
-    public async Task ProposalMatchingTwoExistingConceptsRemainsAmbiguous()
+    public async Task AmbiguousPublishedAliasCannotMergeSubjects()
     {
+        SubjectCatalogRecord existing = SubjectTestData.Catalog();
         var repository = new InMemorySubjectCatalogRepository();
-        repository.Seed(SubjectTestData.Catalog());
-        var generator = new ScriptedSubjectGenerator(
-            """
-            {"concepts":[
-              {"subjectId":null,"label":"Hydraulics","aliases":["Safety"],"description":"Ambiguous subject."}
-            ]}
-            """);
-        var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(),
-                                                new FixedSubjectTimeProvider());
+        repository.Seed(existing with
+        {
+            Concepts = existing.Concepts.Select(concept => concept with { Aliases = ["Shared alias"] }).ToArray()
+        });
+        var generator = new ScriptedSubjectGenerator(Proposal("Shared alias"));
+        var builder = new SubjectCatalogBuilder(generator, new SequenceSubjectIdGenerator(), new FixedSubjectTimeProvider());
 
-        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            builder.ReconcileAsync(repository,
-                                   "manual-library",
-                                   "scan-ambiguous",
-                                   [SubjectTestData.Descriptor()],
-                                   TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => builder.ReconcileAsync(repository, LibraryId, "scan-ambiguous",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken));
 
-        Assert.Equal("The subject classifier returned a concept that ambiguously matches multiple published concepts.",
-                     failure.Message);
-        Assert.DoesNotContain("Hydraulics", failure.ToString(), StringComparison.Ordinal);
         Assert.Single(repository.Inserted);
     }
 
-    [Fact]
-    public async Task CopyablePlaceholderSubjectIdRemainsInvalid()
+    [Theory]
+    [InlineData("{\"concepts\":[null]}")]
+    [InlineData("{\"concepts\":[]}")]
+    [InlineData("{\"concepts\":[{\"label\":\"Inverter\",\"confidence\":0.95,\"evidence\":[\"VF-S15 instruction manual\"]}]}")]
+    [InlineData("{\"concepts\":[{\"label\":\"Pump\",\"confidence\":0.95}]}")]
+    public async Task InvalidOrInventedEvidenceIsRetriedAndNeverPublished(string response)
     {
         var repository = new InMemorySubjectCatalogRepository();
-        repository.Seed(SubjectTestData.Catalog());
-        var generator = new ScriptedSubjectGenerator(
-            """
-            {"concepts":[
-              {"subjectId":"existing-id-or-null","label":"Pneumatics","aliases":[],"description":"Pneumatic systems."}
-            ]}
-            """);
-        var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(),
-                                                new FixedSubjectTimeProvider());
+        var generator = new ScriptedSubjectGenerator(response, response);
+        var builder = new SubjectCatalogBuilder(generator, new SequenceSubjectIdGenerator(), new FixedSubjectTimeProvider());
 
-        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            builder.ReconcileAsync(repository,
-                                   "manual-library",
-                                   "scan-placeholder",
-                                   [SubjectTestData.Descriptor()],
-                                   TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => builder.ReconcileAsync(repository, LibraryId, "scan-invalid",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken));
 
-        Assert.Equal("The subject classifier returned an id outside the published catalog for a new concept.",
-                     failure.Message);
-        Assert.DoesNotContain("existing-id-or-null", failure.ToString(), StringComparison.Ordinal);
-        Assert.Single(repository.Inserted);
-    }
-
-    [Fact]
-    public async Task NullConceptIsSanitizedAndNeverPersisted()
-    {
-        var repository = new InMemorySubjectCatalogRepository();
-        var generator = new ScriptedSubjectGenerator("{\"concepts\":[null]}");
-        var builder = new SubjectCatalogBuilder(generator,
-                                                new SequenceSubjectIdGenerator(),
-                                                new FixedSubjectTimeProvider());
-
-        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
-            builder.ReconcileAsync(repository,
-                                   "manual-library",
-                                   "scan-null-concept",
-                                   [SubjectTestData.Descriptor()],
-                                   TestContext.Current.CancellationToken));
-
-        Assert.Equal("Subject concepts cannot be null.", failure.Message);
+        Assert.Equal(2, generator.Prompts.Count);
         Assert.Empty(repository.Inserted);
     }
+
+    [Fact]
+    public async Task InvalidLaterProposalDoesNotLeakAnEarlierProposalIntoTheRetry()
+    {
+        var repository = new InMemorySubjectCatalogRepository();
+        var generator = new ScriptedSubjectGenerator(
+            """{"concepts":[{"label":"Safety","confidence":0.95,"evidence":["safety"]},null]}""",
+            Proposal("Hydraulics"));
+        var builder = new SubjectCatalogBuilder(generator,
+            new SequenceSubjectIdGenerator("subject-only"), new FixedSubjectTimeProvider());
+
+        SubjectCatalogRecord result = await builder.ReconcileAsync(repository, LibraryId, "scan-retry",
+            [SubjectTestData.Descriptor()], TestContext.Current.CancellationToken);
+
+        SubjectConcept concept = Assert.Single(result.Concepts);
+        Assert.Equal("Hydraulics", concept.Label);
+        Assert.Equal("subject-only", concept.Id);
+        Assert.Equal(2, generator.Prompts.Count);
+    }
+
+    private static string Proposal(string label, string description = "Hydraulic pump service.") =>
+        SubjectJson.Serialize(new
+        {
+            Concepts = new[] { new { Label = label, Aliases = Array.Empty<string>(), Description = description, Confidence = 0.95f, Evidence = new[] { "pump" } } }
+        });
+
+    private const string LibraryId = "manual-library";
 }

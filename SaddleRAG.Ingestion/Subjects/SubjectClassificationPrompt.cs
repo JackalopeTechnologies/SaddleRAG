@@ -11,7 +11,7 @@ namespace SaddleRAG.Ingestion.Subjects;
 /// <summary>Versioned prompt for assigning stable catalog identifiers.</summary>
 public static class SubjectClassificationPrompt
 {
-    public const string PromptVersion = "subject-assignment-v4";
+    public const string PromptVersion = "subject-assignment-v7";
 
     public static string Build(SubjectDescriptor descriptor, SubjectCatalogRecord catalog)
     {
@@ -27,7 +27,7 @@ public static class SubjectClassificationPrompt
                     {
                         SubjectId = catalog.Concepts[index: 1].Id,
                         Confidence = 0.0f,
-                        Evidence = ["secondary evidence"]
+                        Evidence = ["source-1"]
                     }
             ]
             : [];
@@ -37,7 +37,7 @@ public static class SubjectClassificationPrompt
                                                                              {
                                                                                  SubjectId = catalog.Concepts[index: 0].Id,
                                                                                  Confidence = 0.0f,
-                                                                                 Evidence = ["primary evidence"]
+                                                                                 Evidence = ["source-1"]
                                                                              },
                                                                Secondary = secondaryExample
                                                            });
@@ -48,18 +48,22 @@ public static class SubjectClassificationPrompt
                                                                           catalog.TaxonomyVersion,
                                                                           catalog.Concepts
                                                                       },
-                                                        Descriptor = descriptor
+                                                        Descriptor = new { descriptor.Title, descriptor.RelativePath },
+                                                        EvidenceSources = SubjectEvidence.Sources(descriptor)
                                                     });
         string instructions = $$"""
                                       Subject assignment prompt version: {{PromptVersion}}
                                       Select exactly one primary subject and zero to {{SubjectClassificationLimits.MaxSecondarySubjects}} secondary subjects.
+                                      Classify only the current document descriptor. Catalog entries describe possible subjects, not facts about this document.
+                                      Match the document's actual topic and named product model. Never substitute another model or product merely because it appears in the catalog.
                                       Copy every primary and secondary subjectId exactly from a catalog.concepts[].id value.
                                       No other subjectId string is valid. Never output a placeholder, invented id, or JSON null.
                                       Confidence must be between 0 and 1.
                                       Primary must be one JSON object with subjectId, confidence, and evidence fields.
                                       Every secondary array element must be a full JSON object with subjectId, confidence, and evidence fields.
                                       Never put a bare subjectId string in secondary. Use an empty secondary array when no secondary subject applies.
-                                      For every selected subject, evidence must be a JSON array containing 1 to {{SubjectClassificationLimits.MaxEvidenceCount}} short strings supported by the descriptor.
+                                      For every selected subject, evidence must contain 1 to {{SubjectClassificationLimits.MaxEvidenceCount}} distinct keys from evidenceSources, such as "source-1".
+                                      Select excerpts that support the subject. Copy only their keys into evidence; the application will copy the exact source text (1 to {{SubjectClassificationLimits.MaxEvidenceCharacters}} characters per excerpt).
                                       Return exactly one JSON object. This example uses real allowed catalog ids:
                                       {{responseExample}}
                                       Do not use Markdown, XML tags, or commentary. End the response immediately after the closing brace.

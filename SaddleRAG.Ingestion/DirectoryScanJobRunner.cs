@@ -194,7 +194,7 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
             await jobs.UpsertAsync(job, CancellationToken.None);
             DirectoryIngestionResult result = await mCoordinator.RunAsync(
                                                   request,
-                                                  progress => PersistProgress(job, progress, jobs),
+                                                  progress => PersistProgress(job, progress, registeredRoot, jobs),
                                                   cts.Token);
             await PersistResultAsync(job, result, registeredRoot, jobs);
         }
@@ -219,6 +219,7 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
 
     private void PersistProgress(JobRecord job,
                                  DirectoryScanProgress progress,
+                                 string registeredRoot,
                                  IJobRepository jobs)
     {
         ArgumentNullException.ThrowIfNull(progress);
@@ -227,10 +228,16 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
                                 FilesDiscovered = progress.FilesDiscovered,
                                 SupportedDocuments = progress.SupportedDocuments,
                                 DocumentsCompleted = progress.DocumentsCompleted,
-                                CurrentRelativePath = SanitizeRelativePath(progress.CurrentRelativePath)
+                                CurrentRelativePath = SanitizeRelativePath(progress.CurrentRelativePath),
+                                Phase = progress.Phase,
+                                PhaseDocumentsCompleted = progress.PhaseDocumentsCompleted,
+                                CurrentFileStartedAtUtc = progress.CurrentFileStartedAtUtc
                             };
         job.DirectoryScanProgress = sanitized;
-        job.ItemsProcessed = sanitized.DocumentsCompleted;
+        job.DirectoryScanFailures = SanitizeFailures(progress.FileFailures, registeredRoot);
+        job.ErrorCount = job.DirectoryScanFailures.Count;
+        job.PipelineState = sanitized.Phase;
+        job.ItemsProcessed = sanitized.DisplayCompleted;
         job.ItemsTotal = sanitized.SupportedDocuments;
         job.LastProgressAt = DateTime.UtcNow;
         jobs.UpsertAsync(job, CancellationToken.None).GetAwaiter().GetResult();
@@ -241,8 +248,13 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
                                                  string registeredRoot,
                                                  IJobRepository jobs)
     {
-        string detail = SanitizeDetail(result.Detail, registeredRoot);
-        job.DirectoryScanFailures = SanitizeFailures(result.FileFailures, registeredRoot);
+        string? detail = string.IsNullOrWhiteSpace(result.Detail)
+                         && result.Status != DirectoryIngestionStatuses.Failed
+            ? null
+            : SanitizeDetail(result.Detail, registeredRoot);
+        job.DirectoryScanFailures = job.DirectoryScanFailures
+                                       .Concat(SanitizeFailures(result.FileFailures, registeredRoot))
+                                       .Distinct().ToArray();
         job.ResultJson = SerializeResult(result, detail);
         switch(result.Status)
         {
@@ -260,11 +272,8 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
             default:
                 job.Status = JobStatus.Completed;
                 job.PipelineState = nameof(JobStatus.Completed);
-                if (job.DirectoryScanProgress == null)
-                {
-                    job.ItemsProcessed = result.DocumentsProcessed;
-                    job.ItemsTotal = result.DocumentsProcessed;
-                }
+                job.ItemsProcessed = result.DocumentsProcessed;
+                job.ItemsTotal = result.DocumentsProcessed;
 
                 break;
         }
@@ -342,7 +351,7 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
         return result;
     }
 
-    private static string SerializeResult(DirectoryIngestionResult result, string detail) =>
+    private static string SerializeResult(DirectoryIngestionResult result, string? detail) =>
         JsonSerializer.Serialize(new
                                      {
                                          result.Status,

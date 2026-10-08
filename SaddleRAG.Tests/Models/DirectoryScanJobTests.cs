@@ -42,7 +42,7 @@ public sealed class DirectoryScanJobTests
         Assert.Equal(Version, completed.Version);
         Assert.Equal(JobStatus.Completed, completed.Status);
         Assert.Equal("documents", completed.ItemsLabel);
-        Assert.Equal(2, completed.ItemsProcessed);
+        Assert.Equal(4, completed.ItemsProcessed);
         Assert.Equal(4, completed.ItemsTotal);
         Assert.NotNull(completed.DirectoryScanProgress);
         Assert.Equal(5, completed.DirectoryScanProgress.FilesDiscovered);
@@ -82,6 +82,11 @@ public sealed class DirectoryScanJobTests
         Assert.Equal(4, progress["SupportedDocuments"]!.GetValue<int>());
         Assert.Equal(2, progress["DocumentsCompleted"]!.GetValue<int>());
         Assert.Equal("nested/manual.pdf", progress["CurrentRelativePath"]!.GetValue<string>());
+        Assert.Equal(DirectoryScanPhases.Labeling, progress["Phase"]!.GetValue<string>());
+        Assert.Equal(1, progress["PhaseDocumentsCompleted"]!.GetValue<int>());
+        string failure = Assert.Single(root["DirectoryScanFailures"]!.AsArray())!.ToJsonString();
+        Assert.Contains("broken.pdf", failure, StringComparison.Ordinal);
+        Assert.DoesNotContain(RootPath, failure, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -101,7 +106,30 @@ public sealed class DirectoryScanJobTests
                      .UpsertAsync(default!, TestContext.Current.CancellationToken);
     }
 
-    private static JobFixture MakeFixture()
+    [Theory]
+    [InlineData(DirectoryIngestionStatuses.Completed, null, null)]
+    [InlineData("CANCELLED", null, null)]
+    [InlineData(DirectoryIngestionStatuses.Failed, null, "The manual directory scan failed.")]
+    [InlineData(DirectoryIngestionStatuses.Completed, "Read C:\\owned-manuals", "Read [registered root]")]
+    public async Task ResultDetailDoesNotInventFailureForSuccessfulOrCancelledJobs(
+        string status, string? detail, string? expectedDetail)
+    {
+        JobFixture fixture = MakeFixture(status, detail);
+        await fixture.Runner.QueueAsync(LibraryId, profile: null, TestContext.Current.CancellationToken);
+        JobRecord completed = await fixture.Completed.Task.WaitAsync(TimeSpan.FromSeconds(5),
+                                                                     TestContext.Current.CancellationToken);
+
+        Assert.NotNull(completed.ResultJson);
+        JsonObject result = Assert.IsType<JsonObject>(JsonNode.Parse(completed.ResultJson));
+        JsonNode resultStatus = Assert.IsAssignableFrom<JsonNode>(result["Status"]);
+        Assert.Equal(status, resultStatus.GetValue<string>());
+        Assert.Equal(expectedDetail, result["Detail"]?.GetValue<string>());
+        Assert.Equal(status == DirectoryIngestionStatuses.Failed ? expectedDetail : null,
+                     completed.ErrorMessage);
+    }
+
+    private static JobFixture MakeFixture(string status = DirectoryIngestionStatuses.Completed,
+                                          string? detail = null)
     {
         var factory = Substitute.For<RepositoryFactory>([null!]);
         var jobs = Substitute.For<IJobRepository>();
@@ -122,7 +150,8 @@ public sealed class DirectoryScanJobTests
         var completed = new TaskCompletionSource<JobRecord>(TaskCreationOptions.RunContinuationsAsynchronously);
         jobs.UpsertAsync(Arg.Do<JobRecord>(record =>
                                               {
-                                                  if (record.Status == JobStatus.Completed)
+                                                  if (record.Status is JobStatus.Completed or JobStatus.Failed
+                                                      or JobStatus.Cancelled)
                                                       completed.TrySetResult(Clone(record));
                                               }),
                          Arg.Any<CancellationToken>())
@@ -138,14 +167,22 @@ public sealed class DirectoryScanJobTests
                                                                            SupportedDocuments: 4,
                                                                            DocumentsCompleted: 2,
                                                                            CurrentRelativePath:
-                                                                           "nested/manual.pdf"));
+                                                                           "nested/manual.pdf")
+                                    {
+                                        Phase = DirectoryScanPhases.Labeling,
+                                        PhaseDocumentsCompleted = 1,
+                                        CurrentFileStartedAtUtc = QueuedAt.UtcDateTime,
+                                        FileFailures = [new DirectoryScanFileFailure("broken.pdf", "TEST_FAILURE",
+                                            $"Could not read {RootPath}")]
+                                    });
                                 return Task.FromResult(new DirectoryIngestionResult(
-                                                           DirectoryIngestionStatuses.Completed,
+                                                           status,
                                                            LibraryId,
                                                            Version,
                                                            DocumentsProcessed: 4,
                                                            PagesIndexed: 6,
-                                                           ChunksIndexed: 8));
+                                                           ChunksIndexed: 8,
+                                                           Detail: detail));
                             });
         var clock = new FixedQueueTimeProvider();
         var runner = new DirectoryScanJobRunner(coordinator,
@@ -189,7 +226,8 @@ public sealed class DirectoryScanJobTests
             CompletedAt = source.CompletedAt,
             LastProgressAt = source.LastProgressAt,
             CancelledAt = source.CancelledAt,
-            DirectoryScanProgress = source.DirectoryScanProgress
+            DirectoryScanProgress = source.DirectoryScanProgress,
+            DirectoryScanFailures = source.DirectoryScanFailures
         };
 
     private sealed class FixedQueueTimeProvider : TimeProvider

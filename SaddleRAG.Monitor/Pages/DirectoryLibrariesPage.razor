@@ -214,19 +214,15 @@
                                     <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
                                              Color="@JobColor(row.LatestJobStatus)">@row.LatestJobStatus</MudChip>
                                 }
-                                <MudText Typo="Typo.body2">@FormatProgress(row)</MudText>
+                                @if (row.Progress is null)
+                                {
+                                    <MudText Typo="Typo.body2">@FormatProgress(row)</MudText>
+                                }
                             </MudStack>
                             @if (row.Progress is not null)
                             {
-                                <MudProgressLinear Value="@ProgressPercent(row.Progress)"
-                                                   Color="Color.Primary" Rounded="true" Class="mt-1"/>
-                                <MudText Typo="Typo.caption" Class="d-block">@FormatDiscovery(row.Progress)</MudText>
-                                @if (!string.IsNullOrWhiteSpace(row.Progress.CurrentRelativePath))
-                                {
-                                    <MudText Typo="Typo.caption" Class="d-block directory-library-current-file">
-                                        Converting @row.Progress.CurrentRelativePath
-                                    </MudText>
-                                }
+                                <DirectoryScanProgressPanel Progress="@row.Progress"
+                                                            Active="@(row.LatestJobStatus is "Queued" or "Running")" />
                             }
                             <MudText Typo="Typo.caption" Class="d-block">@FormatJobTiming(row)</MudText>
                             @if (row.FileFailures.Count > 0)
@@ -251,6 +247,10 @@
                 </MudTable>
             }
 
+            @if (ProgressRefreshError is not null)
+            {
+                <MudAlert Severity="Severity.Warning">@ProgressRefreshError</MudAlert>
+            }
             <MudDivider Class="my-5"/>
             <MudText Typo="Typo.h6">File failures</MudText>
             @if (SelectedFailures.Count > 0)

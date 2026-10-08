@@ -6,6 +6,8 @@
 #region Usings
 
 using SaddleRAG.Core.Enums;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
@@ -24,6 +26,45 @@ namespace SaddleRAG.Tests.Monitor;
 /// </summary>
 public sealed class DirectoryScanStatusDetailTests
 {
+    [Fact]
+    public void StoredProgressRetainsItsStageAndOlderRecordsRemainReadable()
+    {
+        var current = new DirectoryScanJobProgress
+            {
+                DocumentsCompleted = 27,
+                SupportedDocuments = 27,
+                Phase = DirectoryScanPhases.Labeling,
+                PhaseDocumentsCompleted = 3,
+                CurrentRelativePath = "manual.pdf",
+                CurrentFileStartedAtUtc = StartedAt
+            };
+
+        DirectoryScanJobProgress restored = BsonSerializer.Deserialize<DirectoryScanJobProgress>(current.ToBson());
+        DirectoryScanJobProgress older = BsonSerializer.Deserialize<DirectoryScanJobProgress>(
+            new BsonDocument { { "DocumentsCompleted", 7 }, { "SupportedDocuments", 27 } });
+
+        Assert.Equal(current.Phase, restored.Phase);
+        Assert.Equal(3, restored.DisplayCompleted);
+        Assert.Equal(current.CurrentFileStartedAtUtc, restored.CurrentFileStartedAtUtc);
+        Assert.Equal(DirectoryScanPhases.Extracting, older.Phase);
+        Assert.Equal(7, older.DisplayCompleted);
+    }
+
+    [Fact]
+    public void LabelingCountDoesNotClaimAllExtractedDocumentsAreFinished()
+    {
+        var progress = new DirectoryScanJobProgress
+            {
+                SupportedDocuments = 27,
+                DocumentsCompleted = 27,
+                Phase = DirectoryScanPhases.Labeling,
+                PhaseDocumentsCompleted = 3
+            };
+
+        Assert.Equal(3, progress.DisplayCompleted);
+        Assert.Equal(27, (progress with { Phase = DirectoryScanPhases.Extracting }).DisplayCompleted);
+    }
+
     [Fact]
     public async Task RowCarriesTheJobTimingAndErrorNeededToJudgeARunningScan()
     {

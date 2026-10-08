@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,11 +99,24 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     {
         DirectoryRegistrationResult registration = await RegisterRequiredAsync();
 
-        DirectoryIngestionResult first = await ScanAsync(FirstVersion, "scan-first");
+        var progress = new List<DirectoryScanProgress>();
+        DirectoryIngestionResult first = await ScanAsync(FirstVersion, "scan-first", onProgress: progress.Add);
 
         Assert.Equal(DirectoryRegistrationStatuses.Registered, registration.Status);
         Assert.Equal(DirectoryIngestionStatuses.Completed, first.Status);
         Assert.Equal(FirstVersion, first.Version);
+        Assert.Equal(new[] { DirectoryScanPhases.Extracting, DirectoryScanPhases.Labeling,
+            DirectoryScanPhases.PreparingSearch, DirectoryScanPhases.BuildingIndex, DirectoryScanPhases.Publishing },
+            progress.Select(update => update.Phase).Distinct());
+        Assert.Contains(progress, update => update.Phase == DirectoryScanPhases.Extracting
+                                            && update.DocumentsCompleted == 0
+                                            && update.CurrentRelativePath != null
+                                            && update.CurrentFileStartedAtUtc != null);
+        Assert.Contains(progress, update => update.Phase == DirectoryScanPhases.Labeling
+                                            && update.PhaseDocumentsCompleted == 0
+                                            && update.CurrentRelativePath != null);
+        Assert.Contains(progress, update => update.Phase == DirectoryScanPhases.PreparingSearch
+                                            && update.PhaseDocumentsCompleted == first.DocumentsProcessed);
         LibraryRecord library = Assert.IsType<LibraryRecord>(await Libraries.GetLibraryAsync(
                                                                   LibraryId,
                                                                   TestContext.Current.CancellationToken));
@@ -245,21 +259,17 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UnparseableSubjectReplyDegradesToReviewFlaggedFallbackAndStillPublishes()
+    public async Task DiscoverySelectionsPublishWithoutASecondSubjectGenerationPass()
     {
         await RegisterRequiredAsync();
-        mSubjectGenerator.AssignmentReplyOverride = "not valid json";
-
-        DirectoryIngestionResult result = await ScanAsync(FirstVersion, "scan-fallback");
+        DirectoryIngestionResult result = await ScanAsync(FirstVersion, "scan-single-pass");
 
         Assert.Equal(DirectoryIngestionStatuses.Completed, result.Status);
         LibraryRecord library = Assert.IsType<LibraryRecord>(await Libraries.GetLibraryAsync(
                                                                   LibraryId,
                                                                   TestContext.Current.CancellationToken));
         Assert.Equal(FirstVersion, library.CurrentVersion);
-        // The completed OCR is not discarded: every document still publishes and stays searchable.
         await AssertSearchCitationAsync(PdfMarker, "Manual.pdf", "Owned PDF heading", expectedPage: 2);
-        // Each document received the review-flagged fallback subject instead of aborting the scan.
         IReadOnlyList<DocumentRevisionRecord> revisions = await Sources.GetRevisionsAsync(
                                                                 LibraryId,
                                                                 FirstVersion,
@@ -270,9 +280,12 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
             .GetByDocumentRevisionIdsAsync(revisions.Select(revision => revision.Id).ToList(),
                                            TestContext.Current.CancellationToken);
         Assert.Equal(revisions.Count, assignments.Count);
-        Assert.All(assignments, assignment => Assert.True(assignment.NeedsReview));
+        Assert.Equal(revisions.Count, mSubjectGenerator.RequestCount);
+        Assert.All(assignments, assignment => Assert.False(assignment.NeedsReview));
         Assert.All(assignments,
                    assignment => Assert.Equal("subject-owned-manuals", assignment.Primary.SubjectId));
+        Assert.All(assignments,
+                   assignment => Assert.Equal(SubjectCatalogPrompt.PromptVersion, assignment.Provenance.PromptVersion));
     }
 
     [Fact]
@@ -582,7 +595,8 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
 
     private async Task<DirectoryIngestionResult> ScanAsync(string version,
                                                            string scanRunId,
-                                                           string? profile = null)
+                                                           string? profile = null,
+                                                           Action<DirectoryScanProgress>? onProgress = null)
     {
         ISourceDocumentRepository sources = mFactory.GetSourceDocumentRepository(profile);
         DirectoryLibraryDefinition? definition = await sources.GetDirectoryDefinitionAsync(
@@ -600,7 +614,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
                               Profile = profile
                           };
         DirectoryIngestionResult result = await mCoordinator.RunAsync(request,
-                                                                       onProgress: null,
+                                                                       onProgress,
                                                                        TestContext.Current.CancellationToken);
         return result;
     }
@@ -816,12 +830,7 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
 
     private sealed class ScriptedSubjectTextGenerator : IClassifierTextGenerator
     {
-        /// <summary>
-        ///     When set, every per-document assignment prompt returns this reply
-        ///     instead of a valid one, reproducing an unparseable classifier reply.
-        ///     Catalog prompts are unaffected so catalog reconciliation still succeeds.
-        /// </summary>
-        public string? AssignmentReplyOverride { get; set; }
+        public int RequestCount { get; private set; }
 
         public string BackendName => "scripted";
 
@@ -831,24 +840,18 @@ public sealed class DirectoryLibraryEndToEndTests : IAsyncLifetime
         {
             ct.ThrowIfCancellationRequested();
             bool catalogPrompt = prompt.Contains(SubjectCatalogPrompt.PromptVersion, StringComparison.Ordinal);
-            string response = catalogPrompt
-                                  ? CatalogResponse(prompt)
-                                  : (AssignmentReplyOverride ?? AssignmentResponse);
+            Assert.True(catalogPrompt, "A directory import must retain its discovery selections instead of generating assignments again.");
+            RequestCount++;
+            Assert.True(ClassifierPromptEvidence.TrySplit(prompt, out _, out string evidence, out _));
+            using JsonDocument document = JsonDocument.Parse(evidence);
+            string title = document.RootElement.GetProperty("descriptor").GetProperty("title").GetString() ?? string.Empty;
+            string response = SubjectJson.Serialize(new
+                                  {
+                                      Concepts = new[] { new { Label = "Owned manuals", Aliases = new[] { "manual" }, Confidence = 0.99f, Evidence = new[] { title } } }
+                                  });
             return Task.FromResult(response);
         }
 
-        private static string CatalogResponse(string prompt) =>
-            prompt.Contains(SubjectId, StringComparison.Ordinal)
-                ? ExistingCatalogResponse
-                : NewCatalogResponse;
-
-        private const string NewCatalogResponse =
-            "{\"concepts\":[{\"subjectId\":null,\"label\":\"Owned manuals\",\"aliases\":[\"manual\"],\"description\":\"Owned manual fixture documents.\"}]}";
-        private const string ExistingCatalogResponse =
-            "{\"concepts\":[{\"subjectId\":\"subject-owned-manuals\",\"label\":\"Owned manuals\",\"aliases\":[\"manual\"],\"description\":\"Owned manual fixture documents.\"}]}";
-        private const string AssignmentResponse =
-            "{\"primary\":{\"subjectId\":\"subject-owned-manuals\",\"confidence\":0.99,\"evidence\":[\"owned manual fixture\"]},\"secondary\":[]}";
-        private const string SubjectId = "subject-owned-manuals";
     }
 
     private sealed class FixedSubjectIdGenerator : ISubjectIdGenerator

@@ -4,12 +4,32 @@
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
 using System.Text.Json;
+using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Subjects;
 
 namespace SaddleRAG.Tests.Subjects;
 
 public sealed class SubjectResponseGeneratorTests
 {
+    [Fact]
+    public async Task GenerationSchemaIsForwardedOnInitialRequestAndRetry()
+    {
+        var generator = Substitute.For<IStructuredClassifierTextGenerator>();
+        generator.GenerateAsync(Arg.Any<string>(), Arg.Any<JsonElement>(), Arg.Any<CancellationToken>())
+                 .Returns("{\"value\":\"unknown\"}", "{\"value\":\"accepted\"}");
+        JsonElement schema = SubjectResponseSchema.Catalog(SubjectTestData.Descriptor());
+
+        string result = await SubjectResponseGenerator.GenerateValidatedAsync<Dictionary<string, JsonElement>, string>(
+            generator, "Classify this document.", response => ValidateValue(response["value"]),
+            TestContext.Current.CancellationToken, schema);
+
+        Assert.Equal("accepted", result);
+        await generator.Received(2).GenerateAsync(Arg.Any<string>(),
+            Arg.Is<JsonElement>(value => value.GetRawText() == schema.GetRawText()),
+            TestContext.Current.CancellationToken);
+        await generator.DidNotReceive().GenerateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task InvalidFirstResponseRetriesWithStrictInstructionAndReturnsSecondObject()
     {
@@ -63,6 +83,9 @@ public sealed class SubjectResponseGeneratorTests
         Assert.Equal("accepted", result);
         Assert.Equal(2, generator.Prompts.Count);
         Assert.Contains("use only identifiers explicitly allowed",
+                        generator.Prompts[index: 1],
+                        StringComparison.Ordinal);
+        Assert.Contains("Validation failure to correct: The synthetic value is not allowed.",
                         generator.Prompts[index: 1],
                         StringComparison.Ordinal);
     }

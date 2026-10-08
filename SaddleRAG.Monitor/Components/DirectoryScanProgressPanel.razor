@@ -1,0 +1,35 @@
+@if (Progress is not null)
+{
+    <MudStack Spacing="1" Class="directory-scan-progress">
+        <MudText Typo="Typo.body2">@Progress.Phase · @Progress.DisplayCompleted of @Progress.SupportedDocuments documents</MudText>
+        <MudProgressLinear Value="@Percent" Indeterminate="@IsFinishing" Color="Color.Primary" Rounded="true" />
+        <MudText Typo="Typo.caption">@Progress.FilesDiscovered files found · @Progress.DocumentsCompleted extracted</MudText>
+        @if (!string.IsNullOrWhiteSpace(Progress.CurrentRelativePath))
+        {
+            <MudText Typo="Typo.body2" Class="directory-library-current-file">@Progress.CurrentRelativePath</MudText>
+            @if (Active && Progress.CurrentFileStartedAtUtc is not null)
+            {
+                <MudText Typo="Typo.caption">Time on this file in this stage: @FileElapsed</MudText>
+            }
+        }
+        @foreach (DirectoryScanFileFailure failure in Failures)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">
+                @failure.RelativePath: @failure.Detail
+            </MudAlert>
+        }
+    </MudStack>
+}
+
+@code {
+    [Parameter] public DirectoryScanJobProgress? Progress { get; set; }
+    [Parameter] public IReadOnlyList<DirectoryScanFileFailure> Failures { get; set; } = [];
+    [Parameter] public bool Active { get; set; }
+
+    private bool IsFinishing => Active && Progress?.Phase is DirectoryScanPhases.BuildingIndex or DirectoryScanPhases.Publishing;
+    private double Percent => Progress is { SupportedDocuments: > 0 }
+        ? Progress.DisplayCompleted * PercentScale / Progress.SupportedDocuments : 0;
+    private string FileElapsed => Progress?.CurrentFileStartedAtUtc is DateTime started
+        ? (DateTime.UtcNow - started).ToString(@"hh\:mm\:ss") : string.Empty;
+    private const double PercentScale = 100.0;
+}

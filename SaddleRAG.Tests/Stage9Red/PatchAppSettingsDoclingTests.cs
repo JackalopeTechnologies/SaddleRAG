@@ -88,31 +88,35 @@ public sealed class PatchAppSettingsDoclingTests
         Assert.Contains("$DoclingEndpoint", script, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void LegacySixHundredSecondBudgetIsRaisedAndStallSeeded()
+    [Theory]
+    [InlineData(600)]
+    [InlineData(14400)]
+    public void ShippedConversionLimitsAreRemovedAndStallSeeded(int oldLimit)
     {
-        JsonObject settings = Settings("http://localhost:5001", conversionTimeoutSeconds: 600);
+        JsonObject settings = Settings("http://localhost:5001", conversionTimeoutSeconds: oldLimit);
 
         JsonObject patched = PatchAppSettingsTestDriver.Run(settings, doclingEndpoint: "");
 
         JsonObject docling = patched["DocumentIngestion"]!["Docling"]!.AsObject();
-        Assert.Equal(expected: 14400, docling["ConversionTimeoutSeconds"]!.GetValue<int>());
+        Assert.Equal(expected: 0, docling["ConversionTimeoutSeconds"]!.GetValue<int>());
         Assert.Equal(expected: 300, docling["ConversionStallTimeoutSeconds"]!.GetValue<int>());
     }
 
-    [Fact]
-    public void DeliberateCustomBudgetSurvivesUpgrade()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(7200)]
+    public void DeliberateCustomBudgetSurvivesUpgrade(int limit)
     {
-        JsonObject settings = Settings("http://localhost:5001", conversionTimeoutSeconds: 7200);
+        JsonObject settings = Settings("http://localhost:5001", conversionTimeoutSeconds: limit);
 
         JsonObject patched = PatchAppSettingsTestDriver.Run(settings, doclingEndpoint: "");
 
         JsonObject docling = patched["DocumentIngestion"]!["Docling"]!.AsObject();
-        Assert.Equal(expected: 7200, docling["ConversionTimeoutSeconds"]!.GetValue<int>());
+        Assert.Equal(limit, docling["ConversionTimeoutSeconds"]!.GetValue<int>());
         Assert.Equal(expected: 300, docling["ConversionStallTimeoutSeconds"]!.GetValue<int>());
     }
 
-    private static JsonObject Settings(string endpoint, int conversionTimeoutSeconds = 14400) => new()
+    private static JsonObject Settings(string endpoint, int conversionTimeoutSeconds = 0) => new()
         {
             ["MongoDB"] = new JsonObject
                               {

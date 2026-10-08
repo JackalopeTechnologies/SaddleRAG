@@ -16,7 +16,7 @@ namespace SaddleRAG.Ingestion.Classification;
 /// <summary>
 ///     Singleton <see cref="ILlmClassifier" /> that delegates every
 ///     <see cref="ClassifyAsync" /> call to whichever backend is currently
-///     active. Defaults to the ONNX backend at construction; calling
+///     active. Restores the configured backend at construction (ONNX by default); calling
 ///     <see cref="UseOllamaAsync" /> switches at runtime after verifying
 ///     Ollama is reachable. Calling <see cref="UseOnnx" /> switches back.
 ///     The backend swap is atomic via a <see langword="volatile" /> reference
@@ -25,32 +25,44 @@ namespace SaddleRAG.Ingestion.Classification;
 ///     <see langword="volatile" /> ensures the new value is visible to all
 ///     threads immediately.
 /// </summary>
-public sealed class ClassifierBackendSwitch : ILlmClassifier, IClassifierTextGenerator
+public sealed class ClassifierBackendSwitch : ILlmClassifier, IStructuredClassifierTextGenerator
 {
     /// <summary>
-    ///     Initializes a new <see cref="ClassifierBackendSwitch" /> with ONNX
-    ///     as the default active backend.
+    ///     Initializes a new <see cref="ClassifierBackendSwitch" /> with the configured backend.
     /// </summary>
     /// <param name="onnx">The ONNX-backed classifier (always available).</param>
     /// <param name="ollama">The Ollama-backed classifier (optional at runtime).</param>
     /// <param name="probe">Reachability check for the Ollama endpoint.</param>
     /// <param name="logger">Logger for backend-switch events.</param>
+    /// <param name="initialBackend">Persisted backend selection; defaults to ONNX.</param>
     public ClassifierBackendSwitch(OnnxLlmClassifier onnx,
                                    ILlmClassifier ollama,
                                    IOllamaProbe probe,
-                                   ILogger<ClassifierBackendSwitch> logger)
+                                   ILogger<ClassifierBackendSwitch> logger,
+                                   string initialBackend = ClassifierBackendNames.Onnx)
     {
         ArgumentNullException.ThrowIfNull(onnx);
         ArgumentNullException.ThrowIfNull(ollama);
         ArgumentNullException.ThrowIfNull(probe);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentException.ThrowIfNullOrEmpty(initialBackend);
 
         mOnnx = onnx;
         mOllama = ollama;
         mProbe = probe;
         mLogger = logger;
-        mActive = onnx;
+        mActive = initialBackend.ToLowerInvariant() switch
+                      {
+                          ClassifierBackendNames.Onnx => onnx,
+                          ClassifierBackendNames.Ollama => ollama,
+                          _ => throw new ArgumentException(InvalidBackendMessage, nameof(initialBackend))
+                      };
     }
+
+    public const string ConfigurationSectionName = "Classification";
+    public const string BackendConfigurationKey = "Backend";
+    public const string BackendConfigurationPath = ConfigurationSectionName + ":" + BackendConfigurationKey;
+    private const string InvalidBackendMessage = "Classification.Backend must be 'onnx' or 'ollama'.";
 
     private readonly OnnxLlmClassifier mOnnx;
     private readonly ILlmClassifier mOllama;
@@ -144,4 +156,13 @@ public sealed class ClassifierBackendSwitch : ILlmClassifier, IClassifierTextGen
     }
 
     private const string OllamaNotReachableMessage = "Cannot switch to Ollama classifier: Ollama is not reachable. Install and run Ollama from https://ollama.com, then retry.";
+
+    /// <inheritdoc />
+    public Task<string> GenerateAsync(string prompt, System.Text.Json.JsonElement responseSchema, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(prompt);
+        return mActive is IStructuredClassifierTextGenerator structured
+                   ? structured.GenerateAsync(prompt, responseSchema, ct)
+                   : GenerateAsync(prompt, ct);
+    }
 }

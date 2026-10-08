@@ -28,7 +28,7 @@ namespace SaddleRAG.Mcp.Tools;
 ///     <c>set_active_classifier_model</c> switches between ONNX model
 ///     variants or switches the backend to Ollama. ONNX-model selection is
 ///     persisted via <see cref="OnnxOverrideStore" /> and takes effect on
-///     next restart; the onnx/ollama backend switch takes effect immediately
+///     next restart; the onnx/ollama backend switch is also persisted and takes effect immediately
 ///     (the running <see cref="ClassifierBackendSwitch" /> delegates all
 ///     classify calls to the newly selected backend).
 /// </summary>
@@ -98,7 +98,7 @@ public static class ClassifierTools
                  "execution provider if unset). Use set_active_classifier_model to change the " +
                  "selection: pass an ONNX model Name from this list, or 'ollama' to switch to the " +
                  "Ollama backend. ONNX-model changes persist via runtime-overrides.json and take " +
-                 "effect on next restart; backend switches (onnx↔ollama) take effect immediately."
+                 "effect on next restart; backend switches (onnx↔ollama) persist and take effect immediately."
                 )]
     public static string ListClassifierModels(ClassifierBackendSwitch backendSwitch,
                                               IOptions<OnnxSettings> settings,
@@ -140,7 +140,7 @@ public static class ClassifierTools
                  "Pass 'ollama' (case-insensitive) to switch the live backend to Ollama immediately " +
                  "— Ollama must be reachable or the call throws with an actionable message. " +
                  "Pass 'onnx' (case-insensitive) to switch back to the ONNX backend immediately " +
-                 "using whatever ONNX model was last selected. Returns { ActiveBackend, " +
+                 "using whatever ONNX model was last selected. Backend selections survive restart. Returns { ActiveBackend, " +
                  "ActiveOnnxModel, BackendSwitchedLive, RequiresRestartForOnnxModelReload, " +
                  "OverridesFile }. **Throws ArgumentException on unknown name** — report verbatim."
                 )]
@@ -167,9 +167,11 @@ public static class ClassifierTools
         {
             case (true, false):
                 await backendSwitch.UseOllamaAsync(ct);
+                store.SetClassifierBackend(ClassifierBackendNames.Ollama);
                 requiresRestartForOnnxModelReload = false;
                 break;
             case (false, true):
+                store.SetClassifierBackend(ClassifierBackendNames.Onnx);
                 backendSwitch.UseOnnx();
                 requiresRestartForOnnxModelReload = false;
                 break;
@@ -189,7 +191,7 @@ public static class ClassifierTools
                                ActiveOnnxModel = resolved.Name,
                                BackendSwitchedLive = backendSwitchedLive,
                                RequiresRestartForOnnxModelReload = requiresRestartForOnnxModelReload,
-                               OverridesFile = isOnnx || isOllama ? null : store.FilePath
+                               OverridesFile = store.FilePath
                            };
         string result = JsonSerializer.Serialize(response, smJsonOptions);
         return result;

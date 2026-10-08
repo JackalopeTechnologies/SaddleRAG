@@ -263,8 +263,10 @@ public sealed class DoclingClientTests
         Assert.Contains("PDF backend", result.Detail, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task SlowColdConversionSucceedsWithinConfiguredTimeout()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task SlowColdConversionSucceedsWithOptionalTimeout(int timeoutSeconds)
     {
         var handler = new ScriptedHttpMessageHandler();
         handler.Enqueue(async (_, cancellationToken) =>
@@ -275,7 +277,7 @@ public sealed class DoclingClientTests
         });
         handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
                                                         DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
-        var settings = new DoclingSettings { ConversionTimeoutSeconds = 2 };
+        var settings = new DoclingSettings { ConversionTimeoutSeconds = timeoutSeconds };
         using var client = MakeClient(handler, settings);
 
         var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
@@ -532,14 +534,58 @@ public sealed class DoclingClientTests
     {
         var handler = new ScriptedHttpMessageHandler();
         handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(PendingTaskStatus)));
-        handler.Enqueue((_, _) => throw new TaskCanceledException("simulated poll timeout"));
-        using var client = MakeClient(handler);
+        handler.Enqueue(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus));
+        });
+        var settings = FastSettings();
+        settings.ConversionTimeoutSeconds = 1;
+        using var client = MakeClient(handler, settings);
 
         var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.Equal(DoclingReasonCodes.ConversionTimeout, result.ReasonCode);
         Assert.Equal(expected: 2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task UnansweredPollReachesStallCheckWithUnlimitedConversionDuration()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
+        handler.Enqueue(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus));
+        });
+        var settings = FastSettings();
+        settings.ConversionStallTimeoutSeconds = 1;
+        using var client = MakeClient(handler, settings);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(DoclingReasonCodes.ConversionStalled, result.ReasonCode);
+        Assert.Equal(expected: 2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task TransientPollTimeoutCanRecoverWithinTheStallWindow()
+    {
+        var handler = new ScriptedHttpMessageHandler();
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
+        handler.Enqueue((_, _) => throw new TaskCanceledException("simulated request timeout"));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(SuccessTaskStatus)));
+        handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
+                                                        DoclingTestSupport.LoadFixture("docling-v1-pdf-success.json")));
+        using var client = MakeClient(handler);
+
+        var result = await client.ConvertAsync(ProbeFile(), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(expected: 4, handler.Requests.Count);
     }
 
     [Fact]
@@ -562,16 +608,16 @@ public sealed class DoclingClientTests
     }
 
     [Fact]
-    public async Task LongRunningConversionSurvivesPastTheLegacyTenMinuteBudget()
+    public async Task LongRunningConversionSurvivesWhileDoclingKeepsResponding()
     {
         var handler = new ScriptedHttpMessageHandler();
         var time = new MutableDoclingTimeProvider(new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero));
         handler.Enqueue(DoclingTestSupport.JsonResponse(HttpStatusCode.OK, TaskStatus(StartedTaskStatus)));
-        for(var i = 0; i < 400; i++)
+        for(var i = 0; i < 8; i++)
         {
             handler.Enqueue((_, _) =>
                             {
-                                time.Advance(TimeSpan.FromSeconds(value: 5));
+                                time.Advance(TimeSpan.FromHours(value: 1));
                                 return Task.FromResult(
                                     DoclingTestSupport.JsonResponse(HttpStatusCode.OK,
                                                                     TaskStatus(StartedTaskStatus)));

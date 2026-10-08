@@ -6,6 +6,7 @@
 #region Usings
 
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Ingestion.Classification;
@@ -22,6 +23,25 @@ namespace SaddleRAG.Tests.Classification;
 /// </summary>
 public sealed class ClassifierBackendSwitchTests
 {
+    [Fact]
+    public async Task SelectedLocalBackendReceivesStructuredResponseSchema()
+    {
+        var ollama = Substitute.For<ILlmClassifier, IStructuredClassifierTextGenerator>();
+        var structured = (IStructuredClassifierTextGenerator)ollama;
+        structured.GenerateAsync(Arg.Any<string>(), Arg.Any<JsonElement>(), Arg.Any<CancellationToken>())
+                  .Returns("{\"subject\":\"motor\"}");
+        var selector = new ClassifierBackendSwitch(NewOnnxClassifier(), ollama, new FakeOllamaProbe(),
+            NullLogger<ClassifierBackendSwitch>.Instance, ClassifierBackendNames.Ollama);
+        using JsonDocument schema = JsonDocument.Parse("{\"type\":\"object\"}");
+
+        string response = await selector.GenerateAsync("Classify a motor.", schema.RootElement,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("{\"subject\":\"motor\"}", response);
+        await structured.Received(1).GenerateAsync("Classify a motor.", schema.RootElement,
+            TestContext.Current.CancellationToken);
+    }
+
     #region Fakes
 
     private sealed class FakeClassifier : ILlmClassifier
@@ -115,6 +135,35 @@ public sealed class ClassifierBackendSwitchTests
     }
 
     #endregion
+
+    [Fact]
+    public async Task ConfiguredOllamaBackendIsRestoredWithoutInvokingOnnx()
+    {
+        var onnxFake = new FakeClassifier();
+        var ollamaFake = new FakeClassifier { BackendName = "ollama", ReturnCategory = DocCategory.HowTo };
+        var subject = new ClassifierBackendSwitch(NewOnnxClassifier(onnxFake),
+                                                  ollamaFake,
+                                                  new FakeOllamaProbe(),
+                                                  NullLogger<ClassifierBackendSwitch>.Instance,
+                                                  "ollama");
+
+        var result = await subject.ClassifyAsync(NewPage(), "lib", TestContext.Current.CancellationToken);
+
+        Assert.Equal(DocCategory.HowTo, result.Category);
+        Assert.Equal(0, onnxFake.CallCount);
+        Assert.Equal(1, ollamaFake.CallCount);
+        Assert.Equal("ollama", subject.ActiveBackendName);
+    }
+
+    [Fact]
+    public void UnknownConfiguredBackendIsRejected()
+    {
+        Assert.Throws<ArgumentException>(() => new ClassifierBackendSwitch(NewOnnxClassifier(),
+                                                                           new FakeClassifier(),
+                                                                           new FakeOllamaProbe(),
+                                                                           NullLogger<ClassifierBackendSwitch>.Instance,
+                                                                           "unknown"));
+    }
 
     [Fact]
     public async Task DefaultsToOnnxBackend()

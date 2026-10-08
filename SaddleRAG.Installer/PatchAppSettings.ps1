@@ -75,10 +75,10 @@ $DefaultDatabaseName     = 'SaddleRAG'
 $DefaultOllamaEndpoint   = 'http://localhost:11434'
 $DefaultDoclingEndpoint  = 'http://localhost:5001'
 
-# 600 was the original conversion budget and is too small for OCR-heavy scanned PDFs; it is the only
-# value treated as legacy, so a deliberately customised timeout survives an upgrade untouched.
-$LegacyConversionTimeoutSeconds  = 600
-$DefaultConversionTimeoutSeconds = 14400
+# Previous shipped limits abandoned responding conversions. Zero removes the total duration
+# limit; retain values other than those known defaults as deliberate operator choices.
+$LegacyConversionTimeoutSeconds  = @(600, 14400)
+$DefaultConversionTimeoutSeconds = 0
 $DefaultConversionStallSeconds   = 300
 
 # Logging:LogLevel entries the shipped template carries. Like the conversion
@@ -192,11 +192,11 @@ try
     }
 
     # The conversion timeouts previously reached a machine only through the shipped template, so an
-    # upgrade that preserved appsettings.json kept the old 10-minute budget and abandoned long OCR
-    # conversions the server went on to complete. Converge the one known-bad legacy value and seed the
-    # stall timeout when absent; any other existing value is a deliberate choice and is preserved.
+    # upgrade that preserved appsettings.json kept an elapsed-time limit and abandoned long OCR
+    # conversions the server went on to complete. Remove known shipped limits and seed the stall
+    # timeout when absent; other existing limits remain deliberate choices and are preserved.
     $conversionProperty = $json.DocumentIngestion.Docling.PSObject.Properties['ConversionTimeoutSeconds']
-    if ($null -eq $conversionProperty -or [int]$conversionProperty.Value -eq $LegacyConversionTimeoutSeconds)
+    if ($null -eq $conversionProperty -or [int]$conversionProperty.Value -in $LegacyConversionTimeoutSeconds)
     {
         $json.DocumentIngestion.Docling | Add-Member -MemberType NoteProperty `
             -Name ConversionTimeoutSeconds -Value $DefaultConversionTimeoutSeconds -Force

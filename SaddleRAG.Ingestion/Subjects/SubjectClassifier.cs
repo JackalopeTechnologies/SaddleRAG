@@ -46,8 +46,9 @@ public sealed class SubjectClassifier : ISubjectClassifier
             await SubjectResponseGenerator.GenerateValidatedAsync<SubjectClassificationResponse,
                 ValidatedClassification>(mGenerator,
                                          prompt,
-                                         response => ValidateResponse(response, knownIds),
-                                         ct);
+                                         response => ValidateResponse(response, knownIds, descriptor),
+                                         ct,
+                                         SubjectResponseSchema.Assignment(catalog, descriptor));
         SubjectSelection primary = validated.Primary;
         List<SubjectSelection> secondary = validated.Secondary;
 
@@ -135,15 +136,16 @@ public sealed class SubjectClassifier : ISubjectClassifier
         "Automatic fallback subject: the classifier reply could not be parsed; assignment flagged for review.";
 
     private static ValidatedClassification ValidateResponse(SubjectClassificationResponse response,
-                                                            IReadOnlySet<string> knownIds)
+                                                            IReadOnlySet<string> knownIds,
+                                                            SubjectDescriptor descriptor)
     {
         if (response.Primary == null)
             throw new InvalidDataException("The subject classifier response requires one primary subject.");
         if (response.Secondary is { Count: > SubjectClassificationLimits.MaxSecondarySubjects })
             throw new InvalidDataException($"At most {SubjectClassificationLimits.MaxSecondarySubjects} secondary subjects are allowed.");
 
-        SubjectSelection primary = ValidateSelection(response.Primary, knownIds);
-        var secondary = (response.Secondary ?? []).Select(selection => ValidateSelection(selection, knownIds)).ToList();
+        SubjectSelection primary = ValidateSelection(response.Primary, knownIds, descriptor);
+        var secondary = (response.Secondary ?? []).Select(selection => ValidateSelection(selection, knownIds, descriptor)).ToList();
         var selectedIds = new HashSet<string>(StringComparer.Ordinal);
         if (!selectedIds.Add(primary.SubjectId) || secondary.Any(selection => !selectedIds.Add(selection.SubjectId)))
             throw new InvalidDataException("Primary and secondary subject ids must be unique.");
@@ -153,7 +155,8 @@ public sealed class SubjectClassifier : ISubjectClassifier
     }
 
     private static SubjectSelection ValidateSelection(SubjectSelectionResponse? response,
-                                                      IReadOnlySet<string> knownIds)
+                                                      IReadOnlySet<string> knownIds,
+                                                      SubjectDescriptor descriptor)
     {
         if (response == null)
             throw new InvalidDataException("Subject selections cannot be null.");
@@ -162,23 +165,7 @@ public sealed class SubjectClassifier : ISubjectClassifier
         if (!float.IsFinite(response.Confidence) || response.Confidence is < 0f or > 1f)
             throw new InvalidDataException("Subject confidence must be between 0 and 1.");
 
-        IReadOnlyList<string> rawEvidence = response.Evidence ?? [];
-        if (rawEvidence.Count == 0)
-            throw new InvalidDataException("Every selected subject requires supporting evidence.");
-        if (rawEvidence.Count > SubjectClassificationLimits.MaxEvidenceCount)
-            throw new InvalidDataException($"Subject evidence is limited to {SubjectClassificationLimits.MaxEvidenceCount} entries.");
-
-        var evidence = new List<string>(rawEvidence.Count);
-        var uniqueEvidence = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach(string item in rawEvidence)
-        {
-            string normalized = SubjectText.Normalize(item);
-            if (normalized.Length == 0 || normalized.Length > SubjectClassificationLimits.MaxEvidenceCharacters)
-                throw new InvalidDataException("Subject evidence is empty or exceeds the configured bound.");
-            if (!uniqueEvidence.Add(normalized))
-                throw new InvalidDataException("Subject evidence entries must be unique.");
-            evidence.Add(normalized);
-        }
+        IReadOnlyList<string> evidence = SubjectEvidence.Validate(response.Evidence, descriptor);
 
         return new SubjectSelection
                    {
