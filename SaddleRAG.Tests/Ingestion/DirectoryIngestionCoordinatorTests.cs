@@ -599,12 +599,15 @@ public sealed class DirectoryIngestionCoordinatorTests
         Assert.Contains(progress,
                         item => item.FilesDiscovered == 3
                                 && item.SupportedDocuments == 2
-                                && item.DocumentsCompleted == 1
-                                && item.CurrentRelativePath == expectedGuidePath);
+                                && item.DocumentsCompleted == 0
+                                && item.CurrentRelativePath == expectedGuidePath
+                                && item.CurrentFileStartedAtUtc == QueuedAt.UtcDateTime);
         DirectoryScanProgress terminal = progress[^1];
         Assert.Equal(3, terminal.FilesDiscovered);
         Assert.Equal(2, terminal.SupportedDocuments);
         Assert.Equal(2, terminal.DocumentsCompleted);
+        Assert.Null(terminal.CurrentRelativePath);
+        Assert.Null(terminal.CurrentFileStartedAtUtc);
         Assert.DoesNotContain(progress,
                            item => item.CurrentRelativePath?.Contains(RootPath,
                                                                        StringComparison.OrdinalIgnoreCase) == true);
