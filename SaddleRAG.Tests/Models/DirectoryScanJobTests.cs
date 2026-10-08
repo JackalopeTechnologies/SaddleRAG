@@ -106,7 +106,30 @@ public sealed class DirectoryScanJobTests
                      .UpsertAsync(default!, TestContext.Current.CancellationToken);
     }
 
-    private static JobFixture MakeFixture()
+    [Theory]
+    [InlineData(DirectoryIngestionStatuses.Completed, null, null)]
+    [InlineData("CANCELLED", null, null)]
+    [InlineData(DirectoryIngestionStatuses.Failed, null, "The manual directory scan failed.")]
+    [InlineData(DirectoryIngestionStatuses.Completed, "Read C:\\owned-manuals", "Read [registered root]")]
+    public async Task ResultDetailDoesNotInventFailureForSuccessfulOrCancelledJobs(
+        string status, string? detail, string? expectedDetail)
+    {
+        JobFixture fixture = MakeFixture(status, detail);
+        await fixture.Runner.QueueAsync(LibraryId, profile: null, TestContext.Current.CancellationToken);
+        JobRecord completed = await fixture.Completed.Task.WaitAsync(TimeSpan.FromSeconds(5),
+                                                                     TestContext.Current.CancellationToken);
+
+        Assert.NotNull(completed.ResultJson);
+        JsonObject result = Assert.IsType<JsonObject>(JsonNode.Parse(completed.ResultJson));
+        JsonNode resultStatus = Assert.IsAssignableFrom<JsonNode>(result["Status"]);
+        Assert.Equal(status, resultStatus.GetValue<string>());
+        Assert.Equal(expectedDetail, result["Detail"]?.GetValue<string>());
+        Assert.Equal(status == DirectoryIngestionStatuses.Failed ? expectedDetail : null,
+                     completed.ErrorMessage);
+    }
+
+    private static JobFixture MakeFixture(string status = DirectoryIngestionStatuses.Completed,
+                                          string? detail = null)
     {
         var factory = Substitute.For<RepositoryFactory>([null!]);
         var jobs = Substitute.For<IJobRepository>();
@@ -127,7 +150,8 @@ public sealed class DirectoryScanJobTests
         var completed = new TaskCompletionSource<JobRecord>(TaskCreationOptions.RunContinuationsAsynchronously);
         jobs.UpsertAsync(Arg.Do<JobRecord>(record =>
                                               {
-                                                  if (record.Status == JobStatus.Completed)
+                                                  if (record.Status is JobStatus.Completed or JobStatus.Failed
+                                                      or JobStatus.Cancelled)
                                                       completed.TrySetResult(Clone(record));
                                               }),
                          Arg.Any<CancellationToken>())
@@ -152,12 +176,13 @@ public sealed class DirectoryScanJobTests
                                             $"Could not read {RootPath}")]
                                     });
                                 return Task.FromResult(new DirectoryIngestionResult(
-                                                           DirectoryIngestionStatuses.Completed,
+                                                           status,
                                                            LibraryId,
                                                            Version,
                                                            DocumentsProcessed: 4,
                                                            PagesIndexed: 6,
-                                                           ChunksIndexed: 8));
+                                                           ChunksIndexed: 8,
+                                                           Detail: detail));
                             });
         var clock = new FixedQueueTimeProvider();
         var runner = new DirectoryScanJobRunner(coordinator,

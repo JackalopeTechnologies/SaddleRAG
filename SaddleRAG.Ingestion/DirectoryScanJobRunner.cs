@@ -248,7 +248,10 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
                                                  string registeredRoot,
                                                  IJobRepository jobs)
     {
-        string detail = SanitizeDetail(result.Detail, registeredRoot);
+        string? detail = string.IsNullOrWhiteSpace(result.Detail)
+                         && result.Status != DirectoryIngestionStatuses.Failed
+            ? null
+            : SanitizeDetail(result.Detail, registeredRoot);
         job.DirectoryScanFailures = job.DirectoryScanFailures
                                        .Concat(SanitizeFailures(result.FileFailures, registeredRoot))
                                        .Distinct().ToArray();
@@ -348,7 +351,7 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
         return result;
     }
 
-    private static string SerializeResult(DirectoryIngestionResult result, string detail) =>
+    private static string SerializeResult(DirectoryIngestionResult result, string? detail) =>
         JsonSerializer.Serialize(new
                                      {
                                          result.Status,
