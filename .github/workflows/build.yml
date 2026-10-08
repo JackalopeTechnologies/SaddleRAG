@@ -377,6 +377,8 @@ jobs:
           context: .
           push: false
           tags: ghcr.io/jackalopetechnologies/saddlerag:dev
+          build-args: |
+            VERSION=${{ steps.version.outputs.PackageVersion }}
 
       - name: Build CUDA image (PR/push — no push)
         if: github.event_name != 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/v')
@@ -386,6 +388,8 @@ jobs:
           file: Dockerfile.cuda
           push: false
           tags: ghcr.io/jackalopetechnologies/saddlerag:dev-cuda
+          build-args: |
+            VERSION=${{ steps.version.outputs.PackageVersion }}
 
       - name: Build and push CPU image (release)
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
@@ -393,6 +397,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.PackageVersion }}
           tags: |
             ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}
             ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}-cpu
@@ -406,6 +412,8 @@ jobs:
           context: .
           file: Dockerfile.cuda
           push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.PackageVersion }}
           tags: |
             ghcr.io/jackalopetechnologies/saddlerag:${{ steps.version.outputs.PackageVersion }}-cuda
             ghcr.io/jackalopetechnologies/saddlerag:cuda

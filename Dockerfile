@@ -12,6 +12,7 @@
 
 # ── Stage 1: build ───────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+ARG VERSION=0.0.0-dev
 WORKDIR /src
 COPY . .
 RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
@@ -19,8 +20,10 @@ RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
         -r linux-x64 \
         --self-contained true \
         -p:UseGpu=false \
+        -p:Version="$VERSION" \
         -p:TreatWarningsAsErrors=true \
         -o /app/publish
+RUN grep -Fq "\"SaddleRAG.Mcp/${VERSION}\"" /app/publish/SaddleRAG.Mcp.deps.json
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS runtime
