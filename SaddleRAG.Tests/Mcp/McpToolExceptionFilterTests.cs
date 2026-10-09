@@ -5,10 +5,18 @@
 
 #region Usings
 
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+using MongoDB.Driver;
+using MongoDB.Driver.Core.Clusters;
+using MongoDB.Driver.Core.Connections;
+using MongoDB.Driver.Core.Servers;
+using SaddleRAG.Database;
 using SaddleRAG.Mcp;
+using SaddleRAG.Tests.Database;
 
 #endregion
 
@@ -129,6 +137,79 @@ public sealed class McpToolExceptionFilterTests
         var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
         Assert.Contains("<unknown>", text.Text);
         Assert.True(result.IsError);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncReportsAnUnreachableDatabaseByEndpointInsteadOfTheGenericError()
+    {
+        var unavailable = new DatabaseUnavailableException("localhost:27017", new IOException("refused"));
+
+        ValueTask<CallToolResult> Throw()
+        {
+            throw unavailable;
+        }
+
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries", services: null, Throw);
+
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal(unavailable.Message, text.Text);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncReportsAFailedMongoConnectionAsAnUnreachableDatabase()
+    {
+        var connectionId = new ConnectionId(new ServerId(new ClusterId(value: 1), new DnsEndPoint("localhost", port: 27017)));
+
+        ValueTask<CallToolResult> Throw()
+        {
+            throw new MongoConnectionException(connectionId, "An exception occurred while opening a connection to the server.");
+        }
+
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("search_docs", services: null, Throw);
+
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Contains("localhost:27017", text.Text);
+        Assert.Contains("unreachable", text.Text);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncReportsTheSelectionTimeoutWhileTheDatabaseIsKnownUnreachable()
+    {
+        (var factory, string endpoint) =
+            await UnreachableDatabase.CreateFactoryWithUnreachableDefaultAsync(TestContext.Current.CancellationToken);
+        var services = new ServiceCollection().AddLogging().AddSingleton(factory).BuildServiceProvider();
+
+        ValueTask<CallToolResult> Throw()
+        {
+            throw new TimeoutException("A timeout occurred after 30000ms selecting a server.");
+        }
+
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries", services, Throw);
+
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Contains(endpoint, text.Text);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncLetsATimeoutThroughWhenNoDatabaseIsUnreachable()
+    {
+        var factory = new SaddleRagDbContextFactory(Options.Create(new SaddleRagDbSettings()));
+        var services = new ServiceCollection().AddLogging().AddSingleton(factory).BuildServiceProvider();
+
+        ValueTask<CallToolResult> Throw()
+        {
+            throw new TimeoutException("unrelated timeout");
+        }
+
+        await Assert.ThrowsAsync<TimeoutException>(async () =>
+                                                       await McpToolExceptionFilter.ExecuteAsync("list_libraries",
+                                                                                                 services,
+                                                                                                 Throw
+                                                                                                )
+                                                  );
     }
 
     [Fact]

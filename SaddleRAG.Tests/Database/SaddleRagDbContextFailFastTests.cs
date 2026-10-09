@@ -6,8 +6,6 @@
 #region Usings
 
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using SaddleRAG.Core.Models;
@@ -28,17 +26,10 @@ public sealed class SaddleRagDbContextFailFastTests
     public async Task OperationFailsFastOnceTheDatabaseHasBeenUnreachableForAFullSelectionTimeout()
     {
         var ct = TestContext.Current.CancellationToken;
-        int port = GetClosedLoopbackPort();
-        var settings = new SaddleRagDbSettings
-                           {
-                               ConnectionString =
-                                   $"mongodb://127.0.0.1:{port}/?serverSelectionTimeoutMS=2000&connectTimeoutMS=500",
-                               DatabaseName = "saddlerag-failfast-test"
-                           };
-        var context = new SaddleRagDbContext(Options.Create(settings));
+        var context = new SaddleRagDbContext(Options.Create(UnreachableDatabase.CreateSettings(out string endpoint)));
 
         await Assert.ThrowsAnyAsync<Exception>(() => CountLibrariesAsync(context, ct));
-        await WaitUntilUnreachableForAsync(context, TimeSpan.FromSeconds(seconds: 2), ct);
+        await UnreachableDatabase.WaitUntilUnreachableForAsync(context, TimeSpan.FromSeconds(seconds: 2), ct);
 
         var stopwatch = Stopwatch.StartNew();
         var ex = await Assert.ThrowsAsync<DatabaseUnavailableException>(() => CountLibrariesAsync(context, ct));
@@ -47,31 +38,9 @@ public sealed class SaddleRagDbContextFailFastTests
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(seconds: 1),
                     $"Expected an immediate failure, took {stopwatch.Elapsed.TotalMilliseconds:F0} ms"
                    );
-        Assert.Equal($"127.0.0.1:{port}", ex.Endpoint);
+        Assert.Equal(endpoint, ex.Endpoint);
     }
 
     private static Task<long> CountLibrariesAsync(SaddleRagDbContext context, CancellationToken ct) =>
         context.Libraries.CountDocumentsAsync(FilterDefinition<LibraryRecord>.Empty, cancellationToken: ct);
-
-    private static async Task WaitUntilUnreachableForAsync(SaddleRagDbContext context,
-                                                           TimeSpan duration,
-                                                           CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(seconds: 20);
-        while (!context.Reachability.HasBeenUnreachableFor(duration) && DateTime.UtcNow < deadline)
-            await Task.Delay(TimeSpan.FromMilliseconds(milliseconds: 100), ct);
-
-        Assert.True(context.Reachability.HasBeenUnreachableFor(duration),
-                    "The driver never reported the closed port as unreachable."
-                   );
-    }
-
-    private static int GetClosedLoopbackPort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, port: 0);
-        listener.Start();
-        int port = ((IPEndPoint) listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
 }

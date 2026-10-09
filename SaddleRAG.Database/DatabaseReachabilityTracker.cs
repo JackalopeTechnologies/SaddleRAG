@@ -106,7 +106,7 @@ public sealed class DatabaseReachabilityTracker
             {
                 // Sorted: the driver reorders servers between descriptions, and the
                 // text is shown to people, so it must not shuffle.
-                mEndpoint = string.Join(EndpointSeparator,
+                mEndpoint = string.Join(MongoEndPointText.Separator,
                                         servers.Select(s => MongoEndPointText.Format(s.EndPoint))
                                                .Order(StringComparer.Ordinal)
                                        );
@@ -144,6 +144,4 @@ public sealed class DatabaseReachabilityTracker
 
     private static bool IsServerUnreachable(ServerDescription server) =>
         server.State == ServerState.Disconnected && server.HeartbeatException != null;
-
-    private const string EndpointSeparator = ", ";
 }

@@ -265,7 +265,7 @@ public sealed class McpToolJsonShapeTests
     private static readonly string[] DashboardDocumentedFields =
         [
             "libraryCount", "versionCount", "recentJobs", "suspectCount", "suspectLibraries",
-            "suggestedNextAction"
+            "database", "suggestedNextAction"
         ];
 
     private static readonly string[] DashboardRecentJobEntryFields =

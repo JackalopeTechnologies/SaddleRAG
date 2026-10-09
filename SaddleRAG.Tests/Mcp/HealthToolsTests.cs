@@ -5,10 +5,14 @@
 
 #region Usings
 
+using System.Text.Json.Nodes;
+using NSubstitute.ExceptionExtensions;
+using SaddleRAG.Core;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Mcp;
 using SaddleRAG.Mcp.Tools;
@@ -181,6 +185,70 @@ public sealed class HealthToolsTests
 
         Assert.Contains("\"libraryCount\": 0", json);
         Assert.Contains("Database is empty", json);
+    }
+
+    [Fact]
+    public async Task GetDashboardIndexReportsAnUnreachableDatabaseInsteadOfFailing()
+    {
+        (var factory, var libraryRepo, var _, var _) = MakeFactory();
+        var unavailable = new DatabaseUnavailableException("localhost:27017", innerException: null);
+        libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).ThrowsAsync(unavailable);
+
+        var json = await HealthTools.GetDashboardIndex(factory,
+                                                       new McpWarmupState(),
+                                                       profile: null,
+                                                       TestContext.Current.CancellationToken
+                                                      );
+        var root = JsonNode.Parse(json) as JsonObject;
+
+        Assert.NotNull(root);
+        Assert.Equal(SaddleRagVersion.Informational, root["serverVersion"]?.GetValue<string>());
+        var database = root["database"] as JsonObject;
+        Assert.NotNull(database);
+        Assert.Equal("Unreachable", database["status"]?.GetValue<string>());
+        Assert.Equal("localhost:27017", database["endpoint"]?.GetValue<string>());
+        Assert.Equal(unavailable.Message, database["error"]?.GetValue<string>());
+        var suggested = root["suggestedNextAction"] as JsonObject;
+        Assert.NotNull(suggested);
+        Assert.Null(suggested["tool"]);
+        Assert.Contains("Start the MongoDB service", suggested["message"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GetDashboardIndexReportsAnUnreachableDatabaseWhenTheSelectionTimesOut()
+    {
+        (var factory, var libraryRepo, var _, var _) = MakeFactory();
+        factory.GetUnreachableDatabaseEndpoints().Returns(["localhost:27017"]);
+        libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
+                   .ThrowsAsync(new TimeoutException("A timeout occurred after 30000ms selecting a server."));
+
+        var json = await HealthTools.GetDashboardIndex(factory,
+                                                       new McpWarmupState(),
+                                                       profile: null,
+                                                       TestContext.Current.CancellationToken
+                                                      );
+        var database = (JsonNode.Parse(json) as JsonObject)?["database"] as JsonObject;
+
+        Assert.NotNull(database);
+        Assert.Equal("Unreachable", database["status"]?.GetValue<string>());
+        Assert.Equal("localhost:27017", database["endpoint"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GetDashboardIndexReportsAReachableDatabaseWhenItsQueriesSucceed()
+    {
+        (var factory, var libraryRepo, var _, var _) = MakeFactory();
+        libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>()).Returns([]);
+
+        var json = await HealthTools.GetDashboardIndex(factory,
+                                                       new McpWarmupState(),
+                                                       profile: null,
+                                                       TestContext.Current.CancellationToken
+                                                      );
+        var database = (JsonNode.Parse(json) as JsonObject)?["database"] as JsonObject;
+
+        Assert.NotNull(database);
+        Assert.Equal("Reachable", database["status"]?.GetValue<string>());
     }
 
     [Fact]

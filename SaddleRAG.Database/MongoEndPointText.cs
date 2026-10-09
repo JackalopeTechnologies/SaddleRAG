@@ -28,4 +28,9 @@ internal static class MongoEndPointText
             };
         return text;
     }
+
+    /// <summary>
+    ///     Joins several endpoints into one readable list.
+    /// </summary>
+    public const string Separator = ", ";
 }

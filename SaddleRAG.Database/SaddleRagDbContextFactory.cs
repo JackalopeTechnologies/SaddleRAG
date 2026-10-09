@@ -115,6 +115,24 @@ public class SaddleRagDbContextFactory
 
 
     /// <summary>
+    ///     Server addresses of every database this factory has opened whose MongoDB
+    ///     driver currently reports it unreachable, as <c>host:port</c>. Read from the
+    ///     driver's own state; performs no I/O.
+    /// </summary>
+    public IReadOnlyList<string> GetUnreachableEndpoints()
+    {
+        var endpoints = mContextCache.Values
+                                     .Select(context => context.Reachability)
+                                     .Where(reachability => reachability.IsUnreachable)
+                                     .Select(reachability => reachability.Endpoint)
+                                     .Distinct(StringComparer.Ordinal)
+                                     .Order(StringComparer.Ordinal)
+                                     .ToList();
+        return endpoints;
+    }
+
+
+    /// <summary>
     ///     List all configured profile names.
     /// </summary>
     public IReadOnlyList<string> GetProfileNames()
