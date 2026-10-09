@@ -35,7 +35,7 @@
 // empty strings, and the install would "succeed" with broken downstream
 // config.
 //
-// JScript style mirrors CheckOllamaKeepAlive.js / CheckGpuCapability.js.
+// JScript style mirrors CheckGpuCapability.js.
 
 function SaddleRagInstallerAction()
 {

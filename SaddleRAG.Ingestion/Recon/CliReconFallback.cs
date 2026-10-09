@@ -41,10 +41,24 @@ public class CliReconFallback
 
     public CliReconFallback(IOptions<OllamaSettings> settings,
                             ILogger<CliReconFallback> logger)
+        : this(settings, logger, new OllamaApiClient(new Uri(settings.Value.Endpoint)))
     {
+    }
+
+    /// <summary>
+    ///     Test seam: lets a test supply the Ollama client and see the requests sent.
+    /// </summary>
+    internal CliReconFallback(IOptions<OllamaSettings> settings,
+                              ILogger<CliReconFallback> logger,
+                              OllamaApiClient client)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(client);
+
         mSettings = settings.Value;
         mLogger = logger;
-        mClient = new OllamaApiClient(new Uri(mSettings.Endpoint));
+        mClient = client;
     }
 
     private readonly OllamaApiClient mClient;
@@ -112,7 +126,8 @@ public class CliReconFallback
                           {
                               Model = mSettings.GetActiveReconModel().Name,
                               Prompt = prompt,
-                              Stream = true
+                              Stream = true,
+                              KeepAlive = OllamaKeepAlive.KeepLoaded
                           };
 
         var responseBuilder = new StringBuilder();

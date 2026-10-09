@@ -205,4 +205,14 @@ public class RepositoryFactory
         var result = context.Database;
         return result;
     }
+
+    /// <summary>
+    ///     Server addresses of every opened database the MongoDB driver currently
+    ///     reports unreachable. Read from the driver's own state; performs no I/O.
+    /// </summary>
+    public virtual IReadOnlyList<string> GetUnreachableDatabaseEndpoints()
+    {
+        var result = mContextFactory.GetUnreachableEndpoints();
+        return result;
+    }
 }

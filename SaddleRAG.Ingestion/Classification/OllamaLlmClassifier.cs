@@ -164,7 +164,8 @@ public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGene
                               Prompt = prompt,
                               Format = format,
                               Options = new RequestOptions { Temperature = 0f },
-                              Stream = true
+                              Stream = true,
+                              KeepAlive = OllamaKeepAlive.KeepLoaded
                           };
         var responseBuilder = new StringBuilder();
         await foreach(var token in mGenerateClient.GenerateAsync(request, ct))

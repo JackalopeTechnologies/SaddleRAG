@@ -26,13 +26,27 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
 {
     public OllamaEmbeddingProvider(IOptions<OllamaSettings> settings,
                                    ILogger<OllamaEmbeddingProvider> logger)
+        : this(settings, logger, new OllamaApiClient(new Uri(settings.Value.Endpoint)))
+    {
+    }
+
+    /// <summary>
+    ///     Test seam: lets a test supply the Ollama client and see the requests sent.
+    /// </summary>
+    internal OllamaEmbeddingProvider(IOptions<OllamaSettings> settings,
+                                     ILogger<OllamaEmbeddingProvider> logger,
+                                     OllamaApiClient client)
 
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(client);
+
         mSettings = settings.Value;
 
         mLogger = logger;
 
-        mClient = new OllamaApiClient(new Uri(mSettings.Endpoint));
+        mClient = client;
     }
 
 
@@ -139,7 +153,9 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
                                                             {
                                                                 Model = mSettings.EmbeddingModel,
 
-                                                                Input = [text]
+                                                                Input = [text],
+
+                                                                KeepAlive = OllamaKeepAlive.KeepLoaded
                                                             },
                                                         ct
                                                        );

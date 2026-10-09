@@ -13,6 +13,7 @@ using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database;
 using SaddleRAG.Database.Repositories;
 
 #endregion
@@ -203,10 +204,12 @@ public static class HealthTools
     [McpMeta("anthropic/alwaysLoad", value: true)]
     [Description("Start here in any fresh or disoriented session. Returns a single-call " +
                  "SaddleRAG status overview: the running serverVersion (report it verbatim when " +
-                 "asked which SaddleRAG is running), library/version counts, recent scrape jobs (with " +
-                 "recentJobs[].Stale=true for Running jobs that haven't progressed in 4+ hours), and up to " +
-                 "20 suspect libraries. The SuggestedNextAction field always contains the highest-priority " +
-                 "tool to call next (scrape_docs for empty DB, submit_url_correction for suspect libraries, " +
+                 "asked which SaddleRAG is running), database reachability (database.status is " +
+                 "Unreachable, with the endpoint, when MongoDB cannot be reached), library/version counts, " +
+                 "recent scrape jobs (with recentJobs[].Stale=true for Running jobs that haven't progressed " +
+                 "in 4+ hours), and up to 20 suspect libraries. The SuggestedNextAction field always contains " +
+                 "the highest-priority next step (starting MongoDB when the database is unreachable, " +
+                 "scrape_docs for empty DB, submit_url_correction for suspect libraries, " +
                  "cancel_job for stale-running jobs, null when healthy). If a recent job is marked Stale, call cancel_job with that job id. Act on SuggestedNextAction " +
                  "before doing anything else."
                 )]
@@ -219,6 +222,59 @@ public static class HealthTools
         ArgumentNullException.ThrowIfNull(repositoryFactory);
         ArgumentNullException.ThrowIfNull(warmupState);
 
+        string result;
+        try
+        {
+            result = await BuildDashboardAsync(repositoryFactory, warmupState, profile, ct);
+        }
+        catch(Exception ex) when (DatabaseFailure.AsUnavailable(ex, repositoryFactory.GetUnreachableDatabaseEndpoints())
+                                      is { } unavailable)
+        {
+            // Not a silent catch: the outage is the dashboard's answer. It is the
+            // documented health check, so it reports the database as down rather than
+            // failing the same way every other tool does.
+            result = BuildDatabaseUnreachableDashboard(unavailable, warmupState);
+        }
+
+        return result;
+    }
+
+    private static string BuildDatabaseUnreachableDashboard(DatabaseUnavailableException unavailable,
+                                                            McpWarmupState warmupState)
+    {
+        var response = new
+                           {
+                               serverVersion = SaddleRagVersion.Informational,
+                               database = new
+                                              {
+                                                  status = DatabaseStatusUnreachable,
+                                                  endpoint = (string?) unavailable.Endpoint,
+                                                  error = (string?) unavailable.Message
+                                              },
+                               libraryCount = (int?) null,
+                               versionCount = (int?) null,
+                               recentJobs = Array.Empty<object>(),
+                               suspectCount = (int?) null,
+                               suspectLibraries = Array.Empty<object>(),
+                               warmup = BuildWarmup(warmupState),
+                               suggestedNextAction = new { tool = (string?) null, message = unavailable.Message }
+                           };
+        return JsonSerializer.Serialize(response, smJsonOptions);
+    }
+
+    private static object BuildWarmup(McpWarmupState warmupState) =>
+        new
+            {
+                status = warmupState.Status,
+                currentPhase = warmupState.CurrentPhase,
+                lastError = warmupState.LastError
+            };
+
+    private static async Task<string> BuildDashboardAsync(RepositoryFactory repositoryFactory,
+                                                          McpWarmupState warmupState,
+                                                          string? profile,
+                                                          CancellationToken ct)
+    {
         var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
         var jobRepo = repositoryFactory.GetJobRepository(profile);
 
@@ -291,22 +347,21 @@ public static class HealthTools
                 var _ => new { tool = (string?) null, message = SuggestMessageHealthy }
             };
 
-        var warmup = new
-                         {
-                             status = warmupState.Status,
-                             currentPhase = warmupState.CurrentPhase,
-                             lastError = warmupState.LastError
-                         };
-
         var response = new
                            {
                                serverVersion = SaddleRagVersion.Informational,
+                               database = new
+                                              {
+                                                  status = DatabaseStatusReachable,
+                                                  endpoint = (string?) null,
+                                                  error = (string?) null
+                                              },
                                libraryCount = libraries.Count,
                                versionCount,
                                recentJobs = recentJobsProjection,
                                suspectCount = suspectList.Count,
                                suspectLibraries = suspectList,
-                               warmup,
+                               warmup = BuildWarmup(warmupState),
                                suggestedNextAction = suggested
                            };
         return JsonSerializer.Serialize(response, smJsonOptions);
@@ -341,6 +396,8 @@ public static class HealthTools
     private const string SuggestToolCancelScrape = "cancel_job";
     private const string SuggestMessageHealthy = "All libraries look healthy.";
     private const string WarmupStatusFailed = "Failed";
+    private const string DatabaseStatusReachable = "Reachable";
+    private const string DatabaseStatusUnreachable = "Unreachable";
     private const int DuplicateContentSampleCap = 200;
     private const int MinContentSampleForSuspect = 5;
     private const double DuplicateContentSuspectThreshold = 60.0;
