@@ -104,9 +104,16 @@ public class SaddleRagDbContext
     public SaddleRagDbContext(IOptions<SaddleRagDbSettings> settings)
     {
         (var connectionString, var databaseName) = settings.Value.Resolve();
-        var client = new MongoClient(connectionString);
-        mDatabase = client.GetDatabase(databaseName);
+        var cached = MongoClientCache.GetOrCreate(connectionString);
+        Reachability = cached.Reachability;
+        mDatabase = cached.Client.GetDatabase(databaseName);
     }
+
+    /// <summary>
+    ///     The driver's live view of whether this context's database can be reached.
+    ///     Shared by every context on the same connection string.
+    /// </summary>
+    public DatabaseReachabilityTracker Reachability { get; }
 
     public IMongoCollection<LibraryRecord> Libraries =>
         mDatabase.GetCollection<LibraryRecord>(CollectionLibraries);
