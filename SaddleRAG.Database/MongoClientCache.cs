@@ -30,9 +30,30 @@ internal static class MongoClientCache
     {
         ArgumentException.ThrowIfNullOrEmpty(connectionString);
 
-        var cached = smClients.GetOrAdd(connectionString,
-                                        key => new Lazy<CachedMongoClient>(() => Create(key)))
-                              .Value;
+        var cached = GetOrCreate(connectionString, Create);
+        return cached;
+    }
+
+    internal static CachedMongoClient GetOrCreate(string connectionString, Func<string, CachedMongoClient> create)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(connectionString);
+        ArgumentNullException.ThrowIfNull(create);
+
+        var lazy = smClients.GetOrAdd(connectionString, key => new Lazy<CachedMongoClient>(() => create(key)));
+        CachedMongoClient cached;
+        try
+        {
+            cached = lazy.Value;
+        }
+        catch(Exception)
+        {
+            // Lazy<T> remembers a failure. Creation can fail transiently — a
+            // mongodb+srv:// string resolves DNS here — so drop this exact entry and
+            // let the next call try again instead of failing until restart.
+            smClients.TryRemove(new KeyValuePair<string, Lazy<CachedMongoClient>>(connectionString, lazy));
+            throw;
+        }
+
         return cached;
     }
 

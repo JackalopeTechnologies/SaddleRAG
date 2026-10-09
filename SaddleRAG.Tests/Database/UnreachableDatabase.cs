@@ -21,14 +21,15 @@ namespace SaddleRAG.Tests.Database;
 /// </summary>
 internal static class UnreachableDatabase
 {
-    public static SaddleRagDbSettings CreateSettings(out string endpoint)
+    public static SaddleRagDbSettings CreateSettings(out string endpoint,
+                                                     int serverSelectionTimeoutMilliseconds = DefaultSelectionTimeoutMilliseconds)
     {
         int port = GetClosedLoopbackPort();
         endpoint = $"127.0.0.1:{port}";
         var settings = new SaddleRagDbSettings
                            {
                                ConnectionString =
-                                   $"mongodb://{endpoint}/?serverSelectionTimeoutMS=2000&connectTimeoutMS=500",
+                                   $"mongodb://{endpoint}/?serverSelectionTimeoutMS={serverSelectionTimeoutMilliseconds}&connectTimeoutMS=500",
                                DatabaseName = "saddlerag-unreachable-test"
                            };
         return settings;
@@ -65,6 +66,7 @@ internal static class UnreachableDatabase
         return port;
     }
 
+    private const int DefaultSelectionTimeoutMilliseconds = 2000;
     private static readonly TimeSpan smWaitLimit = TimeSpan.FromSeconds(seconds: 20);
     private static readonly TimeSpan smPollInterval = TimeSpan.FromMilliseconds(milliseconds: 100);
 }

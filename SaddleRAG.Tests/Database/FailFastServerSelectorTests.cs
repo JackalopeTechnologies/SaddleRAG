@@ -19,61 +19,93 @@ public sealed class FailFastServerSelectorTests
     [Fact]
     public void PassesServersThroughWhileTheDatabaseIsReachable()
     {
-        var clock = new MutableTimeProvider(smStart);
-        var selector = new FailFastServerSelector(new DatabaseReachabilityTracker(clock), smGrace);
+        var selector = new FailFastServerSelector(new DatabaseReachabilityTracker(new ManualTimeProvider(smStart)), smGrace);
         var connected = MakeServer(heartbeatException: null, ServerState.Connected);
 
+        using var _ = DatabaseFailFastScope.Begin();
         var selected = selector.SelectServers(MakeCluster(connected), [connected]);
 
         Assert.Equal([connected], selected);
     }
 
     [Fact]
-    public void KeepsWaitingDuringTheGraceWindowSoABootRaceStillSucceeds()
+    public void NeverFailsFastOutsideAToolCall()
     {
-        var clock = new MutableTimeProvider(smStart);
-        var tracker = new DatabaseReachabilityTracker(clock);
-        var selector = new FailFastServerSelector(tracker, smGrace);
-        var failed = MakeServer(new IOException("refused"), ServerState.Disconnected);
-        tracker.Observe(MakeCluster(failed));
+        (var selector, var clock, var tracker) = MakeSelector();
+        tracker.Observe(MakeCluster(MakeServer(new IOException("refused"), ServerState.Disconnected)));
+        clock.Advance(smGrace);
+        var freshFailure = MakeCluster(MakeServer(new IOException("refused again"), ServerState.Disconnected));
 
-        clock.UtcNow = smStart.AddSeconds(seconds: 29);
-        var selected = selector.SelectServers(MakeCluster(failed), []);
+        var selected = selector.SelectServers(freshFailure, []);
 
         Assert.Empty(selected);
     }
 
     [Fact]
-    public void ThrowsDatabaseUnavailableOnceUnreachableForTheWholeGraceWindow()
+    public void KeepsWaitingDuringTheGraceWindowSoABootRaceStillSucceeds()
     {
-        var clock = new MutableTimeProvider(smStart);
-        var tracker = new DatabaseReachabilityTracker(clock);
-        var selector = new FailFastServerSelector(tracker, smGrace);
-        var refused = new IOException("refused");
-        var failed = MakeServer(refused, ServerState.Disconnected);
-        tracker.Observe(MakeCluster(failed));
+        (var selector, var clock, var tracker) = MakeSelector();
+        tracker.Observe(MakeCluster(MakeServer(new IOException("refused"), ServerState.Disconnected)));
+        clock.Advance(TimeSpan.FromSeconds(seconds: 29));
+        var freshFailure = MakeCluster(MakeServer(new IOException("refused again"), ServerState.Disconnected));
 
-        clock.UtcNow = smStart.Add(smGrace);
-        var ex = Assert.Throws<DatabaseUnavailableException>(() => selector.SelectServers(MakeCluster(failed), []));
+        using var _ = DatabaseFailFastScope.Begin();
+        var selected = selector.SelectServers(freshFailure, []);
+
+        Assert.Empty(selected);
+    }
+
+    [Fact]
+    public void WaitsForAFreshHeartbeatBeforeFailingSoARecoveredDatabaseIsNoticed()
+    {
+        (var selector, var clock, var tracker) = MakeSelector();
+        var staleFailure = MakeCluster(MakeServer(new IOException("refused"), ServerState.Disconnected));
+        tracker.Observe(staleFailure);
+        clock.Advance(smGrace);
+
+        using var _ = DatabaseFailFastScope.Begin();
+        var selected = selector.SelectServers(staleFailure, []);
+
+        Assert.Empty(selected);
+    }
+
+    [Fact]
+    public void FailsFastInsideAToolCallOnceUnreachableForTheGraceWindowAndJustRechecked()
+    {
+        (var selector, var clock, var tracker) = MakeSelector();
+        tracker.Observe(MakeCluster(MakeServer(new IOException("refused"), ServerState.Disconnected)));
+        clock.Advance(smGrace);
+        var refusedAgain = new IOException("refused again");
+        var freshFailure = MakeCluster(MakeServer(refusedAgain, ServerState.Disconnected));
+
+        using var _ = DatabaseFailFastScope.Begin();
+        var ex = Assert.Throws<DatabaseUnavailableException>(() => selector.SelectServers(freshFailure, []));
 
         Assert.Equal("localhost:27017", ex.Endpoint);
-        Assert.Same(refused, ex.InnerException);
-        Assert.Contains("localhost:27017", ex.Message);
+        Assert.Same(refusedAgain, ex.InnerException);
         Assert.Contains("unreachable", ex.Message);
     }
 
     [Fact]
-    public void ObservesTheDescriptionItIsGivenSoItDoesNotDependOnEventOrder()
+    public void StopsFailingFastOnceTheToolCallEnds()
     {
-        var clock = new MutableTimeProvider(smStart);
-        var selector = new FailFastServerSelector(new DatabaseReachabilityTracker(clock), smGrace);
-        var failed = MakeServer(new IOException("refused"), ServerState.Disconnected);
+        (var selector, var clock, var tracker) = MakeSelector();
+        tracker.Observe(MakeCluster(MakeServer(new IOException("refused"), ServerState.Disconnected)));
+        clock.Advance(smGrace);
+        var freshFailure = MakeCluster(MakeServer(new IOException("refused again"), ServerState.Disconnected));
 
-        var first = selector.SelectServers(MakeCluster(failed), []);
-        clock.UtcNow = smStart.Add(smGrace);
+        var scope = DatabaseFailFastScope.Begin();
+        scope.Dispose();
+        var selected = selector.SelectServers(freshFailure, []);
 
-        Assert.Empty(first);
-        Assert.Throws<DatabaseUnavailableException>(() => selector.SelectServers(MakeCluster(failed), []));
+        Assert.Empty(selected);
+    }
+
+    private static (FailFastServerSelector Selector, ManualTimeProvider Clock, DatabaseReachabilityTracker Tracker) MakeSelector()
+    {
+        var clock = new ManualTimeProvider(smStart);
+        var tracker = new DatabaseReachabilityTracker(clock);
+        return (new FailFastServerSelector(tracker, smGrace), clock, tracker);
     }
 
     private static ClusterDescription MakeCluster(params ServerDescription[] servers) =>
@@ -96,16 +128,4 @@ public sealed class FailFastServerSelectorTests
     private static readonly DnsEndPoint smLocalhost = new DnsEndPoint("localhost", port: 27017);
     private static readonly DateTimeOffset smStart = new DateTimeOffset(2026, 10, 8, 23, 50, 0, TimeSpan.Zero);
     private static readonly TimeSpan smGrace = TimeSpan.FromSeconds(seconds: 30);
-
-    private sealed class MutableTimeProvider : TimeProvider
-    {
-        public MutableTimeProvider(DateTimeOffset utcNow)
-        {
-            UtcNow = utcNow;
-        }
-
-        public DateTimeOffset UtcNow { get; set; }
-
-        public override DateTimeOffset GetUtcNow() => UtcNow;
-    }
 }

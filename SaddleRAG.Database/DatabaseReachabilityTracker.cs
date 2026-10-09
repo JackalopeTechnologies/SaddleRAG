@@ -14,11 +14,16 @@ namespace SaddleRAG.Database;
 
 /// <summary>
 ///     Follows the MongoDB driver's view of one cluster and answers whether the
-///     database is known to be unreachable, at which endpoint, and for how long.
+///     database is known to be unreachable, at which endpoint, for how long, and
+///     how recently the driver last re-checked and failed.
 ///     <para>
 ///         "Unreachable" means every known server is disconnected and its most recent
 ///         heartbeat failed. A server that has not reported a heartbeat result yet is
 ///         not unreachable — that is a fresh process racing MongoDB's own start.
+///     </para>
+///     <para>
+///         Durations use the monotonic clock, so a wall-clock correction (time sync
+///         shortly after boot) cannot shorten or stretch them.
 ///     </para>
 /// </summary>
 public sealed class DatabaseReachabilityTracker
@@ -32,8 +37,10 @@ public sealed class DatabaseReachabilityTracker
     private readonly Lock mLock = new Lock();
     private readonly TimeProvider mTimeProvider;
     private string mEndpoint = string.Empty;
+    private long? mLastFreshFailureTimestamp;
     private Exception? mLastHeartbeatException;
-    private DateTimeOffset? mUnreachableSince;
+    private List<Exception> mSeenFailures = [];
+    private long? mUnreachableSinceTimestamp;
 
     /// <summary>
     ///     True while every known server's latest heartbeat has failed.
@@ -45,7 +52,7 @@ public sealed class DatabaseReachabilityTracker
             bool result;
             lock(mLock)
             {
-                result = mUnreachableSince.HasValue;
+                result = mUnreachableSinceTimestamp.HasValue;
             }
 
             return result;
@@ -53,8 +60,8 @@ public sealed class DatabaseReachabilityTracker
     }
 
     /// <summary>
-    ///     The cluster's server addresses as <c>host:port</c>, comma-separated;
-    ///     empty until the driver has described the cluster.
+    ///     The cluster's server addresses as <c>host:port</c>, comma-separated and
+    ///     sorted; empty until the driver has described the cluster.
     /// </summary>
     public string Endpoint
     {
@@ -71,7 +78,7 @@ public sealed class DatabaseReachabilityTracker
     }
 
     /// <summary>
-    ///     The heartbeat failure behind the current outage; null while reachable.
+    ///     The most recent heartbeat failure of the current outage; null while reachable.
     /// </summary>
     public Exception? LastHeartbeatException
     {
@@ -90,7 +97,9 @@ public sealed class DatabaseReachabilityTracker
     /// <summary>
     ///     Records the driver's latest description of the cluster. The outage clock
     ///     starts at the first description in which every server is unreachable and
-    ///     stops at the first one in which any server is not.
+    ///     stops at the first one in which any server is not. A heartbeat failure
+    ///     counts as fresh only the first time it is seen — the driver hands the same
+    ///     description to more than one observer.
     /// </summary>
     public void Observe(ClusterDescription description)
     {
@@ -98,7 +107,7 @@ public sealed class DatabaseReachabilityTracker
 
         var servers = description.Servers;
         bool unreachable = servers.Count > 0 && servers.All(IsServerUnreachable);
-        Exception? heartbeatException = servers.Select(s => s.HeartbeatException).FirstOrDefault(e => e != null);
+        var failures = servers.Select(s => s.HeartbeatException).OfType<Exception>().ToList();
 
         lock(mLock)
         {
@@ -112,14 +121,21 @@ public sealed class DatabaseReachabilityTracker
                                        );
             }
 
+            bool newFailure = failures.Exists(failure => !mSeenFailures.Contains(failure, ReferenceEqualityComparer.Instance));
+            mSeenFailures = failures;
+
             if (unreachable)
             {
-                mUnreachableSince ??= mTimeProvider.GetUtcNow();
-                mLastHeartbeatException = heartbeatException;
+                long now = mTimeProvider.GetTimestamp();
+                mUnreachableSinceTimestamp ??= now;
+                if (newFailure)
+                    mLastFreshFailureTimestamp = now;
+                mLastHeartbeatException = failures.FirstOrDefault();
             }
             else
             {
-                mUnreachableSince = null;
+                mUnreachableSinceTimestamp = null;
+                mLastFreshFailureTimestamp = null;
                 mLastHeartbeatException = null;
             }
         }
@@ -136,7 +152,25 @@ public sealed class DatabaseReachabilityTracker
         bool result;
         lock(mLock)
         {
-            result = mUnreachableSince.HasValue && mTimeProvider.GetUtcNow() - mUnreachableSince.Value >= duration;
+            result = mUnreachableSinceTimestamp is { } since && mTimeProvider.GetElapsedTime(since) >= duration;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    ///     True when the database is unreachable and the driver's newest heartbeat
+    ///     failure arrived within <paramref name="window" /> — the driver has just
+    ///     re-checked and the server is still down.
+    /// </summary>
+    public bool HeartbeatFailedWithin(TimeSpan window)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(window, TimeSpan.Zero);
+
+        bool result;
+        lock(mLock)
+        {
+            result = mLastFreshFailureTimestamp is { } last && mTimeProvider.GetElapsedTime(last) <= window;
         }
 
         return result;

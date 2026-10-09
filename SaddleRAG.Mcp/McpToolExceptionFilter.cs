@@ -30,6 +30,10 @@ namespace SaddleRAG.Mcp;
 ///         the user instead of guessing the tool is broken.
 ///     </para>
 ///     <para>
+///         Each tool runs inside a <see cref="DatabaseFailFastScope" />, so its database
+///         calls stop waiting once an outage is established.
+///     </para>
+///     <para>
 ///         <see cref="OperationCanceledException" />, <see cref="McpException" />,
 ///         and unrelated exceptions are left to propagate so the framework
 ///         handles them as designed.
@@ -70,7 +74,9 @@ internal static class McpToolExceptionFilter
         CallToolResult result;
         try
         {
-            result = await next();
+            // Only database calls made by a tool call may fail fast during an outage.
+            using(DatabaseFailFastScope.Begin())
+                result = await next();
         }
         catch(ArgumentException ex)
         {

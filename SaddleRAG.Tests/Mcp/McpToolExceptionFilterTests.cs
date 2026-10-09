@@ -140,6 +140,23 @@ public sealed class McpToolExceptionFilterTests
     }
 
     [Fact]
+    public async Task ExecuteAsyncRunsTheToolInsideADatabaseFailFastScopeThatEndsWithTheCall()
+    {
+        bool activeDuringCall = false;
+
+        ValueTask<CallToolResult> Run()
+        {
+            activeDuringCall = DatabaseFailFastScope.IsActive;
+            return ValueTask.FromResult(new CallToolResult { Content = [new TextContentBlock { Text = "ok" }] });
+        }
+
+        await McpToolExceptionFilter.ExecuteAsync("list_libraries", services: null, Run);
+
+        Assert.True(activeDuringCall);
+        Assert.False(DatabaseFailFastScope.IsActive);
+    }
+
+    [Fact]
     public async Task ExecuteAsyncReportsAnUnreachableDatabaseByEndpointInsteadOfTheGenericError()
     {
         var unavailable = new DatabaseUnavailableException("localhost:27017", new IOException("refused"));

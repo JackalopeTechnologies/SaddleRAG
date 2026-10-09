@@ -19,16 +19,17 @@ public sealed class DatabaseReachabilityTrackerTests
     [Fact]
     public void NewTrackerIsNotUnreachable()
     {
-        var tracker = new DatabaseReachabilityTracker(new MutableTimeProvider(smStart));
+        var tracker = new DatabaseReachabilityTracker(new ManualTimeProvider(smStart));
 
         Assert.False(tracker.IsUnreachable);
         Assert.False(tracker.HasBeenUnreachableFor(TimeSpan.Zero));
+        Assert.False(tracker.HeartbeatFailedWithin(TimeSpan.FromSeconds(seconds: 1)));
     }
 
     [Fact]
     public void ServerWithNoHeartbeatResultYetIsNotUnreachable()
     {
-        var tracker = new DatabaseReachabilityTracker(new MutableTimeProvider(smStart));
+        var tracker = new DatabaseReachabilityTracker(new ManualTimeProvider(smStart));
 
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, heartbeatException: null, ServerState.Disconnected)));
 
@@ -38,7 +39,7 @@ public sealed class DatabaseReachabilityTrackerTests
     [Fact]
     public void EveryServerFailingItsHeartbeatMarksTheDatabaseUnreachableAtThatEndpoint()
     {
-        var tracker = new DatabaseReachabilityTracker(new MutableTimeProvider(smStart));
+        var tracker = new DatabaseReachabilityTracker(new ManualTimeProvider(smStart));
         var refused = new IOException("No connection could be made because the target machine actively refused it.");
 
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, refused, ServerState.Disconnected)));
@@ -51,11 +52,11 @@ public sealed class DatabaseReachabilityTrackerTests
     [Fact]
     public void UnreachableDurationCountsFromTheFirstFailedHeartbeatNotTheLatest()
     {
-        var clock = new MutableTimeProvider(smStart);
+        var clock = new ManualTimeProvider(smStart);
         var tracker = new DatabaseReachabilityTracker(clock);
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused"), ServerState.Disconnected)));
 
-        clock.UtcNow = smStart.AddSeconds(seconds: 10);
+        clock.Advance(TimeSpan.FromSeconds(seconds: 10));
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused again"), ServerState.Disconnected)));
 
         Assert.True(tracker.HasBeenUnreachableFor(TimeSpan.FromSeconds(seconds: 10)));
@@ -63,19 +64,33 @@ public sealed class DatabaseReachabilityTrackerTests
     }
 
     [Fact]
-    public void ConnectedServerClearsUnreachableAndALaterOutageRestartsTheClock()
+    public void UnreachableDurationIgnoresAWallClockCorrection()
     {
-        var clock = new MutableTimeProvider(smStart);
+        var clock = new ManualTimeProvider(smStart);
         var tracker = new DatabaseReachabilityTracker(clock);
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused"), ServerState.Disconnected)));
 
-        clock.UtcNow = smStart.AddSeconds(seconds: 60);
+        clock.StepWallClock(TimeSpan.FromHours(hours: 1));
+        clock.Advance(TimeSpan.FromSeconds(seconds: 1));
+
+        Assert.True(tracker.HasBeenUnreachableFor(TimeSpan.FromSeconds(seconds: 1)));
+        Assert.False(tracker.HasBeenUnreachableFor(TimeSpan.FromSeconds(seconds: 2)));
+    }
+
+    [Fact]
+    public void ConnectedServerClearsUnreachableAndALaterOutageRestartsTheClock()
+    {
+        var clock = new ManualTimeProvider(smStart);
+        var tracker = new DatabaseReachabilityTracker(clock);
+        tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused"), ServerState.Disconnected)));
+
+        clock.Advance(TimeSpan.FromSeconds(seconds: 60));
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, heartbeatException: null, ServerState.Connected)));
         Assert.False(tracker.IsUnreachable);
 
-        clock.UtcNow = smStart.AddSeconds(seconds: 70);
+        clock.Advance(TimeSpan.FromSeconds(seconds: 10));
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused"), ServerState.Disconnected)));
-        clock.UtcNow = smStart.AddSeconds(seconds: 75);
+        clock.Advance(TimeSpan.FromSeconds(seconds: 5));
 
         Assert.True(tracker.IsUnreachable);
         Assert.True(tracker.HasBeenUnreachableFor(TimeSpan.FromSeconds(seconds: 5)));
@@ -83,9 +98,25 @@ public sealed class DatabaseReachabilityTrackerTests
     }
 
     [Fact]
+    public void ANewHeartbeatFailureIsFreshButSeeingTheSameOneAgainIsNot()
+    {
+        var clock = new ManualTimeProvider(smStart);
+        var tracker = new DatabaseReachabilityTracker(clock);
+        var first = MakeCluster(MakeServer(smLocalhost, new IOException("refused"), ServerState.Disconnected));
+        tracker.Observe(first);
+
+        clock.Advance(TimeSpan.FromSeconds(seconds: 5));
+        tracker.Observe(first);
+        Assert.False(tracker.HeartbeatFailedWithin(TimeSpan.FromSeconds(seconds: 1)));
+
+        tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused again"), ServerState.Disconnected)));
+        Assert.True(tracker.HeartbeatFailedWithin(TimeSpan.FromSeconds(seconds: 1)));
+    }
+
+    [Fact]
     public void OneReachableServerKeepsAMultiServerClusterReachable()
     {
-        var tracker = new DatabaseReachabilityTracker(new MutableTimeProvider(smStart));
+        var tracker = new DatabaseReachabilityTracker(new ManualTimeProvider(smStart));
 
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused"), ServerState.Disconnected),
                                     MakeServer(new DnsEndPoint("db2", port: 27018), heartbeatException: null, ServerState.Connected)
@@ -97,7 +128,7 @@ public sealed class DatabaseReachabilityTrackerTests
     [Fact]
     public void EndpointListsEveryServerInStableOrderWhenAllAreUnreachable()
     {
-        var tracker = new DatabaseReachabilityTracker(new MutableTimeProvider(smStart));
+        var tracker = new DatabaseReachabilityTracker(new ManualTimeProvider(smStart));
 
         tracker.Observe(MakeCluster(MakeServer(smLocalhost, new IOException("refused"), ServerState.Disconnected),
                                     MakeServer(new IPEndPoint(IPAddress.Loopback, port: 27018), new IOException("refused"), ServerState.Disconnected)
@@ -126,16 +157,4 @@ public sealed class DatabaseReachabilityTrackerTests
     private static readonly ClusterId smClusterId = new ClusterId(value: 1);
     private static readonly DnsEndPoint smLocalhost = new DnsEndPoint("localhost", port: 27017);
     private static readonly DateTimeOffset smStart = new DateTimeOffset(2026, 10, 8, 23, 50, 0, TimeSpan.Zero);
-
-    private sealed class MutableTimeProvider : TimeProvider
-    {
-        public MutableTimeProvider(DateTimeOffset utcNow)
-        {
-            UtcNow = utcNow;
-        }
-
-        public DateTimeOffset UtcNow { get; set; }
-
-        public override DateTimeOffset GetUtcNow() => UtcNow;
-    }
 }
