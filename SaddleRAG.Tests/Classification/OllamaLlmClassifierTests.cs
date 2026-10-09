@@ -169,6 +169,18 @@ public sealed class OllamaLlmClassifierTests
     }
 
     [Fact]
+    public async Task GenerationAsksOllamaToKeepTheClassifierModelLoaded()
+    {
+        var client = new FakeGenerateClient { Response = """{"subject":"motor"}""" };
+        var classifier = NewClassifier(client);
+
+        await classifier.GenerateAsync("Return JSON.", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(client.ReceivedRequest);
+        Assert.Equal("-1m", client.ReceivedRequest.KeepAlive);
+    }
+
+    [Fact]
     public async Task ClosingBraceInsideAStringDoesNotEndAnIncompleteAnswer()
     {
         var client = new FakeGenerateClient { Chunks = ["{\"subject\":\"motor }", " datasheet\"}", "discarded trailing text"] };

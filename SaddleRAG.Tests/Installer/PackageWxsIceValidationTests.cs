@@ -273,7 +273,6 @@ public sealed class PackageWxsIceValidationTests
             ["OpenDoclingReleases"] = "OpenDoclingReleases.js",
             ["OpenDoclingApiDocumentation"] = "OpenDoclingApiDocumentation.js",
             ["OpenTesseractInstallInstructions"] = "OpenTesseractInstallInstructions.js",
-            ["CheckOllamaKeepAlive"] = "CheckOllamaKeepAlive.js",
             ["CheckGpuCapability"] = "CheckGpuCapability.js",
             ["EscapeAppSettingsProperties"] = "EscapeAppSettingsProperties.js"
         };

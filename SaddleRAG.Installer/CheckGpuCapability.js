@@ -32,7 +32,7 @@
 //                             declaration in Package.wxs uses Auto both as the
 //                             initial sentinel and as a valid radio value.
 //
-// JScript style mirrors CheckOllamaKeepAlive.js. Detection is intentionally
+// Detection is intentionally
 // permissive: a runtime EP-append failure in OnnxExecutionProviderConfigurator
 // already falls back to CPU with a recorded warning, so a false positive here
 // degrades gracefully rather than breaking the install.

@@ -55,12 +55,6 @@
         <Property Id="REGISTER_CODEX"           Value="1" Secure="yes" />
         <Property Id="REGISTER_CODEX_ARG"       Value="--codex=false" Secure="yes" />
 
-        <!-- Ollama keep-alive detection: CheckOllamaKeepAlive CA populates these -->
-        <!-- in the UI sequence so the Ollama dialog can show or hide a notice. -->
-        <Property Id="OLLAMA_KEEPALIVE_EXISTING" Secure="yes" />
-        <Property Id="OLLAMA_KEEPALIVE_WILL_SET" Value="0" Secure="yes" />
-        <Property Id="OLLAMA_KEEPALIVE_NOTICE" Secure="yes" />
-
         <!-- GPU detection: CheckGpuCapability CA populates these before    -->
         <!-- LaunchConditions in both sequences. WINDOWSBUILDNUMBER gates   -->
         <!-- the launch condition; GPU_DETECTED + GPU_DETECTION_REASON      -->
@@ -231,7 +225,6 @@
         <!-- via -File "[MCPFOLDER]Script.ps1" without any inline PowerShell that    -->
         <!-- would be mangled by MSI's property formatter eating [...] expressions.  -->
         <Component Id="HelperScripts" Directory="MCPFOLDER" Guid="B3A1F2E4-9C7D-4E8B-A5F1-2D3E4F5A6B7C">
-            <File Source="SetOllamaKeepAlive.ps1" />
             <File Source="UnsetOllamaKeepAlive.ps1" />
             <File Source="PatchAppSettings.ps1" />
             <File Source="ConfigureCrashCapture.ps1" />
@@ -261,7 +254,6 @@
         <Binary Id="OpenDoclingReleasesScript" SourceFile="OpenDoclingReleases.js" />
         <Binary Id="OpenDoclingApiDocumentationScript" SourceFile="OpenDoclingApiDocumentation.js" />
         <Binary Id="OpenTesseractInstallInstructionsScript" SourceFile="OpenTesseractInstallInstructions.js" />
-        <Binary Id="CheckOllamaKeepAliveScript" SourceFile="CheckOllamaKeepAlive.js" />
         <Binary Id="CheckGpuCapabilityScript" SourceFile="CheckGpuCapability.js" />
         <Binary Id="EscapeAppSettingsPropertiesScript" SourceFile="EscapeAppSettingsProperties.js" />
 
@@ -327,15 +319,6 @@
 
         <CustomAction Id="OpenTesseractInstallInstructions"
                       BinaryRef="OpenTesseractInstallInstructionsScript"
-                      JScriptCall="SaddleRagInstallerAction"
-                      Execute="immediate"
-                      Return="ignore" />
-
-        <!-- UI-time CA: read system OLLAMA_KEEP_ALIVE so the Ollama dialog can -->
-        <!-- decide whether to show the "we will set OLLAMA_KEEP_ALIVE=-1" notice. -->
-        <!-- Sets properties OLLAMA_KEEPALIVE_EXISTING and OLLAMA_KEEPALIVE_WILL_SET. -->
-        <CustomAction Id="CheckOllamaKeepAlive"
-                      BinaryRef="CheckOllamaKeepAliveScript"
                       JScriptCall="SaddleRagInstallerAction"
                       Execute="immediate"
                       Return="ignore" />
@@ -510,26 +493,12 @@
                       Return="ignore"
                       Impersonate="yes" />
 
-        <!-- Set OLLAMA_KEEP_ALIVE=-1 system-wide on install, but only if it isn't -->
-        <!-- already set. The script writes a registry marker so uninstall knows -->
-        <!-- whether we set it. Impersonate="no" so it runs elevated and can -->
-        <!-- write to the Machine env scope. -->
-        <SetProperty Id="SetOllamaKeepAlive"
-                     Before="SetOllamaKeepAlive"
-                     Sequence="execute"
-                     Value="&quot;powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -File &quot;[MCPFOLDER]SetOllamaKeepAlive.ps1&quot;" />
-
-        <CustomAction Id="SetOllamaKeepAlive"
-                      BinaryRef="Wix4UtilCA_X86"
-                      DllEntry="WixQuietExec"
-                      Execute="deferred"
-                      Return="ignore"
-                      Impersonate="no" />
-
-        <!-- Conditionally remove OLLAMA_KEEP_ALIVE on uninstall. Removes only if -->
-        <!-- our marker is present AND the current value still matches what we set, -->
-        <!-- so user changes after install are respected. Always cleans up the -->
-        <!-- marker registry key so we don't leave breadcrumbs. -->
+        <!-- SaddleRAG no longer sets OLLAMA_KEEP_ALIVE machine-wide: it pinned   -->
+        <!-- every program's Ollama models in GPU memory, and SaddleRAG now asks  -->
+        <!-- for keep-alive on its own Ollama requests. Uninstall still removes   -->
+        <!-- the -1 that versions before 1.12.3 set - only if their registry      -->
+        <!-- marker is present AND the value is unchanged, so user choices are    -->
+        <!-- respected - and always removes the marker. -->
         <SetProperty Id="UnsetOllamaKeepAlive"
                      Before="UnsetOllamaKeepAlive"
                      Sequence="execute"
@@ -643,8 +612,7 @@
             <Custom Action="PatchAppSettings" After="SetPatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterExternalTools" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
-            <Custom Action="SetOllamaKeepAlive" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />
-            <Custom Action="ConfigureCrashCapture" After="SetOllamaKeepAlive" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="ConfigureCrashCapture" After="RegisterExternalTools" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="EnsurePlaywrightChromium" After="ConfigureCrashCapture" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RemoveCrashCapture" Before="UnsetOllamaKeepAlive" Condition="REMOVE = &quot;ALL&quot;" />
             <Custom Action="UnsetOllamaKeepAlive" Before="UnregisterAiClients" Condition="REMOVE = &quot;ALL&quot;" />
@@ -658,15 +626,12 @@
             <Custom Action="LaunchTray" After="InstallFinalize" Condition="NOT Installed" />
         </InstallExecuteSequence>
 
-        <!-- Run CheckOllamaKeepAlive in the UI sequence so the Ollama dialog -->
-        <!-- can hide its keep-alive notice when the user already has a value. -->
         <!-- CheckGpuCapability must precede LaunchConditions for the build-  -->
         <!-- number gate, and its property writes (GPU_DETECTED,              -->
         <!-- GPU_DETECTION_REASON, ONNX_EXECUTION_PROVIDER) feed              -->
         <!-- ExecutionModeDlg later in the UI flow.                           -->
         <InstallUISequence>
             <Custom Action="CheckGpuCapability" Before="LaunchConditions" />
-            <Custom Action="CheckOllamaKeepAlive" After="CostFinalize" />
         </InstallUISequence>
 
         <!-- UI -->
@@ -687,7 +652,6 @@
             <ProgressText Action="PatchAppSettings" Message="Writing configuration..." />
             <ProgressText Action="RegisterAiClients" Message="Registering AI tool integrations..." />
             <ProgressText Action="UnregisterAiClients" Message="Removing AI tool integrations..." />
-            <ProgressText Action="SetOllamaKeepAlive" Message="Configuring Ollama keep-alive..." />
             <ProgressText Action="UnsetOllamaKeepAlive" Message="Removing Ollama keep-alive setting..." />
             <ProgressText Action="ConfigureCrashCapture" Message="Configuring crash dump capture..." />
             <ProgressText Action="RemoveCrashCapture" Message="Removing crash dump configuration..." />
@@ -799,15 +763,6 @@
                 <Control Id="InfoText" Type="Text" X="25" Y="188" Width="320" Height="14"
                          Transparent="yes" NoPrefix="yes"
                          Text="Don't have Ollama? Download it for free from https://ollama.com." />
-
-                <!-- Keep-alive notice. Text comes from the OLLAMA_KEEPALIVE_NOTICE -->
-                <!-- property, which CheckOllamaKeepAlive populates with either   -->
-                <!-- the message or an empty string. WiX 5 does not allow show/   -->
-                <!-- hide Conditions as child elements of Control, so we toggle   -->
-                <!-- visibility by toggling the rendered text instead.            -->
-                <Control Id="KeepAliveText" Type="Text" X="25" Y="204" Width="320" Height="22"
-                         Transparent="yes" NoPrefix="yes"
-                         Text="[OLLAMA_KEEPALIVE_NOTICE]" />
 
                 <Control Id="BottomLine" Type="Line" X="0" Y="228" Width="370" Height="0" />
                 <Control Id="Back" Type="PushButton" X="180" Y="247" Width="56" Height="17" Text="&amp;Back">
