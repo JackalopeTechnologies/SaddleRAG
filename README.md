@@ -614,6 +614,24 @@ git push origin v1.0.0
 
 The tag workflow builds and tests Windows and Linux, packages the MSI, desktop extension, and Linux archive, pushes the release container images, and uploads the assets to a **draft** GitHub Release. Verify the workflow and assets, then publish that draft.
 
+Windows publishing uses `scripts/Publish-WindowsPackage.ps1`. Each application is
+published separately, then the script checks runtime versions and file hashes before
+assembling the installer input. Shared package versions and the bundled .NET runtime
+are pinned in `Directory.Packages.props`. The tray, command-line application and
+installer helper carry their own runtimes in their executables, so their desktop and
+console dependencies cannot overwrite the server's libraries.
+
+```powershell
+./scripts/Test-PublishOutputs.ps1 -ScratchDirectory E:/Scratch/package-checks
+./scripts/Publish-WindowsPackage.ps1 -OutputDirectory E:/Scratch/saddlerag-release -Version 1.12.3
+```
+
+Use new output directories for these commands. The verified installer input is the
+`publish` subdirectory, with a `package-manifest.json` listing every packaged file's
+hash. Upgrade installed copies through the MSI installer. The server-only
+`publish-and-install-service.ps1` development helper requires an empty directory and
+a service name that does not already exist.
+
 ## Project Structure
 
 ```
