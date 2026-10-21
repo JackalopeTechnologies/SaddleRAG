@@ -134,6 +134,65 @@ public sealed class SearchRankFusionTests
         await sorter.DidNotReceiveWithAnyArgs().ReRankAsync(default!, default!, default, TestContext.Current.CancellationToken);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DuplicateWebPassageCannotCrowdOutFifthDistinctAnswer(bool active)
+    {
+        var candidates = Candidates(6);
+        candidates[4] = candidates[4] with
+            { Chunk = candidates[3].Chunk with { Id = "duplicate", PageUrl = "https://example.test/c4/index" } };
+        var sorter = OrderedSorter();
+
+        var result = await Rank(sorter, candidates, active);
+
+        Assert.Equal(new[] { "c1", "c2", "c3", "c4", "c6" }, result.Select(r => r.Chunk.Id));
+        Assert.Equal("https://example.test/c4", result[3].Chunk.PageUrl);
+        Assert.Equal(candidates[3].Chunk.Content, result[3].Chunk.Content);
+        Assert.Equal(active, result[3].RerankScore.HasValue);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EqualProseInDifferentTechnicalContextsRemainsDistinct(bool active)
+    {
+        var original = Chunk("original");
+        var source = new DocumentProvenance
+            { DocumentId = "manual", RevisionId = "revision", SourceUri = "file:///manual.pdf", RelativePath = "manual.pdf" };
+        DocChunk[] chunks =
+        [
+            original,
+            original with { Id = "library", LibraryId = "another-library" },
+            original with { Id = "version", Version = "v2" },
+            original with { Id = "category", Category = DocCategory.HowTo },
+            original with { Id = "title", PageTitle = "another title" },
+            original with { Id = "section", SectionPath = "another section" },
+            original with { Id = "symbol", QualifiedName = "Another.Symbol" },
+            original with { Id = "language", CodeLanguage = "csharp" },
+            original with { Id = "document", DocumentSource = source },
+            original with { Id = "revision", DocumentSource = source with { RevisionId = "other" } },
+            original with { Id = "page", DocumentSource = source with { PageStart = 2 } },
+            original with { Id = "text", Content = "original with an additional qualification" }
+        ];
+        var candidates = chunks.Select((chunk, i) => new SearchTools.HybridCandidate
+            { Chunk = chunk, HybridScore = 1.0 / (i + 1), VectorScore = 0.8f, Bm25Score = 0 }).ToArray();
+
+        var result = await SearchTools.ApplyRerankerOrPassThroughAsync(OrderedSorter(), new QueryMetricsRecorder(),
+            "query", candidates, chunks.Length, active, 25, TestContext.Current.CancellationToken);
+
+        Assert.Equal(chunks.Select(c => c.Id), result.Select(r => r.Chunk.Id));
+    }
+
+    private static IReRanker OrderedSorter()
+    {
+        var sorter = Substitute.For<IReRanker>();
+        sorter.ReRankAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<DocChunk>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+              .Returns(call => (call.Arg<IReadOnlyList<DocChunk>>() ?? []).Select((chunk, i) =>
+                  new ReRankResult { Chunk = chunk, RelevanceScore = 1f / (i + 1) }).ToArray());
+        return sorter;
+    }
+
     private static Task<IReadOnlyList<SearchTools.RankedResult>> Rank(IReRanker sorter,
         IReadOnlyList<SearchTools.HybridCandidate> candidates, bool active) =>
         SearchTools.ApplyRerankerOrPassThroughAsync(sorter, new QueryMetricsRecorder(), "query", candidates,

@@ -823,7 +823,7 @@ public static class SearchTools
 
         if (!rerankActive)
         {
-            result = hybrid.Select(c => new RankedResult
+            result = SelectDistinctResults(hybrid.Select(c => new RankedResult
                                             {
                                                 Chunk = c.Chunk,
                                                 FinalScore = (float) c.HybridScore + SourceIdentityPriority(sourceMatches, c.Chunk.Id),
@@ -832,10 +832,7 @@ public static class SearchTools
                                                 Bm25Score = (float) c.Bm25Score,
                                                 RerankScore = null
                                             }
-                                  )
-                           .OrderByDescending(c => c.FinalScore)
-                           .Take(maxResults)
-                           .ToList();
+                                  ), maxResults);
         }
         else
         {
@@ -889,15 +886,37 @@ public static class SearchTools
         var retrievalRanks = RankScores(hybrid.Where(candidate => candidate.HybridScore > 0)
                                              .Select(candidate => (candidate.Chunk.Id, candidate.HybridScore)));
         var rerankRanks = RankScores(rerankedById.Values.Select(rr => (rr.Chunk.Id, (double) rr.RelevanceScore)));
-        var ordered = hybrid.Select(candidate => CreateReRankedResult(candidate,
+        var ordered = SelectDistinctResults(hybrid.Select(candidate => CreateReRankedResult(candidate,
                                                                       retrievalRanks,
                                                                       rerankRanks,
                                                                       rerankedById,
-                                                                      sourceMatches))
-                      .OrderByDescending(r => r.FinalScore)
-                      .Take(maxResults)
-                      .ToList();
+                                                                      sourceMatches)), maxResults);
         return ordered;
+    }
+
+    private static IReadOnlyList<RankedResult> SelectDistinctResults(IEnumerable<RankedResult> candidates, int maxResults)
+    {
+        // Alternate web URLs can contain exactly the same passage. Keep the
+        // highest-ranked copy and its citation before applying the result limit,
+        // so duplicates cannot crowd a different answer out of the response.
+        // Preserve version, section, symbol, and local-document context: equal
+        // prose alone does not make two technical references interchangeable.
+        var result = candidates.OrderByDescending(candidate => candidate.FinalScore)
+                               .DistinctBy(candidate => new
+                                                            {
+                                                                candidate.Chunk.LibraryId,
+                                                                candidate.Chunk.Version,
+                                                                candidate.Chunk.Category,
+                                                                candidate.Chunk.PageTitle,
+                                                                candidate.Chunk.SectionPath,
+                                                                candidate.Chunk.QualifiedName,
+                                                                candidate.Chunk.CodeLanguage,
+                                                                candidate.Chunk.DocumentSource,
+                                                                candidate.Chunk.Content
+                                                            })
+                               .Take(maxResults)
+                               .ToList();
+        return result;
     }
 
     private static RankedResult CreateReRankedResult(HybridCandidate candidate,
