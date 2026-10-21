@@ -19,6 +19,10 @@ public sealed class TrayHealthObserver(HttpClient client, Uri baseAddress)
     private const string NotificationsProperty = "notifications";
     private const string WarningsProperty = "warnings";
     private const string ErrorsProperty = "errors";
+    private const string HasWarningsProperty = "hasWarnings";
+    private const string HasErrorsProperty = "hasErrors";
+    private const string UnreadErrorsSummary = "Unread server errors; open logs";
+    private const string UnreadWarningsSummary = "Unread server warnings; open logs";
     private const string ReadFailedProperty = "readFailed";
     private const string LogReadFailedSummary = "Unable to read server logs";
     private const string ProductPrefix = "SaddleRAG — ";
@@ -72,12 +76,15 @@ public sealed class TrayHealthObserver(HttpClient client, Uri baseAddress)
         {
             int warnings = notifications.GetProperty(WarningsProperty).GetInt32();
             int errors = notifications.GetProperty(ErrorsProperty).GetInt32();
+            bool hasWarnings = warnings > 0 || ReadFlag(notifications, HasWarningsProperty);
+            bool hasErrors = errors > 0 || ReadFlag(notifications, HasErrorsProperty);
             bool readFailed = notifications.GetProperty(ReadFailedProperty).GetBoolean();
-            if (warnings + errors > 0 || readFailed)
+            if (hasWarnings || hasErrors || readFailed)
             {
+                string unread = hasErrors ? UnreadErrorsSummary : UnreadWarningsSummary;
                 string detail = readFailed ? LogReadFailedSummary
-                    : $"{errors} unread errors, {warnings} unread warnings";
-                result = new(errors > 0 || readFailed ? McpServiceState.Stopped : McpServiceState.Transitioning,
+                    : unread;
+                result = new(hasErrors || readFailed ? McpServiceState.Stopped : McpServiceState.Transitioning,
                              ProductPrefix + detail, LogsPage,
                              LogNotificationPrefix + notifications.GetProperty(NewestProperty).ToString() + KeySeparator + readFailed);
             }
@@ -96,4 +103,7 @@ public sealed class TrayHealthObserver(HttpClient client, Uri baseAddress)
         }
         return result;
     }
+
+    private static bool ReadFlag(JsonElement notifications, string property) =>
+        notifications.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.True;
 }

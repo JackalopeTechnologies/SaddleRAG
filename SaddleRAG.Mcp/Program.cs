@@ -185,6 +185,7 @@ builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
 // acknowledgement singleton (MainLayout lives in this project, LogsPage in Monitor).
 builder.Services.AddSingleton<IServerLogReader>(new FileServerLogTailReader(logDirectory));
 builder.Services.AddSingleton<IServerLogAcknowledgement, ServerLogAcknowledgement>();
+builder.Services.AddSingleton<LogNotificationReader>();
 builder.Services.AddSingleton(runSentinel);
 
 // Crash triage (issue #140): get_crash_report aggregates event-log records,
@@ -727,6 +728,7 @@ else
 
     var firstRequestLogged = false;
 
+    app.UseMiddleware<ShutdownConnectionMiddleware>();
     app.Use(async (context, next) =>
 
             {
@@ -767,10 +769,9 @@ else
                (McpWarmupState warmupState,
                 IDoclingCapabilityService doclingCapability,
                 SaddleRAG.Core.DependencyHealthState dependencies,
-                IServerLogReader logReader,
-                IServerLogAcknowledgement acknowledgement) =>
+                LogNotificationReader notifications) =>
                    ServiceHealthResponseFactory.CreateResult(warmupState, doclingCapability,
-                                                              dependencies, logReader, acknowledgement)
+                                                              dependencies, notifications)
               );
 
 

@@ -39,8 +39,7 @@ internal static class ServiceHealthResponseFactory
     internal static IResult CreateResult(McpWarmupState warmupState,
                                          IDoclingCapabilityService doclingCapability,
                                          SaddleRAG.Core.DependencyHealthState dependencies,
-                                         SaddleRAG.Core.Interfaces.IServerLogReader logReader,
-                                         SaddleRAG.Core.Interfaces.IServerLogAcknowledgement acknowledgement)
+                                         LogNotificationReader notifications)
     {
         string status = OverallStatus(warmupState, dependencies);
         if (status == HealthyStatus && doclingCapability.CurrentStatus.State == DoclingCapabilityState.Unavailable)
@@ -48,7 +47,7 @@ internal static class ServiceHealthResponseFactory
         var response = Create(status, warmupState, doclingCapability) with
         {
             Services = dependencies.Snapshot(),
-            Notifications = LogNotificationReader.Read(logReader, acknowledgement)
+            Notifications = notifications.Read()
         };
         return Results.Json(response, statusCode: HttpStatus(status));
     }

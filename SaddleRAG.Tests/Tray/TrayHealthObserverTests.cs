@@ -48,6 +48,20 @@ public sealed class TrayHealthObserverTests
         Assert.Equal(TrayAttention.Unreachable, await observer.ReadAsync(TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task ErrorsOutsideTheLogWindowKeepTheTrayWarning()
+    {
+        using var client = new HttpClient(new ResponseHandler(HttpStatusCode.OK,
+            """{"status":"Healthy","notifications":{"warnings":0,"errors":0,"hasErrors":true,"newestAt":"2026-10-21T01:00:00Z","readFailed":false}}"""));
+        var observer = new TrayHealthObserver(client, new Uri("http://localhost:6100"));
+
+        TrayAttention attention = await observer.ReadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(McpServiceState.Stopped, attention.IconState);
+        Assert.Equal("/monitor/logs", attention.TargetPath);
+        Assert.Contains("Unread server errors", attention.Summary);
+    }
+
     private sealed class ResponseHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
         public string Body { get; set; } = body;

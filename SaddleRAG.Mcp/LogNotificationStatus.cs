@@ -6,4 +6,8 @@
 namespace SaddleRAG.Mcp;
 
 /// <summary>Unread warnings and errors from the bounded server log window.</summary>
-public sealed record LogNotificationStatus(int Warnings, int Errors, DateTimeOffset? NewestAt, bool ReadFailed);
+public sealed record LogNotificationStatus(int Warnings, int Errors, DateTimeOffset? NewestAt, bool ReadFailed)
+{
+    public bool HasWarnings { get; init; }
+    public bool HasErrors { get; init; }
+}
