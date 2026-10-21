@@ -50,9 +50,38 @@ Embedding retention is independent of classification and recon requests.
 small embedding model remains available for 60 seconds between requests. No
 setting keeps an embedding model loaded indefinitely.
 
-The October 2026 comparison uses isolated copies of documentation and does not
-change the installed provider, settings, or library vectors. Google is a candidate,
-not the active model.
+## Re-embedding stored libraries
+
+Use the existing `reembed_library` tool after selecting a new embedding model.
+It regenerates vectors from stored passages without downloading or splitting
+the documents again, and is safe to repeat.
+
+1. Pause ordinary search and ingestion while changing the provider, model,
+   dimensions, or task instructions. Keep the maintenance server available for
+   the re-embedding tools and health screen.
+2. Install the selected model and apply its settings, including any runtime
+   overrides. For `embeddinggemma-2:270m`, use 768 dimensions, task instructions
+   enabled, and an 8192-token context. Disable `Onnx.EmbeddingEnabled`; the
+   independent DirectML result sorter can remain enabled.
+3. Call `reembed_library` for each stored library/version and the intended database
+   profile, with `dryRun: false` and no `maxChunks` limit. Run one job at a time.
+4. Poll `get_reembed_status` using its returned job identifier. Require a completed
+   job, the full passage count, and the intended provider, model, and dimensions
+   before continuing. A failed library can be re-embedded again after correcting
+   the cause.
+5. Verify unchanged document content, complete valid vectors, model metadata,
+   and real searches before restoring ordinary service. Include stored passages
+   whose catalog records are missing; report that catalog problem separately
+   rather than dropping their data.
+
+A model change replaces derived vectors in the existing database. Returning to
+an earlier model requires another complete re-embedding before exposing searches.
+Whether to make a separate database backup is an operator decision.
+
+The [October 2026 comparison](embedding-comparison-2026-10-21.md) measures isolated
+embedding retrieval. It does not establish the quality of complete searches,
+which also apply keyword scoring and result sorting. Validate those searches
+against the full libraries during each migration.
 
 Sources: [Ollama embedding requests](https://docs.ollama.com/api/embed),
 [Nomic model instructions](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5),
