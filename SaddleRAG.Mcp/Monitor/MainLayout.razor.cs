@@ -22,10 +22,10 @@ public abstract class MainLayoutBase : LayoutComponentBase, IDisposable
     private IServerLogAcknowledgement? Acknowledgement { get; set; }
 
     [Inject]
-    private IServiceProvider? Services { get; set; }
+    private DependencyHealthState? HealthState { get; set; }
 
     protected IReadOnlyList<SaddleRAG.Core.Models.DependencyHealth> FailedServices =>
-        Services?.GetService<DependencyHealthState>()?.Snapshot()
+        HealthState?.Snapshot()
             .Where(entry => entry.Status == UnavailableStatus).ToArray() ?? [];
 
     private const string UnavailableStatus = "Unavailable";
