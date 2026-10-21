@@ -80,6 +80,8 @@ in the audit. Content comparison found 32 and 506 exact matches respectively in
 their current counterpart libraries; the remaining five passages need review
 before any cleanup.
 
-The search-quality and catalog follow-ups remain in
+The search-quality and catalog follow-ups were subsequently resolved in
 [issue 189](https://github.com/JackalopeTechnologies/SaddleRAG/issues/189).
+See the [installed ranking comparison and catalog repair](search-quality-2026-10-21.md)
+for the later results; the figures above describe the migration checkpoint.
 For future model changes, use the [repeatable re-embedding procedure](ollama-embeddings.md#re-embedding-stored-libraries).

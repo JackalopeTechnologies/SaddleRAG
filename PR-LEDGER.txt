@@ -1,1 +1,0 @@
-[fix/service-health-and-ollama] Complete the clean solution rebuild, full test run, combined server/tray installation and installed search comparison for the rank-fusion fixes; record results and completed duplicate-data repair in issue 189.
