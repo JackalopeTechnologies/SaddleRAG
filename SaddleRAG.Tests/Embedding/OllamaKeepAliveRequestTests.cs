@@ -17,15 +17,12 @@ using SaddleRAG.Ingestion.Recon;
 namespace SaddleRAG.Tests.Embedding;
 
 /// <summary>
-///     SaddleRAG keeps its own Ollama models loaded by asking on each request,
-///     instead of the installer setting OLLAMA_KEEP_ALIVE machine-wide (which pinned
-///     every other program's models in GPU memory too). Ollama rejects the bare
-///     string "-1" ("missing unit in duration"); "-1m" means "keep loaded".
+///     Ordinary requests leave retention to the operator's Ollama configuration.
 /// </summary>
 public sealed class OllamaKeepAliveRequestTests
 {
     [Fact]
-    public async Task EmbeddingRequestsAskOllamaToKeepTheEmbeddingModelLoaded()
+    public async Task EmbeddingRequestsRespectServerRetention()
     {
         var handler = new RecordingOllamaHandler("{\"model\":\"nomic-embed-text\",\"embeddings\":[[0.1,0.2,0.3]]}");
         var provider = new OllamaEmbeddingProvider(Options.Create(new OllamaSettings()),
@@ -36,11 +33,11 @@ public sealed class OllamaKeepAliveRequestTests
         await provider.EmbedAsync(["hello"], ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("/api/embed", handler.LastPath);
-        Assert.Contains(ExpectedKeepAliveJson, handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"keep_alive\"", handler.LastBody, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task ReconRequestsAskOllamaToKeepTheReconModelLoaded()
+    public async Task ReconRequestsRespectServerRetention()
     {
         var handler = new RecordingOllamaHandler("{\"response\":\"not json\",\"done\":true}\n");
         var settings = new OllamaSettings { ReconModels = { new OllamaModelEntry { Name = "test-recon:latest" } } };
@@ -52,11 +49,10 @@ public sealed class OllamaKeepAliveRequestTests
         await recon.ReconAsync("https://example.com/docs", "lib", "1.0", TestContext.Current.CancellationToken);
 
         Assert.Equal("/api/generate", handler.LastPath);
-        Assert.Contains(ExpectedKeepAliveJson, handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"keep_alive\"", handler.LastBody, StringComparison.Ordinal);
     }
 
     private static OllamaApiClient MakeClient(RecordingOllamaHandler handler) =>
         new OllamaApiClient(new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") });
 
-    private const string ExpectedKeepAliveJson = "\"keep_alive\":\"-1m\"";
 }

@@ -67,7 +67,6 @@ const string HttpClientDocUrlProbe = "DocUrlProbe";
 const string OllamaProbeHttpClientName = "OllamaProbe";
 const string KestrelHttpsEndpointKey = "Kestrel:Endpoints:Https:Url";
 const string HealthEndpointPath = "/health";
-const string HealthyStatus = "Healthy";
 const string MonitorHubEndpointPath = "/monitor/hub";
 const string MonitorEndpointPath = "/monitor";
 const string KestrelHttpPortKey = "Kestrel:Endpoints:Http:Port";
@@ -204,6 +203,8 @@ builder.Services.AddSingleton(new CrashReportService.Options(Path.Combine(common
 builder.Services.AddSingleton<CrashReportService>();
 
 builder.Services.AddSingleton<McpWarmupState>();
+builder.Services.AddSingleton<SaddleRAG.Core.DependencyHealthState>();
+builder.Services.AddHostedService<DependencyHealthMonitor>();
 
 builder.Services.AddHostedService<McpWarmupService>();
 
@@ -761,10 +762,12 @@ else
 
     app.MapGet(HealthEndpointPath,
                (McpWarmupState warmupState,
-                IDoclingCapabilityService doclingCapability) =>
-                   Results.Ok(ServiceHealthResponseFactory.Create(HealthyStatus,
-                                                                  warmupState,
-                                                                  doclingCapability))
+                IDoclingCapabilityService doclingCapability,
+                SaddleRAG.Core.DependencyHealthState dependencies,
+                IServerLogReader logReader,
+                IServerLogAcknowledgement acknowledgement) =>
+                   ServiceHealthResponseFactory.CreateResult(warmupState, doclingCapability,
+                                                              dependencies, logReader, acknowledgement)
               );
 
 

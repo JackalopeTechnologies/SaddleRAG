@@ -97,17 +97,12 @@ public sealed class DoclingHealthToolsTests
     }
 
     [Fact]
-    public void HealthRouteAlwaysWrapsCoreAndOptionalCapabilityPayloadInHttpOk()
+    public void HealthResponseDistinguishesUnavailableCoreFromOptionalFailures()
     {
-        string root = ResolveRepositoryRoot();
-        string program = File.ReadAllText(Path.Combine(root, "SaddleRAG.Mcp", "Program.cs"));
-        int route = program.IndexOf("app.MapGet(HealthEndpointPath", StringComparison.Ordinal);
-        Assert.True(route >= 0);
-        string healthBlock = program.Substring(route, Math.Min(900, program.Length - route));
-
-        Assert.Contains("Results.Ok", healthBlock, StringComparison.Ordinal);
-        Assert.Contains("ServiceHealthResponseFactory.Create", healthBlock, StringComparison.Ordinal);
-        Assert.DoesNotContain("Results.StatusCode", healthBlock, StringComparison.Ordinal);
+        Assert.Equal(503, ServiceHealthResponseFactory.HttpStatus("Unavailable"));
+        Assert.Equal(503, ServiceHealthResponseFactory.HttpStatus("Starting"));
+        Assert.Equal(200, ServiceHealthResponseFactory.HttpStatus("Degraded"));
+        Assert.Equal(200, ServiceHealthResponseFactory.HttpStatus("Healthy"));
     }
 
     private static DoclingCapabilityStatus Status(string reasonCode, string detail) =>

@@ -155,7 +155,7 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
 
                                                                 Input = [text],
 
-                                                                KeepAlive = OllamaKeepAlive.KeepLoaded
+                              KeepAlive = null
                                                             },
                                                         ct
                                                        );

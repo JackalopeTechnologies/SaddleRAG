@@ -20,6 +20,7 @@
         </MudTooltip>
         <MudSpacer/>
         <div class="monitor-top-navigation">
+            <MudLink Href="/monitor/health" Color="Color.Inherit" Class="mx-2">Health</MudLink>
             <MudLink Href="/monitor" Color="Color.Inherit" Class="mx-2">Libraries</MudLink>
             <MudLink Href="/monitor/directory-libraries" Color="Color.Inherit" Class="mx-2">Directories</MudLink>
             <MudLink Href="/monitor/jobs" Color="Color.Inherit" Class="mx-2">Jobs</MudLink>
@@ -34,6 +35,7 @@
     <MudDrawer @bind-Open="DrawerOpen" Elevation="1" Variant="DrawerVariant.Responsive"
                Breakpoint="Breakpoint.Md">
         <MudNavMenu>
+            <MudNavLink Href="/monitor/health" Icon="@Icons.Material.Filled.HealthAndSafety">Health</MudNavLink>
             <MudNavLink Href="/monitor" Icon="@Icons.Material.Filled.LibraryBooks">Libraries</MudNavLink>
             <MudNavLink Href="/monitor/directory-libraries" Icon="@Icons.Material.Filled.FolderOpen">Directories</MudNavLink>
             <MudNavLink Href="/monitor/jobs" Icon="@Icons.Material.Filled.History">Jobs</MudNavLink>

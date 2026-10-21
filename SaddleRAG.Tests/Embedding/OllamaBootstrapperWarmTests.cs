@@ -172,7 +172,7 @@ public sealed class OllamaBootstrapperWarmTests
     }
 
     [Fact]
-    public async Task PayloadIncludesKeepAliveMinusOne()
+    public async Task PayloadPreservesServerModelRetention()
     {
         var handler = new StubHttpMessageHandler(_ => OllamaResponse(readyToken: "READY"));
         using var client = new HttpClient(handler);
@@ -184,10 +184,10 @@ public sealed class OllamaBootstrapperWarmTests
                                                       TestContext.Current.CancellationToken
                                                      );
 
-        // Ollama's keep_alive contract: -1 means "stay resident forever".
-        // Anything else and the model would drop out of VRAM during idle
-        // gaps and the first real classify call would re-pay cold load.
-        Assert.Contains("\"keep_alive\":-1", handler.LastBody);
+        // The server owner controls model retention. In particular, startup
+        // must not override OLLAMA_KEEP_ALIVE=0 and pin a model indefinitely.
+        using var payload = JsonDocument.Parse(handler.LastBody);
+        Assert.False(payload.RootElement.TryGetProperty("keep_alive", out _));
     }
 
     [Fact]

@@ -177,7 +177,7 @@ public sealed class OllamaLlmClassifierTests
         await classifier.GenerateAsync("Return JSON.", TestContext.Current.CancellationToken);
 
         Assert.NotNull(client.ReceivedRequest);
-        Assert.Equal("-1m", client.ReceivedRequest.KeepAlive);
+        Assert.Null(client.ReceivedRequest.KeepAlive);
     }
 
     [Fact]

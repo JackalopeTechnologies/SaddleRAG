@@ -208,8 +208,8 @@ public sealed class McpWarmupService : BackgroundService
 
             // Download the active classifier model folder (idempotent) and
             // warm the ONNX classifier so the first real classification isn't
-            // cold. Gated on Onnx.Enabled — when ONNX is off this whole block
-            // is skipped and the classifier cold-loads on first use. Non-fatal:
+            // cold. Only run this for the selected ONNX classifier; an Ollama
+            // classifier is verified separately below. Non-fatal:
             // a download or warm failure logs a warning but does NOT abort
             // warmup (mirrors the search-path warm's non-fatal pattern), so
             // the operator can still serve search while resolving the issue.
@@ -217,7 +217,7 @@ public sealed class McpWarmupService : BackgroundService
             // on the default all-ONNX path this warm IS the active classifier.
             bool onnxClassifierWarm = false;
 
-            if (onnxSettings.Enabled)
+            if (onnxSettings.Enabled && !ollamaClassifierActive)
             {
                 stepSw.Restart();
 
@@ -323,9 +323,8 @@ public sealed class McpWarmupService : BackgroundService
             // the ONNX classifier was already downloaded and warmed above and
             // its outcome alone decides completed-vs-degraded. The Ollama
             // generate warm below runs ONLY when the Ollama classifier backend
-            // is actually active — otherwise it would send a keep_alive=-1
-            // (permanent VRAM pin) request for the phi classification model to
-            // Ollama on every startup even though nothing consumes it, and would
+            // is actually active — otherwise it would load an unused model on
+            // every startup and would
             // flip a healthy all-ONNX warmup to the degraded phase whenever
             // Ollama isn't running. A failed classifier warm only means the
             // first reextract_library / dryrun_scrape call cold-loads the model;

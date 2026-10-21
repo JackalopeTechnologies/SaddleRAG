@@ -1,0 +1,3 @@
+[fix/service-health-and-ollama] Complete dependency-specific work interruption and recovery, including startup recovery and bounded audit buffering, under issue #189.
+[fix/service-health-and-ollama] Verify shared Ollama launch configuration and selected-classifier startup against issue #189.
+[fix/service-health-and-ollama] Complete isolated outage/recovery checks, clean solution rebuild, full test run and installed service/tray verification before preparing a pull request.

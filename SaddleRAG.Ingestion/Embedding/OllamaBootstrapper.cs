@@ -132,9 +132,8 @@ public class OllamaBootstrapper
     }
 
     /// <summary>
-    ///     Pre-load the configured classification model into Ollama VRAM
-    ///     with <c>keep_alive=-1</c> so the first user request doesn't
-    ///     pay a multi-second cold-load penalty. Sends a classifier-priming
+    ///     Verify the configured classification model through Ollama while
+    ///     respecting the server's configured model retention. Sends a classifier-priming
     ///     prompt and verifies the model returns a "READY" acknowledgement
     ///     so we have evidence the model actually loaded and can serve --
     ///     a 200 response with empty body is a degenerate "warm" that
@@ -191,8 +190,7 @@ public class OllamaBootstrapper
                               {
                                   model,
                                   prompt = WarmupPrompt,
-                                  stream = false,
-                                  keep_alive = KeepAliveForever
+                                  stream = false
                               };
             var response = await client.PostAsJsonAsync(endpoint, payload, ct);
             response.EnsureSuccessStatusCode();
@@ -259,7 +257,6 @@ public class OllamaBootstrapper
     private const string ExpectedWarmupToken = "READY";
     private const int WarmupBodyLogCap = 256;
     private const string WarmupBodyTruncatedSuffix = "...";
-    private const int KeepAliveForever = -1;
     private const int MinimumWarmModelTimeoutSeconds = 1;
 
     private const string OllamaWindowsInstallerUrl = "https://ollama.com/download/OllamaSetup.exe";
