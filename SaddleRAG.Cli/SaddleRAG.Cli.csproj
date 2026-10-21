@@ -7,6 +7,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- The installed CLI shares the server's directory, not its runtime files. -->
+  <PropertyGroup Condition="'$(SelfContained)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="CodeStructure.Analyzers" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
