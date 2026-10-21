@@ -1,0 +1,3817 @@
+{
+  "Server": {
+    "name": "SaddleRAG — Documentation RAG MCP Server",
+    "version": "1.12.3-local.search.20261021+e6f2662f783284f74231f588cf04e37bb862b65e"
+  },
+  "OriginalQuestions": 29,
+  "HoldoutQuestions": 6,
+  "Restored": true,
+  "Summary": [
+    {
+      "Mode": "Onnx",
+      "BaselineExactFirst": 13,
+      "BaselineExactTopFive": 23,
+      "BaselineMeanMs": 831.72,
+      "InstalledExactFirst": 15,
+      "InstalledExactTopFive": 24,
+      "InstalledReviewedTopFive": 29,
+      "InstalledMeanMs": 815.07,
+      "HoldoutSpecificAnswerTopFive": 4,
+      "HoldoutReviewedTopFive": 6
+    },
+    {
+      "Mode": "Off",
+      "BaselineExactFirst": 12,
+      "BaselineExactTopFive": 24,
+      "BaselineMeanMs": 387.14,
+      "InstalledExactFirst": 14,
+      "InstalledExactTopFive": 25,
+      "InstalledReviewedTopFive": 28,
+      "InstalledMeanMs": 356.86,
+      "HoldoutSpecificAnswerTopFive": 4,
+      "HoldoutReviewedTopFive": 5
+    }
+  ],
+  "Results": [
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q01",
+      "Query": "How do I install files under the current user's Documents or profile folder?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 594,
+      "Top": [
+        {
+          "PageTitle": "How to deploy files in the User Profile folder",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-qa-install-user-profile-folder.html",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.81012976,
+          "Bm25Score": 0.9746951,
+          "RerankScore": 0.51391727
+        },
+        {
+          "PageTitle": "How to install files in a custom folder",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-custom-folder.html",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.7711586,
+          "Bm25Score": 1,
+          "RerankScore": 0.5557984
+        },
+        {
+          "PageTitle": "How to install files in a custom folder",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-custom-folder.html",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.77622676,
+          "Bm25Score": 0.41394746,
+          "RerankScore": 0.33295923
+        },
+        {
+          "PageTitle": "Files and Folders",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qat-files-folders.html",
+          "RelevanceScore": 0.225,
+          "VectorScore": 0.76001036,
+          "Bm25Score": 0.67547965,
+          "RerankScore": 0.30809003
+        },
+        {
+          "PageTitle": "How to install some files in a folder of a previously installed application?",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-another-application.html",
+          "RelevanceScore": 0.22222222,
+          "VectorScore": 0.7819076,
+          "Bm25Score": 0.35115656,
+          "RerankScore": 0.20108153
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q02",
+      "Query": "What Microsoft checks should validate an installation package and identify common consistency errors?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 610,
+      "Top": [
+        {
+          "PageTitle": "Validating Installation Packages",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/validating-installation-packages.html",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8906977,
+          "Bm25Score": 1,
+          "RerankScore": 0.47721383
+        },
+        {
+          "PageTitle": "Build-Time Best Practices",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/build-best-practices.html",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.7916945,
+          "Bm25Score": 0.57396203,
+          "RerankScore": 0.3617376
+        },
+        {
+          "PageTitle": "Package Validation",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/package-validation.html",
+          "RelevanceScore": 0.35,
+          "VectorScore": 0.8176808,
+          "Bm25Score": 0.74870914,
+          "RerankScore": 0.16555448
+        },
+        {
+          "PageTitle": "How to Perform MSI Package Validation Using a .CUB File",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/msi-full-package-validation-cub-file.html",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.79075265,
+          "Bm25Score": 0.38411564,
+          "RerankScore": 0.16789192
+        },
+        {
+          "PageTitle": "Issues Pane",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/issues-pane.html",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.7696116,
+          "Bm25Score": 0.44415537,
+          "RerankScore": 0.17612863
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q03",
+      "Query": "How can I remove an XML file from an Advanced Installer project using the command line?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 536,
+      "Top": [
+        {
+          "PageTitle": "Delete XML File Command Option",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/delete-xml-file.html",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.8953858,
+          "Bm25Score": 0.69940066,
+          "RerankScore": 0.40857166
+        },
+        {
+          "PageTitle": "Files and Folders Commands",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/file-commands.html",
+          "RelevanceScore": 0.55,
+          "VectorScore": 0.7816452,
+          "Bm25Score": 0.8745554,
+          "RerankScore": 0.5891078
+        },
+        {
+          "PageTitle": "Import XML File Command Option",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/import-xml-file.html",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.8130385,
+          "Bm25Score": 0.91771096,
+          "RerankScore": 0.56814885
+        },
+        {
+          "PageTitle": "Files and Folders",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qat-files-folders.html",
+          "RelevanceScore": 0.32142857,
+          "VectorScore": 0.761788,
+          "Bm25Score": 1,
+          "RerankScore": 0.23113562
+        },
+        {
+          "PageTitle": "Permissions Tab - XML Files Page",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/xml-permissions.html",
+          "RelevanceScore": 0.22916667,
+          "VectorScore": 0.79373884,
+          "Bm25Score": 0.7983098,
+          "RerankScore": 0.5021634
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q04",
+      "Query": "Where can I add elements and entire subtrees to an MSIX package manifest?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 486,
+      "Top": [
+        {
+          "PageTitle": "Manifest Editor Page",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/win-store-app-manifest-editor.html",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8810133,
+          "Bm25Score": 1,
+          "RerankScore": 0.389131
+        },
+        {
+          "PageTitle": "Edit Manifest Element dialog",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/win-store-app-new-manifest-element.html",
+          "RelevanceScore": 0.35,
+          "VectorScore": 0.8200486,
+          "Bm25Score": 0.6417378,
+          "RerankScore": 0.09304159
+        },
+        {
+          "PageTitle": "MSIX Editor",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/msix-editor-mode.html",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.79942906,
+          "Bm25Score": 0.6855067,
+          "RerankScore": 0.14443304
+        },
+        {
+          "PageTitle": "Create an MSIX package",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/tutorial-create-msix-package.html",
+          "RelevanceScore": 0.27631578,
+          "VectorScore": 0.7520629,
+          "Bm25Score": 0.6265172,
+          "RerankScore": 0.14632308
+        },
+        {
+          "PageTitle": "Frequently Asked Questions about MSIX",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/faq-msix.html",
+          "RelevanceScore": 0.19166666,
+          "VectorScore": 0.7641132,
+          "Bm25Score": 0.9819339,
+          "RerankScore": 0.039023884
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q05",
+      "Query": "Which Math.NET filter type rejects frequencies inside a band while passing frequencies outside it?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 924,
+      "Top": [
+        {
+          "PageTitle": "FilterType - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/FilterType.htm",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8515269,
+          "Bm25Score": 1,
+          "RerankScore": 0.04386336
+        },
+        {
+          "PageTitle": "Math.NET Filtering",
+          "PageUrl": "https://filtering.mathdotnet.com",
+          "RelevanceScore": 0.35,
+          "VectorScore": 0.7727636,
+          "Bm25Score": 0.30559543,
+          "RerankScore": 0.032205913
+        },
+        {
+          "PageTitle": "OnlineFilter - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/OnlineFilter.htm",
+          "RelevanceScore": 0.27,
+          "VectorScore": 0.7883344,
+          "Bm25Score": 0.3697988,
+          "RerankScore": 0.0042571616
+        },
+        {
+          "PageTitle": "PermanentWindow<T> - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windows/PermanentWindow%601.htm",
+          "RelevanceScore": 0.22222222,
+          "VectorScore": 0.73205894,
+          "Bm25Score": 0.33736074,
+          "RerankScore": 0.025577202
+        },
+        {
+          "PageTitle": "MathNet.Filtering - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/index.htm",
+          "RelevanceScore": 0.19298245,
+          "VectorScore": 0.78097904,
+          "Bm25Score": 0.13136354,
+          "RerankScore": 0.010127199
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q06",
+      "Query": "How do I precompute flat top window coefficients and copy them into an array?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 381,
+      "Top": [
+        {
+          "PageTitle": "FlatTopWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/FlatTopWindow.htm",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.7994733,
+          "Bm25Score": 1,
+          "RerankScore": 0.047425795
+        },
+        {
+          "PageTitle": "IWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/IWindow.htm",
+          "RelevanceScore": 0.54545456,
+          "VectorScore": 0.87556,
+          "Bm25Score": 0.51032585,
+          "RerankScore": 0.023604942
+        },
+        {
+          "PageTitle": "Window - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/Window.htm",
+          "RelevanceScore": 0.54545456,
+          "VectorScore": 0.87556,
+          "Bm25Score": 0.51032585,
+          "RerankScore": 0.023604942
+        },
+        {
+          "PageTitle": "BlackmanWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/BlackmanWindow.htm",
+          "RelevanceScore": 0.375,
+          "VectorScore": 0.7751491,
+          "Bm25Score": 0.5412448,
+          "RerankScore": 0.031892642
+        },
+        {
+          "PageTitle": "LanczosWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/LanczosWindow.htm",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.77045834,
+          "Bm25Score": 0.5412448,
+          "RerankScore": 0.029013664
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q07",
+      "Query": "For a bilinear transform of poles and zeros, is samplingTime the rate or its reciprocal, and are arrays modified?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1032,
+      "Top": [
+        {
+          "PageTitle": "BilinearTransform - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.TransferFunctions/BilinearTransform.htm",
+          "RelevanceScore": 1,
+          "VectorScore": 0.85476273,
+          "Bm25Score": 1,
+          "RerankScore": 0.15696046
+        },
+        {
+          "PageTitle": "Math.NET Filtering Release Notes",
+          "PageUrl": "https://filtering.mathdotnet.com/ReleaseNotes.html",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.61648536,
+          "Bm25Score": 0.23741697,
+          "RerankScore": 0.0130354995
+        },
+        {
+          "PageTitle": "FirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.FIR/FirCoefficients.htm",
+          "RelevanceScore": 0.29545453,
+          "VectorScore": 0.69557494,
+          "Bm25Score": 0.033097256,
+          "RerankScore": 0.003512882
+        },
+        {
+          "PageTitle": "MathNet.Filtering.TransferFunctions - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.TransferFunctions/index.htm",
+          "RelevanceScore": 0.29545453,
+          "VectorScore": 0.67675376,
+          "Bm25Score": 0.009357912,
+          "RerankScore": 0.014828062
+        },
+        {
+          "PageTitle": "IWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/IWindow.htm",
+          "RelevanceScore": 0.18333334,
+          "VectorScore": 0.68177843,
+          "Bm25Score": 0.013477021,
+          "RerankScore": 0.0036611473
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q08",
+      "Query": "What inputs are needed to calculate IIR bandpass filter coefficients?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 401,
+      "Top": [
+        {
+          "PageTitle": "IirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.IIR/IirCoefficients.htm",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8161366,
+          "Bm25Score": 1,
+          "RerankScore": 0.16506313
+        },
+        {
+          "PageTitle": "FirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.FIR/FirCoefficients.htm",
+          "RelevanceScore": 0.375,
+          "VectorScore": 0.77228165,
+          "Bm25Score": 0.6612533,
+          "RerankScore": 0.13674627
+        },
+        {
+          "PageTitle": "IirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Butterworth/IirCoefficients.htm",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.8114914,
+          "Bm25Score": 0.67899513,
+          "RerankScore": 0.062930614
+        },
+        {
+          "PageTitle": "OnlineIirFilter - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.IIR/OnlineIirFilter.htm",
+          "RelevanceScore": 0.28125,
+          "VectorScore": 0.8166646,
+          "Bm25Score": 0.5556335,
+          "RerankScore": 0.00595178
+        },
+        {
+          "PageTitle": "FilterType - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/FilterType.htm",
+          "RelevanceScore": 0.225,
+          "VectorScore": 0.7065293,
+          "Bm25Score": 0.607782,
+          "RerankScore": 0.010904677
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q09",
+      "Query": "How can a substitute always return the same result regardless of its method arguments?",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 524,
+      "Top": [
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.83480227,
+          "Bm25Score": 0.546907,
+          "RerankScore": 0.13329148
+        },
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.54545456,
+          "VectorScore": 0.8166174,
+          "Bm25Score": 0.45738384,
+          "RerankScore": 0.17848843
+        },
+        {
+          "PageTitle": "Return for any args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-any-args/index",
+          "RelevanceScore": 0.2857143,
+          "VectorScore": 0.8088132,
+          "Bm25Score": 1,
+          "RerankScore": 0.062951736
+        },
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 0.26666668,
+          "VectorScore": 0.82702196,
+          "Bm25Score": 0.61842066,
+          "RerankScore": 0.12168316
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs/index",
+          "RelevanceScore": 0.2,
+          "VectorScore": 0.7861644,
+          "Bm25Score": 0.5957372,
+          "RerankScore": 0.12506428
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q10",
+      "Query": "How do I raise a PropertyChanged event on a substitute when the event uses its own delegate type?",
+      "Library": "nsubstitute",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1250,
+      "Top": [
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events/index",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.73054683,
+          "Bm25Score": 1,
+          "RerankScore": 0.095856704
+        },
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events/index",
+          "RelevanceScore": 0.54545456,
+          "VectorScore": 0.76233435,
+          "Bm25Score": 0.6132958,
+          "RerankScore": 0.03686139
+        },
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events",
+          "RelevanceScore": 0.54545456,
+          "VectorScore": 0.76233435,
+          "Bm25Score": 0.6132958,
+          "RerankScore": 0.03686139
+        },
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events",
+          "RelevanceScore": 0.375,
+          "VectorScore": 0.7405855,
+          "Bm25Score": 0.99131423,
+          "RerankScore": 0.07050174
+        },
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.22222222,
+          "VectorScore": 0.716467,
+          "Bm25Score": 0.44559896,
+          "RerankScore": 0.045006193
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q11",
+      "Query": "How can I increment a counter after returning a value from a mocked call?",
+      "Library": "nsubstitute",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 485,
+      "Top": [
+        {
+          "PageTitle": "Multiple return values | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/multiple-returns",
+          "RelevanceScore": 0.53125,
+          "VectorScore": 0.7481026,
+          "Bm25Score": 0.5205375,
+          "RerankScore": 0.06344052
+        },
+        {
+          "PageTitle": "Return from a function | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-from-function/index",
+          "RelevanceScore": 0.5217391,
+          "VectorScore": 0.76425886,
+          "Bm25Score": 0.8195984,
+          "RerankScore": 0.013945137
+        },
+        {
+          "PageTitle": "Setting out and ref args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/setting-out-and-ref-arguments/index",
+          "RelevanceScore": 0.29545453,
+          "VectorScore": 0.7464536,
+          "Bm25Score": 1,
+          "RerankScore": 0.03472804
+        },
+        {
+          "PageTitle": "Callbacks, void calls and When..Do | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/callbacks/index",
+          "RelevanceScore": 0.28846154,
+          "VectorScore": 0.74578285,
+          "Bm25Score": 0.61767066,
+          "RerankScore": 0.05073745
+        },
+        {
+          "PageTitle": "Callbacks, void calls and When..Do | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/callbacks",
+          "RelevanceScore": 0.28846154,
+          "VectorScore": 0.74578285,
+          "Bm25Score": 0.61767066,
+          "RerankScore": 0.05073745
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q12",
+      "Query": "Why can substituting a class execute the real constructor, and why are interfaces safer?",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 0,
+      "ReviewedAnswerRank": 5,
+      "Review": "Equivalent /index page explains base-constructor execution and recommends interfaces.",
+      "TotalMs": 504,
+      "Top": [
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute/index",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.79408544,
+          "Bm25Score": 1,
+          "RerankScore": 0.08021318
+        },
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.7406527,
+          "Bm25Score": 0.74138916,
+          "RerankScore": 0.083938055
+        },
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute/index",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.7406527,
+          "Bm25Score": 0.74138916,
+          "RerankScore": 0.083938055
+        },
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.791343,
+          "Bm25Score": 0.9949013,
+          "RerankScore": 0.08021318
+        },
+        {
+          "PageTitle": "How NSubstitute works | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/how-nsub-works/index",
+          "RelevanceScore": 0.26666668,
+          "VectorScore": 0.7912847,
+          "Bm25Score": 0.9762771,
+          "RerankScore": 0.048934884
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q13",
+      "Query": "Can I verify calls to virtual methods on a partial substitute without replacing their implementations?",
+      "Library": "nsubstitute",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 479,
+      "Top": [
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.7705756,
+          "Bm25Score": 0.98045516,
+          "RerankScore": 0.073235534
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs",
+          "RelevanceScore": 0.5416667,
+          "VectorScore": 0.83205247,
+          "Bm25Score": 0.98284584,
+          "RerankScore": 0.048248146
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs/index",
+          "RelevanceScore": 0.35,
+          "VectorScore": 0.82600224,
+          "Bm25Score": 1,
+          "RerankScore": 0.06327424
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs/index",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.80873024,
+          "Bm25Score": 0.9145268,
+          "RerankScore": 0.067583226
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.80873024,
+          "Bm25Score": 0.9145268,
+          "RerankScore": 0.067583226
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q14",
+      "Query": "Which OllamaSharp object retains conversation history including tool calls across messages?",
+      "Library": "ollamasharp",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1010,
+      "Top": [
+        {
+          "PageTitle": "awaescher/OllamaSharp: README.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/README.md",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.76695865,
+          "Bm25Score": 1,
+          "RerankScore": 0.14514974
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/tool-support.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/tool-support.md",
+          "RelevanceScore": 0.5555556,
+          "VectorScore": 0.80322796,
+          "Bm25Score": 0.28645527,
+          "RerankScore": 0.026129397
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/chat-and-generate.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/chat-and-generate.md",
+          "RelevanceScore": 0.28846154,
+          "VectorScore": 0.73443604,
+          "Bm25Score": 0.5751393,
+          "RerankScore": 0.10196809
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Chat.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Chat.cs",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.79599917,
+          "Bm25Score": 0.37983057,
+          "RerankScore": 0.030566262
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/introduction.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/introduction.md",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.7773806,
+          "Bm25Score": 0.5974437,
+          "RerankScore": 0.047031935
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q15",
+      "Query": "How can I use Ollama through Microsoft's common chat and embedding interfaces so I can swap providers?",
+      "Library": "ollamasharp",
+      "ExactRank": 3,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 501,
+      "Top": [
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/getting-started.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/getting-started.md",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.8035325,
+          "Bm25Score": 0.7785094,
+          "RerankScore": 0.19176647
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: AGENTS.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/AGENTS.md",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.765376,
+          "Bm25Score": 1,
+          "RerankScore": 0.23588052
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: README.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/README.md",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.80127054,
+          "Bm25Score": 0.7868786,
+          "RerankScore": 0.14742137
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/introduction.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/introduction.md",
+          "RelevanceScore": 0.20833333,
+          "VectorScore": 0.75182873,
+          "Bm25Score": 0.31598383,
+          "RerankScore": 0.061956335
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: AGENTS.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/AGENTS.md",
+          "RelevanceScore": 0.20833333,
+          "VectorScore": 0.7397092,
+          "Bm25Score": 0.6166368,
+          "RerankScore": 0.0973716
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q16",
+      "Query": "Which Ollama exception constructor preserves an underlying exception together with a message?",
+      "Library": "ollamasharp",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 504,
+      "Top": [
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Models/Exceptions/OllamaException.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Models/Exceptions/OllamaException.cs",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8008773,
+          "Bm25Score": 0.86608845,
+          "RerankScore": 0.03585849
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Models/Exceptions/ModelDoesNotSupportToolsException.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Models/Exceptions/ModelDoesNotSupportToolsException.cs",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.7641333,
+          "Bm25Score": 0.812297,
+          "RerankScore": 0.019069286
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/advanced-configuration.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/advanced-configuration.md",
+          "RelevanceScore": 0.27631578,
+          "VectorScore": 0.69961023,
+          "Bm25Score": 0.46051624,
+          "RerankScore": 0.021606814
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Models/Exceptions/ResponseError.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Models/Exceptions/ResponseError.cs",
+          "RelevanceScore": 0.26666668,
+          "VectorScore": 0.7504133,
+          "Bm25Score": 0.8232066,
+          "RerankScore": 0.014985454
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: AGENTS.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/AGENTS.md",
+          "RelevanceScore": 0.20833333,
+          "VectorScore": 0.70582086,
+          "Bm25Score": 0.77161145,
+          "RerankScore": 0.019056082
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q17",
+      "Query": "How do I save several named Math.NET matrices to a MATLAB file?",
+      "Library": "mathnet-numerics",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 1199,
+      "Top": [
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.84690344,
+          "Bm25Score": 0.58785814,
+          "RerankScore": 0.21246669
+        },
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles.html",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.84690344,
+          "Bm25Score": 0.58785814,
+          "RerankScore": 0.21246669
+        },
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.7703676,
+          "Bm25Score": 1,
+          "RerankScore": 0.3241041
+        },
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles.html",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.7703676,
+          "Bm25Score": 1,
+          "RerankScore": 0.3241041
+        },
+        {
+          "PageTitle": "NIST MatrixMarket Text Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatrixMarket",
+          "RelevanceScore": 0.2,
+          "VectorScore": 0.7572139,
+          "Bm25Score": 0.62474996,
+          "RerankScore": 0.1249111
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q18",
+      "Query": "How can I get the upper triangular factor and solve equations after computing an LU factorization?",
+      "Library": "mathnet-numerics",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 442,
+      "Top": [
+        {
+          "PageTitle": "ManagedLinearAlgebraProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.LinearAlgebra/ManagedLinearAlgebraProvider.htm",
+          "RelevanceScore": 1,
+          "VectorScore": 0.80270034,
+          "Bm25Score": 0.8126368,
+          "RerankScore": 0.11936854
+        },
+        {
+          "PageTitle": "LU<T> - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.LinearAlgebra.Factorization/LU%601.htm",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.7707571,
+          "Bm25Score": 1,
+          "RerankScore": 0.09106195
+        },
+        {
+          "PageTitle": "QR<T> - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.LinearAlgebra.Factorization/QR%601.htm",
+          "RelevanceScore": 0.23809524,
+          "VectorScore": 0.7212139,
+          "Bm25Score": 0.5963429,
+          "RerankScore": 0.040806804
+        },
+        {
+          "PageTitle": "ManagedLinearAlgebraProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.LinearAlgebra/ManagedLinearAlgebraProvider.htm",
+          "RelevanceScore": 0.225,
+          "VectorScore": 0.7574502,
+          "Bm25Score": 0.35865265,
+          "RerankScore": 0.031366467
+        },
+        {
+          "PageTitle": "LU<T> - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.LinearAlgebra.Factorization/LU%601.htm",
+          "RelevanceScore": 0.19607843,
+          "VectorScore": 0.7495999,
+          "Bm25Score": 0.756876,
+          "RerankScore": 0.012253955
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q19",
+      "Query": "Can I release a linear algebra provider's cached buffers and handles without unloading the provider?",
+      "Library": "mathnet-numerics",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 481,
+      "Top": [
+        {
+          "PageTitle": "ILinearAlgebraProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.LinearAlgebra/ILinearAlgebraProvider.htm",
+          "RelevanceScore": 0.5833333,
+          "VectorScore": 0.8575424,
+          "Bm25Score": 0.87257326,
+          "RerankScore": 0.04022868
+        },
+        {
+          "PageTitle": "ISparseSolverProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.SparseSolver/ISparseSolverProvider.htm",
+          "RelevanceScore": 0.5833333,
+          "VectorScore": 0.8575424,
+          "Bm25Score": 0.87257326,
+          "RerankScore": 0.04022868
+        },
+        {
+          "PageTitle": "Intel Math Kernel Library (MKL)",
+          "PageUrl": "https://numerics.mathdotnet.com/MKL",
+          "RelevanceScore": 0.53333336,
+          "VectorScore": 0.7212667,
+          "Bm25Score": 0.6772943,
+          "RerankScore": 0.059571072
+        },
+        {
+          "PageTitle": "Intel Math Kernel Library (MKL)",
+          "PageUrl": "https://numerics.mathdotnet.com/MKL.html",
+          "RelevanceScore": 0.53333336,
+          "VectorScore": 0.7212667,
+          "Bm25Score": 0.6772943,
+          "RerankScore": 0.059571072
+        },
+        {
+          "PageTitle": "Math.NET Numerics Release Notes",
+          "PageUrl": "https://numerics.mathdotnet.com/ReleaseNotes",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.7514414,
+          "Bm25Score": 1,
+          "RerankScore": 0.040793683
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q20",
+      "Query": "How can I read the vertical data coordinate at the point hit by a SciChart hit test?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 2446,
+      "Top": [
+        {
+          "PageTitle": "HitTest(Point) Method | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.AxisBase~HitTest(Point).html",
+          "RelevanceScore": 0.5555556,
+          "VectorScore": 0.7943909,
+          "Bm25Score": 0.6759759,
+          "RerankScore": 0.060624525
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_properties.html",
+          "RelevanceScore": 0.52380955,
+          "VectorScore": 0.81005925,
+          "Bm25Score": 0.6635836,
+          "RerankScore": 0.022215385
+        },
+        {
+          "PageTitle": "HitTest(Point) Method | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.PolarXAxis~HitTest(Point).html",
+          "RelevanceScore": 0.29545453,
+          "VectorScore": 0.7931354,
+          "Bm25Score": 0.6796564,
+          "RerankScore": 0.056696694
+        },
+        {
+          "PageTitle": "StackedColumnSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.StackedColumnSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.7832254,
+          "Bm25Score": 0.7990587,
+          "RerankScore": 0.035466336
+        },
+        {
+          "PageTitle": "StackedBoxPlotSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.StackedBoxPlotSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.2,
+          "VectorScore": 0.77583224,
+          "Bm25Score": 0.7990587,
+          "RerankScore": 0.032554105
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q21",
+      "Query": "Where does the negative logarithmic tick provider validate that the visible minimum is less than the maximum?",
+      "Library": "scichart-wpf",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1532,
+      "Top": [
+        {
+          "PageTitle": "IsParamsValid Method (LogarithmicNegativeTickProvider) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Numerics.TickProviders.LogarithmicNegativeTickProvider~IsParamsValid.html",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8221092,
+          "Bm25Score": 0.022834303,
+          "RerankScore": 0.0842463
+        },
+        {
+          "PageTitle": "",
+          "PageUrl": "https://www.scichart.com/documentation/win/current//sitemap.xml",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.7966149,
+          "Bm25Score": 0,
+          "RerankScore": 0.053902972
+        },
+        {
+          "PageTitle": "",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/sitemap.xml",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.7966149,
+          "Bm25Score": 0,
+          "RerankScore": 0.053902972
+        },
+        {
+          "PageTitle": "IsNegativeLogarithmicAxis Property (ILogarithmicAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.LogarithmicAxis.ILogarithmicAxis~IsNegativeLogarithmicAxis.html",
+          "RelevanceScore": 0.27272728,
+          "VectorScore": 0.7648531,
+          "Bm25Score": 0.5789236,
+          "RerankScore": 0.0071159955
+        },
+        {
+          "PageTitle": "CalculateMinorTicks Method (LogarithmicNegativeTickProvider) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Numerics.TickProviders.LogarithmicNegativeTickProvider~CalculateMinorTicks.html",
+          "RelevanceScore": 0.26666668,
+          "VectorScore": 0.81536895,
+          "Bm25Score": 0.024361117,
+          "RerankScore": 0.05050227
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q22",
+      "Query": "Which category numeric axis method supplies the default nonzero range when its visible range is undefined?",
+      "Library": "scichart-wpf",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1926,
+      "Top": [
+        {
+          "PageTitle": "GetDefaultNonZeroRange Method (CategoryNumericAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.CategoryNumericAxis~GetDefaultNonZeroRange.html",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.86392576,
+          "Bm25Score": 0.5425031,
+          "RerankScore": 0.078587756
+        },
+        {
+          "PageTitle": "GetDefaultNonZeroRange Method (NumericAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.NumericAxis~GetDefaultNonZeroRange.html",
+          "RelevanceScore": 0.625,
+          "VectorScore": 0.84557533,
+          "Bm25Score": 0.5425031,
+          "RerankScore": 0.09919727
+        },
+        {
+          "PageTitle": "Axis Types in SciChart | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/Axis%20Types%20in%20SciChart.html",
+          "RelevanceScore": 0.35,
+          "VectorScore": 0.7891374,
+          "Bm25Score": 0.83217126,
+          "RerankScore": 0.04083157
+        },
+        {
+          "PageTitle": "GetDefaultNonZeroRange Method (CategoryDateTimeAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.CategoryDateTimeAxis~GetDefaultNonZeroRange.html",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.84689856,
+          "Bm25Score": 0.5425031,
+          "RerankScore": 0.067441784
+        },
+        {
+          "PageTitle": "GetDefaultNonZeroRange Method (NumericAxis3D) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting3D~SciChart.Charting3D.Axis.NumericAxis3D~GetDefaultNonZeroRange.html",
+          "RelevanceScore": 0.20833333,
+          "VectorScore": 0.8352874,
+          "Bm25Score": 0.5425031,
+          "RerankScore": 0.052059185
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q23",
+      "Query": "What SciChart extension finds a visual child of a requested type?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1806,
+      "Top": [
+        {
+          "PageTitle": "RadialPanel Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Themes.RadialPanel_methods.html",
+          "RelevanceScore": 0.5714286,
+          "VectorScore": 0.7775583,
+          "Bm25Score": 0.8053516,
+          "RerankScore": 0.08351722
+        },
+        {
+          "PageTitle": "SciChart.Charting.Visuals.Constants Namespace | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Constants_namespace.html",
+          "RelevanceScore": 0.5294118,
+          "VectorScore": 0.8149316,
+          "Bm25Score": 0.04332892,
+          "RerankScore": 0.0059794798
+        },
+        {
+          "PageTitle": "SciChartPerformanceOverlay Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.SciChartPerformanceOverlay_methods.html",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.78108734,
+          "Bm25Score": 0.81205887,
+          "RerankScore": 0.051382605
+        },
+        {
+          "PageTitle": "LegendModifier3D Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting3D~SciChart.Charting3D.Modifiers.LegendModifier3D_methods.html",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.7797792,
+          "Bm25Score": 0.81205887,
+          "RerankScore": 0.047954466
+        },
+        {
+          "PageTitle": "ObjectModel3D Class Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting3D~SciChart.Charting3D.Visuals.Object.ObjectModel3D_properties.html",
+          "RelevanceScore": 0.16666667,
+          "VectorScore": 0.8105072,
+          "Bm25Score": 0.037810225,
+          "RerankScore": 0.006620151
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q24",
+      "Query": "How long must the silent gap between serial frames be, including after a reply before addressing another inverter?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 3,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 616,
+      "Top": [
+        {
+          "PageTitle": "TOSVERT VF-S15 Series",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5e1f3f81c721d671c6d6a5b90e9a85ac22821bd720d0edf569c0eaf5e454a366#section-0010",
+          "RelevanceScore": 1,
+          "VectorScore": 0.82630676,
+          "Bm25Score": 1,
+          "RerankScore": 0.013171281
+        },
+        {
+          "PageTitle": "VF-S15_Communication_E6581913",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-b9a53cb52f90f9119da6314a4dcaacaf840316a3c40b43050f3ecbb8e3213305#section-0000",
+          "RelevanceScore": 0.375,
+          "VectorScore": 0.8105277,
+          "Bm25Score": 0.98968935,
+          "RerankScore": 0.010361407
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-666fe72ca05a55d1c1afec50e7f28b0e5fc1d6e0d9c855c69efad1dd74f88828#section-0021",
+          "RelevanceScore": 0.375,
+          "VectorScore": 0.8052181,
+          "Bm25Score": 0.93995565,
+          "RerankScore": 0.012595737
+        },
+        {
+          "PageTitle": "VF-AS3_Communication_E6582143",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-cfac824c7277b45bdbd18a22d652d53592f1069a59d6cfd8a571421dde8ac857#section-0000",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.80725425,
+          "Bm25Score": 0.7516731,
+          "RerankScore": 0.01046235
+        },
+        {
+          "PageTitle": "TOSVERT VF-S11",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-27302a01137309bd926b44250177cc06a46c409cd2c293ad42bde59d89880b17#section-0068",
+          "RelevanceScore": 0.17142858,
+          "VectorScore": 0.8002262,
+          "Bm25Score": 0.3848235,
+          "RerankScore": 0.009830896
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q25",
+      "Query": "What operating history is used to estimate the remaining life of an inverter's cooling fan and capacitors?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 682,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0668",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.8024709,
+          "Bm25Score": 0.7524753,
+          "RerankScore": 0.03572344
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0461",
+          "RelevanceScore": 0.55,
+          "VectorScore": 0.83173525,
+          "Bm25Score": 0.9837395,
+          "RerankScore": 0.020112457
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0592",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.81103855,
+          "Bm25Score": 0.6487986,
+          "RerankScore": 0.023537386
+        },
+        {
+          "PageTitle": "VF-S9_Instruction_E6580757",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-7416e81b1c01bc53386c2d587264ab2e0fc2c06d4ad34a0173b1a3fa2295c2d4#section-0001",
+          "RelevanceScore": 0.28846154,
+          "VectorScore": 0.79014456,
+          "Bm25Score": 0.6848978,
+          "RerankScore": 0.02704598
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0428",
+          "RelevanceScore": 0.2857143,
+          "VectorScore": 0.80103105,
+          "Bm25Score": 1,
+          "RerankScore": 0.017815433
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q26",
+      "Query": "In which monitor mode can I use a shortcut list for frequently adjusted inverter parameters?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 639,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0154",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.8109558,
+          "Bm25Score": 1,
+          "RerankScore": 0.121169105
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-0248",
+          "RelevanceScore": 0.5217391,
+          "VectorScore": 0.84517276,
+          "Bm25Score": 0.19018124,
+          "RerankScore": 0.004570409
+        },
+        {
+          "PageTitle": "VF-AS3_Instruction_E6582062",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-530684e489ccfaafb1c71898dabcbae6ef5404f5a08c4c28b6595be0c1677d5a#section-0000",
+          "RelevanceScore": 0.2857143,
+          "VectorScore": 0.81235784,
+          "Bm25Score": 0.45324442,
+          "RerankScore": 0.042087786
+        },
+        {
+          "PageTitle": "VF-S15_Instruction_E6582175",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-da1c003b3d57ff7423e698c81921da0d3e615b11e5ab00e5dcaf3fadd09f2dde#section-0000",
+          "RelevanceScore": 0.26666668,
+          "VectorScore": 0.81883895,
+          "Bm25Score": 0.695461,
+          "RerankScore": 0.041174408
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0402",
+          "RelevanceScore": 0.19791667,
+          "VectorScore": 0.8451397,
+          "Bm25Score": 0.38203746,
+          "RerankScore": 0.007848118
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q27",
+      "Query": "How long must an output phase failure persist before the VF-S9 trips and activates its relay?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 4,
+      "AutomaticAnswerRank": 4,
+      "ReviewedAnswerRank": 4,
+      "Review": null,
+      "TotalMs": 574,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-1004",
+          "RelevanceScore": 0.52380955,
+          "VectorScore": 0.81378734,
+          "Bm25Score": 0.3057555,
+          "RerankScore": 0.016042976
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0407",
+          "RelevanceScore": 0.52380955,
+          "VectorScore": 0.7408434,
+          "Bm25Score": 0.6020714,
+          "RerankScore": 0.27581063
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0422",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.75665057,
+          "Bm25Score": 0.7973575,
+          "RerankScore": 0.06426851
+        },
+        {
+          "PageTitle": "VF-S9_Instruction_E6580757",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-7416e81b1c01bc53386c2d587264ab2e0fc2c06d4ad34a0173b1a3fa2295c2d4#section-0000",
+          "RelevanceScore": 0.32142857,
+          "VectorScore": 0.7992106,
+          "Bm25Score": 0.5915111,
+          "RerankScore": 0.20426136
+        },
+        {
+          "PageTitle": "VF-S11_Instruction_E6581158",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-82d3d3a931895f6cea4daa212f34df268f4f27d60ae18021ca893bc2955711cf#section-0001",
+          "RelevanceScore": 0.19607843,
+          "VectorScore": 0.7497559,
+          "Bm25Score": 0.615825,
+          "RerankScore": 0.18771732
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q28",
+      "Query": "Which parameters set the speed reached frequency and its detection band?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 556,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0212",
+          "RelevanceScore": 1,
+          "VectorScore": 0.88207865,
+          "Bm25Score": 0.7566969,
+          "RerankScore": 0.08508898
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0240",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.8325688,
+          "Bm25Score": 0.8457171,
+          "RerankScore": 0.05549087
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0277",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.86586964,
+          "Bm25Score": 0.75881,
+          "RerankScore": 0.056741457
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-0613",
+          "RelevanceScore": 0.175,
+          "VectorScore": 0.8367818,
+          "Bm25Score": 0.6015235,
+          "RerankScore": 0.009429295
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-0615",
+          "RelevanceScore": 0.15625,
+          "VectorScore": 0.82173544,
+          "Bm25Score": 0.5725578,
+          "RerankScore": 0.017498963
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Original",
+      "Id": "q29",
+      "Query": "How can I adjust the output current meter when the current reading fluctuates too much?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 517,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0156",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8580351,
+          "Bm25Score": 0.8163731,
+          "RerankScore": 0.7057703
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0182",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.81910443,
+          "Bm25Score": 0.78364676,
+          "RerankScore": 0.37749046
+        },
+        {
+          "PageTitle": "VF-S9_Instruction_E6580757",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-7416e81b1c01bc53386c2d587264ab2e0fc2c06d4ad34a0173b1a3fa2295c2d4#section-0000",
+          "RelevanceScore": 0.375,
+          "VectorScore": 0.7873153,
+          "Bm25Score": 1,
+          "RerankScore": 0.11342662
+        },
+        {
+          "PageTitle": "VF-S11_Instruction_E6581158",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-82d3d3a931895f6cea4daa212f34df268f4f27d60ae18021ca893bc2955711cf#section-0000",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.7757154,
+          "Bm25Score": 0.9935612,
+          "RerankScore": 0.13768443
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-0391",
+          "RelevanceScore": 0.15555556,
+          "VectorScore": 0.7922429,
+          "Bm25Score": 0.67531097,
+          "RerankScore": 0.08683221
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Holdout",
+      "Id": "h01",
+      "Query": "How do I make NSubstitute ignore every argument when returning a fixed value?",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 0,
+      "ReviewedAnswerRank": 1,
+      "Review": "Argument-matchers documentation supports the Arg.Any<T>() alternative; the ReturnsForAnyArgs shortcut was absent.",
+      "TotalMs": 496,
+      "Top": [
+        {
+          "PageTitle": "Argument matchers | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/argument-matchers/index",
+          "RelevanceScore": 0.5833333,
+          "VectorScore": 0.80253005,
+          "Bm25Score": 0.7203669,
+          "RerankScore": 0.1428576
+        },
+        {
+          "PageTitle": "Argument matchers | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/argument-matchers",
+          "RelevanceScore": 0.5833333,
+          "VectorScore": 0.80253005,
+          "Bm25Score": 0.7203669,
+          "RerankScore": 0.1428576
+        },
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 0.55,
+          "VectorScore": 0.82009405,
+          "Bm25Score": 1,
+          "RerankScore": 0.049434464
+        },
+        {
+          "PageTitle": "How NSubstitute works | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/how-nsub-works/index",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.78637207,
+          "Bm25Score": 0.9022207,
+          "RerankScore": 0.09054173
+        },
+        {
+          "PageTitle": "How NSubstitute works | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/how-nsub-works",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.78637207,
+          "Bm25Score": 0.9022207,
+          "RerankScore": 0.09054173
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Holdout",
+      "Id": "h02",
+      "Query": "Configure a substitute method to return 100 for every combination of inputs.",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 5,
+      "ReviewedAnswerRank": 5,
+      "Review": null,
+      "TotalMs": 486,
+      "Top": [
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.7731699,
+          "Bm25Score": 1,
+          "RerankScore": 0.06974719
+        },
+        {
+          "PageTitle": "Return for specific args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-args",
+          "RelevanceScore": 0.5555556,
+          "VectorScore": 0.77397233,
+          "Bm25Score": 0.115365945,
+          "RerankScore": 0.028882941
+        },
+        {
+          "PageTitle": "Safe configuration and overlapping calls | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/configure/index",
+          "RelevanceScore": 0.375,
+          "VectorScore": 0.73192054,
+          "Bm25Score": 0.8685383,
+          "RerankScore": 0.050380364
+        },
+        {
+          "PageTitle": "Safe configuration and overlapping calls | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/configure",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.72460043,
+          "Bm25Score": 0.8649138,
+          "RerankScore": 0.050380364
+        },
+        {
+          "PageTitle": "Return for any args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-any-args",
+          "RelevanceScore": 0.20833333,
+          "VectorScore": 0.77366084,
+          "Bm25Score": 0.23918329,
+          "RerankScore": 0.02376421
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Holdout",
+      "Id": "h03",
+      "Query": "Can I set a method return value without matching individual arguments in NSubstitute?",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 0,
+      "ReviewedAnswerRank": 4,
+      "Review": "Argument-matchers documentation supports the Arg.Any<T>() alternative; the ReturnsForAnyArgs shortcut was absent.",
+      "TotalMs": 473,
+      "Top": [
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 0.5416667,
+          "VectorScore": 0.8713194,
+          "Bm25Score": 1,
+          "RerankScore": 0.0956671
+        },
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.53125,
+          "VectorScore": 0.8401607,
+          "Bm25Score": 0.32414135,
+          "RerankScore": 0.1754865
+        },
+        {
+          "PageTitle": "Multiple return values | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/multiple-returns/index",
+          "RelevanceScore": 0.32142857,
+          "VectorScore": 0.84947896,
+          "Bm25Score": 0.6856019,
+          "RerankScore": 0.17426884
+        },
+        {
+          "PageTitle": "Argument matchers | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/argument-matchers/index",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.8182512,
+          "Bm25Score": 0.9187022,
+          "RerankScore": 0.14652391
+        },
+        {
+          "PageTitle": "Argument matchers | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/argument-matchers",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.8182512,
+          "Bm25Score": 0.9187022,
+          "RerankScore": 0.14652391
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Holdout",
+      "Id": "h04",
+      "Query": "Which property on SciChart HitTestInfo contains the data Y value?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 3354,
+      "Top": [
+        {
+          "PageTitle": "HitTestInfo Structure Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_members.html",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.8603671,
+          "Bm25Score": 0.8117447,
+          "RerankScore": 0.14040598
+        },
+        {
+          "PageTitle": "HeatmapSeriesInfo Class Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Model.ChartData.HeatmapSeriesInfo_properties.html",
+          "RelevanceScore": 0.53846157,
+          "VectorScore": 0.86073035,
+          "Bm25Score": 0.25775546,
+          "RerankScore": 0.074155025
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Fields",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_fields.html",
+          "RelevanceScore": 0.28333333,
+          "VectorScore": 0.8179412,
+          "Bm25Score": 1,
+          "RerankScore": 0.06551909
+        },
+        {
+          "PageTitle": "TernarySeriesInfo Class Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Model.ChartData.TernarySeriesInfo_properties.html",
+          "RelevanceScore": 0.28125,
+          "VectorScore": 0.81859475,
+          "Bm25Score": 0.37047303,
+          "RerankScore": 0.13165687
+        },
+        {
+          "PageTitle": "Metadata Property (HitTestInfo) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo~Metadata.html",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.81214225,
+          "Bm25Score": 0.8534651,
+          "RerankScore": 0.12812585
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Holdout",
+      "Id": "h05",
+      "Query": "Where is the Y coordinate of the closest data point in a SciChart hit-test result?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 3016,
+      "Top": [
+        {
+          "PageTitle": "ColumnSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.ColumnSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.54545456,
+          "VectorScore": 0.77741987,
+          "Bm25Score": 0.99129665,
+          "RerankScore": 0.07012938
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_properties.html",
+          "RelevanceScore": 0.5208333,
+          "VectorScore": 0.7983104,
+          "Bm25Score": 0.60318,
+          "RerankScore": 0.024166426
+        },
+        {
+          "PageTitle": "TernarySeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.TernarySeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.28846154,
+          "VectorScore": 0.7742061,
+          "Bm25Score": 0.9932232,
+          "RerankScore": 0.05300777
+        },
+        {
+          "PageTitle": "UniformVectorFieldHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.UniformVectorFieldHitTestProvider_methods.html",
+          "RelevanceScore": 0.27,
+          "VectorScore": 0.77439827,
+          "Bm25Score": 0.8935675,
+          "RerankScore": 0.067868724
+        },
+        {
+          "PageTitle": "CandlestickSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.CandlestickSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.19607843,
+          "VectorScore": 0.7748135,
+          "Bm25Score": 0.9825346,
+          "RerankScore": 0.06419551
+        }
+      ]
+    },
+    {
+      "Mode": "Onnx",
+      "Set": "Holdout",
+      "Id": "h06",
+      "Query": "After hit testing a SciChart series, how do I get the vertical data value?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 2472,
+      "Top": [
+        {
+          "PageTitle": "Breaking Changes in SciChart WPF SDK v6 | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/Breaking%20Changes%20in%20SciChart%20WPF%20SDK%20v6.html",
+          "RelevanceScore": 0.75,
+          "VectorScore": 0.79018015,
+          "Bm25Score": 0.93922484,
+          "RerankScore": 0.1090123
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_members.html",
+          "RelevanceScore": 0.5833333,
+          "VectorScore": 0.8059305,
+          "Bm25Score": 0.486046,
+          "RerankScore": 0.06755693
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_properties.html",
+          "RelevanceScore": 0.41666666,
+          "VectorScore": 0.8040563,
+          "Bm25Score": 0.4782071,
+          "RerankScore": 0.10062673
+        },
+        {
+          "PageTitle": "BaseColumnRenderableSeries Class Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.BaseColumnRenderableSeries_members.html",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.7925066,
+          "Bm25Score": 0.75067604,
+          "RerankScore": 0.07844145
+        },
+        {
+          "PageTitle": "CustomRenderableSeries Class Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.CustomRenderableSeries_members.html",
+          "RelevanceScore": 0.29166666,
+          "VectorScore": 0.7925066,
+          "Bm25Score": 0.75067604,
+          "RerankScore": 0.07844145
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q01",
+      "Query": "How do I install files under the current user's Documents or profile folder?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 69,
+      "Top": [
+        {
+          "PageTitle": "How to deploy files in the User Profile folder",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-qa-install-user-profile-folder.html",
+          "RelevanceScore": 0.8,
+          "VectorScore": 0.81012976,
+          "Bm25Score": 0.9746951,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How to install files in a custom folder",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-custom-folder.html",
+          "RelevanceScore": 0.55,
+          "VectorScore": 0.7711586,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How to install some files in a folder of a previously installed application?",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-another-application.html",
+          "RelevanceScore": 0.32222223,
+          "VectorScore": 0.7819076,
+          "Bm25Score": 0.35115656,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How to install files in a custom folder",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qa-custom-folder.html",
+          "RelevanceScore": 0.23333333,
+          "VectorScore": 0.77622676,
+          "Bm25Score": 0.41394746,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Files and Folders",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qat-files-folders.html",
+          "RelevanceScore": 0.23333333,
+          "VectorScore": 0.76001036,
+          "Bm25Score": 0.67547965,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q02",
+      "Query": "What Microsoft checks should validate an installation package and identify common consistency errors?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 65,
+      "Top": [
+        {
+          "PageTitle": "Validating Installation Packages",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/validating-installation-packages.html",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8906977,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Package Validation",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/package-validation.html",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.8176808,
+          "Bm25Score": 0.74870914,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Build-Time Best Practices",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/build-best-practices.html",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.7916945,
+          "Bm25Score": 0.57396203,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How to Perform MSI Package Validation Using a .CUB File",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/msi-full-package-validation-cub-file.html",
+          "RelevanceScore": 0.18333334,
+          "VectorScore": 0.79075265,
+          "Bm25Score": 0.38411564,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Most important blog articles",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/blog-articles.html",
+          "RelevanceScore": 0.17948718,
+          "VectorScore": 0.7514629,
+          "Bm25Score": 0.6599713,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q03",
+      "Query": "How can I remove an XML file from an Advanced Installer project using the command line?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 92,
+      "Top": [
+        {
+          "PageTitle": "Delete XML File Command Option",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/delete-xml-file.html",
+          "RelevanceScore": 0.63076925,
+          "VectorScore": 0.8953858,
+          "Bm25Score": 0.69940066,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Files and Folders",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/qat-files-folders.html",
+          "RelevanceScore": 0.41428572,
+          "VectorScore": 0.761788,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Import XML File Command Option",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/import-xml-file.html",
+          "RelevanceScore": 0.32,
+          "VectorScore": 0.8130385,
+          "Bm25Score": 0.91771096,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Delete File Command Option",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/del-file.html",
+          "RelevanceScore": 0.31379312,
+          "VectorScore": 0.84936756,
+          "Bm25Score": 0.3379152,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Delete Temporary File Command Option",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/del-temp-file.html",
+          "RelevanceScore": 0.21081083,
+          "VectorScore": 0.82360405,
+          "Bm25Score": 0.25400358,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q04",
+      "Query": "Where can I add elements and entire subtrees to an MSIX package manifest?",
+      "Library": "advanced-installer",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 276,
+      "Top": [
+        {
+          "PageTitle": "Manifest Editor Page",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/win-store-app-manifest-editor.html",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8810133,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Edit Manifest Element dialog",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/win-store-app-new-manifest-element.html",
+          "RelevanceScore": 0.33636364,
+          "VectorScore": 0.8200486,
+          "Bm25Score": 0.6417378,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Frequently Asked Questions about MSIX",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/faq-msix.html",
+          "RelevanceScore": 0.26,
+          "VectorScore": 0.7641132,
+          "Bm25Score": 0.9819339,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "MSIX Editor",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/msix-editor-mode.html",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.79942906,
+          "Bm25Score": 0.6855067,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "MSIX Tweaker",
+          "PageUrl": "http://127.0.0.1:8765/user-guide/msix-tweaker.html",
+          "RelevanceScore": 0.20833334,
+          "VectorScore": 0.76946396,
+          "Bm25Score": 0.8199284,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q05",
+      "Query": "Which Math.NET filter type rejects frequencies inside a band while passing frequencies outside it?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 563,
+      "Top": [
+        {
+          "PageTitle": "FilterType - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/FilterType.htm",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8515269,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "OnlineFilter - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/OnlineFilter.htm",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.7883344,
+          "Bm25Score": 0.3697988,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "MathNet.Filtering - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/index.htm",
+          "RelevanceScore": 0.21081083,
+          "VectorScore": 0.78097904,
+          "Bm25Score": 0.13136354,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "MathNet.Filtering.Windowing - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/index.htm",
+          "RelevanceScore": 0.15888889,
+          "VectorScore": 0.7783451,
+          "Bm25Score": 0.11466419,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Math.NET Filtering",
+          "PageUrl": "https://filtering.mathdotnet.com",
+          "RelevanceScore": 0.15238096,
+          "VectorScore": 0.7727636,
+          "Bm25Score": 0.30559543,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q06",
+      "Query": "How do I precompute flat top window coefficients and copy them into an array?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 3,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 40,
+      "Top": [
+        {
+          "PageTitle": "IWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/IWindow.htm",
+          "RelevanceScore": 0.62857145,
+          "VectorScore": 0.87556,
+          "Bm25Score": 0.51032585,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Window - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/Window.htm",
+          "RelevanceScore": 0.62857145,
+          "VectorScore": 0.87556,
+          "Bm25Score": 0.51032585,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "FlatTopWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/FlatTopWindow.htm",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.7994733,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "BlackmanWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/BlackmanWindow.htm",
+          "RelevanceScore": 0.35000002,
+          "VectorScore": 0.7751491,
+          "Bm25Score": 0.5412448,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TriangularWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/TriangularWindow.htm",
+          "RelevanceScore": 0.2857143,
+          "VectorScore": 0.77048755,
+          "Bm25Score": 0.5412448,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q07",
+      "Query": "For a bilinear transform of poles and zeros, is samplingTime the rate or its reciprocal, and are arrays modified?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1104,
+      "Top": [
+        {
+          "PageTitle": "BilinearTransform - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.TransferFunctions/BilinearTransform.htm",
+          "RelevanceScore": 1,
+          "VectorScore": 0.85476273,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "FirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.FIR/FirCoefficients.htm",
+          "RelevanceScore": 0.31538463,
+          "VectorScore": 0.69557494,
+          "Bm25Score": 0.033097256,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Math.NET Filtering Release Notes",
+          "PageUrl": "https://filtering.mathdotnet.com/ReleaseNotes.html",
+          "RelevanceScore": 0.2139535,
+          "VectorScore": 0.61648536,
+          "Bm25Score": 0.23741697,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "ArbitraryPeriodicSource - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.DataSources/ArbitraryPeriodicSource.htm",
+          "RelevanceScore": 0.2,
+          "VectorScore": 0.691542,
+          "Bm25Score": 0,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "IWindow - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Windowing/IWindow.htm",
+          "RelevanceScore": 0.16379312,
+          "VectorScore": 0.68177843,
+          "Bm25Score": 0.013477021,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q08",
+      "Query": "What inputs are needed to calculate IIR bandpass filter coefficients?",
+      "Library": "mathnet-filtering",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 45,
+      "Top": [
+        {
+          "PageTitle": "IirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.IIR/IirCoefficients.htm",
+          "RelevanceScore": 0.70000005,
+          "VectorScore": 0.8161366,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "OnlineIirFilter - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.IIR/OnlineIirFilter.htm",
+          "RelevanceScore": 0.68,
+          "VectorScore": 0.8166646,
+          "Bm25Score": 0.5556335,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "IirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.Butterworth/IirCoefficients.htm",
+          "RelevanceScore": 0.4,
+          "VectorScore": 0.8114914,
+          "Bm25Score": 0.67899513,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "FirCoefficients - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering.FIR/FirCoefficients.htm",
+          "RelevanceScore": 0.28333333,
+          "VectorScore": 0.77228165,
+          "Bm25Score": 0.6612533,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "FilterType - Math.NET Filtering Documentation",
+          "PageUrl": "https://filtering.mathdotnet.com/api/MathNet.Filtering/FilterType.htm",
+          "RelevanceScore": 0.16666667,
+          "VectorScore": 0.7065293,
+          "Bm25Score": 0.607782,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q09",
+      "Query": "How can a substitute always return the same result regardless of its method arguments?",
+      "Library": "nsubstitute",
+      "ExactRank": 4,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 75,
+      "Top": [
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.625,
+          "VectorScore": 0.83480227,
+          "Bm25Score": 0.546907,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Return for any args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-any-args/index",
+          "RelevanceScore": 0.45454547,
+          "VectorScore": 0.8088132,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 0.35714287,
+          "VectorScore": 0.82702196,
+          "Bm25Score": 0.61842066,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Return for any args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-any-args",
+          "RelevanceScore": 0.26666668,
+          "VectorScore": 0.8128158,
+          "Bm25Score": 0.98867637,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Return for all calls of a type | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-all/index",
+          "RelevanceScore": 0.22352941,
+          "VectorScore": 0.8268451,
+          "Bm25Score": 0.54064626,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q10",
+      "Query": "How do I raise a PropertyChanged event on a substitute when the event uses its own delegate type?",
+      "Library": "nsubstitute",
+      "ExactRank": 3,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 1147,
+      "Top": [
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events/index",
+          "RelevanceScore": 0.73333335,
+          "VectorScore": 0.76233435,
+          "Bm25Score": 0.6132958,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events",
+          "RelevanceScore": 0.73333335,
+          "VectorScore": 0.76233435,
+          "Bm25Score": 0.6132958,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events/index",
+          "RelevanceScore": 0.47500002,
+          "VectorScore": 0.73054683,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Raising events | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/raising-events",
+          "RelevanceScore": 0.32,
+          "VectorScore": 0.7405855,
+          "Bm25Score": 0.99131423,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute/index",
+          "RelevanceScore": 0.23076923,
+          "VectorScore": 0.75320774,
+          "Bm25Score": 0.32676473,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q11",
+      "Query": "How can I increment a counter after returning a value from a mocked call?",
+      "Library": "nsubstitute",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 42,
+      "Top": [
+        {
+          "PageTitle": "Return from a function | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-from-function/index",
+          "RelevanceScore": 0.73333335,
+          "VectorScore": 0.76425886,
+          "Bm25Score": 0.8195984,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Setting out and ref args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/setting-out-and-ref-arguments/index",
+          "RelevanceScore": 0.44285715,
+          "VectorScore": 0.7464536,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Replacing return values | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/replacing-return-values",
+          "RelevanceScore": 0.32000002,
+          "VectorScore": 0.7639912,
+          "Bm25Score": 0.2804587,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Setting out and ref args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/setting-out-and-ref-arguments",
+          "RelevanceScore": 0.26,
+          "VectorScore": 0.74929804,
+          "Bm25Score": 0.9931775,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Return from a function | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-from-function",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.76001185,
+          "Bm25Score": 0.812281,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q12",
+      "Query": "Why can substituting a class execute the real constructor, and why are interfaces safer?",
+      "Library": "nsubstitute",
+      "ExactRank": 4,
+      "AutomaticAnswerRank": 4,
+      "ReviewedAnswerRank": 4,
+      "Review": null,
+      "TotalMs": 39,
+      "Top": [
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute/index",
+          "RelevanceScore": 1,
+          "VectorScore": 0.79408544,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.791343,
+          "Bm25Score": 0.9949013,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How NSubstitute works | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/how-nsub-works/index",
+          "RelevanceScore": 0.33333334,
+          "VectorScore": 0.7912847,
+          "Bm25Score": 0.9762771,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How NSubstitute works | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/how-nsub-works",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.7864985,
+          "Bm25Score": 0.9706709,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Creating a substitute | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/creating-a-substitute",
+          "RelevanceScore": 0.1657143,
+          "VectorScore": 0.7406527,
+          "Bm25Score": 0.74138916,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q13",
+      "Query": "Can I verify calls to virtual methods on a partial substitute without replacing their implementations?",
+      "Library": "nsubstitute",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 47,
+      "Top": [
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs",
+          "RelevanceScore": 0.8,
+          "VectorScore": 0.83205247,
+          "Bm25Score": 0.98284584,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs/index",
+          "RelevanceScore": 0.70000005,
+          "VectorScore": 0.82600224,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs/index",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.80873024,
+          "Bm25Score": 0.9145268,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Partial subs and test spies | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/partial-subs",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.80873024,
+          "Bm25Score": 0.9145268,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.17083333,
+          "VectorScore": 0.7705756,
+          "Bm25Score": 0.98045516,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q14",
+      "Query": "Which OllamaSharp object retains conversation history including tool calls across messages?",
+      "Library": "ollamasharp",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 594,
+      "Top": [
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/tool-support.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/tool-support.md",
+          "RelevanceScore": 0.62222224,
+          "VectorScore": 0.80322796,
+          "Bm25Score": 0.28645527,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: README.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/README.md",
+          "RelevanceScore": 0.46,
+          "VectorScore": 0.76695865,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Chat.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Chat.cs",
+          "RelevanceScore": 0.34444445,
+          "VectorScore": 0.79599917,
+          "Bm25Score": 0.37983057,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/tool-support.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/tool-support.md",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.7824338,
+          "Bm25Score": 0.6013854,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/getting-started.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/getting-started.md",
+          "RelevanceScore": 0.22608696,
+          "VectorScore": 0.74749863,
+          "Bm25Score": 0.9053844,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q15",
+      "Query": "How can I use Ollama through Microsoft's common chat and embedding interfaces so I can swap providers?",
+      "Library": "ollamasharp",
+      "ExactRank": 3,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 44,
+      "Top": [
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/getting-started.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/getting-started.md",
+          "RelevanceScore": 0.73333335,
+          "VectorScore": 0.8035325,
+          "Bm25Score": 0.7785094,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: AGENTS.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/AGENTS.md",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.765376,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: README.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/README.md",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.80127054,
+          "Bm25Score": 0.7868786,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: docs/introduction.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/docs/introduction.md",
+          "RelevanceScore": 0.17352942,
+          "VectorScore": 0.75182873,
+          "Bm25Score": 0.31598383,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: index.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/index.md",
+          "RelevanceScore": 0.16666667,
+          "VectorScore": 0.74298525,
+          "Bm25Score": 0.5027598,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q16",
+      "Query": "Which Ollama exception constructor preserves an underlying exception together with a message?",
+      "Library": "ollamasharp",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 40,
+      "Top": [
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Models/Exceptions/OllamaException.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Models/Exceptions/OllamaException.cs",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8008773,
+          "Bm25Score": 0.86608845,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Models/Exceptions/ModelDoesNotSupportToolsException.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Models/Exceptions/ModelDoesNotSupportToolsException.cs",
+          "RelevanceScore": 0.4,
+          "VectorScore": 0.7641333,
+          "Bm25Score": 0.812297,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Models/Exceptions/ResponseError.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Models/Exceptions/ResponseError.cs",
+          "RelevanceScore": 0.4,
+          "VectorScore": 0.7504133,
+          "Bm25Score": 0.8232066,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: src/OllamaSharp/Models/ErrorResponse.cs",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/src/OllamaSharp/Models/ErrorResponse.cs",
+          "RelevanceScore": 0.16904762,
+          "VectorScore": 0.7285506,
+          "Bm25Score": 0.40053424,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "awaescher/OllamaSharp: README.md",
+          "PageUrl": "https://github.com/awaescher/OllamaSharp/blob/HEAD/README.md",
+          "RelevanceScore": 0.15208334,
+          "VectorScore": 0.68715495,
+          "Bm25Score": 0.8139222,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q17",
+      "Query": "How do I save several named Math.NET matrices to a MATLAB file?",
+      "Library": "mathnet-numerics",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 834,
+      "Top": [
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles",
+          "RelevanceScore": 0.64444447,
+          "VectorScore": 0.84690344,
+          "Bm25Score": 0.58785814,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles.html",
+          "RelevanceScore": 0.64444447,
+          "VectorScore": 0.84690344,
+          "Bm25Score": 0.58785814,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.7703676,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "MATLAB Level-5 Mat Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatlabFiles.html",
+          "RelevanceScore": 0.6,
+          "VectorScore": 0.7703676,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "NIST MatrixMarket Text Files",
+          "PageUrl": "https://numerics.mathdotnet.com/MatrixMarket",
+          "RelevanceScore": 0.25333333,
+          "VectorScore": 0.7572139,
+          "Bm25Score": 0.62474996,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q18",
+      "Query": "How can I get the upper triangular factor and solve equations after computing an LU factorization?",
+      "Library": "mathnet-numerics",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 58,
+      "Top": [
+        {
+          "PageTitle": "ManagedLinearAlgebraProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.LinearAlgebra/ManagedLinearAlgebraProvider.htm",
+          "RelevanceScore": 0.8,
+          "VectorScore": 0.80270034,
+          "Bm25Score": 0.8126368,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "LU<T> - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.LinearAlgebra.Factorization/LU%601.htm",
+          "RelevanceScore": 0.70000005,
+          "VectorScore": 0.7707571,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "LU<T> - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.LinearAlgebra.Factorization/LU%601.htm",
+          "RelevanceScore": 0.25333333,
+          "VectorScore": 0.7495999,
+          "Bm25Score": 0.756876,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "ManagedLinearAlgebraProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.LinearAlgebra/ManagedLinearAlgebraProvider.htm",
+          "RelevanceScore": 0.22500001,
+          "VectorScore": 0.7574502,
+          "Bm25Score": 0.35865265,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "ManagedLinearAlgebraProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.LinearAlgebra/ManagedLinearAlgebraProvider.htm",
+          "RelevanceScore": 0.17,
+          "VectorScore": 0.7550322,
+          "Bm25Score": 0.28887162,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q19",
+      "Query": "Can I release a linear algebra provider's cached buffers and handles without unloading the provider?",
+      "Library": "mathnet-numerics",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 65,
+      "Top": [
+        {
+          "PageTitle": "ILinearAlgebraProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.LinearAlgebra/ILinearAlgebraProvider.htm",
+          "RelevanceScore": 0.68,
+          "VectorScore": 0.8575424,
+          "Bm25Score": 0.87257326,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "ISparseSolverProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.SparseSolver/ISparseSolverProvider.htm",
+          "RelevanceScore": 0.68,
+          "VectorScore": 0.8575424,
+          "Bm25Score": 0.87257326,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Math.NET Numerics Release Notes",
+          "PageUrl": "https://numerics.mathdotnet.com/ReleaseNotes",
+          "RelevanceScore": 0.52,
+          "VectorScore": 0.7514414,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Math.NET Numerics Release Notes",
+          "PageUrl": "https://numerics.mathdotnet.com/ReleaseNotes.html",
+          "RelevanceScore": 0.52,
+          "VectorScore": 0.7514414,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "IFourierTransformProvider - Math.NET Numerics Documentation",
+          "PageUrl": "https://numerics.mathdotnet.com/api/MathNet.Numerics.Providers.FourierTransform/IFourierTransformProvider.htm",
+          "RelevanceScore": 0.25714287,
+          "VectorScore": 0.7753906,
+          "Bm25Score": 0.7525627,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q20",
+      "Query": "How can I read the vertical data coordinate at the point hit by a SciChart hit test?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1890,
+      "Top": [
+        {
+          "PageTitle": "HitTestInfo Structure Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_properties.html",
+          "RelevanceScore": 0.61,
+          "VectorScore": 0.81005925,
+          "Bm25Score": 0.6635836,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "StackedColumnSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.StackedColumnSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.44615385,
+          "VectorScore": 0.7832254,
+          "Bm25Score": 0.7990587,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "StackedBoxPlotSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.StackedBoxPlotSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.41764706,
+          "VectorScore": 0.77583224,
+          "Bm25Score": 0.7990587,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_members.html",
+          "RelevanceScore": 0.31142858,
+          "VectorScore": 0.8074031,
+          "Bm25Score": 0.69966155,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "HitTest Method (AxisBase) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.AxisBase~HitTest.html",
+          "RelevanceScore": 0.21111111,
+          "VectorScore": 0.79895836,
+          "Bm25Score": 0.68415177,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q21",
+      "Query": "Where does the negative logarithmic tick provider validate that the visible minimum is less than the maximum?",
+      "Library": "scichart-wpf",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 781,
+      "Top": [
+        {
+          "PageTitle": "IsParamsValid Method (LogarithmicNegativeTickProvider) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Numerics.TickProviders.LogarithmicNegativeTickProvider~IsParamsValid.html",
+          "RelevanceScore": 0.6117647,
+          "VectorScore": 0.8221092,
+          "Bm25Score": 0.022834303,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "IsNegativeLogarithmicAxis Property (ILogarithmicAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.LogarithmicAxis.ILogarithmicAxis~IsNegativeLogarithmicAxis.html",
+          "RelevanceScore": 0.41875002,
+          "VectorScore": 0.7648531,
+          "Bm25Score": 0.5789236,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "CalculateMinorTicks Method (LogarithmicNegativeTickProvider) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Numerics.TickProviders.LogarithmicNegativeTickProvider~CalculateMinorTicks.html",
+          "RelevanceScore": 0.3166667,
+          "VectorScore": 0.81536895,
+          "Bm25Score": 0.024361117,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "IsNegativeLogarithmicAxis Property (LogarithmicNumericAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.LogarithmicAxis.LogarithmicNumericAxis~IsNegativeLogarithmicAxis.html",
+          "RelevanceScore": 0.21363637,
+          "VectorScore": 0.7557916,
+          "Bm25Score": 0.5766929,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "IsParamsValid Method (LogarithmicNumericTickProvider) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Numerics.TickProviders.LogarithmicNumericTickProvider~IsParamsValid.html",
+          "RelevanceScore": 0.21176471,
+          "VectorScore": 0.8075632,
+          "Bm25Score": 0.022834303,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q22",
+      "Query": "Which category numeric axis method supplies the default nonzero range when its visible range is undefined?",
+      "Library": "scichart-wpf",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 840,
+      "Top": [
+        {
+          "PageTitle": "GetDefaultNonZeroRange Method (CategoryNumericAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.CategoryNumericAxis~GetDefaultNonZeroRange.html",
+          "RelevanceScore": 0.65000004,
+          "VectorScore": 0.86392576,
+          "Bm25Score": 0.5425031,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Axis Types in SciChart | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/Axis%20Types%20in%20SciChart.html",
+          "RelevanceScore": 0.41500002,
+          "VectorScore": 0.7891374,
+          "Bm25Score": 0.83217126,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "GetDefaultNonZeroRange Method (CategoryDateTimeAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.CategoryDateTimeAxis~GetDefaultNonZeroRange.html",
+          "RelevanceScore": 0.35000002,
+          "VectorScore": 0.84689856,
+          "Bm25Score": 0.5425031,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "GetDefaultNonZeroRange Method (NumericAxis) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.NumericAxis~GetDefaultNonZeroRange.html",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.84557533,
+          "Bm25Score": 0.5425031,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "IIndexAxis Interface",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Axes.IIndexAxis.html",
+          "RelevanceScore": 0.22222222,
+          "VectorScore": 0.7979749,
+          "Bm25Score": 0.82791394,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q23",
+      "Query": "What SciChart extension finds a visual child of a requested type?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 897,
+      "Top": [
+        {
+          "PageTitle": "SciChart.Charting.Visuals.Constants Namespace | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.Constants_namespace.html",
+          "RelevanceScore": 0.61538464,
+          "VectorScore": 0.8149316,
+          "Bm25Score": 0.04332892,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "SciChartPerformanceOverlay Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.SciChartPerformanceOverlay_methods.html",
+          "RelevanceScore": 0.4166667,
+          "VectorScore": 0.78108734,
+          "Bm25Score": 0.81205887,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "LegendModifier3D Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting3D~SciChart.Charting3D.Modifiers.LegendModifier3D_methods.html",
+          "RelevanceScore": 0.41500002,
+          "VectorScore": 0.7797792,
+          "Bm25Score": 0.81205887,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "ObjectModel3D Class Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting3D~SciChart.Charting3D.Visuals.Object.ObjectModel3D_properties.html",
+          "RelevanceScore": 0.3121212,
+          "VectorScore": 0.8105072,
+          "Bm25Score": 0.037810225,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "SciChart.Drawing.Extensions Namespace Inheritance Hierarchy",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Drawing~SciChart.Drawing.Extensions_namespace_hierarchy.html",
+          "RelevanceScore": 0.21818183,
+          "VectorScore": 0.806719,
+          "Bm25Score": 0.045371443,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q24",
+      "Query": "How long must the silent gap between serial frames be, including after a reply before addressing another inverter?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 4,
+      "AutomaticAnswerRank": 4,
+      "ReviewedAnswerRank": 4,
+      "Review": null,
+      "TotalMs": 120,
+      "Top": [
+        {
+          "PageTitle": "TOSVERT VF-S15 Series",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5e1f3f81c721d671c6d6a5b90e9a85ac22821bd720d0edf569c0eaf5e454a366#section-0010",
+          "RelevanceScore": 1,
+          "VectorScore": 0.82630676,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "VF-S15_Communication_E6581913",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-b9a53cb52f90f9119da6314a4dcaacaf840316a3c40b43050f3ecbb8e3213305#section-0000",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.8105277,
+          "Bm25Score": 0.98968935,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "VF-AS3_Communication_E6582143",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-cfac824c7277b45bdbd18a22d652d53592f1069a59d6cfd8a571421dde8ac857#section-0000",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.80725425,
+          "Bm25Score": 0.7516731,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-666fe72ca05a55d1c1afec50e7f28b0e5fc1d6e0d9c855c69efad1dd74f88828#section-0021",
+          "RelevanceScore": 0.25333333,
+          "VectorScore": 0.8052181,
+          "Bm25Score": 0.93995565,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "VF-AS3_Communication_E6582143",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-cfac824c7277b45bdbd18a22d652d53592f1069a59d6cfd8a571421dde8ac857#section-0000",
+          "RelevanceScore": 0.2,
+          "VectorScore": 0.8069796,
+          "Bm25Score": 0.48420495,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q25",
+      "Query": "What operating history is used to estimate the remaining life of an inverter's cooling fan and capacitors?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 1,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 126,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0461",
+          "RelevanceScore": 0.8,
+          "VectorScore": 0.83173525,
+          "Bm25Score": 0.9837395,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0428",
+          "RelevanceScore": 0.5,
+          "VectorScore": 0.80103105,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0592",
+          "RelevanceScore": 0.32857144,
+          "VectorScore": 0.81103855,
+          "Bm25Score": 0.6487986,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0667",
+          "RelevanceScore": 0.28,
+          "VectorScore": 0.80534506,
+          "Bm25Score": 0.74931175,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0668",
+          "RelevanceScore": 0.22,
+          "VectorScore": 0.8024709,
+          "Bm25Score": 0.7524753,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q26",
+      "Query": "In which monitor mode can I use a shortcut list for frequently adjusted inverter parameters?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 2,
+      "AutomaticAnswerRank": 2,
+      "ReviewedAnswerRank": 2,
+      "Review": null,
+      "TotalMs": 133,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-0248",
+          "RelevanceScore": 0.6105263,
+          "VectorScore": 0.84517276,
+          "Bm25Score": 0.19018124,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0154",
+          "RelevanceScore": 0.41935486,
+          "VectorScore": 0.8109558,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0402",
+          "RelevanceScore": 0.32666668,
+          "VectorScore": 0.8451397,
+          "Bm25Score": 0.38203746,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "VF-S15_Instruction_E6582175",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-da1c003b3d57ff7423e698c81921da0d3e615b11e5ab00e5dcaf3fadd09f2dde#section-0000",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.83803815,
+          "Bm25Score": 0.49005124,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "VF-S15_Instruction_E6582175",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-da1c003b3d57ff7423e698c81921da0d3e615b11e5ab00e5dcaf3fadd09f2dde#section-0000",
+          "RelevanceScore": 0.23529412,
+          "VectorScore": 0.81883895,
+          "Bm25Score": 0.695461,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q27",
+      "Query": "How long must an output phase failure persist before the VF-S9 trips and activates its relay?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 0,
+      "ReviewedAnswerRank": 0,
+      "Review": null,
+      "TotalMs": 96,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-1004",
+          "RelevanceScore": 0.6121212,
+          "VectorScore": 0.81378734,
+          "Bm25Score": 0.3057555,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0422",
+          "RelevanceScore": 0.43333334,
+          "VectorScore": 0.75665057,
+          "Bm25Score": 0.7973575,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-1005",
+          "RelevanceScore": 0.31176472,
+          "VectorScore": 0.8107017,
+          "Bm25Score": 0.30547908,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-1002",
+          "RelevanceScore": 0.216,
+          "VectorScore": 0.8069515,
+          "Bm25Score": 0.38056388,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-1006",
+          "RelevanceScore": 0.21538462,
+          "VectorScore": 0.74311614,
+          "Bm25Score": 0.7868015,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q28",
+      "Query": "Which parameters set the speed reached frequency and its detection band?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 90,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0212",
+          "RelevanceScore": 0.68,
+          "VectorScore": 0.88207865,
+          "Bm25Score": 0.7566969,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0240",
+          "RelevanceScore": 0.4857143,
+          "VectorScore": 0.8325688,
+          "Bm25Score": 0.8457171,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0277",
+          "RelevanceScore": 0.4,
+          "VectorScore": 0.86586964,
+          "Bm25Score": 0.75881,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-0613",
+          "RelevanceScore": 0.22500001,
+          "VectorScore": 0.8367818,
+          "Bm25Score": 0.6015235,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-5dcc2db81b6f2a685fb5e834708d77666d9a0ab1f34680fc536f06c86a8a4b96#section-0704",
+          "RelevanceScore": 0.21935484,
+          "VectorScore": 0.7872052,
+          "Bm25Score": 0.8374432,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Original",
+      "Id": "q29",
+      "Query": "How can I adjust the output current meter when the current reading fluctuates too much?",
+      "Library": "toshiba-manuals",
+      "ExactRank": 3,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 137,
+      "Top": [
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-bcbef20a7f788498d3437563783cd5a0d6b1b1cd3f7bb8ca64888aa114a333e0#section-0156",
+          "RelevanceScore": 0.6666667,
+          "VectorScore": 0.8580351,
+          "Bm25Score": 0.8163731,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "VF-S9_Instruction_E6580757",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-7416e81b1c01bc53386c2d587264ab2e0fc2c06d4ad34a0173b1a3fa2295c2d4#section-0000",
+          "RelevanceScore": 0.4857143,
+          "VectorScore": 0.7873153,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-eb3a34403b3c5d6c62df3d7462df2ed629b637ce556d014fec607357efb0a287#section-0182",
+          "RelevanceScore": 0.35714287,
+          "VectorScore": 0.81910443,
+          "Bm25Score": 0.78364676,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "VF-S11_Instruction_E6581158",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-82d3d3a931895f6cea4daa212f34df268f4f27d60ae18021ca893bc2955711cf#section-0000",
+          "RelevanceScore": 0.25454545,
+          "VectorScore": 0.7757154,
+          "Bm25Score": 0.9935612,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TOSHIBA",
+          "PageUrl": "saddlerag://library/toshiba-manuals/documents/source-document-ebd86ecaf25bc42d50ca8fd5e1450a72af31a863937540ea46b938c940ba441e#section-0160",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.8037977,
+          "Bm25Score": 0.73655546,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Holdout",
+      "Id": "h01",
+      "Query": "How do I make NSubstitute ignore every argument when returning a fixed value?",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 0,
+      "ReviewedAnswerRank": 0,
+      "Review": null,
+      "TotalMs": 39,
+      "Top": [
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 1,
+          "VectorScore": 0.82009405,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Return for all calls of a type | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-all/index",
+          "RelevanceScore": 0.31,
+          "VectorScore": 0.80808944,
+          "Bm25Score": 0.34194395,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Auto and recursive mocks | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/auto-and-recursive-mocks/index",
+          "RelevanceScore": 0.23333333,
+          "VectorScore": 0.8079448,
+          "Bm25Score": 0.56676173,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How NSubstitute works | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/how-nsub-works/index",
+          "RelevanceScore": 0.23157895,
+          "VectorScore": 0.78637207,
+          "Bm25Score": 0.9022207,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "How NSubstitute works | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/how-nsub-works",
+          "RelevanceScore": 0.23157895,
+          "VectorScore": 0.78637207,
+          "Bm25Score": 0.9022207,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Holdout",
+      "Id": "h02",
+      "Query": "Configure a substitute method to return 100 for every combination of inputs.",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 43,
+      "Top": [
+        {
+          "PageTitle": "Return for specific args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-args",
+          "RelevanceScore": 0.6114286,
+          "VectorScore": 0.77397233,
+          "Bm25Score": 0.115365945,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 0.55,
+          "VectorScore": 0.7731699,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Return for any args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-any-args",
+          "RelevanceScore": 0.31818184,
+          "VectorScore": 0.77366084,
+          "Bm25Score": 0.23918329,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Safe configuration and overlapping calls | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/configure/index",
+          "RelevanceScore": 0.21935484,
+          "VectorScore": 0.73192054,
+          "Bm25Score": 0.8685383,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Return for any args | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/return-for-any-args/index",
+          "RelevanceScore": 0.21904762,
+          "VectorScore": 0.77321947,
+          "Bm25Score": 0.24090351,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Holdout",
+      "Id": "h03",
+      "Query": "Can I set a method return value without matching individual arguments in NSubstitute?",
+      "Library": "nsubstitute",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 0,
+      "ReviewedAnswerRank": 4,
+      "Review": "Argument-matchers documentation supports the Arg.Any<T>() alternative; the ReturnsForAnyArgs shortcut was absent.",
+      "TotalMs": 43,
+      "Top": [
+        {
+          "PageTitle": "Setting a return value | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/set-return-value/index",
+          "RelevanceScore": 1,
+          "VectorScore": 0.8713194,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Replacing return values | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/replacing-return-values",
+          "RelevanceScore": 0.32666668,
+          "VectorScore": 0.85140556,
+          "Bm25Score": 0.5953079,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Replacing return values | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/replacing-return-values/index",
+          "RelevanceScore": 0.22857143,
+          "VectorScore": 0.8508938,
+          "Bm25Score": 0.60028094,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Argument matchers | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/argument-matchers/index",
+          "RelevanceScore": 0.22,
+          "VectorScore": 0.8182512,
+          "Bm25Score": 0.9187022,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Argument matchers | NSubstitute",
+          "PageUrl": "https://nsubstitute.github.io/help/argument-matchers",
+          "RelevanceScore": 0.22,
+          "VectorScore": 0.8182512,
+          "Bm25Score": 0.9187022,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Holdout",
+      "Id": "h04",
+      "Query": "Which property on SciChart HitTestInfo contains the data Y value?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 1751,
+      "Top": [
+        {
+          "PageTitle": "HeatmapSeriesInfo Class Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Model.ChartData.HeatmapSeriesInfo_properties.html",
+          "RelevanceScore": 0.6088889,
+          "VectorScore": 0.86073035,
+          "Bm25Score": 0.25775546,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Fields",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_fields.html",
+          "RelevanceScore": 0.44,
+          "VectorScore": 0.8179412,
+          "Bm25Score": 1,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_members.html",
+          "RelevanceScore": 0.4,
+          "VectorScore": 0.8603671,
+          "Bm25Score": 0.8117447,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_properties.html",
+          "RelevanceScore": 0.24000001,
+          "VectorScore": 0.8485696,
+          "Bm25Score": 0.7101311,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "YValue Property (HitTestInfo) | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo~YValue.html",
+          "RelevanceScore": 0.23,
+          "VectorScore": 0.84106386,
+          "Bm25Score": 0.78783077,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Holdout",
+      "Id": "h05",
+      "Query": "Where is the Y coordinate of the closest data point in a SciChart hit-test result?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 1,
+      "ReviewedAnswerRank": 1,
+      "Review": null,
+      "TotalMs": 2475,
+      "Top": [
+        {
+          "PageTitle": "HitTestInfo Structure Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_properties.html",
+          "RelevanceScore": 0.6085107,
+          "VectorScore": 0.7983104,
+          "Bm25Score": 0.60318,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "TernarySeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.TernarySeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.42857143,
+          "VectorScore": 0.7742061,
+          "Bm25Score": 0.9932232,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_members.html",
+          "RelevanceScore": 0.30869567,
+          "VectorScore": 0.7939391,
+          "Bm25Score": 0.6068388,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "StackedColumnSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.StackedColumnSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.26666668,
+          "VectorScore": 0.77929217,
+          "Bm25Score": 0.9930887,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "ScatterSeriesHitTestProvider Class Methods",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTesters.ScatterSeriesHitTestProvider_methods.html",
+          "RelevanceScore": 0.25,
+          "VectorScore": 0.7922328,
+          "Bm25Score": 0.9825346,
+          "RerankScore": null
+        }
+      ]
+    },
+    {
+      "Mode": "Off",
+      "Set": "Holdout",
+      "Id": "h06",
+      "Query": "After hit testing a SciChart series, how do I get the vertical data value?",
+      "Library": "scichart-wpf",
+      "ExactRank": 0,
+      "AutomaticAnswerRank": 3,
+      "ReviewedAnswerRank": 3,
+      "Review": null,
+      "TotalMs": 1876,
+      "Top": [
+        {
+          "PageTitle": "HitTestInfo Structure Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_members.html",
+          "RelevanceScore": 0.625,
+          "VectorScore": 0.8059305,
+          "Bm25Score": 0.486046,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "Breaking Changes in SciChart WPF SDK v6 | WPF Chart Documentation",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/Breaking%20Changes%20in%20SciChart%20WPF%20SDK%20v6.html",
+          "RelevanceScore": 0.45000002,
+          "VectorScore": 0.79018015,
+          "Bm25Score": 0.93922484,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "HitTestInfo Structure Properties",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.HitTestInfo_properties.html",
+          "RelevanceScore": 0.32352942,
+          "VectorScore": 0.8040563,
+          "Bm25Score": 0.4782071,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "BaseColumnRenderableSeries Class Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.BaseColumnRenderableSeries_members.html",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.7925066,
+          "Bm25Score": 0.75067604,
+          "RerankScore": null
+        },
+        {
+          "PageTitle": "CustomRenderableSeries Class Members",
+          "PageUrl": "https://www.scichart.com/documentation/win/current/SciChart.Charting~SciChart.Charting.Visuals.RenderableSeries.CustomRenderableSeries_members.html",
+          "RelevanceScore": 0.3,
+          "VectorScore": 0.7925066,
+          "Bm25Score": 0.75067604,
+          "RerankScore": null
+        }
+      ]
+    }
+  ]
+}
