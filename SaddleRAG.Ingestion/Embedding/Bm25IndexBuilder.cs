@@ -14,7 +14,7 @@ namespace SaddleRAG.Ingestion.Embedding;
 
 /// <summary>
 ///     Builds a sharded BM25 inverted index from a library's chunk
-///     content. Postings are partitioned across <see cref="DefaultShardCount" />
+///     content, page title, and source filename. Postings are partitioned across <see cref="DefaultShardCount" />
 ///     buckets via stable hash on the term, so any single shard fits
 ///     comfortably in a Mongo document for the corpus sizes SaddleRAG is
 ///     built for. The repository layer applies further per-term and
@@ -28,7 +28,7 @@ public static class Bm25IndexBuilder
 {
     /// <summary>
     ///     Build a sharded BM25 index over the supplied chunks. Reads
-    ///     each chunk's Id and Content fields; produces inverted postings
+    ///     each chunk's Id, Content, PageTitle, and source filename; produces inverted postings
     ///     keyed by term, partitioned into <paramref name="shardCount" />
     ///     shards. Returns the inline <see cref="Bm25Stats" /> and the
     ///     full shard list — caller persists shards via
@@ -60,7 +60,8 @@ public static class Bm25IndexBuilder
                             DocLengths = docLengths,
                             DocumentCount = documentCount,
                             AverageDocLength = avg,
-                            ShardCount = shardCount
+                            ShardCount = shardCount,
+                            TextVersion = CurrentTextVersion
                         };
 
         var result = new Bm25BuildResult { Stats = stats, Shards = shards };
@@ -130,9 +131,10 @@ public static class Bm25IndexBuilder
                                  Dictionary<string, int> docLengths)
     {
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var searchableText = GetSearchableText(chunk);
 
         // 1) Lowercase prose tokens.
-        foreach(var match in smProseTokenRegex.Matches(chunk.Content).Where(m => m.Value.Length >= MinTokenLength))
+        foreach(var match in smProseTokenRegex.Matches(searchableText).Where(m => m.Value.Length >= MinTokenLength))
         {
             var lower = match.Value.ToLowerInvariant();
             counts[lower] = counts.TryGetValue(lower, out var c) ? c + 1 : 1;
@@ -143,7 +145,7 @@ public static class Bm25IndexBuilder
         //    like "axisfault.disabled" matches an indexed
         //    "AxisFault.Disabled". The prose tokenizer above can't bridge
         //    that gap because it splits on the separators.
-        foreach(var token in IdentifierTokenizer.EmitRawAndLowercase(chunk.Content, MinTokenLength))
+        foreach(var token in IdentifierTokenizer.EmitRawAndLowercase(searchableText, MinTokenLength))
             counts[token] = counts.TryGetValue(token, out var c) ? c + 1 : 1;
 
         var docLength = counts.Values.Sum();
@@ -163,6 +165,26 @@ public static class Bm25IndexBuilder
             }
         }
     }
+
+    private static string GetSearchableText(DocChunk chunk)
+    {
+        // Manual identity often exists only in the title or source filename.
+        // Include it in the same index as prose, without changing stored text
+        // or embeddings. Index duplicate title/filename metadata only once.
+        // Normalize separators because imported paths can come from Windows.
+        var filename = Path.GetFileNameWithoutExtension(chunk.DocumentSource?.RelativePath.Replace('\\', '/'));
+        var headings = new[] { chunk.PageTitle, filename }
+                       .Where(value => !string.IsNullOrWhiteSpace(value))
+                       .Distinct(StringComparer.OrdinalIgnoreCase);
+        var result = string.Join('\n', headings.Append(chunk.Content));
+        return result;
+    }
+
+    /// <summary>
+    ///     Version 2 includes source titles and filenames. Older indexes remain
+    ///     readable and acquire these terms when their metadata is rebuilt.
+    /// </summary>
+    public const int CurrentTextVersion = 2;
 
     private const int MinTokenLength = 2;
     private const int DefaultShardCount = 64;

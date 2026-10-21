@@ -1,0 +1,2 @@
+[fix/service-health-and-ollama] Verify title and source filename keyword retrieval against all 29 questions, six holdouts and new VF-S9 phrasings with DirectML on/off; record quality and timing before changing the live sorter setting.
+[fix/service-health-and-ollama] Run clean solution build and full tests, install combined package, rebuild existing keyword indexes, and verify installed health and search without changing the live sorter default.

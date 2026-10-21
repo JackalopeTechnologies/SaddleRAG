@@ -27,7 +27,7 @@ public static class RescrubTools
     [Description("Queue a background job that re-extracts parser-derived metadata from chunks already stored for " +
                  "(library, version). Does NOT re-crawl, re-chunk, or re-embed. Updates Symbols[], QualifiedName, " +
                  "ParserVersion, optional Category reclassification, and the derived library_indexes " +
-                 "(CodeFenceSymbols + Manifest). Use this when parser, extractor, classifier, or index-building logic " +
+                 "(keyword search over text, titles and source filenames; CodeFenceSymbols; Manifest). Use this when parser, extractor, classifier, or index-building logic " +
                  "changed but the stored chunk text is still valid. Returns a JobId immediately — poll " +
                  "get_reextract_status(jobId) for completion. When done the result includes counts, a sample of per-chunk " +
                  "diffs, and a BoundaryHint field: null (healthy), 'rechunk_library may help' (5%–10% boundary issues), " +
@@ -49,7 +49,7 @@ public static class RescrubTools
                                                     [Description("Skip the pre-flight chunk-boundary audit (typically only used for tests)."
                                                                 )]
                                                     bool skipBoundaryAudit = false,
-                                                    [Description("If true (default), rebuild CodeFenceSymbols and Manifest."
+                                                    [Description("If true (default), rebuild keyword search over text, titles and source filenames, CodeFenceSymbols and Manifest."
                                                                 )]
                                                     bool rebuildIndexes = true,
                                                     [Description("Optional cap for spot-checking large libraries.")]
