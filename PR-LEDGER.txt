@@ -1,0 +1,2 @@
+[fix/service-health-and-ollama] Complete the isolated Google versus Nomic embedding comparison and record results in issue #189 without switching the live model.
+[fix/service-health-and-ollama] Complete a clean solution rebuild and full test run after the embedding changes before pushing.

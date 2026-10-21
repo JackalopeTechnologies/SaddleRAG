@@ -5,6 +5,8 @@
 
 #region Usings
 
+using System.Globalization;
+using System.Net;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
@@ -14,191 +16,185 @@ using SaddleRAG.Core.Interfaces;
 
 #endregion
 
-
 namespace SaddleRAG.Ingestion.Embedding;
 
-/// <summary>
-///     Embedding provider using Ollama via OllamaSharp.
-///     Supports any Ollama embedding model (nomic-embed-text, mxbai-embed-large, etc.).
-/// </summary>
+/// <summary>Embeds ordered batches through Ollama with bounded model retention.</summary>
 public class OllamaEmbeddingProvider : IEmbeddingProvider
-
 {
     public OllamaEmbeddingProvider(IOptions<OllamaSettings> settings,
                                    ILogger<OllamaEmbeddingProvider> logger)
-        : this(settings, logger, new OllamaApiClient(new Uri(settings.Value.Endpoint)))
+        : this(settings, logger, CreateClient(settings))
     {
     }
 
-    /// <summary>
-    ///     Test seam: lets a test supply the Ollama client and see the requests sent.
-    /// </summary>
+    /// <summary>Allows request-level testing without a running Ollama server.</summary>
     internal OllamaEmbeddingProvider(IOptions<OllamaSettings> settings,
                                      ILogger<OllamaEmbeddingProvider> logger,
                                      OllamaApiClient client)
-
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(client);
-
         mSettings = settings.Value;
-
+        ValidateSettings(mSettings);
         mLogger = logger;
-
         mClient = client;
     }
 
-
-    private readonly OllamaApiClient mClient;
-
-    private readonly ILogger<OllamaEmbeddingProvider> mLogger;
-
-    private readonly OllamaSettings mSettings;
-
-
     /// <inheritdoc />
-
     public string ProviderId => ProviderIdName;
 
-
     /// <inheritdoc />
-
     public string ModelName => mSettings.EmbeddingModel;
 
-
     /// <inheritdoc />
-
     public int Dimensions => mSettings.EmbeddingDimensions;
-
 
     /// <inheritdoc />
     public async Task<float[][]> EmbedAsync(IReadOnlyList<string> texts,
                                             EmbedRole role = EmbedRole.Document,
                                             CancellationToken ct = default)
-
     {
         ArgumentNullException.ThrowIfNull(texts);
-        // OllamaEmbeddingProvider does not apply task prefixes; the role
-        // parameter is honored by asymmetric ONNX models only. Reading
-        // the value silences any "unused parameter" lint.
-        _ = role;
+        ct.ThrowIfCancellationRequested();
+        string prefix = SelectPrefix(role);
+        // Validate the entire call before sending any part of it to Ollama.
+        foreach (string text in texts)
+            ArgumentNullException.ThrowIfNull(text);
 
+        var result = new float[texts.Count][];
+        for (var offset = 0; offset < texts.Count; offset += mSettings.EmbeddingBatchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+            int count = Math.Min(mSettings.EmbeddingBatchSize, texts.Count - offset);
+            var input = new string[count];
+            for (var index = 0; index < count; index++)
+                input[index] = prefix + texts[offset + index];
 
-        float[][] allEmbeddings = [];
-
+            float[][] batch = await EmbedBatchWithRetryAsync(input, ct);
+            Array.Copy(batch, sourceIndex: 0, result, offset, count);
+        }
 
         if (texts.Count > 0)
-
-        {
-            allEmbeddings = new float[texts.Count][];
-
-
-            for(var i = 0; i < texts.Count; i++)
-
-            {
-                allEmbeddings[i] = await EmbedSingleWithRetryAsync(texts[i], ct);
-
-
-                if ((i + 1) % LogProgressInterval == 0)
-
-                    mLogger.LogDebug("Embedded {Count}/{Total} texts", i + 1, texts.Count);
-            }
-
-
-            mLogger.LogInformation("Embedded {Count} texts via Ollama ({Model})",
-                                   texts.Count,
-                                   mSettings.EmbeddingModel
-                                  );
-        }
-
-
-        return allEmbeddings;
-    }
-
-
-    private async Task<float[]> EmbedSingleWithRetryAsync(string text, CancellationToken ct)
-
-    {
-        float[] result = [];
-
-        var attempt = 0;
-
-        var succeeded = false;
-
-
-        while (!succeeded && attempt < MaxRetryAttempts)
-
-        {
-            try
-
-            {
-                if (attempt > 0)
-
-                {
-                    int delayMs = InitialRetryDelayMs * (1 << (attempt - 1));
-
-                    mLogger.LogWarning("Embedding retry attempt {Attempt}/{Max} after {Delay}ms",
-                                       attempt + 1,
-                                       MaxRetryAttempts,
-                                       delayMs
-                                      );
-
-                    await Task.Delay(delayMs, ct);
-                }
-
-
-                var response = await mClient.EmbedAsync(new EmbedRequest
-
-                                                            {
-                                                                Model = mSettings.EmbeddingModel,
-
-                                                                Input = [text],
-
-                              KeepAlive = null
-                                                            },
-                                                        ct
-                                                       );
-
-
-                if (response.Embeddings == null || response.Embeddings.Count == 0)
-
-                    throw new InvalidOperationException("Ollama returned null or empty embeddings for the input text.");
-
-
-                result = response.Embeddings[index: 0].Select(d => d).ToArray();
-
-                succeeded = true;
-            }
-
-            catch(Exception ex) when(attempt < MaxRetryAttempts - 1)
-
-            {
-                mLogger.LogWarning(ex, "Embedding attempt {Attempt} failed", attempt + 1);
-            }
-
-
-            attempt++;
-        }
-
-
+            mLogger.LogInformation("Embedded {Count} texts via Ollama ({Model}) as {Role}",
+                                   texts.Count, ModelName, role);
         return result;
     }
 
+    private string SelectPrefix(EmbedRole role)
+    {
+        if (!Enum.IsDefined(role))
+            throw new ArgumentOutOfRangeException(nameof(role));
 
-    /// <summary>
-    ///     Public identifier persisted to <c>LibraryVersionRecord.EmbeddingProviderId</c>
-    ///     so other components (notably <c>McpWarmupService</c>) can detect which
-    ///     stored libraries were embedded under Ollama and route their model names
-    ///     through <c>OllamaBootstrapper</c> at startup. ONNX-embedded libraries
-    ///     persist their own provider id (<c>"onnx"</c>) and must be skipped by
-    ///     the Ollama bootstrap path — Ollama would 404 on Hugging Face names like
-    ///     <c>nomic-embed-text-v1.5</c>.
-    /// </summary>
+        var result = string.Empty;
+        if (mSettings.EmbeddingUseTaskPrefixes)
+        {
+            string family = ModelName.Split(':')[0];
+            result = (family, role) switch
+            {
+                ("nomic-embed-text", EmbedRole.Document) => NomicDocumentPrefix,
+                ("nomic-embed-text", EmbedRole.Query) => NomicQueryPrefix,
+                ("embeddinggemma" or "embeddinggemma-2", EmbedRole.Document) => GemmaDocumentPrefix,
+                ("embeddinggemma" or "embeddinggemma-2", EmbedRole.Query) => GemmaQueryPrefix,
+                _ => throw new InvalidOperationException(
+                    $"No task instructions are defined for Ollama embedding model '{ModelName}'. " +
+                    UnsupportedTaskInstructionsAdvice)
+            };
+        }
+        return result;
+    }
+
+    private async Task<float[][]> EmbedBatchWithRetryAsync(string[] input, CancellationToken ct)
+    {
+        float[][] result = [];
+        var succeeded = false;
+        for (var attempt = 0; attempt < MaxRetryAttempts && !succeeded; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (attempt > 0)
+                    await Task.Delay(InitialRetryDelayMs * (1 << (attempt - 1)), ct);
+
+                EmbedResponse response = await mClient.EmbedAsync(new EmbedRequest
+                {
+                    Model = ModelName,
+                    Input = [..input],
+                    KeepAlive = mSettings.EmbeddingKeepAliveSeconds.ToString(CultureInfo.InvariantCulture) + "s",
+                    // Reject oversize inputs; silently dropping content damages retrieval.
+                    Truncate = false,
+                    Options = new RequestOptions { NumThread = mSettings.EmbeddingThreads }
+                }, ct);
+                result = ValidateResponse(response, input.Length);
+                succeeded = true;
+            }
+            catch (Exception ex) when (attempt < MaxRetryAttempts - 1 && IsTransient(ex, ct))
+            {
+                mLogger.LogWarning(ex, "Ollama embedding attempt {Attempt} failed; retrying", attempt + 1);
+            }
+        }
+        return result;
+    }
+
+    private float[][] ValidateResponse(EmbedResponse response, int expectedCount)
+    {
+        if (response.Embeddings == null || response.Embeddings.Count != expectedCount)
+            throw new InvalidDataException($"Ollama returned {response.Embeddings?.Count ?? 0} embeddings; expected {expectedCount}.");
+
+        var result = new float[expectedCount][];
+        for (var index = 0; index < expectedCount; index++)
+        {
+            float[]? vector = response.Embeddings[index];
+            if (vector == null || vector.Length != Dimensions)
+                throw new InvalidDataException($"Ollama embedding {index} has {vector?.Length ?? 0} dimensions; expected {Dimensions}.");
+            if (vector.Any(value => !float.IsFinite(value)) || !vector.Any(value => value != 0))
+                throw new InvalidDataException($"Ollama embedding {index} contains non-finite values or has zero length.");
+            result[index] = vector;
+        }
+        return result;
+    }
+
+    private static bool IsTransient(Exception error, CancellationToken ct)
+    {
+        bool result = !ct.IsCancellationRequested && error switch
+        {
+            HttpRequestException request => request.StatusCode is null or HttpStatusCode.RequestTimeout
+                or HttpStatusCode.TooManyRequests || (int)request.StatusCode >= (int)HttpStatusCode.InternalServerError,
+            TaskCanceledException => true,
+            _ => false
+        };
+        return result;
+    }
+
+    private static OllamaApiClient CreateClient(IOptions<OllamaSettings> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ValidateSettings(settings.Value);
+        return new OllamaApiClient(new Uri(settings.Value.Endpoint));
+    }
+
+    private static void ValidateSettings(OllamaSettings settings)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settings.EmbeddingModel);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(settings.EmbeddingDimensions);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(settings.EmbeddingBatchSize);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(settings.EmbeddingBatchSize, OllamaSettings.MaximumEmbeddingBatchSize);
+        ArgumentOutOfRangeException.ThrowIfNegative(settings.EmbeddingKeepAliveSeconds);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(settings.EmbeddingKeepAliveSeconds, OllamaSettings.MaximumEmbeddingKeepAliveSeconds);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(settings.EmbeddingThreads);
+    }
+
+    /// <summary>Identifier persisted with Ollama-embedded library versions.</summary>
     public const string ProviderIdName = "ollama";
+    private const string NomicDocumentPrefix = "search_document: ";
+    private const string UnsupportedTaskInstructionsAdvice =
+        "Choose a supported model or disable EmbeddingUseTaskPrefixes for unprefixed embeddings.";
+    private const string NomicQueryPrefix = "search_query: ";
+    private const string GemmaDocumentPrefix = "title: none | text: ";
+    private const string GemmaQueryPrefix = "task: search result | query: ";
     private const int MaxRetryAttempts = 3;
-
     private const int InitialRetryDelayMs = 1000;
-
-    private const int LogProgressInterval = 50;
+    private readonly OllamaApiClient mClient;
+    private readonly ILogger<OllamaEmbeddingProvider> mLogger;
+    private readonly OllamaSettings mSettings;
 }

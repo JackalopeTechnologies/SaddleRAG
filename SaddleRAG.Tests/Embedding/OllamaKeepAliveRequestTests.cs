@@ -17,15 +17,15 @@ using SaddleRAG.Ingestion.Recon;
 namespace SaddleRAG.Tests.Embedding;
 
 /// <summary>
-///     Ordinary requests leave retention to the operator's Ollama configuration.
+///     Embeddings use bounded retention; generation respects the server setting.
 /// </summary>
 public sealed class OllamaKeepAliveRequestTests
 {
     [Fact]
-    public async Task EmbeddingRequestsRespectServerRetention()
+    public async Task EmbeddingRequestsUseBoundedRetention()
     {
         var handler = new RecordingOllamaHandler("{\"model\":\"nomic-embed-text\",\"embeddings\":[[0.1,0.2,0.3]]}");
-        var provider = new OllamaEmbeddingProvider(Options.Create(new OllamaSettings()),
+        var provider = new OllamaEmbeddingProvider(Options.Create(new OllamaSettings { EmbeddingDimensions = 3 }),
                                                    NullLogger<OllamaEmbeddingProvider>.Instance,
                                                    MakeClient(handler)
                                                   );
@@ -33,7 +33,7 @@ public sealed class OllamaKeepAliveRequestTests
         await provider.EmbedAsync(["hello"], ct: TestContext.Current.CancellationToken);
 
         Assert.Equal("/api/embed", handler.LastPath);
-        Assert.DoesNotContain("\"keep_alive\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.Contains("\"keep_alive\":\"60s\"", handler.LastBody, StringComparison.Ordinal);
     }
 
     [Fact]

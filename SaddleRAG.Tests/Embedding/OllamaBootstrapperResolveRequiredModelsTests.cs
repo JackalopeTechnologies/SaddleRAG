@@ -48,11 +48,11 @@ public sealed class OllamaBootstrapperResolveRequiredModelsTests
         var settings = MakeSettings(embedding: "nomic-embed", classification: "phi4-mini");
 
         var required = OllamaBootstrapper.ResolveRequiredModels(settings,
-                                                                additionalModels: ["llama3.2:3b", "qwen2.5-coder"],
+                                                                additionalModels: ["llama3.2:3b", "devstral-small-2"],
                                                                 ollamaClassifierActive: true);
 
         Assert.Contains("llama3.2:3b", required);
-        Assert.Contains("qwen2.5-coder", required);
+        Assert.Contains("devstral-small-2", required);
         Assert.Equal(expected: 4, required.Count);
     }
 
@@ -74,11 +74,11 @@ public sealed class OllamaBootstrapperResolveRequiredModelsTests
         var settings = MakeSettings(embedding: "nomic-embed", classification: "phi4-mini");
 
         var required = OllamaBootstrapper.ResolveRequiredModels(settings,
-                                                                additionalModels: ["llama3.2", string.Empty, "qwen"],
+                                                                additionalModels: ["llama3.2", string.Empty, "phi3:mini"],
                                                                 ollamaClassifierActive: true);
 
         Assert.Contains("llama3.2", required);
-        Assert.Contains("qwen", required);
+        Assert.Contains("phi3:mini", required);
         Assert.DoesNotContain(string.Empty, required);
         Assert.Equal(expected: 4, required.Count);
     }
