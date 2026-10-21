@@ -50,6 +50,7 @@ public static class SearchTools
         public required float VectorScore { get; init; }
         public required float Bm25Score { get; init; }
         public float? RerankScore { get; init; }
+        public bool SourceIdentityMatch { get; init; }
     }
 
     [McpServerTool(Name = "search_docs")]
@@ -816,21 +817,24 @@ public static class SearchTools
         ArgumentNullException.ThrowIfNull(metrics);
         ArgumentException.ThrowIfNullOrEmpty(query);
         ArgumentNullException.ThrowIfNull(hybrid);
+        var sourceMatches = DocumentIdentitySearchPolicy.FindMatches(query,
+            hybrid.Where(candidate => candidate.HybridScore > 0).Select(candidate => candidate.Chunk));
         IReadOnlyList<RankedResult> result;
 
         if (!rerankActive)
         {
-            result = hybrid.OrderByDescending(c => c.HybridScore)
-                           .Take(maxResults)
-                           .Select(c => new RankedResult
+            result = hybrid.Select(c => new RankedResult
                                             {
                                                 Chunk = c.Chunk,
-                                                FinalScore = (float) c.HybridScore,
+                                                FinalScore = (float) c.HybridScore + SourceIdentityPriority(sourceMatches, c.Chunk.Id),
+                                                SourceIdentityMatch = sourceMatches.Contains(c.Chunk.Id),
                                                 VectorScore = c.VectorScore,
                                                 Bm25Score = (float) c.Bm25Score,
                                                 RerankScore = null
                                             }
                                   )
+                           .OrderByDescending(c => c.FinalScore)
+                           .Take(maxResults)
                            .ToList();
         }
         else
@@ -841,6 +845,7 @@ public static class SearchTools
                                                      hybrid,
                                                      maxResults,
                                                      maxReRankCandidates,
+                                                     sourceMatches,
                                                      ct
                                                     );
         }
@@ -861,11 +866,13 @@ public static class SearchTools
         IReadOnlyList<HybridCandidate> hybrid,
         int maxResults,
         int maxReRankCandidates,
+        IReadOnlySet<string> sourceMatches,
         CancellationToken ct)
     {
         var hybridByChunkId = hybrid.ToDictionary(c => c.Chunk.Id, c => c, StringComparer.Ordinal);
         var reRankCandidateCount = ResolveReRankCandidateCount(hybrid.Count, maxReRankCandidates);
-        var reRankCandidates = hybrid.Take(reRankCandidateCount).ToList();
+        var reRankCandidates = hybrid.OrderByDescending(c => sourceMatches.Contains(c.Chunk.Id))
+                                     .Take(reRankCandidateCount).ToList();
         var candidateChunks = reRankCandidates.Select(c => c.Chunk).ToList();
         var rerankResults = await metrics.TimeAsync(QueryMetricOperations.Rerank,
                                                     () => reRanker.ReRankAsync(query,
@@ -885,7 +892,8 @@ public static class SearchTools
         var ordered = hybrid.Select(candidate => CreateReRankedResult(candidate,
                                                                       retrievalRanks,
                                                                       rerankRanks,
-                                                                      rerankedById))
+                                                                      rerankedById,
+                                                                      sourceMatches))
                       .OrderByDescending(r => r.FinalScore)
                       .Take(maxResults)
                       .ToList();
@@ -895,7 +903,8 @@ public static class SearchTools
     private static RankedResult CreateReRankedResult(HybridCandidate candidate,
                                                      IReadOnlyDictionary<string, int> retrievalRanks,
                                                      IReadOnlyDictionary<string, int> rerankRanks,
-                                                     IReadOnlyDictionary<string, ReRankResult> rerankedById)
+                                                     IReadOnlyDictionary<string, ReRankResult> rerankedById,
+                                                     IReadOnlySet<string> sourceMatches)
     {
         var id = candidate.Chunk.Id;
         var score = RerankerVoteWeight * ReciprocalRank(retrievalRanks.GetValueOrDefault(id)) +
@@ -903,7 +912,8 @@ public static class SearchTools
         var result = new RankedResult
                          {
                              Chunk = candidate.Chunk,
-                             FinalScore = (float) score,
+                             FinalScore = (float) score + SourceIdentityPriority(sourceMatches, id),
+                             SourceIdentityMatch = sourceMatches.Contains(id),
                              VectorScore = candidate.VectorScore,
                              Bm25Score = (float) candidate.Bm25Score,
                              RerankScore = rerankedById.GetValueOrDefault(id)?.RelevanceScore
@@ -912,6 +922,11 @@ public static class SearchTools
     }
 
     private const double RerankerVoteWeight = 0.5;
+
+    // Rank-fusion scores are bounded by one. Adding one encodes source
+    // preference without changing the order within either group. Candidates
+    // remain available when metadata is missing or the query is ambiguous.
+    private static float SourceIdentityPriority(IReadOnlySet<string> matches, string id) => matches.Contains(id) ? 1f : 0f;
 
     private static string SerializeSearchResponse(IReadOnlyList<RankedResult> ranked,
                                                   Stopwatch embedSw,
@@ -944,7 +959,8 @@ public static class SearchTools
                                                                                RelevanceScore = rankedResult.FinalScore,
                                                                                rankedResult.VectorScore,
                                                                                rankedResult.Bm25Score,
-                                                                               rankedResult.RerankScore
+                                                                               rankedResult.RerankScore,
+                                                                               rankedResult.SourceIdentityMatch
                                                                            },
                                                                        smJsonOptions)
                                         ?? throw new InvalidOperationException("Search result serialization returned no JSON value.");
