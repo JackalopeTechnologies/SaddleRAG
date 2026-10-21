@@ -135,17 +135,13 @@ jobs:
         # and run locally and on self-hosted runners that have those services.
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build --filter "Category!=Integration"
 
-      - name: Publish
-        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
+      - name: Test combined package guards
+        shell: pwsh
+        run: ./scripts/Test-PublishOutputs.ps1 -ScratchDirectory ./artifacts/package-guard-tests
 
-      - name: Publish CLI
-        run: dotnet publish SaddleRAG.Cli/SaddleRAG.Cli.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
-
-      - name: Publish Tray
-        run: dotnet publish SaddleRAG.Tray/SaddleRAG.Tray.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
-
-      - name: Publish installer helper
-        run: dotnet publish SaddleRAG.Installer.Helper/SaddleRAG.Installer.Helper.csproj --configuration Release --runtime win-x64 --self-contained true --output ./artifacts/${{ steps.version.outputs.PackageVersion }}/publish -p:Version=${{ steps.version.outputs.PackageVersion }}
+      - name: Publish and verify combined Windows package
+        shell: pwsh
+        run: ./scripts/Publish-WindowsPackage.ps1 -OutputDirectory ./artifacts/${{ steps.version.outputs.PackageVersion }} -Version ${{ steps.version.outputs.PackageVersion }}
 
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
