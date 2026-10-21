@@ -5,6 +5,13 @@
 
 <MudText Typo="Typo.h4" Class="mb-4">SaddleRAG Monitor</MudText>
 <ClassifierBadge />
+@if (LibrariesUnavailable)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">
+        Libraries could not be refreshed. Any displayed data is from the last successful read.
+        Retrying automatically. <MudLink Href="/monitor/health">Open service health</MudLink>
+    </MudAlert>
+}
 
 @if (ActiveJobSnapshots.Count > 0)
 {
@@ -19,7 +26,7 @@
 }
 
 <MudText Typo="Typo.h6" Class="mb-2">Libraries</MudText>
-@if (Libraries.Count == 0 && ActiveJobSnapshots.Count == 0)
+@if (!LibrariesUnavailable && Libraries.Count == 0 && ActiveJobSnapshots.Count == 0)
 {
     <MudPaper Class="pa-6 text-center" Elevation="0" Outlined="true">
         <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Large" Color="Color.Primary"/>

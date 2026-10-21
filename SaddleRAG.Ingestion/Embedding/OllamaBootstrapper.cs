@@ -302,12 +302,16 @@ public class OllamaBootstrapper
 
     private async Task EnsureInstalledAsync(CancellationToken ct)
     {
+        if (!new Uri(mSettings.Endpoint).IsLoopback)
+            throw new InvalidOperationException(RemoteOllamaUnavailableMessage);
         string? ollamaPath = FindOllamaExecutable();
 
         if (ollamaPath != null)
             mLogger.LogInformation("Ollama found at {Path}", ollamaPath);
         else
         {
+            if (!mSettings.AllowAutomaticInstallation)
+                throw new InvalidOperationException(SelectExistingInstallationMessage);
             mLogger.LogInformation("Ollama not found, installing...");
 
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -331,12 +335,28 @@ public class OllamaBootstrapper
         }
     }
 
-    private static string? FindOllamaExecutable() =>
-        FindOllamaExecutable(Environment.GetEnvironmentVariable(PathEnvironmentVariable),
-                             File.Exists,
-                             OllamaExeName,
-                             GetDefaultCommonPaths()
-                            );
+    internal string? FindOllamaExecutable()
+    {
+        string? result;
+        if (!string.IsNullOrWhiteSpace(mSettings.ExecutablePath))
+        {
+            if (!Path.IsPathFullyQualified(mSettings.ExecutablePath) || !File.Exists(mSettings.ExecutablePath))
+                throw new InvalidOperationException(SelectedExecutableMissingMessage);
+            result = mSettings.ExecutablePath;
+        }
+        else
+        {
+            result = FindOllamaExecutable(Environment.GetEnvironmentVariable(PathEnvironmentVariable),
+                File.Exists, OllamaExeName, GetDefaultCommonPaths());
+        }
+        return result;
+    }
+
+    private const string RemoteOllamaUnavailableMessage = "The configured remote Ollama server is unavailable; no local installation was started.";
+    private const string SelectExistingInstallationMessage = "Ollama is unavailable. Set Ollama:ExecutablePath to the existing installation and Ollama:ModelsDirectory to its shared model store.";
+    private const string SelectedExecutableMissingMessage = "Ollama:ExecutablePath must name an existing absolute executable path.";
+    private const string ModelDirectoryMissingMessage = "Ollama:ModelsDirectory must name an existing absolute model directory.";
+    private const string ModelsEnvironmentVariable = "OLLAMA_MODELS";
 
     /// <summary>
     ///     Search a PATH-style string and a fallback list of common install
@@ -530,12 +550,21 @@ public class OllamaBootstrapper
                                     RedirectStandardOutput = true,
                                     RedirectStandardError = true
                                 };
+            ConfigureModelDirectory(startInfo);
             var started = pmProcessStarterOverride != null
                               ? pmProcessStarterOverride(startInfo)
                               : Process.Start(startInfo);
 
             if (started != null)
+            {
+                // Drain both redirected streams so a long-running server cannot
+                // block when its output pipe fills.
+                started.OutputDataReceived += (_, _) => { };
+                started.ErrorDataReceived += (_, _) => { };
+                started.BeginOutputReadLine();
+                started.BeginErrorReadLine();
                 mLogger.LogInformation("Spawned ollama serve (PID {Pid})", started.Id);
+            }
 
             var bound = false;
             for(var i = 0; i < MaxStartWaitSeconds && !bound; i++)
@@ -560,6 +589,16 @@ public class OllamaBootstrapper
                 InvalidOperationException($"Cannot start Ollama. Verify installation at {FindOllamaExecutable() ?? "unknown path"}.",
                                           ex
                                          );
+        }
+    }
+
+    internal void ConfigureModelDirectory(ProcessStartInfo startInfo)
+    {
+        if (!string.IsNullOrWhiteSpace(mSettings.ModelsDirectory))
+        {
+            if (!Path.IsPathFullyQualified(mSettings.ModelsDirectory) || !Directory.Exists(mSettings.ModelsDirectory))
+                throw new InvalidOperationException(ModelDirectoryMissingMessage);
+            startInfo.Environment[ModelsEnvironmentVariable] = mSettings.ModelsDirectory;
         }
     }
 

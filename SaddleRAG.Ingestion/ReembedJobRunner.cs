@@ -181,7 +181,7 @@ public class ReembedJobRunner : IReembedJobDispatcher
     private async Task RunClaimedJobAsync(JobRecord jobRecord, IJobRepository jobRepo)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
-        mCancellationRegistry.Register(jobRecord.Id, cts);
+        mCancellationRegistry.Register(jobRecord.Id, cts, jobRecord.Profile);
 
         mBroadcaster.RecordJobStarted(jobRecord.Id,
                                       jobRecord.LibraryId ?? string.Empty,

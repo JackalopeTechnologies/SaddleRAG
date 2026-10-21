@@ -6,6 +6,8 @@
 #region Usings
 
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Database.Repositories;
@@ -32,19 +34,24 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     public ScrapeAuditWriter(IScrapeAuditRepository repo,
                              RepositoryFactory? repositoryFactory,
                              int batchSize = DefaultBatchSize,
-                             TimeSpan? flushInterval = null)
+                             TimeSpan? flushInterval = null,
+                             ILogger<ScrapeAuditWriter>? logger = null,
+                             int capacity = DefaultCapacity)
     {
         ArgumentNullException.ThrowIfNull(repo);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
+        mLogger = logger ?? NullLogger<ScrapeAuditWriter>.Instance;
         mDefaultRepo = repo;
         mRepositoryFactory = repositoryFactory;
         mBatchSize = batchSize;
         mFlushInterval = flushInterval ?? smDefaultFlushInterval;
-        mChannel = Channel.CreateUnbounded<PendingAuditEntry>(new UnboundedChannelOptions
-                                                                  {
-                                                                      SingleReader = false,
-                                                                      SingleWriter = false
-                                                                  });
+        mChannel = Channel.CreateBounded<PendingAuditEntry>(new BoundedChannelOptions(capacity)
+        {
+            SingleReader = false,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
         mLoop = Task.Run(RunFlushLoopAsync);
     }
 
@@ -57,6 +64,14 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     private readonly IScrapeAuditRepository mDefaultRepo;
     private readonly RepositoryFactory? mRepositoryFactory;
     private bool mDisposed;
+    private readonly ILogger<ScrapeAuditWriter> mLogger;
+    private readonly SemaphoreSlim mFlushGate = new(1, 1);
+    private readonly List<PendingAuditEntry> mPending = [];
+    private const int DefaultCapacity = 10000;
+    private const string QueueFullMessage = "Audit buffering is full or stopping. Stop ingestion and restore MongoDB before retrying.";
+    private const string RetryMessage = "Audit persistence failed; retaining the batch and retrying after recovery";
+    private const string ShutdownMessage = "Audit shutdown could not persist all pending events";
+    private static readonly TimeSpan smWriteTimeout = TimeSpan.FromSeconds(5);
 
     #region RecordSkipped method
 
@@ -176,21 +191,32 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
 
     #endregion
 
-    #region FlushAsync method
-
     /// <inheritdoc />
     public async Task FlushAsync(CancellationToken ct = default)
     {
-        var batch = new List<PendingAuditEntry>(mBatchSize);
-        while (mChannel.Reader.TryRead(out var entry))
-            batch.Add(entry);
-
-        await FlushBatchAsync(batch, ct);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        bounded.CancelAfter(smWriteTimeout);
+        await mFlushGate.WaitAsync(bounded.Token);
+        try
+        {
+            bool finished = false;
+            while (!finished)
+            {
+                while (mPending.Count < mBatchSize && mChannel.Reader.TryRead(out var entry))
+                    mPending.Add(entry);
+                finished = mPending.Count == 0;
+                if (!finished)
+                {
+                    await FlushBatchAsync(mPending, bounded.Token);
+                    mPending.Clear();
+                }
+            }
+        }
+        finally
+        {
+            mFlushGate.Release();
+        }
     }
-
-    #endregion
-
-    #region DisposeAsync method
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
@@ -200,68 +226,69 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
             mDisposed = true;
             mChannel.Writer.TryComplete();
             await mCts.CancelAsync();
+            await mLoop;
             try
             {
-                await mLoop;
+                await FlushAsync();
             }
-            catch(OperationCanceledException)
+            catch (Exception exception)
             {
+                mLogger.LogError(exception, ShutdownMessage);
             }
-
-            await FlushAsync();
             mCts.Dispose();
+            mFlushGate.Dispose();
         }
     }
 
-    #endregion
-
-    private void Enqueue(string? profile, ScrapeAuditLogEntry entry) =>
-        mChannel.Writer.TryWrite(new PendingAuditEntry(profile, entry));
+    private void Enqueue(string? profile, ScrapeAuditLogEntry entry)
+    {
+        if (!mChannel.Writer.TryWrite(new PendingAuditEntry(profile, entry)))
+        {
+            mLogger.LogError(QueueFullMessage);
+            throw new InvalidOperationException(QueueFullMessage);
+        }
+    }
 
     private async Task RunFlushLoopAsync()
     {
-        var buffer = new List<PendingAuditEntry>(mBatchSize);
-        while (!mCts.IsCancellationRequested)
+        bool failed = false;
+        try
         {
-            try
+            while (!mCts.IsCancellationRequested)
             {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(mCts.Token);
-                timeoutCts.CancelAfter(mFlushInterval);
-                while (await mChannel.Reader.WaitToReadAsync(timeoutCts.Token))
-                    await DrainAvailableAsync(buffer);
+                failed = await FlushAttemptAsync(failed);
+                await Task.Delay(mFlushInterval, mCts.Token);
             }
-            catch(OperationCanceledException)
-            {
-            }
-
-            await FlushBatchAsync(buffer, CancellationToken.None);
-            buffer.Clear();
         }
-
-        await FlushBatchAsync(buffer, CancellationToken.None);
+        catch (OperationCanceledException) when (mCts.IsCancellationRequested)
+        {
+            // Dispose performs one final bounded flush.
+        }
     }
 
-    private async Task DrainAvailableAsync(List<PendingAuditEntry> buffer)
+    private async Task<bool> FlushAttemptAsync(bool previousFailure)
     {
-        while (mChannel.Reader.TryRead(out var entry))
+        bool failed = false;
+        try
         {
-            buffer.Add(entry);
-            if (buffer.Count >= mBatchSize)
-            {
-                await FlushBatchAsync(buffer, mCts.Token);
-                buffer.Clear();
-            }
+            await FlushAsync(mCts.Token);
         }
+        catch (Exception exception) when (!mCts.IsCancellationRequested)
+        {
+            if (!previousFailure)
+                mLogger.LogWarning(exception, RetryMessage);
+            failed = true;
+        }
+        return failed;
     }
 
     private async Task FlushBatchAsync(IReadOnlyList<PendingAuditEntry> batch, CancellationToken ct)
     {
-        foreach(IGrouping<string?, PendingAuditEntry> group in batch.GroupBy(item => item.Profile,
+        foreach (IGrouping<string?, PendingAuditEntry> group in batch.GroupBy(item => item.Profile,
                                                                               StringComparer.Ordinal))
         {
             IScrapeAuditRepository repository = string.IsNullOrEmpty(group.Key) || mRepositoryFactory == null
-                                                    ? mDefaultRepo
-                                                    : mRepositoryFactory.GetScrapeAuditRepository(group.Key);
+                ? mDefaultRepo : mRepositoryFactory.GetScrapeAuditRepository(group.Key);
             await repository.InsertManyAsync(group.Select(item => item.Entry), ct);
         }
     }

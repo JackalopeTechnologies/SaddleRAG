@@ -37,9 +37,15 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
     protected List<LibrarySummaryItem> Libraries { get; } = [];
 
     private HubConnection? mHub;
+    private Timer? mRecoveryTimer;
+    private readonly CancellationTokenSource mShutdown = new();
+    private bool mRefreshing;
+    protected bool LibrariesUnavailable { get; private set; }
 
     public async ValueTask DisposeAsync()
     {
+        mRecoveryTimer?.Dispose();
+        await mShutdown.CancelAsync();
         if (mHub is not null)
             await mHub.DisposeAsync();
     }
@@ -50,9 +56,9 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(DataService);
         ArgumentNullException.ThrowIfNull(Broadcaster);
 
-        var summaries = await DataService.GetLibrarySummariesAsync();
-        Libraries.Clear();
-        Libraries.AddRange(summaries);
+        await RefreshLibrariesAsync();
+        mRecoveryTimer = new Timer(_ => _ = InvokeAsync(RetryLibrariesAsync), null,
+            TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
 
         RebuildFromIds(Broadcaster.GetActiveJobIds());
 
@@ -81,6 +87,40 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         var snapshots = ids.Select(id => Broadcaster.GetJobSnapshot(id))
                            .OfType<JobTickSnapshot>();
         ActiveJobSnapshots.AddRange(snapshots);
+    }
+
+    private async Task RetryLibrariesAsync()
+    {
+        if (LibrariesUnavailable && !mRefreshing)
+        {
+            await RefreshLibrariesAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshLibrariesAsync()
+    {
+        ArgumentNullException.ThrowIfNull(DataService);
+        mRefreshing = true;
+        try
+        {
+            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(mShutdown.Token);
+            bounded.CancelAfter(TimeSpan.FromSeconds(3));
+            var summaries = await DataService.GetLibrarySummariesAsync(bounded.Token);
+            Libraries.Clear();
+            Libraries.AddRange(summaries);
+            LibrariesUnavailable = false;
+        }
+        catch (Exception) when (!mShutdown.IsCancellationRequested)
+        {
+            // Keep the last successful view and an explicit failure banner. The
+            // health page supplies the dependency diagnosis independently.
+            LibrariesUnavailable = true;
+        }
+        finally
+        {
+            mRefreshing = false;
+        }
     }
 
     protected async Task CancelJob(string jobId)

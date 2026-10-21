@@ -136,6 +136,8 @@ public partial class App : Application
             // Double-click is the gesture users reach for first, so give it the same
             // dashboard action the menu item runs rather than a parallel implementation.
             mTrayIcon.DoubleClickCommand = new RelayCommand(OpenDashboardGuarded);
+            mTrayIcon.TrayBalloonTipClicked += (_, _) =>
+                OpenMonitorPath(mAttention?.TargetPath ?? HealthPage);
 
             StartDoclingLaunchPolling();
             mHealthObserver = new TrayHealthObserver(mDoclingHttpClient, new Uri(DashboardUrl));
@@ -312,7 +314,9 @@ public partial class App : Application
                 mAttention = await mHealthObserver.ReadAsync(mShutdown.Token);
                 SyncMenu();
                 if (mHealthObserver.ShouldNotify(mAttention))
-                    ShowBalloon(mAttention.Summary + NotificationHint);
+                    mTrayIcon?.ShowNotification(BalloonTitle, mAttention.Summary + NotificationHint,
+                        icon: mAttention.IconState == McpServiceState.Stopped
+                            ? H.NotifyIcon.Core.NotificationIcon.Error : H.NotifyIcon.Core.NotificationIcon.Warning);
             }
             catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
             {

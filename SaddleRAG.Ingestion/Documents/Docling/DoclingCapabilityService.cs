@@ -74,6 +74,32 @@ public sealed class DoclingCapabilityService : IDoclingCapabilityService
         return result;
     }
 
+    /// <inheritdoc />
+    public void RecordServiceObservation(DoclingServiceObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        lock (mSync)
+        {
+            if (observation.Succeeded)
+            {
+                // A lightweight readiness check restores transport availability;
+                // it does not invent successful conversion evidence.
+                mRecordedFailure = mProbe.CurrentStatus with { LastCheckedAt = DateTimeOffset.UtcNow };
+            }
+            else
+            {
+                mRecordedFailure = mProbe.CurrentStatus with
+                {
+                    State = DoclingCapabilityState.Unavailable,
+                    ReasonCode = observation.ReasonCode,
+                    Detail = observation.Detail,
+                    LastCheckedAt = DateTimeOffset.UtcNow,
+                    Remediation = UnexpectedFailureRemediation
+                };
+            }
+        }
+    }
+
     private const string UnexpectedFailureDetail = "The Docling capability check failed unexpectedly.";
     private const string UnexpectedFailureRemediation =
         "Review the SaddleRAG and user-managed Docling logs, then retry the status check.";

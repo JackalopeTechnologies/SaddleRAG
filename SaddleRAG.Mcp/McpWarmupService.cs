@@ -49,9 +49,47 @@ public sealed class McpWarmupService : BackgroundService
     private readonly IServiceProvider mServiceProvider;
 
     private readonly McpWarmupState mWarmupState;
+    private readonly HashSet<string?> mPendingProfiles = [];
+    private static readonly TimeSpan smRecoveryInterval = TimeSpan.FromSeconds(10);
 
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                if (mWarmupState.Status != nameof(ScrapeJobStatus.Completed))
+                    await RunStartupAsync(stoppingToken);
+                else
+                    await RecoverProfilesAsync(stoppingToken);
+                await Task.Delay(smRecoveryInterval, stoppingToken);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // The health host stays available while startup waits for dependencies.
+        }
+    }
+
+    private async Task RecoverProfilesAsync(CancellationToken stoppingToken)
+    {
+        using var scope = mServiceProvider.CreateScope();
+        var contexts = scope.ServiceProvider.GetRequiredService<SaddleRagDbContextFactory>();
+        var repositories = scope.ServiceProvider.GetRequiredService<RepositoryFactory>();
+        var vectorSearch = scope.ServiceProvider.GetRequiredService<IVectorSearchProvider>();
+        foreach (string? profile in mPendingProfiles.ToArray())
+        {
+            if (!contexts.GetForProfile(profile).Reachability.HealthCheckFailed)
+            {
+                mPendingProfiles.Remove(profile);
+                await DiscoverModelsForProfileAsync(profile, contexts, repositories, [], stoppingToken);
+                await LoadChunksForProfileAsync(profile, repositories, vectorSearch, stoppingToken);
+            }
+        }
+    }
+
+    private async Task RunStartupAsync(CancellationToken stoppingToken)
 
     {
         var startupSw = Stopwatch.StartNew();
@@ -67,6 +105,12 @@ public sealed class McpWarmupService : BackgroundService
         try
 
         {
+            // A failed initial database connection must not leave empty indexes
+            // permanently reported as ready. Retry startup after reconnection.
+            using var databaseTimeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            databaseTimeout.CancelAfter(TimeSpan.FromSeconds(3));
+            await mServiceProvider.GetRequiredService<SaddleRagDbContextFactory>()
+                .GetDefault().CheckHealthAsync(databaseTimeout.Token);
             stepSw.Restart();
 
             await VerifyPlaywrightRuntimeAsync(mPlaywrightRuntimeProbe,
@@ -157,7 +201,14 @@ public sealed class McpWarmupService : BackgroundService
 
             if (ollamaBackendActive)
             {
-                await bootstrapper.BootstrapAsync(ollamaClassifierActive, requiredModels.ToList(), stoppingToken);
+                try
+                {
+                    await bootstrapper.BootstrapAsync(ollamaClassifierActive, requiredModels.ToList(), stoppingToken);
+                }
+                catch (Exception exception) when (!ollamaEmbeddingActive && !stoppingToken.IsCancellationRequested)
+                {
+                    mLogger.LogWarning(exception, "Ollama classification is unavailable; continuing native search startup");
+                }
 
                 mWarmupState.MarkPhase(PhaseOllamaBootstrapFinished);
 
@@ -435,6 +486,7 @@ public sealed class McpWarmupService : BackgroundService
 
         {
             mLogger.LogWarning(ex, "Failed to inspect profile {Profile}, skipping at startup", profile ?? "(default)");
+            mPendingProfiles.Add(profile);
         }
     }
 
@@ -552,6 +604,7 @@ public sealed class McpWarmupService : BackgroundService
 
         {
             mLogger.LogWarning(ex, "Failed to load chunks for profile {Profile}, skipping", profile ?? "(default)");
+            mPendingProfiles.Add(profile);
         }
     }
 

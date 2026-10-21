@@ -38,7 +38,6 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
     private const string MongoSuffix = ")";
     private const string MongoWork = "Stored libraries and jobs in ";
     private const string MongoRemediation = "Check the MongoDB service and connection settings. SaddleRAG reconnects automatically.";
-    private const string PingCommand = "ping";
     private const string MongoReady = "MongoDB accepted a database command.";
     private static readonly TimeSpan smCheckTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan smCheckInterval = TimeSpan.FromSeconds(10);
@@ -52,6 +51,16 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
             {
                 foreach (DependencyProbe probe in CreateProbes())
                     await DependencyProbeRunner.CheckAsync(probe, state, smCheckTimeout, logger, stoppingToken);
+                using var recoveryTimeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                recoveryTimeout.CancelAfter(smCheckTimeout);
+                try
+                {
+                    await services.GetRequiredService<InterruptedJobRecovery>().CheckAsync(recoveryTimeout.Token);
+                }
+                catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
+                {
+                    // Retain interrupted statuses for the next pass.
+                }
                 await Task.Delay(smCheckInterval, stoppingToken);
             }
         }
@@ -117,6 +126,7 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
     {
                 var client = services.GetRequiredService<IDoclingClient>();
                 DoclingServiceObservation observation = await client.CheckReadinessAsync(token);
+                services.GetRequiredService<IDoclingCapabilityService>().RecordServiceObservation(observation);
                 if (!observation.Succeeded)
                     throw new InvalidOperationException(observation.ReasonCode);
                 return observation.Detail;
@@ -129,8 +139,7 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
             async token =>
             {
                 SaddleRagDbContext context = factory.GetForProfile(profile);
-                await context.Database.RunCommandAsync<BsonDocument>(
-                    new BsonDocument(PingCommand, 1), cancellationToken: token);
+                await context.CheckHealthAsync(token);
                 return MongoReady;
             });
 

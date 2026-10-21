@@ -43,6 +43,8 @@ internal static class ServiceHealthResponseFactory
                                          SaddleRAG.Core.Interfaces.IServerLogAcknowledgement acknowledgement)
     {
         string status = OverallStatus(warmupState, dependencies);
+        if (status == HealthyStatus && doclingCapability.CurrentStatus.State == DoclingCapabilityState.Unavailable)
+            status = DegradedStatus;
         var response = Create(status, warmupState, doclingCapability) with
         {
             Services = dependencies.Snapshot(),

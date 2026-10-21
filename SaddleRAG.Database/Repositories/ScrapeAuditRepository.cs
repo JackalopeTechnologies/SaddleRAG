@@ -34,13 +34,16 @@ public sealed class ScrapeAuditRepository : IScrapeAuditRepository
     {
         ArgumentNullException.ThrowIfNull(entries);
         var list = entries.ToList();
-        var insertTask = list.Count > 0
-                             ? mContext.ScrapeAuditLog.InsertManyAsync(list,
-                                                                       new InsertManyOptions { IsOrdered = false },
-                                                                       ct
-                                                                      )
-                             : Task.CompletedTask;
-        await insertTask;
+        if (list.Count > 0)
+        {
+            // Reusing each immutable event's ID makes retry safe after an ambiguous
+            // connection failure that may have written part of the batch.
+            var writes = list.Select(entry => new ReplaceOneModel<ScrapeAuditLogEntry>(
+                Builders<ScrapeAuditLogEntry>.Filter.Eq(item => item.Id, entry.Id), entry)
+                { IsUpsert = true });
+            await mContext.ScrapeAuditLog.BulkWriteAsync(writes,
+                new BulkWriteOptions { IsOrdered = false }, ct);
+        }
     }
 
     /// <inheritdoc />

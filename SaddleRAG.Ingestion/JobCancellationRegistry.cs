@@ -21,15 +21,33 @@ namespace SaddleRAG.Ingestion;
 /// </summary>
 public class JobCancellationRegistry : IJobCancellationRegistry
 {
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> mEntries =
-        new ConcurrentDictionary<string, CancellationTokenSource>();
+    private readonly ConcurrentDictionary<string, RunningJobRegistration> mEntries = new();
 
     public void Register(string jobId, CancellationTokenSource cts)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         ArgumentNullException.ThrowIfNull(cts);
 
-        mEntries[jobId] = cts;
+        Register(jobId, cts, null);
+    }
+
+    /// <inheritdoc />
+    public void Register(string jobId, CancellationTokenSource cts, string? profile)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        ArgumentNullException.ThrowIfNull(cts);
+        mEntries[jobId] = new RunningJobRegistration(cts, profile);
+    }
+
+    /// <summary>Snapshot used to stop only jobs whose database is unavailable.</summary>
+    public IReadOnlyDictionary<string, string?> GetProfiles() =>
+        mEntries.ToDictionary(entry => entry.Key, entry => entry.Value.Profile);
+
+    /// <summary>Whether a runner still owns the job.</summary>
+    public bool IsRegistered(string jobId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        return mEntries.ContainsKey(jobId);
     }
 
     public void Unregister(string jobId)
@@ -43,10 +61,17 @@ public class JobCancellationRegistry : IJobCancellationRegistry
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
         bool res = false;
-        if (mEntries.TryGetValue(jobId, out var cts))
+        if (mEntries.TryGetValue(jobId, out var registration))
         {
-            await cts.CancelAsync();
-            res = true;
+            try
+            {
+                await registration.Cancellation.CancelAsync();
+                res = true;
+            }
+            catch (ObjectDisposedException)
+            {
+                // The runner finished and disposed its token after this lookup.
+            }
         }
 
         return res;

@@ -185,7 +185,7 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
     {
         IJobRepository jobs = mRepositoryFactory.GetJobRepository(request.Profile);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(mApplicationStopping);
-        mCancellationRegistry.Register(job.Id, cts);
+        mCancellationRegistry.Register(job.Id, cts, request.Profile);
         try
         {
             job.Status = JobStatus.Running;

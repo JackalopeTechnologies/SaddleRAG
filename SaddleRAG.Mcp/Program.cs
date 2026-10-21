@@ -379,7 +379,9 @@ builder.Services.AddSingleton<RescrubJobRunner>();
 // Shared cancellation registry — every cancellable job runner registers its
 // per-job CTS here so cancel_job (and the monitor API) can signal it without
 // knowing which runner owns the job.
-builder.Services.AddSingleton<IJobCancellationRegistry, JobCancellationRegistry>();
+builder.Services.AddSingleton<JobCancellationRegistry>();
+builder.Services.AddSingleton<IJobCancellationRegistry>(sp => sp.GetRequiredService<JobCancellationRegistry>());
+builder.Services.AddSingleton<InterruptedJobRecovery>();
 builder.Services.AddSingleton<JobCancellationService>();
 
 // Reembed service and background job runner (consumed by reembed_library MCP tool)
@@ -423,7 +425,8 @@ builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
 builder.Services.AddSingleton<IScrapeAuditWriter>(sp =>
                                                       new ScrapeAuditWriter(sp.GetRequiredService<
                                                                                 IScrapeAuditRepository>(),
-                                                                           sp.GetRequiredService<RepositoryFactory>()
+                                                                           sp.GetRequiredService<RepositoryFactory>(),
+                                                                           logger: sp.GetRequiredService<ILogger<ScrapeAuditWriter>>()
                                                                            )
                                                  );
 

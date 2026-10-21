@@ -116,22 +116,22 @@ public class SaddleRagDbContext
     public DatabaseReachabilityTracker Reachability { get; }
 
     public IMongoCollection<LibraryRecord> Libraries =>
-        mDatabase.GetCollection<LibraryRecord>(CollectionLibraries);
+        AvailableDatabase.GetCollection<LibraryRecord>(CollectionLibraries);
 
     public IMongoCollection<LibraryVersionRecord> LibraryVersions =>
-        mDatabase.GetCollection<LibraryVersionRecord>(CollectionLibraryVersions);
+        AvailableDatabase.GetCollection<LibraryVersionRecord>(CollectionLibraryVersions);
 
     public IMongoCollection<PageRecord> Pages =>
-        mDatabase.GetCollection<PageRecord>(CollectionPages);
+        AvailableDatabase.GetCollection<PageRecord>(CollectionPages);
 
     public IMongoCollection<DocChunk> Chunks =>
-        mDatabase.GetCollection<DocChunk>(CollectionChunks);
+        AvailableDatabase.GetCollection<DocChunk>(CollectionChunks);
 
     public IMongoCollection<VersionDiffRecord> VersionDiffs =>
-        mDatabase.GetCollection<VersionDiffRecord>(CollectionVersionDiffs);
+        AvailableDatabase.GetCollection<VersionDiffRecord>(CollectionVersionDiffs);
 
     public IMongoCollection<ProjectProfile> ProjectProfiles =>
-        mDatabase.GetCollection<ProjectProfile>(CollectionProjectProfiles);
+        AvailableDatabase.GetCollection<ProjectProfile>(CollectionProjectProfiles);
 
     /// <summary>
     ///     Unified jobs collection. Replaced the four legacy per-pipeline
@@ -141,46 +141,46 @@ public class SaddleRagDbContext
     ///     legacy collections are dropped once migration completes.
     /// </summary>
     public IMongoCollection<JobRecord> Jobs =>
-        mDatabase.GetCollection<JobRecord>(CollectionJobs);
+        AvailableDatabase.GetCollection<JobRecord>(CollectionJobs);
 
     public IMongoCollection<LibraryProfile> LibraryProfiles =>
-        mDatabase.GetCollection<LibraryProfile>(CollectionLibraryProfiles);
+        AvailableDatabase.GetCollection<LibraryProfile>(CollectionLibraryProfiles);
 
     public IMongoCollection<LibraryIndex> LibraryIndexes =>
-        mDatabase.GetCollection<LibraryIndex>(CollectionLibraryIndexes);
+        AvailableDatabase.GetCollection<LibraryIndex>(CollectionLibraryIndexes);
 
     public IMongoCollection<Bm25Shard> Bm25Shards =>
-        mDatabase.GetCollection<Bm25Shard>(CollectionBm25Shards);
+        AvailableDatabase.GetCollection<Bm25Shard>(CollectionBm25Shards);
 
     public IMongoCollection<ExcludedSymbol> ExcludedSymbols =>
-        mDatabase.GetCollection<ExcludedSymbol>(CollectionExcludedSymbols);
+        AvailableDatabase.GetCollection<ExcludedSymbol>(CollectionExcludedSymbols);
 
     public IMongoCollection<ScrapeAuditLogEntry> ScrapeAuditLog =>
-        mDatabase.GetCollection<ScrapeAuditLogEntry>(CollectionScrapeAuditLog);
+        AvailableDatabase.GetCollection<ScrapeAuditLogEntry>(CollectionScrapeAuditLog);
 
     public IMongoCollection<DirectoryLibraryDefinition> DirectoryLibraries =>
-        mDatabase.GetCollection<DirectoryLibraryDefinition>(CollectionDirectoryLibraries);
+        AvailableDatabase.GetCollection<DirectoryLibraryDefinition>(CollectionDirectoryLibraries);
 
     public IMongoCollection<SourceDocumentRecord> SourceDocuments =>
-        mDatabase.GetCollection<SourceDocumentRecord>(CollectionSourceDocuments);
+        AvailableDatabase.GetCollection<SourceDocumentRecord>(CollectionSourceDocuments);
 
     public IMongoCollection<DocumentRevisionRecord> DocumentRevisions =>
-        mDatabase.GetCollection<DocumentRevisionRecord>(CollectionDocumentRevisions);
+        AvailableDatabase.GetCollection<DocumentRevisionRecord>(CollectionDocumentRevisions);
 
     public IMongoCollection<DocumentArtifactBlobRecord> DocumentArtifactBlobs =>
-        mDatabase.GetCollection<DocumentArtifactBlobRecord>(CollectionDocumentArtifactBlobs);
+        AvailableDatabase.GetCollection<DocumentArtifactBlobRecord>(CollectionDocumentArtifactBlobs);
 
     public IMongoCollection<SubjectCatalogRecord> SubjectCatalogs =>
-        mDatabase.GetCollection<SubjectCatalogRecord>(CollectionSubjectCatalogs);
+        AvailableDatabase.GetCollection<SubjectCatalogRecord>(CollectionSubjectCatalogs);
 
     public IMongoCollection<SubjectAssignmentRecord> SubjectAssignments =>
-        mDatabase.GetCollection<SubjectAssignmentRecord>(CollectionSubjectAssignments);
+        AvailableDatabase.GetCollection<SubjectAssignmentRecord>(CollectionSubjectAssignments);
 
     public IMongoCollection<LibraryIngestionModeRecord> LibraryIngestionModes =>
-        mDatabase.GetCollection<LibraryIngestionModeRecord>(CollectionLibraryIngestionModes);
+        AvailableDatabase.GetCollection<LibraryIngestionModeRecord>(CollectionLibraryIngestionModes);
 
     public IMongoCollection<LibraryRenameOperationRecord> LibraryRenameOperations =>
-        mDatabase.GetCollection<LibraryRenameOperationRecord>(CollectionLibraryRenameOperations);
+        AvailableDatabase.GetCollection<LibraryRenameOperationRecord>(CollectionLibraryRenameOperations);
 
     /// <summary>
     ///     GridFS bucket for spilled BM25 payloads (per-term postings or
@@ -189,14 +189,14 @@ public class SaddleRagDbContext
     ///     repository — callers don't construct it directly.
     /// </summary>
     public IGridFSBucket Bm25Bucket =>
-        new GridFSBucket(mDatabase, new GridFSBucketOptions { BucketName = Bm25BucketName });
+        new GridFSBucket(AvailableDatabase, new GridFSBucketOptions { BucketName = Bm25BucketName });
 
     /// <summary>
     ///     Dedicated bucket for immutable source and extraction artifacts.
     ///     The source-document repository owns all access and cleanup.
     /// </summary>
     public IGridFSBucket DocumentArtifactsBucket =>
-        new GridFSBucket(mDatabase, new GridFSBucketOptions { BucketName = DocumentArtifactsBucketName });
+        new GridFSBucket(AvailableDatabase, new GridFSBucketOptions { BucketName = DocumentArtifactsBucketName });
 
     /// <summary>
     ///     Underlying <see cref="IMongoDatabase" />. Exposed for maintenance
@@ -204,9 +204,38 @@ public class SaddleRagDbContext
     ///     admin commands or enumerate collections — repository getters
     ///     remain the right entry point for typed CRUD.
     /// </summary>
-    public IMongoDatabase Database => mDatabase;
+    public IMongoDatabase Database => AvailableDatabase;
 
     private readonly IMongoDatabase mDatabase;
+    private const string HealthPingCommand = "ping";
+    private const string UnknownEndpoint = "the configured endpoint";
+
+    /// <summary>Checks the underlying database even while ordinary work is blocked.</summary>
+    public async Task CheckHealthAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await mDatabase.RunCommandAsync<BsonDocument>(new BsonDocument(HealthPingCommand, 1),
+                                                          cancellationToken: cancellationToken);
+            Reachability.RecordHealthCheck(true);
+        }
+        catch
+        {
+            Reachability.RecordHealthCheck(false);
+            throw;
+        }
+    }
+
+    private IMongoDatabase AvailableDatabase
+    {
+        get
+        {
+            if (Reachability.HealthCheckFailed)
+                throw new DatabaseUnavailableException(
+                    string.IsNullOrEmpty(Reachability.Endpoint) ? UnknownEndpoint : Reachability.Endpoint, null);
+            return mDatabase;
+        }
+    }
 
     /// <summary>
     ///     Ensures required indexes exist on all collections.

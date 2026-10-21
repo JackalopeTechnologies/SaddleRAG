@@ -53,6 +53,13 @@
     </MudDrawer>
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.False" Class="pa-4">
+            @foreach (var service in FailedServices)
+            {
+                <MudAlert Severity="@(service.Required ? Severity.Error : Severity.Warning)" Class="mb-3">
+                    @service.Name is unavailable. @service.AffectedWork is affected.
+                    <MudLink Href="/monitor/health">Open service health</MudLink>
+                </MudAlert>
+            }
             @Body
         </MudContainer>
     </MudMainContent>

@@ -112,7 +112,7 @@ public class RescrubJobRunner
                               );
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
-        mCancellationRegistry.Register(jobRecord.Id, cts);
+        mCancellationRegistry.Register(jobRecord.Id, cts, jobRecord.Profile);
 
         try
         {

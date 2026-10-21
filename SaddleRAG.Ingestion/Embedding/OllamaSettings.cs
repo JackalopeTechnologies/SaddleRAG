@@ -25,6 +25,15 @@ public class OllamaSettings
     /// </summary>
     public string Endpoint { get; set; } = DefaultEndpoint;
 
+    /// <summary>Optional absolute path to the single existing Ollama executable to launch.</summary>
+    public string ExecutablePath { get; set; } = string.Empty;
+
+    /// <summary>Shared model directory passed to a launched server; empty inherits OLLAMA_MODELS.</summary>
+    public string ModelsDirectory { get; set; } = string.Empty;
+
+    /// <summary>Explicit opt-in to installing Ollama when no installation can be found.</summary>
+    public bool AllowAutomaticInstallation { get; set; }
+
     /// <summary>
     ///     Model name for embeddings (used when <c>Onnx.EmbeddingEnabled</c>
     ///     is false). Kept as a single field rather than a registry because

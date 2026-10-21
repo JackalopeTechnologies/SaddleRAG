@@ -113,7 +113,7 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         if (jobType.IsCancellable())
         {
             cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
-            mCancellationRegistry.Register(jobRecord.Id, cts);
+            mCancellationRegistry.Register(jobRecord.Id, cts, jobRecord.Profile);
             executeToken = cts.Token;
         }
         else

@@ -111,7 +111,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
                                   );
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
-            mCancellationRegistry.Register(jobRecord.Id, cts);
+            mCancellationRegistry.Register(jobRecord.Id, cts, jobRecord.Profile);
 
             await mOrchestrator.IngestAsync(jobRecord.Job,
                                             jobRecord.Profile,

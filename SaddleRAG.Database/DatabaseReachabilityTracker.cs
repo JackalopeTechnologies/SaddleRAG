@@ -41,6 +41,13 @@ public sealed class DatabaseReachabilityTracker
     private Exception? mLastHeartbeatException;
     private List<Exception> mSeenFailures = [];
     private long? mUnreachableSinceTimestamp;
+    private volatile bool mHealthCheckFailed;
+
+    /// <summary>A bounded application check failed; ordinary work waits for a successful check.</summary>
+    public bool HealthCheckFailed => mHealthCheckFailed;
+
+    /// <summary>Shares health-check results between named and default contexts using this connection.</summary>
+    public void RecordHealthCheck(bool succeeded) => mHealthCheckFailed = !succeeded;
 
     /// <summary>
     ///     True while every known server's latest heartbeat has failed.
