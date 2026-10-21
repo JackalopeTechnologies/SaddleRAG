@@ -430,7 +430,12 @@ jobs:
     # without blocking the existing required `build` gate. Promote into
     # `needs:` once a few runs prove stability — for now, "loud signal,
     # no gate."
-    runs-on: ubuntu-latest
+    # MongoDB 8 rejects affected kernels >= 6.19 (SERVER-121912). The
+    # Ubuntu 22.04 runner uses the compatible 6.8 Azure kernel; do not let
+    # ubuntu-latest move this database-backed job onto an incompatible host.
+    # Revisit this pin when MongoDB and the newer hosted kernel are compatible:
+    # https://jira.mongodb.org/browse/SERVER-125742
+    runs-on: ubuntu-22.04
 
     services:
       mongo:
@@ -518,6 +523,7 @@ jobs:
             https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1/resolve/main/spm.model
 
       - name: Run integration tests (with coverage)
+        id: integration-tests
         # --collect:"XPlat Code Coverage" captures the lines integration tests
         # actually exercise (Mongo-backed repositories, real PageCrawler /
         # Playwright paths, ONNX provider). The coverage-report job merges
@@ -526,7 +532,9 @@ jobs:
         run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
 
       - name: Upload integration coverage XML
-        if: success() || failure()
+        # No test report can exist when container startup/build prevented tests.
+        # Still require a report after an actual test failure.
+        if: ${{ !cancelled() && (steps.integration-tests.outcome == 'success' || steps.integration-tests.outcome == 'failure') }}
         uses: actions/upload-artifact@v7
         with:
           name: coverage-integration-${{ steps.version.outputs.PackageVersion }}
