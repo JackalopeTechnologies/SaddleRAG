@@ -21,6 +21,15 @@ public abstract class MainLayoutBase : LayoutComponentBase, IDisposable
     [Inject]
     private IServerLogAcknowledgement? Acknowledgement { get; set; }
 
+    [Inject]
+    private DependencyHealthState? HealthState { get; set; }
+
+    protected IReadOnlyList<SaddleRAG.Core.Models.DependencyHealth> FailedServices =>
+        HealthState?.Snapshot()
+            .Where(entry => entry.Status == UnavailableStatus).ToArray() ?? [];
+
+    private const string UnavailableStatus = "Unavailable";
+
     protected bool DrawerOpen { get; set; } = true;
 
     /// <summary>Running build, short form, shown beside the product name.</summary>
@@ -106,5 +115,5 @@ public abstract class MainLayoutBase : LayoutComponentBase, IDisposable
 
     private static readonly TimeSpan smErrorWindow = TimeSpan.FromHours(1);
 
-    private const int BadgeRefreshIntervalMs = 30_000;
+    private const int BadgeRefreshIntervalMs = 10_000;
 }

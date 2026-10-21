@@ -126,6 +126,64 @@ public sealed class Bm25IndexBuilderTests
         Assert.True(build.Stats.AverageDocLength > 0);
     }
 
+    [Theory]
+    [InlineData("VF-S9_Instruction_E6580757", null)]
+    [InlineData("TOSHIBA", "manuals/VF-S9_Instruction_E6580757.pdf")]
+    [InlineData("TOSHIBA", "manuals\\VF-S9_Instruction_E6580757.pdf")]
+    public async Task SourceIdentityIsSearchableWhenAbsentFromPassage(string title, string? relativePath)
+    {
+        var passage = MakeChunk("answer", "Output phase failure persisting for one second activates the relay.") with
+        {
+            PageTitle = title,
+            DocumentSource = relativePath == null ? null : new DocumentProvenance
+            {
+                DocumentId = "manual", RevisionId = "revision", SourceUri = "saddlerag://manual",
+                RelativePath = relativePath
+            }
+        };
+        var unrelated = MakeChunk("other", passage.Content) with { PageTitle = "VF-AS3 instructions" };
+        var build = Bm25IndexBuilder.Build("lib", "1.0", [passage, unrelated]);
+
+        var scores = await Bm25Scorer.ScoreAsync(new InMemoryBm25TermLookup(build), build.Stats,
+                                                "VF-S9", TestContext.Current.CancellationToken);
+
+        Assert.True(scores[passage.Id] > scores[unrelated.Id]);
+        Assert.Equal(Bm25IndexBuilder.CurrentTextVersion, build.Stats.TextVersion);
+        Assert.DoesNotContain("VF-S9", passage.Content);
+    }
+
+    [Fact]
+    public void DuplicateTitleAndSourceFilenameDoNotCountTwice()
+    {
+        var passage = MakeChunk("answer", "The relay activates after one second.") with { PageTitle = "VF-S9_Instruction" };
+        var duplicate = passage with
+        {
+            DocumentSource = new DocumentProvenance
+            {
+                DocumentId = "manual", RevisionId = "revision", SourceUri = "saddlerag://manual",
+                RelativePath = "manuals/vf-s9_instruction.pdf"
+            }
+        };
+
+        var titleOnly = Bm25IndexBuilder.Build("lib", "1.0", [passage]);
+        var titleAndFile = Bm25IndexBuilder.Build("lib", "1.0", [duplicate]);
+
+        Assert.Equal(titleOnly.Stats.DocLengths, titleAndFile.Stats.DocLengths);
+        Assert.Equal(titleOnly.Shards.SelectMany(s => s.InlineTerms).OrderBy(p => p.Key)
+                              .SelectMany(p => p.Value.Select(v => (p.Key, v.ChunkId, v.TermFrequency))),
+                     titleAndFile.Shards.SelectMany(s => s.InlineTerms).OrderBy(p => p.Key)
+                                 .SelectMany(p => p.Value.Select(v => (p.Key, v.ChunkId, v.TermFrequency))));
+    }
+
+    [Fact]
+    public void SourceTitleDoesNotCreateAnEmptyPassageResult()
+    {
+        var build = Bm25IndexBuilder.Build("lib", "1.0", [MakeChunk("empty", "") with { PageTitle = "VF-S9" }]);
+
+        Assert.Empty(build.Stats.DocLengths);
+        Assert.Empty(build.Shards);
+    }
+
     private static IReadOnlyList<DocChunk> ManyChunks() =>
         [
             MakeChunk("a", "MoveLinear axis homing on each axis."),

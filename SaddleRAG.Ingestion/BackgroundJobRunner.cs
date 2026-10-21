@@ -75,7 +75,8 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         await jobRepo.UpsertAsync(Project(jobRecord), ct);
 
         // Fire-and-forget background execution. Errors land in the job record.
-        _ = Task.Run(() => RunJobAsync(jobRecord, execute), mAppStoppingToken);
+        _ = Task.Run(() => JobTaskObserver.RunAsync(() => RunJobAsync(jobRecord, execute),
+            jobRecord.Id, jobRecord.Profile, mCancellationRegistry, mBroadcaster, mLogger), mAppStoppingToken);
 
         return jobRecord.Id;
     }
@@ -113,7 +114,7 @@ public class BackgroundJobRunner : IBackgroundJobRunner
         if (jobType.IsCancellable())
         {
             cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
-            mCancellationRegistry.Register(jobRecord.Id, cts);
+            mCancellationRegistry.Register(jobRecord.Id, cts, jobRecord.Profile);
             executeToken = cts.Token;
         }
         else

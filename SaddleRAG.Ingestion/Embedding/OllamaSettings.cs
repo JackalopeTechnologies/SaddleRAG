@@ -25,6 +25,15 @@ public class OllamaSettings
     /// </summary>
     public string Endpoint { get; set; } = DefaultEndpoint;
 
+    /// <summary>Optional absolute path to the single existing Ollama executable to launch.</summary>
+    public string ExecutablePath { get; set; } = string.Empty;
+
+    /// <summary>Shared model directory passed to a launched server; empty inherits OLLAMA_MODELS.</summary>
+    public string ModelsDirectory { get; set; } = string.Empty;
+
+    /// <summary>Explicit opt-in to installing Ollama when no installation can be found.</summary>
+    public bool AllowAutomaticInstallation { get; set; }
+
     /// <summary>
     ///     Model name for embeddings (used when <c>Onnx.EmbeddingEnabled</c>
     ///     is false). Kept as a single field rather than a registry because
@@ -38,6 +47,30 @@ public class OllamaSettings
     ///     Output dimensionality of the embedding model.
     /// </summary>
     public int EmbeddingDimensions { get; set; } = DefaultEmbeddingDimensions;
+
+    /// <summary>
+    ///     Apply model-specific document/query instructions. Enable when creating
+    ///     or re-embedding a library. False preserves older unprefixed vectors.
+    /// </summary>
+    public bool EmbeddingUseTaskPrefixes { get; set; }
+
+    /// <summary>Maximum texts per sequential embedding request (1–64).</summary>
+    public int EmbeddingBatchSize { get; set; } = DefaultEmbeddingBatchSize;
+
+    /// <summary>
+    ///     Embedding-only idle retention (0–300 seconds). Zero unloads after each
+    ///     request. Classification and recon retention are unaffected.
+    /// </summary>
+    public int EmbeddingKeepAliveSeconds { get; set; } = DefaultEmbeddingKeepAliveSeconds;
+
+    /// <summary>Bound embedding CPU threads; GPU use remains automatic.</summary>
+    public int EmbeddingThreads { get; set; } = DefaultEmbeddingThreads;
+
+    /// <summary>
+    ///     Optional token capacity for both context and the internal embedding
+    ///     batch. Null uses 8192 for embeddinggemma-2 and Ollama defaults otherwise.
+    /// </summary>
+    public int? EmbeddingContextLength { get; set; }
 
     /// <summary>
     ///     Name of the <see cref="ClassificationModels" /> entry to use for
@@ -143,6 +176,11 @@ public class OllamaSettings
     public const string DefaultEndpoint = "http://localhost:11434";
     public const string DefaultEmbeddingModel = "nomic-embed-text";
     public const int DefaultEmbeddingDimensions = 768;
+    public const int DefaultEmbeddingBatchSize = 16;
+    public const int MaximumEmbeddingBatchSize = 64;
+    public const int DefaultEmbeddingKeepAliveSeconds = 60;
+    public const int MaximumEmbeddingKeepAliveSeconds = 300;
+    public const int DefaultEmbeddingThreads = 4;
     public const int DefaultModelPullTimeoutSeconds = 600;
     public const int DefaultWarmModelTimeoutSeconds = 90;
     public const float DefaultReconMinConfidence = 0.6f;

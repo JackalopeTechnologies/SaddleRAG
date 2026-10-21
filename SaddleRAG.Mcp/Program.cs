@@ -67,7 +67,6 @@ const string HttpClientDocUrlProbe = "DocUrlProbe";
 const string OllamaProbeHttpClientName = "OllamaProbe";
 const string KestrelHttpsEndpointKey = "Kestrel:Endpoints:Https:Url";
 const string HealthEndpointPath = "/health";
-const string HealthyStatus = "Healthy";
 const string MonitorHubEndpointPath = "/monitor/hub";
 const string MonitorEndpointPath = "/monitor";
 const string KestrelHttpPortKey = "Kestrel:Endpoints:Http:Port";
@@ -186,6 +185,7 @@ builder.Services.AddSingleton(new DiagnosticTools.LogConfig(logDirectory));
 // acknowledgement singleton (MainLayout lives in this project, LogsPage in Monitor).
 builder.Services.AddSingleton<IServerLogReader>(new FileServerLogTailReader(logDirectory));
 builder.Services.AddSingleton<IServerLogAcknowledgement, ServerLogAcknowledgement>();
+builder.Services.AddSingleton<LogNotificationReader>();
 builder.Services.AddSingleton(runSentinel);
 
 // Crash triage (issue #140): get_crash_report aggregates event-log records,
@@ -204,6 +204,8 @@ builder.Services.AddSingleton(new CrashReportService.Options(Path.Combine(common
 builder.Services.AddSingleton<CrashReportService>();
 
 builder.Services.AddSingleton<McpWarmupState>();
+builder.Services.AddSingleton<SaddleRAG.Core.DependencyHealthState>();
+builder.Services.AddHostedService<DependencyHealthMonitor>();
 
 builder.Services.AddHostedService<McpWarmupService>();
 
@@ -378,7 +380,9 @@ builder.Services.AddSingleton<RescrubJobRunner>();
 // Shared cancellation registry — every cancellable job runner registers its
 // per-job CTS here so cancel_job (and the monitor API) can signal it without
 // knowing which runner owns the job.
-builder.Services.AddSingleton<IJobCancellationRegistry, JobCancellationRegistry>();
+builder.Services.AddSingleton<JobCancellationRegistry>();
+builder.Services.AddSingleton<IJobCancellationRegistry>(sp => sp.GetRequiredService<JobCancellationRegistry>());
+builder.Services.AddSingleton<InterruptedJobRecovery>();
 builder.Services.AddSingleton<JobCancellationService>();
 
 // Reembed service and background job runner (consumed by reembed_library MCP tool)
@@ -422,7 +426,8 @@ builder.Services.AddSingleton<IScrapeJobQueue>(sp =>
 builder.Services.AddSingleton<IScrapeAuditWriter>(sp =>
                                                       new ScrapeAuditWriter(sp.GetRequiredService<
                                                                                 IScrapeAuditRepository>(),
-                                                                           sp.GetRequiredService<RepositoryFactory>()
+                                                                           sp.GetRequiredService<RepositoryFactory>(),
+                                                                           logger: sp.GetRequiredService<ILogger<ScrapeAuditWriter>>()
                                                                            )
                                                  );
 
@@ -723,6 +728,7 @@ else
 
     var firstRequestLogged = false;
 
+    app.UseMiddleware<ShutdownConnectionMiddleware>();
     app.Use(async (context, next) =>
 
             {
@@ -761,10 +767,11 @@ else
 
     app.MapGet(HealthEndpointPath,
                (McpWarmupState warmupState,
-                IDoclingCapabilityService doclingCapability) =>
-                   Results.Ok(ServiceHealthResponseFactory.Create(HealthyStatus,
-                                                                  warmupState,
-                                                                  doclingCapability))
+                IDoclingCapabilityService doclingCapability,
+                SaddleRAG.Core.DependencyHealthState dependencies,
+                LogNotificationReader notifications) =>
+                   ServiceHealthResponseFactory.CreateResult(warmupState, doclingCapability,
+                                                              dependencies, notifications)
               );
 
 

@@ -7,12 +7,18 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- The installed CLI shares the server's directory, not its runtime files. -->
+  <PropertyGroup Condition="'$(SelfContained)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="CodeStructure.Analyzers" Version="1.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.11" />
-    <PackageReference Include="SharpCompress" Version="0.50.3" />
-    <PackageReference Include="System.CommandLine" Version="2.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageReference Include="CodeStructure.Analyzers" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="SharpCompress" />
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
   <ItemGroup>

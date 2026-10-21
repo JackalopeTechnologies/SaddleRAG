@@ -127,7 +127,7 @@ public class CliReconFallback
                               Model = mSettings.GetActiveReconModel().Name,
                               Prompt = prompt,
                               Stream = true,
-                              KeepAlive = OllamaKeepAlive.KeepLoaded
+                              KeepAlive = null
                           };
 
         var responseBuilder = new StringBuilder();

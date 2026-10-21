@@ -37,15 +37,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CodeStructure.Analyzers" Version="1.0.7" />
-    <PackageReference Include="Microsoft.Playwright" Version="1.61.0" />
-    <PackageReference Include="AngleSharp" Version="1.7.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
-    <PackageReference Include="OllamaSharp" Version="5.4.30" />
-    <PackageReference Include="SharpCompress" Version="0.50.3" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0"
+    <PackageReference Include="CodeStructure.Analyzers" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="AngleSharp" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="OllamaSharp" />
+    <PackageReference Include="SharpCompress" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime"
                       Condition="'$(UseGpu)' != 'true' and '$(UseGpuCuda)' != 'true'" />
     <!--
       Microsoft.ML.OnnxRuntime.DirectML lags Microsoft.ML.OnnxRuntime on
@@ -53,7 +53,7 @@
       cadence. 1.24.4 is the latest DirectML build at time of writing; the
       CPU build can stay at 1.28.0. Bump this when DirectML 1.25+ ships.
     -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4"
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML"
                       Condition="'$(UseGpu)' == 'true' and '$(UseGpuCuda)' != 'true'" />
     <!--
       CUDA execution provider. Ships AppendExecutionProvider_CUDA and the
@@ -61,7 +61,7 @@
       Requires CUDA 12.x + cuDNN 9.x at runtime (provided by the nvidia/cuda
       base image in Dockerfile.cuda). Version matches the CPU NuGet.
     -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.28.0"
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu"
                       Condition="'$(UseGpuCuda)' == 'true'" />
     <!--
       Microsoft.ML.OnnxRuntimeGenAI — generative-inference runtime for the ONNX classifier.
@@ -70,13 +70,13 @@
       GenAI.Cuda moved on to 0.15.1, so the DirectML flavor runs a version behind the
       other two. Bump it when GenAI.DirectML 0.15+ ships.
     -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.15.1"
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI"
                       Condition="'$(UseGpu)' != 'true' and '$(UseGpuCuda)' != 'true'" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.DirectML" Version="0.14.1"
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.DirectML"
                       Condition="'$(UseGpu)' == 'true' and '$(UseGpuCuda)' != 'true'" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.Cuda" Version="0.15.1"
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.Cuda"
                       Condition="'$(UseGpuCuda)' == 'true'" />
-    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" />
   </ItemGroup>
 
   <ItemGroup>

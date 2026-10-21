@@ -9,6 +9,14 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        int result = args.Length > 0 && args[0].Equals(ConfigurationUpgradeCommand.Name, StringComparison.Ordinal)
+            ? ConfigurationUpgradeCommand.Run(args)
+            : await StartAndMonitorAsync(args);
+        return result;
+    }
+
+    private static async Task<int> StartAndMonitorAsync(string[] args)
+    {
         StartAndMonitorOptions? options = StartAndMonitorOptions.Parse(args, out string parseError);
         int exitCode;
         if (options == null)

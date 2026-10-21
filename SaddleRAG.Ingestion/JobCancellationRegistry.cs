@@ -7,6 +7,7 @@
 
 using System.Collections.Concurrent;
 using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 
 #endregion
 
@@ -21,15 +22,60 @@ namespace SaddleRAG.Ingestion;
 /// </summary>
 public class JobCancellationRegistry : IJobCancellationRegistry
 {
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> mEntries =
-        new ConcurrentDictionary<string, CancellationTokenSource>();
+    private readonly ConcurrentDictionary<string, RunningJobRegistration> mEntries = new();
+    private readonly ConcurrentDictionary<string, InterruptedJob> mInterrupted = new();
+    private readonly Lock mRecoveryLock = new();
+    private const int MaximumPendingRecoveries = 10000;
+    private const string RecoveryCapacityMessage = "Too many interrupted jobs await database recovery. Stop creating jobs and restore MongoDB.";
+
+    /// <inheritdoc />
+    public void RecordInterrupted(string jobId, string? profile, string detail)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        ArgumentException.ThrowIfNullOrEmpty(detail);
+        lock (mRecoveryLock)
+        {
+            if (mInterrupted.Count >= MaximumPendingRecoveries && !mInterrupted.ContainsKey(jobId))
+                throw new InvalidOperationException(RecoveryCapacityMessage);
+            mInterrupted.TryAdd(jobId, new InterruptedJob(jobId, profile, detail));
+        }
+    }
+
+    /// <summary>Returns interrupted statuses awaiting a durable database write.</summary>
+    public IReadOnlyList<InterruptedJob> GetInterrupted() => mInterrupted.Values.ToArray();
+
+    /// <summary>Removes a status only after its database write succeeds.</summary>
+    public void AcknowledgeInterrupted(string jobId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        mInterrupted.TryRemove(jobId, out _);
+    }
 
     public void Register(string jobId, CancellationTokenSource cts)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);
         ArgumentNullException.ThrowIfNull(cts);
 
-        mEntries[jobId] = cts;
+        Register(jobId, cts, null);
+    }
+
+    /// <inheritdoc />
+    public void Register(string jobId, CancellationTokenSource cts, string? profile)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        ArgumentNullException.ThrowIfNull(cts);
+        mEntries[jobId] = new RunningJobRegistration(cts, profile);
+    }
+
+    /// <summary>Snapshot used to stop only jobs whose database is unavailable.</summary>
+    public IReadOnlyDictionary<string, string?> GetProfiles() =>
+        mEntries.ToDictionary(entry => entry.Key, entry => entry.Value.Profile);
+
+    /// <summary>Whether a runner still owns the job.</summary>
+    public bool IsRegistered(string jobId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        return mEntries.ContainsKey(jobId);
     }
 
     public void Unregister(string jobId)
@@ -43,10 +89,17 @@ public class JobCancellationRegistry : IJobCancellationRegistry
         ArgumentException.ThrowIfNullOrEmpty(jobId);
 
         bool res = false;
-        if (mEntries.TryGetValue(jobId, out var cts))
+        if (mEntries.TryGetValue(jobId, out var registration))
         {
-            await cts.CancelAsync();
-            res = true;
+            try
+            {
+                await registration.Cancellation.CancelAsync();
+                res = true;
+            }
+            catch (ObjectDisposedException)
+            {
+                // The runner finished and disposed its token after this lookup.
+            }
         }
 
         return res;

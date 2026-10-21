@@ -49,9 +49,48 @@ public sealed class McpWarmupService : BackgroundService
     private readonly IServiceProvider mServiceProvider;
 
     private readonly McpWarmupState mWarmupState;
+    private readonly HashSet<string?> mPendingProfiles = [];
+    private const string EmbeddingStartupFailedMessage = "The embedding provider is unavailable; startup will retry.";
+    private static readonly TimeSpan smRecoveryInterval = TimeSpan.FromSeconds(10);
 
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                if (mWarmupState.Status != nameof(ScrapeJobStatus.Completed))
+                    await RunStartupAsync(stoppingToken);
+                else
+                    await RecoverProfilesAsync(stoppingToken);
+                await Task.Delay(smRecoveryInterval, stoppingToken);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // The health host stays available while startup waits for dependencies.
+        }
+    }
+
+    private async Task RecoverProfilesAsync(CancellationToken stoppingToken)
+    {
+        using var scope = mServiceProvider.CreateScope();
+        var contexts = scope.ServiceProvider.GetRequiredService<SaddleRagDbContextFactory>();
+        var repositories = scope.ServiceProvider.GetRequiredService<RepositoryFactory>();
+        var vectorSearch = scope.ServiceProvider.GetRequiredService<IVectorSearchProvider>();
+        foreach (string? profile in mPendingProfiles.ToArray())
+        {
+            if (!contexts.GetForProfile(profile).Reachability.HealthCheckFailed)
+            {
+                mPendingProfiles.Remove(profile);
+                await DiscoverModelsForProfileAsync(profile, contexts, repositories, [], stoppingToken);
+                await LoadChunksForProfileAsync(profile, repositories, vectorSearch, stoppingToken);
+            }
+        }
+    }
+
+    private async Task RunStartupAsync(CancellationToken stoppingToken)
 
     {
         var startupSw = Stopwatch.StartNew();
@@ -67,6 +106,12 @@ public sealed class McpWarmupService : BackgroundService
         try
 
         {
+            // A failed initial database connection must not leave empty indexes
+            // permanently reported as ready. Retry startup after reconnection.
+            using var databaseTimeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            databaseTimeout.CancelAfter(TimeSpan.FromSeconds(3));
+            await mServiceProvider.GetRequiredService<SaddleRagDbContextFactory>()
+                .GetDefault().CheckHealthAsync(databaseTimeout.Token);
             stepSw.Restart();
 
             await VerifyPlaywrightRuntimeAsync(mPlaywrightRuntimeProbe,
@@ -157,7 +202,14 @@ public sealed class McpWarmupService : BackgroundService
 
             if (ollamaBackendActive)
             {
-                await bootstrapper.BootstrapAsync(ollamaClassifierActive, requiredModels.ToList(), stoppingToken);
+                try
+                {
+                    await bootstrapper.BootstrapAsync(ollamaClassifierActive, requiredModels.ToList(), stoppingToken);
+                }
+                catch (Exception exception) when (!ollamaEmbeddingActive && !stoppingToken.IsCancellationRequested)
+                {
+                    mLogger.LogWarning(exception, "Ollama classification is unavailable; continuing native search startup");
+                }
 
                 mWarmupState.MarkPhase(PhaseOllamaBootstrapFinished);
 
@@ -208,8 +260,8 @@ public sealed class McpWarmupService : BackgroundService
 
             // Download the active classifier model folder (idempotent) and
             // warm the ONNX classifier so the first real classification isn't
-            // cold. Gated on Onnx.Enabled — when ONNX is off this whole block
-            // is skipped and the classifier cold-loads on first use. Non-fatal:
+            // cold. Only run this for the selected ONNX classifier; an Ollama
+            // classifier is verified separately below. Non-fatal:
             // a download or warm failure logs a warning but does NOT abort
             // warmup (mirrors the search-path warm's non-fatal pattern), so
             // the operator can still serve search while resolving the issue.
@@ -217,7 +269,7 @@ public sealed class McpWarmupService : BackgroundService
             // on the default all-ONNX path this warm IS the active classifier.
             bool onnxClassifierWarm = false;
 
-            if (onnxSettings.Enabled)
+            if (onnxSettings.Enabled && !ollamaClassifierActive)
             {
                 stepSw.Restart();
 
@@ -323,9 +375,8 @@ public sealed class McpWarmupService : BackgroundService
             // the ONNX classifier was already downloaded and warmed above and
             // its outcome alone decides completed-vs-degraded. The Ollama
             // generate warm below runs ONLY when the Ollama classifier backend
-            // is actually active — otherwise it would send a keep_alive=-1
-            // (permanent VRAM pin) request for the phi classification model to
-            // Ollama on every startup even though nothing consumes it, and would
+            // is actually active — otherwise it would load an unused model on
+            // every startup and would
             // flip a healthy all-ONNX warmup to the degraded phase whenever
             // Ollama isn't running. A failed classifier warm only means the
             // first reextract_library / dryrun_scrape call cold-loads the model;
@@ -359,6 +410,8 @@ public sealed class McpWarmupService : BackgroundService
                                                          ollamaWarmSucceeded
                                                         );
 
+            if (!embeddingProviderReady)
+                throw new InvalidOperationException(EmbeddingStartupFailedMessage);
             mWarmupState.MarkCompleted(classifierWarm ? nameof(ScrapeJobStatus.Completed) : PhaseClassifierDegraded);
 
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s - Completed", startupSw.Elapsed.TotalSeconds);
@@ -436,6 +489,7 @@ public sealed class McpWarmupService : BackgroundService
 
         {
             mLogger.LogWarning(ex, "Failed to inspect profile {Profile}, skipping at startup", profile ?? "(default)");
+            mPendingProfiles.Add(profile);
         }
     }
 
@@ -553,6 +607,7 @@ public sealed class McpWarmupService : BackgroundService
 
         {
             mLogger.LogWarning(ex, "Failed to load chunks for profile {Profile}, skipping", profile ?? "(default)");
+            mPendingProfiles.Add(profile);
         }
     }
 

@@ -84,7 +84,8 @@ public class ScrapeJobRunner : IScrapeJobQueue
         await jobRepo.UpsertAsync(ProjectToUnified(jobRecord), ct);
 
         // Fire-and-forget background execution. Errors land in the job record.
-        _ = Task.Run(() => RunJobAsync(jobRecord), mAppStoppingToken);
+        _ = Task.Run(() => JobTaskObserver.RunAsync(() => RunJobAsync(jobRecord),
+            jobRecord.Id, jobRecord.Profile, mCancellationRegistry, null, mLogger), mAppStoppingToken);
 
         return jobRecord.Id;
     }
@@ -111,7 +112,7 @@ public class ScrapeJobRunner : IScrapeJobQueue
                                   );
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(mAppStoppingToken);
-            mCancellationRegistry.Register(jobRecord.Id, cts);
+            mCancellationRegistry.Register(jobRecord.Id, cts, jobRecord.Profile);
 
             await mOrchestrator.IngestAsync(jobRecord.Job,
                                             jobRecord.Profile,

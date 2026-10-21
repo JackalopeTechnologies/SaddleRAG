@@ -30,7 +30,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CodeStructure.Analyzers" Version="1.0.7" />
+    <PackageReference Include="CodeStructure.Analyzers" />
   </ItemGroup>
 
 </Project>

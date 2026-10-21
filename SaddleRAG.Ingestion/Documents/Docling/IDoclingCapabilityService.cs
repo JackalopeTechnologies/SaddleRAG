@@ -16,4 +16,7 @@ public interface IDoclingCapabilityService
                                                  CancellationToken cancellationToken = default);
 
     void RecordUnexpectedFailure();
+
+    /// <summary>Updates transport availability without running another conversion probe.</summary>
+    void RecordServiceObservation(DoclingServiceObservation observation) { }
 }

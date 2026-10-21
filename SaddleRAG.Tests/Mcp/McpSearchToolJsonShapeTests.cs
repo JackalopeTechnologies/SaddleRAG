@@ -335,7 +335,7 @@ public sealed class McpSearchToolJsonShapeTests
     private static readonly string[] SearchDocsResultEntryFields =
         [
             "LibraryId", "Category", "PageTitle", "SectionPath", "PageUrl", "Content", "QualifiedName",
-            "CodeLanguage", "RelevanceScore", "VectorScore", "Bm25Score", "RerankScore"
+            "CodeLanguage", "RelevanceScore", "VectorScore", "Bm25Score", "RerankScore", "SourceIdentityMatch"
         ];
 
     private static readonly string[] OverviewEntryFields =

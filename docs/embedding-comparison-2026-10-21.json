@@ -1,0 +1,994 @@
+{
+  "directml": {
+    "Mode": "directml",
+    "Model": "nomic-embed-text-v1.5",
+    "Provider": "onnx",
+    "CapturedUtc": "2026-10-21T09:43:03.1098294-06:00",
+    "CorpusSha256": "0F3B551245C5DCBEE4B1C967CB96F0CD1EC21073941DEABF50A400120880CF5B",
+    "QuestionsSha256": "60AB3E5A73C587B299C420478903EAB73F7B228B124B580C2ACF464AE8A868DB",
+    "CorpusCount": 667,
+    "QueryCount": 29,
+    "Dimensions": 768,
+    "DirectMlPassageLimit": 512,
+    "PassagesOverDirectMlLimit": 3,
+    "MaximumNomicTokens": 914,
+    "NativeActiveProvider": "DirectMl",
+    "ConstructionMs": 977.4719,
+    "ColdFirstQueryMs": 1448.46,
+    "DocumentPassMs": [
+      60334.3321,
+      80306.1586
+    ],
+    "DocumentsPerSecond": [
+      11.055065611640375,
+      8.305714177193877
+    ],
+    "WarmQueryMedianMs": 86.1229,
+    "WarmQueryP95Ms": 137.0519,
+    "QueryRounds": 3,
+    "TopOne": 19,
+    "TopFive": 26,
+    "MeanReciprocalRank": 0.7719348659003831,
+    "CommonLengthQueries": 29,
+    "CommonLengthTopOne": 19,
+    "CommonLengthTopFive": 26,
+    "BaselineGpuMiB": 5887,
+    "PeakGpuMiB": 6398,
+    "RunningOllama": null,
+    "Ranks": [
+      {
+        "Id": "q01",
+        "Query": "How do I install files under the current user's Documents or profile folder?",
+        "Expected": [
+          "advanced-installer/current/c61ed69295cf/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q02",
+        "Query": "What Microsoft checks should validate an installation package and identify common consistency errors?",
+        "Expected": [
+          "advanced-installer/current/071c7db33900/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q03",
+        "Query": "How can I remove an XML file from an Advanced Installer project using the command line?",
+        "Expected": [
+          "advanced-installer/current/52917aa4b3e1/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q04",
+        "Query": "Where can I add elements and entire subtrees to an MSIX package manifest?",
+        "Expected": [
+          "advanced-installer/current/a6cc1ed3b9db/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q05",
+        "Query": "Which Math.NET filter type rejects frequencies inside a band while passing frequencies outside it?",
+        "Expected": [
+          "mathnet-filtering/current/6c75ca36808b/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q06",
+        "Query": "How do I precompute flat top window coefficients and copy them into an array?",
+        "Expected": [
+          "mathnet-filtering/current/31da392f23ee/0"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q07",
+        "Query": "For a bilinear transform of poles and zeros, is samplingTime the rate or its reciprocal, and are arrays modified?",
+        "Expected": [
+          "mathnet-filtering/current/f055b6c200fb/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q08",
+        "Query": "What inputs are needed to calculate IIR bandpass filter coefficients?",
+        "Expected": [
+          "mathnet-filtering/current/f9b2928c34d7/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q09",
+        "Query": "How can a substitute always return the same result regardless of its method arguments?",
+        "Expected": [
+          "nsubstitute/5.3.0/91ef47239954/0"
+        ],
+        "Rank": 8,
+        "CommonLengthRank": 8
+      },
+      {
+        "Id": "q10",
+        "Query": "How do I raise a PropertyChanged event on a substitute when the event uses its own delegate type?",
+        "Expected": [
+          "nsubstitute/5.3.0/80b6d14c5d5c/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q11",
+        "Query": "How can I increment a counter after returning a value from a mocked call?",
+        "Expected": [
+          "nsubstitute/5.3.0/b9a2e02cd041/0-1"
+        ],
+        "Rank": 3,
+        "CommonLengthRank": 3
+      },
+      {
+        "Id": "q12",
+        "Query": "Why can substituting a class execute the real constructor, and why are interfaces safer?",
+        "Expected": [
+          "nsubstitute/5.3.0/207de3215773/0-2"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q13",
+        "Query": "Can I verify calls to virtual methods on a partial substitute without replacing their implementations?",
+        "Expected": [
+          "nsubstitute/5.3.0/b0071bb90a59/0-2"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q14",
+        "Query": "Which OllamaSharp object retains conversation history including tool calls across messages?",
+        "Expected": [
+          "ollamasharp/5.4.25/cef424785d01/10"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q15",
+        "Query": "How can I use Ollama through Microsoft's common chat and embedding interfaces so I can swap providers?",
+        "Expected": [
+          "ollamasharp/5.4.25/cef424785d01/11"
+        ],
+        "Rank": 4,
+        "CommonLengthRank": 4
+      },
+      {
+        "Id": "q16",
+        "Query": "Which Ollama exception constructor preserves an underlying exception together with a message?",
+        "Expected": [
+          "ollamasharp/5.4.25/721017ff5c6e/0"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q17",
+        "Query": "How do I save several named Math.NET matrices to a MATLAB file?",
+        "Expected": [
+          "mathnet-numerics/current/913c3a0508a3/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q18",
+        "Query": "How can I get the upper triangular factor and solve equations after computing an LU factorization?",
+        "Expected": [
+          "mathnet-numerics/current/8c63c0ad768f/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q19",
+        "Query": "Can I release a linear algebra provider's cached buffers and handles without unloading the provider?",
+        "Expected": [
+          "mathnet-numerics/current/d287253e94c0/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q20",
+        "Query": "How can I read the vertical data coordinate at the point hit by a SciChart hit test?",
+        "Expected": [
+          "scichart-wpf/current/4c9ba26e0bd6/0"
+        ],
+        "Rank": 15,
+        "CommonLengthRank": 14
+      },
+      {
+        "Id": "q21",
+        "Query": "Where does the negative logarithmic tick provider validate that the visible minimum is less than the maximum?",
+        "Expected": [
+          "scichart-wpf/current/9e0fcb441fae/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q22",
+        "Query": "Which category numeric axis method supplies the default nonzero range when its visible range is undefined?",
+        "Expected": [
+          "scichart-wpf/current/628c5d12478d/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q23",
+        "Query": "What SciChart extension finds a visual child of a requested type?",
+        "Expected": [
+          "scichart-wpf/current/735e21f0826b/0"
+        ],
+        "Rank": 9,
+        "CommonLengthRank": 9
+      },
+      {
+        "Id": "q24",
+        "Query": "How long must the silent gap between serial frames be, including after a reply before addressing another inverter?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/8bf6f027249f/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q25",
+        "Query": "What operating history is used to estimate the remaining life of an inverter's cooling fan and capacitors?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/4c7e9f244e31/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q26",
+        "Query": "In which monitor mode can I use a shortcut list for frequently adjusted inverter parameters?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/47941dff6cdf/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q27",
+        "Query": "How long must an output phase failure persist before the VF-S9 trips and activates its relay?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/caec246f337b/24-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q28",
+        "Query": "Which parameters set the speed reached frequency and its detection band?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/b74de2e9c113/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q29",
+        "Query": "How can I adjust the output current meter when the current reading fluctuates too much?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/f80738c8e390/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      }
+    ]
+  },
+  "nomic": {
+    "Mode": "nomic",
+    "Model": "nomic-embed-text:latest",
+    "Provider": "ollama",
+    "CapturedUtc": "2026-10-21T09:44:06.9804042-06:00",
+    "CorpusSha256": "0F3B551245C5DCBEE4B1C967CB96F0CD1EC21073941DEABF50A400120880CF5B",
+    "QuestionsSha256": "60AB3E5A73C587B299C420478903EAB73F7B228B124B580C2ACF464AE8A868DB",
+    "CorpusCount": 667,
+    "QueryCount": 29,
+    "Dimensions": 768,
+    "DirectMlPassageLimit": 512,
+    "PassagesOverDirectMlLimit": 3,
+    "MaximumNomicTokens": 914,
+    "NativeActiveProvider": null,
+    "ConstructionMs": 1.893,
+    "ColdFirstQueryMs": 23398.4799,
+    "DocumentPassMs": [
+      16195.7912,
+      6648.061
+    ],
+    "DocumentsPerSecond": [
+      41.18353909131652,
+      100.3300059972374
+    ],
+    "WarmQueryMedianMs": 18.7742,
+    "WarmQueryP95Ms": 22.713,
+    "QueryRounds": 3,
+    "TopOne": 22,
+    "TopFive": 28,
+    "MeanReciprocalRank": 0.8472085385878488,
+    "CommonLengthQueries": 29,
+    "CommonLengthTopOne": 22,
+    "CommonLengthTopFive": 28,
+    "BaselineGpuMiB": 5876,
+    "PeakGpuMiB": 6608,
+    "RunningOllama": {
+      "models": [
+        {
+          "name": "nomic-embed-text:latest",
+          "model": "nomic-embed-text:latest",
+          "size": 274290656,
+          "digest": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "nomic-bert",
+            "families": [
+              "nomic-bert"
+            ],
+            "parameter_size": "137M",
+            "quantization_level": "F16"
+          },
+          "expires_at": "2026-10-21T09:45:04.4250797-06:00",
+          "size_vram": 274290656,
+          "context_length": 2048,
+          "runner": "llamacpp"
+        }
+      ]
+    },
+    "Ranks": [
+      {
+        "Id": "q01",
+        "Query": "How do I install files under the current user's Documents or profile folder?",
+        "Expected": [
+          "advanced-installer/current/c61ed69295cf/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q02",
+        "Query": "What Microsoft checks should validate an installation package and identify common consistency errors?",
+        "Expected": [
+          "advanced-installer/current/071c7db33900/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q03",
+        "Query": "How can I remove an XML file from an Advanced Installer project using the command line?",
+        "Expected": [
+          "advanced-installer/current/52917aa4b3e1/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q04",
+        "Query": "Where can I add elements and entire subtrees to an MSIX package manifest?",
+        "Expected": [
+          "advanced-installer/current/a6cc1ed3b9db/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q05",
+        "Query": "Which Math.NET filter type rejects frequencies inside a band while passing frequencies outside it?",
+        "Expected": [
+          "mathnet-filtering/current/6c75ca36808b/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q06",
+        "Query": "How do I precompute flat top window coefficients and copy them into an array?",
+        "Expected": [
+          "mathnet-filtering/current/31da392f23ee/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q07",
+        "Query": "For a bilinear transform of poles and zeros, is samplingTime the rate or its reciprocal, and are arrays modified?",
+        "Expected": [
+          "mathnet-filtering/current/f055b6c200fb/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q08",
+        "Query": "What inputs are needed to calculate IIR bandpass filter coefficients?",
+        "Expected": [
+          "mathnet-filtering/current/f9b2928c34d7/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q09",
+        "Query": "How can a substitute always return the same result regardless of its method arguments?",
+        "Expected": [
+          "nsubstitute/5.3.0/91ef47239954/0"
+        ],
+        "Rank": 5,
+        "CommonLengthRank": 5
+      },
+      {
+        "Id": "q10",
+        "Query": "How do I raise a PropertyChanged event on a substitute when the event uses its own delegate type?",
+        "Expected": [
+          "nsubstitute/5.3.0/80b6d14c5d5c/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q11",
+        "Query": "How can I increment a counter after returning a value from a mocked call?",
+        "Expected": [
+          "nsubstitute/5.3.0/b9a2e02cd041/0-1"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q12",
+        "Query": "Why can substituting a class execute the real constructor, and why are interfaces safer?",
+        "Expected": [
+          "nsubstitute/5.3.0/207de3215773/0-2"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q13",
+        "Query": "Can I verify calls to virtual methods on a partial substitute without replacing their implementations?",
+        "Expected": [
+          "nsubstitute/5.3.0/b0071bb90a59/0-2"
+        ],
+        "Rank": 3,
+        "CommonLengthRank": 3
+      },
+      {
+        "Id": "q14",
+        "Query": "Which OllamaSharp object retains conversation history including tool calls across messages?",
+        "Expected": [
+          "ollamasharp/5.4.25/cef424785d01/10"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q15",
+        "Query": "How can I use Ollama through Microsoft's common chat and embedding interfaces so I can swap providers?",
+        "Expected": [
+          "ollamasharp/5.4.25/cef424785d01/11"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q16",
+        "Query": "Which Ollama exception constructor preserves an underlying exception together with a message?",
+        "Expected": [
+          "ollamasharp/5.4.25/721017ff5c6e/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q17",
+        "Query": "How do I save several named Math.NET matrices to a MATLAB file?",
+        "Expected": [
+          "mathnet-numerics/current/913c3a0508a3/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q18",
+        "Query": "How can I get the upper triangular factor and solve equations after computing an LU factorization?",
+        "Expected": [
+          "mathnet-numerics/current/8c63c0ad768f/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q19",
+        "Query": "Can I release a linear algebra provider's cached buffers and handles without unloading the provider?",
+        "Expected": [
+          "mathnet-numerics/current/d287253e94c0/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q20",
+        "Query": "How can I read the vertical data coordinate at the point hit by a SciChart hit test?",
+        "Expected": [
+          "scichart-wpf/current/4c9ba26e0bd6/0"
+        ],
+        "Rank": 28,
+        "CommonLengthRank": 27
+      },
+      {
+        "Id": "q21",
+        "Query": "Where does the negative logarithmic tick provider validate that the visible minimum is less than the maximum?",
+        "Expected": [
+          "scichart-wpf/current/9e0fcb441fae/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q22",
+        "Query": "Which category numeric axis method supplies the default nonzero range when its visible range is undefined?",
+        "Expected": [
+          "scichart-wpf/current/628c5d12478d/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q23",
+        "Query": "What SciChart extension finds a visual child of a requested type?",
+        "Expected": [
+          "scichart-wpf/current/735e21f0826b/0"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q24",
+        "Query": "How long must the silent gap between serial frames be, including after a reply before addressing another inverter?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/8bf6f027249f/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q25",
+        "Query": "What operating history is used to estimate the remaining life of an inverter's cooling fan and capacitors?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/4c7e9f244e31/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q26",
+        "Query": "In which monitor mode can I use a shortcut list for frequently adjusted inverter parameters?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/47941dff6cdf/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q27",
+        "Query": "How long must an output phase failure persist before the VF-S9 trips and activates its relay?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/caec246f337b/24-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q28",
+        "Query": "Which parameters set the speed reached frequency and its detection band?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/b74de2e9c113/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q29",
+        "Query": "How can I adjust the output current meter when the current reading fluctuates too much?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/f80738c8e390/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      }
+    ]
+  },
+  "gemma": {
+    "Mode": "gemma",
+    "Model": "embeddinggemma-2:270m",
+    "Provider": "ollama",
+    "CapturedUtc": "2026-10-21T09:45:20.3503022-06:00",
+    "CorpusSha256": "0F3B551245C5DCBEE4B1C967CB96F0CD1EC21073941DEABF50A400120880CF5B",
+    "QuestionsSha256": "60AB3E5A73C587B299C420478903EAB73F7B228B124B580C2ACF464AE8A868DB",
+    "CorpusCount": 667,
+    "QueryCount": 29,
+    "Dimensions": 768,
+    "DirectMlPassageLimit": 512,
+    "PassagesOverDirectMlLimit": 3,
+    "MaximumNomicTokens": 914,
+    "NativeActiveProvider": null,
+    "ConstructionMs": 1.8111,
+    "ColdFirstQueryMs": 31826.3409,
+    "DocumentPassMs": [
+      9597.8432,
+      9536.7862
+    ],
+    "DocumentsPerSecond": [
+      69.49477982720119,
+      69.93970358693791
+    ],
+    "WarmQueryMedianMs": 18.094,
+    "WarmQueryP95Ms": 22.691,
+    "QueryRounds": 3,
+    "TopOne": 26,
+    "TopFive": 29,
+    "MeanReciprocalRank": 0.9339080459770116,
+    "CommonLengthQueries": 29,
+    "CommonLengthTopOne": 26,
+    "CommonLengthTopFive": 29,
+    "BaselineGpuMiB": 5878,
+    "PeakGpuMiB": 6664,
+    "RunningOllama": {
+      "models": [
+        {
+          "name": "embeddinggemma-2:270m",
+          "model": "embeddinggemma-2:270m",
+          "size": 303957280,
+          "digest": "c21dd30c1e38444d3b4faa091407b6fa97221447b4965d74931d43d7f09bbbfd",
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "gemma-embedding2",
+            "families": [
+              "gemma-embedding2"
+            ],
+            "parameter_size": "271.00M",
+            "quantization_level": "Q8_0"
+          },
+          "expires_at": "2026-10-21T09:46:18.0936841-06:00",
+          "size_vram": 303957280,
+          "context_length": 32768,
+          "runner": "llamacpp"
+        }
+      ]
+    },
+    "Ranks": [
+      {
+        "Id": "q01",
+        "Query": "How do I install files under the current user's Documents or profile folder?",
+        "Expected": [
+          "advanced-installer/current/c61ed69295cf/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q02",
+        "Query": "What Microsoft checks should validate an installation package and identify common consistency errors?",
+        "Expected": [
+          "advanced-installer/current/071c7db33900/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q03",
+        "Query": "How can I remove an XML file from an Advanced Installer project using the command line?",
+        "Expected": [
+          "advanced-installer/current/52917aa4b3e1/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q04",
+        "Query": "Where can I add elements and entire subtrees to an MSIX package manifest?",
+        "Expected": [
+          "advanced-installer/current/a6cc1ed3b9db/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q05",
+        "Query": "Which Math.NET filter type rejects frequencies inside a band while passing frequencies outside it?",
+        "Expected": [
+          "mathnet-filtering/current/6c75ca36808b/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q06",
+        "Query": "How do I precompute flat top window coefficients and copy them into an array?",
+        "Expected": [
+          "mathnet-filtering/current/31da392f23ee/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q07",
+        "Query": "For a bilinear transform of poles and zeros, is samplingTime the rate or its reciprocal, and are arrays modified?",
+        "Expected": [
+          "mathnet-filtering/current/f055b6c200fb/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q08",
+        "Query": "What inputs are needed to calculate IIR bandpass filter coefficients?",
+        "Expected": [
+          "mathnet-filtering/current/f9b2928c34d7/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q09",
+        "Query": "How can a substitute always return the same result regardless of its method arguments?",
+        "Expected": [
+          "nsubstitute/5.3.0/91ef47239954/0"
+        ],
+        "Rank": 3,
+        "CommonLengthRank": 3
+      },
+      {
+        "Id": "q10",
+        "Query": "How do I raise a PropertyChanged event on a substitute when the event uses its own delegate type?",
+        "Expected": [
+          "nsubstitute/5.3.0/80b6d14c5d5c/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q11",
+        "Query": "How can I increment a counter after returning a value from a mocked call?",
+        "Expected": [
+          "nsubstitute/5.3.0/b9a2e02cd041/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q12",
+        "Query": "Why can substituting a class execute the real constructor, and why are interfaces safer?",
+        "Expected": [
+          "nsubstitute/5.3.0/207de3215773/0-2"
+        ],
+        "Rank": 2,
+        "CommonLengthRank": 2
+      },
+      {
+        "Id": "q13",
+        "Query": "Can I verify calls to virtual methods on a partial substitute without replacing their implementations?",
+        "Expected": [
+          "nsubstitute/5.3.0/b0071bb90a59/0-2"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q14",
+        "Query": "Which OllamaSharp object retains conversation history including tool calls across messages?",
+        "Expected": [
+          "ollamasharp/5.4.25/cef424785d01/10"
+        ],
+        "Rank": 4,
+        "CommonLengthRank": 4
+      },
+      {
+        "Id": "q15",
+        "Query": "How can I use Ollama through Microsoft's common chat and embedding interfaces so I can swap providers?",
+        "Expected": [
+          "ollamasharp/5.4.25/cef424785d01/11"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q16",
+        "Query": "Which Ollama exception constructor preserves an underlying exception together with a message?",
+        "Expected": [
+          "ollamasharp/5.4.25/721017ff5c6e/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q17",
+        "Query": "How do I save several named Math.NET matrices to a MATLAB file?",
+        "Expected": [
+          "mathnet-numerics/current/913c3a0508a3/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q18",
+        "Query": "How can I get the upper triangular factor and solve equations after computing an LU factorization?",
+        "Expected": [
+          "mathnet-numerics/current/8c63c0ad768f/0-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q19",
+        "Query": "Can I release a linear algebra provider's cached buffers and handles without unloading the provider?",
+        "Expected": [
+          "mathnet-numerics/current/d287253e94c0/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q20",
+        "Query": "How can I read the vertical data coordinate at the point hit by a SciChart hit test?",
+        "Expected": [
+          "scichart-wpf/current/4c9ba26e0bd6/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q21",
+        "Query": "Where does the negative logarithmic tick provider validate that the visible minimum is less than the maximum?",
+        "Expected": [
+          "scichart-wpf/current/9e0fcb441fae/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q22",
+        "Query": "Which category numeric axis method supplies the default nonzero range when its visible range is undefined?",
+        "Expected": [
+          "scichart-wpf/current/628c5d12478d/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q23",
+        "Query": "What SciChart extension finds a visual child of a requested type?",
+        "Expected": [
+          "scichart-wpf/current/735e21f0826b/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q24",
+        "Query": "How long must the silent gap between serial frames be, including after a reply before addressing another inverter?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/8bf6f027249f/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q25",
+        "Query": "What operating history is used to estimate the remaining life of an inverter's cooling fan and capacitors?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/4c7e9f244e31/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q26",
+        "Query": "In which monitor mode can I use a shortcut list for frequently adjusted inverter parameters?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/47941dff6cdf/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q27",
+        "Query": "How long must an output phase failure persist before the VF-S9 trips and activates its relay?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/caec246f337b/24-1"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q28",
+        "Query": "Which parameters set the speed reached frequency and its detection band?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/b74de2e9c113/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      },
+      {
+        "Id": "q29",
+        "Query": "How can I adjust the output current meter when the current reading fluctuates too much?",
+        "Expected": [
+          "toshiba-manuals/2026-10-07/f80738c8e390/0"
+        ],
+        "Rank": 1,
+        "CommonLengthRank": 1
+      }
+    ]
+  },
+  "idleReload": [
+    {
+      "Model": "nomic-embed-text:latest",
+      "Round": 1,
+      "ElapsedMs": 7939.6612,
+      "ServerLoadMs": 1294.7476,
+      "ServerTotalMs": 5878.8509,
+      "AutomaticUnloadVerified": true,
+      "LoadedState": {
+        "models": []
+      }
+    },
+    {
+      "Model": "nomic-embed-text:latest",
+      "Round": 2,
+      "ElapsedMs": 3382.894,
+      "ServerLoadMs": 1273.2427,
+      "ServerTotalMs": 1340.4518,
+      "AutomaticUnloadVerified": true,
+      "LoadedState": {
+        "models": []
+      }
+    },
+    {
+      "Model": "embeddinggemma-2:270m",
+      "Round": 1,
+      "ElapsedMs": 4952.2599,
+      "ServerLoadMs": 2864.0895,
+      "ServerTotalMs": 2920.1672,
+      "AutomaticUnloadVerified": true,
+      "LoadedState": {
+        "models": []
+      }
+    },
+    {
+      "Model": "embeddinggemma-2:270m",
+      "Round": 2,
+      "ElapsedMs": 4697.4192,
+      "ServerLoadMs": 2601.3454,
+      "ServerTotalMs": 2654.789,
+      "AutomaticUnloadVerified": true,
+      "LoadedState": {
+        "models": []
+      }
+    }
+  ]
+}

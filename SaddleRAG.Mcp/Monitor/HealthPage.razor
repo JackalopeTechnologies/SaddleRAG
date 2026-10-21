@@ -1,0 +1,24 @@
+@page "/monitor/health"
+@rendermode InteractiveServer
+@inherits HealthPageBase
+
+<PageTitle>SaddleRAG service health</PageTitle>
+<MudText Typo="Typo.h4" Class="mb-4">Service health</MudText>
+<MudAlert Severity="@(Overall == "Unavailable" ? Severity.Error : Overall == "Healthy" ? Severity.Success : Severity.Warning)"
+          Class="mb-4">@Overall — @Warmup?.CurrentPhase</MudAlert>
+<MudText Class="mb-4">Checks refresh automatically. Affected work stops when a service is unavailable; new work can run after recovery. Interrupted work is not repeated automatically.</MudText>
+@foreach (var service in Observations)
+{
+    <MudPaper Class="pa-4 mb-3" Elevation="1">
+        <MudText Typo="Typo.h6">@service.Name — @service.Status</MudText>
+        <MudText>@service.Detail</MudText>
+        <MudText>Affected work: @service.AffectedWork</MudText>
+        <MudText>Last check: @service.LastCheckedAt?.ToLocalTime().ToString("G")</MudText>
+        @if (service.UnavailableSince is not null)
+        {
+            <MudText>Unavailable since: @service.UnavailableSince.Value.ToLocalTime().ToString("G")</MudText>
+            <MudAlert Severity="Severity.Warning" Class="mt-2">@service.Remediation</MudAlert>
+        }
+    </MudPaper>
+}
+<MudButton Href="/monitor/logs" Variant="Variant.Filled" Color="Color.Primary">Open server logs</MudButton>

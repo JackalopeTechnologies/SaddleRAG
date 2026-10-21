@@ -15,6 +15,10 @@
                         IconSource="/Resources/saddlerag-icon.ico">
             <tb:TaskbarIcon.ContextMenu>
                 <ContextMenu>
+                    <MenuItem x:Name="AttentionItem" Header="Checking SaddleRAG health…" FontWeight="Bold" Click="OnOpenAttention"/>
+                    <MenuItem Header="Service health" Click="OnOpenHealth"/>
+                    <MenuItem Header="Server warnings and errors" Click="OnOpenLogs"/>
+                    <Separator/>
                     <MenuItem x:Name="StartItem" Header="Start MCP" Click="OnStart"/>
                     <MenuItem x:Name="StopItem"  Header="Stop MCP"  Click="OnStop"/>
                     <Separator/>

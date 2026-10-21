@@ -23,6 +23,12 @@ namespace SaddleRAG.Tray;
 
 public partial class App : Application
 {
+    private const string AttentionItemName = "AttentionItem";
+    private const string CheckingHealthMessage = "Checking SaddleRAG health…";
+    private const string HealthPage = "/monitor/health";
+    private const string LogsPage = "/monitor/logs";
+    private const string NotificationHint = ". Open the tray warning for details.";
+    private const string HealthPollFailedMessage = "Unable to update tray health";
     private const string DashboardUrl = "http://localhost:6100";
     private const string BalloonTitle = "SaddleRAG";
 
@@ -98,6 +104,10 @@ public partial class App : Application
     private DoclingProcessLauncher? mDoclingLauncher;
     private DoclingLaunchCoordinator? mDoclingCoordinator;
     private DispatcherTimer? mDoclingTimer;
+    private TrayHealthObserver? mHealthObserver;
+    private TrayAttention? mAttention;
+    private bool mHealthPollActive;
+    private readonly CancellationTokenSource mShutdown = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -126,8 +136,12 @@ public partial class App : Application
             // Double-click is the gesture users reach for first, so give it the same
             // dashboard action the menu item runs rather than a parallel implementation.
             mTrayIcon.DoubleClickCommand = new RelayCommand(OpenDashboardGuarded);
+            mTrayIcon.TrayBalloonTipClicked += (_, _) =>
+                OpenMonitorPath(mAttention?.TargetPath ?? HealthPage);
 
             StartDoclingLaunchPolling();
+            mHealthObserver = new TrayHealthObserver(mDoclingHttpClient, new Uri(DashboardUrl));
+            _ = PollHealthAsync();
 
             mTrayIcon.ContextMenu.Opened += (_, _) => SyncMenu();
             SyncMenu();
@@ -172,6 +186,7 @@ public partial class App : Application
         // Clean exit auto-disposes via DisposeAfterExit; this explicit call mirrors the
         // official sample and is the recommended "cleaner" path.
         mDoclingTimer?.Stop();
+        mShutdown.Cancel();
         mDoclingHttpClient.Dispose();
         mTrayIcon?.Dispose();
         mLoggerFactory?.Dispose();
@@ -217,8 +232,11 @@ public partial class App : Application
         if (mMenuModel is not null && mTrayIcon?.ContextMenu is not null)
         {
             mMenuModel.Refresh();
-            mTrayIcon.ToolTipText = mMenuModel.Tooltip;
-            UpdateIcon(mMenuModel.State);
+            mTrayIcon.ToolTipText = mAttention?.Summary ?? mMenuModel.Tooltip;
+            UpdateIcon(mAttention?.IconState ?? mMenuModel.State);
+            MenuItem? attention = FindMenuItem(AttentionItemName);
+            if (attention is not null)
+                attention.Header = mAttention?.Summary ?? CheckingHealthMessage;
             // x:Name on items inside Application.Resources does NOT generate code-behind
             // fields, and index-based access breaks if a Separator/order changes. Look up
             // by name instead.
@@ -275,6 +293,48 @@ public partial class App : Application
 
     private void OnOpenDashboard(object sender, RoutedEventArgs e) => OpenDashboardGuarded();
 
+    private void OnOpenHealth(object sender, RoutedEventArgs e) => OpenMonitorPath(HealthPage);
+
+    private void OnOpenLogs(object sender, RoutedEventArgs e) => OpenMonitorPath(LogsPage);
+
+    private void OnOpenAttention(object sender, RoutedEventArgs e) =>
+        OpenMonitorPath(mAttention?.TargetPath ?? HealthPage);
+
+    private void OpenMonitorPath(string path) =>
+        RunGuarded(() => Process.Start(new ProcessStartInfo(DashboardUrl + path) { UseShellExecute = true }),
+                   OpeningDashboardMessage);
+
+    private async Task PollHealthAsync()
+    {
+        if (!mHealthPollActive && mHealthObserver is not null)
+        {
+            mHealthPollActive = true;
+            try
+            {
+                mAttention = await mHealthObserver.ReadAsync(mShutdown.Token);
+                SyncMenu();
+                if (mHealthObserver.ShouldNotify(mAttention))
+                    mTrayIcon?.ShowNotification(BalloonTitle, mAttention.Summary + NotificationHint,
+                        icon: mAttention.IconState == McpServiceState.Stopped
+                            ? H.NotifyIcon.Core.NotificationIcon.Error : H.NotifyIcon.Core.NotificationIcon.Warning);
+            }
+            catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
+            {
+                // Tray shutdown cancels its pending health request.
+            }
+            catch (Exception exception)
+            {
+                mLog?.LogWarning(exception, HealthPollFailedMessage);
+                mAttention = TrayAttention.Unreachable;
+                SyncMenu();
+            }
+            finally
+            {
+                mHealthPollActive = false;
+            }
+        }
+    }
+
     private void OpenDashboardGuarded()
     {
         RunGuarded(
@@ -300,6 +360,7 @@ public partial class App : Application
                                 Interval = TimeSpan.FromSeconds(DoclingPollIntervalSeconds)
                             };
         mDoclingTimer.Tick += (_, _) => _ = PollDoclingLaunchRequestAsync();
+        mDoclingTimer.Tick += (_, _) => _ = PollHealthAsync();
         mDoclingTimer.Start();
     }
 

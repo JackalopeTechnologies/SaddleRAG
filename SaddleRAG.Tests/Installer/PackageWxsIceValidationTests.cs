@@ -102,7 +102,7 @@ public sealed class PackageWxsIceValidationTests
                                          .Single(element =>
                                                      (string?)element.Attribute(ActionAttributeName)
                                                      == EscapeAppSettingsActionId);
-        Assert.Equal(InstallFilesActionId, (string?)escape.Attribute(AfterAttributeName));
+        Assert.Equal(CompleteConfigurationActionId, (string?)escape.Attribute(AfterAttributeName));
 
         XElement patch = executeSequence.Elements(ns + CustomElementName)
                                         .Single(element =>
@@ -368,7 +368,7 @@ public sealed class PackageWxsIceValidationTests
     private const string EscapeAppSettingsActionId = "EscapeAppSettingsProperties";
     private const string PatchAppSettingsActionId = "PatchAppSettings";
     private const string SetPatchAppSettingsActionId = "SetPatchAppSettings";
-    private const string InstallFilesActionId = "InstallFiles";
+    private const string CompleteConfigurationActionId = "CompleteConfiguration";
 
     private const string WxsFileName = "Package.wxs";
     private const string GitHubDirectoryName = ".github";

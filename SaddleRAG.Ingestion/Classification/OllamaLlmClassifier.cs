@@ -132,7 +132,7 @@ public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGene
                              confidence
                             );
         }
-        catch(Exception ex)
+        catch(Exception ex) when (ex is not OperationCanceledException and not HttpRequestException)
         {
             mLogger.LogWarning(ex, "LLM classification failed for {Url}", page.Url);
         }
@@ -165,7 +165,7 @@ public class OllamaLlmClassifier : ILlmClassifier, IStructuredClassifierTextGene
                               Format = format,
                               Options = new RequestOptions { Temperature = 0f },
                               Stream = true,
-                              KeepAlive = OllamaKeepAlive.KeepLoaded
+                              KeepAlive = null
                           };
         var responseBuilder = new StringBuilder();
         await foreach(var token in mGenerateClient.GenerateAsync(request, ct))

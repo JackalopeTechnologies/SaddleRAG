@@ -67,30 +67,16 @@ function Get-ResolvedDirectoryPath
     return $res
 }
 
-function Stop-ServiceIfRunning
+# This helper creates a fresh development server only. Publishing one project over
+# an installed server/tray package can replace libraries that its other apps need.
+if ($null -ne (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue))
 {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
-
-    $existingService = Get-Service -Name $Name -ErrorAction SilentlyContinue
-
-    if ($null -ne $existingService)
-    {
-        if ($existingService.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped)
-        {
-            if ($PSCmdlet.ShouldProcess($Name, 'Stop Windows service'))
-            {
-                Stop-Service -Name $Name -Force
-            }
-        }
-
-        if ($PSCmdlet.ShouldProcess($Name, 'Remove Windows service'))
-        {
-            Remove-Service -Name $Name
-        }
-    }
+    throw 'This service already exists. Upgrade it with the checked Windows package and MSI installer; this development helper cannot upgrade an installation.'
+}
+if ((Test-Path -LiteralPath $InstallDirectory) -and
+    @(Get-ChildItem -LiteralPath $InstallDirectory -Force).Count -gt 0)
+{
+    throw 'InstallDirectory must be empty. Use scripts/Publish-WindowsPackage.ps1 and the MSI installer for an existing installation.'
 }
 
 if (-not (Test-Administrator))
@@ -101,11 +87,13 @@ if (-not (Test-Administrator))
 $resolvedProjectPath = Get-ResolvedFilePath -Path $ProjectPath -Label 'ProjectPath'
 $resolvedInstallDirectory = Get-ResolvedDirectoryPath -Path $InstallDirectory
 
-Stop-ServiceIfRunning -Name $ServiceName
-
 if ($PSCmdlet.ShouldProcess($resolvedProjectPath, "Publish to $resolvedInstallDirectory"))
 {
-    & dotnet publish $resolvedProjectPath -c $Configuration -p:Platform=$Platform -o $resolvedInstallDirectory
+    [xml]$packages = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Directory.Packages.props')
+    $runtimeVersion = [string]$packages.Project.PropertyGroup.SaddleRagBundledRuntimeVersion
+    if ([string]::IsNullOrWhiteSpace($runtimeVersion)) { throw 'The bundled runtime version is not pinned.' }
+    & dotnet publish $resolvedProjectPath -c $Configuration -p:Platform=$Platform -r win-x64 --self-contained true -m:2 -p:TreatWarningsAsErrors=true -p:RuntimeFrameworkVersion=$runtimeVersion -o $resolvedInstallDirectory
+    if ($LASTEXITCODE -ne 0) { throw 'Server publishing failed; the service was not created.' }
 }
 
 $serviceExePath = Join-Path $resolvedInstallDirectory 'SaddleRAG.Mcp.exe'

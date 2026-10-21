@@ -12,10 +12,17 @@
     <RootNamespace>SaddleRAG.Tray</RootNamespace>
   </PropertyGroup>
 
+  <!-- Keep the desktop runtime private; its WindowsBase and cryptography files
+       cannot share a publish folder with the server's runtime counterparts. -->
+  <PropertyGroup Condition="'$(SelfContained)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.*" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.*" />
-    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.*" />
+    <PackageReference Include="H.NotifyIcon.Wpf" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" />
   </ItemGroup>
 
   <ItemGroup>

@@ -8,7 +8,8 @@
              UpgradeCode="CA600210-74B0-4CDC-90AC-A2798F2136F6"
              Scope="perMachine">
 
-        <MajorUpgrade DowngradeErrorMessage="A newer version of SaddleRAG is already installed." />
+        <MajorUpgrade Schedule="afterInstallInitialize"
+                      DowngradeErrorMessage="A newer version of SaddleRAG is already installed." />
         <MediaTemplate EmbedCab="yes" />
 
         <!-- Branding: Add/Remove Programs icon + reusable icon id for the shortcut. -->
@@ -247,6 +248,27 @@
         <!-- the CustomAction.Target S255 column. Action ids and sequencing stay intact. -->
         <Binary Id="TestMongoConnectionScript" SourceFile="TestMongoConnection.js" />
         <Binary Id="TestOllamaConnectionScript" SourceFile="TestOllamaConnection.js" />
+
+        <!-- Snapshot before the old MSI removes its harvested appsettings.json.
+             The helper is embedded because installed files do not exist yet.
+             Immediate snapshot uses a private directory in the installing user's
+             temp folder; deferred restore is elevated. Keep the backup until
+             commit so rollback can restore the operator's original bytes too. -->
+        <Binary Id="ConfigurationUpgradeHelper" SourceFile="$(var.PublishDir)\SaddleRAG.Installer.Helper.exe" />
+        <CustomAction Id="SnapshotConfiguration" BinaryRef="ConfigurationUpgradeHelper"
+                      ExeCommand="preserve-config snapshot &quot;[MCPFOLDER].&quot; &quot;[TempFolder]SaddleRAG-Upgrade-[ProductCode]&quot;"
+                      Execute="immediate" Return="check" />
+        <CustomAction Id="RollbackConfiguration" BinaryRef="ConfigurationUpgradeHelper"
+                      ExeCommand="preserve-config restore &quot;[MCPFOLDER].&quot; &quot;[TempFolder]SaddleRAG-Upgrade-[ProductCode]&quot;"
+                      Execute="rollback" Impersonate="no" Return="check" />
+        <CustomAction Id="RestoreConfiguration" BinaryRef="ConfigurationUpgradeHelper"
+                      ExeCommand="preserve-config restore &quot;[MCPFOLDER].&quot; &quot;[TempFolder]SaddleRAG-Upgrade-[ProductCode]&quot;"
+                      Execute="deferred" Impersonate="no" Return="check" />
+        <!-- Cleanup failure retains a private recovery copy and must not roll
+             back an otherwise successful installation. -->
+        <CustomAction Id="CompleteConfiguration" BinaryRef="ConfigurationUpgradeHelper"
+                      ExeCommand="preserve-config complete &quot;[MCPFOLDER].&quot; &quot;[TempFolder]SaddleRAG-Upgrade-[ProductCode]&quot;"
+                      Execute="commit" Impersonate="no" Return="ignore" />
         <Binary Id="LaunchMongoDownloadScript" SourceFile="LaunchMongoDownload.js" />
         <Binary Id="LaunchOllamaDownloadScript" SourceFile="LaunchOllamaDownload.js" />
         <Binary Id="TestDoclingConnectionScript" SourceFile="TestDoclingConnection.js" />
@@ -603,12 +625,19 @@
                       Return="asyncNoWait" />
 
         <InstallExecuteSequence>
+            <Custom Action="SnapshotConfiguration" Before="InstallInitialize" Condition="WIX_UPGRADE_DETECTED" />
+            <!-- RemoveExistingProducts must run before any script actions (ICE63).
+                 MSI rolls back that removal; this action then covers changes
+                 made by the new product's deferred configuration actions. -->
+            <Custom Action="RollbackConfiguration" After="RemoveExistingProducts" Condition="WIX_UPGRADE_DETECTED" />
+            <Custom Action="RestoreConfiguration" After="InstallFiles" Condition="WIX_UPGRADE_DETECTED" />
+            <Custom Action="CompleteConfiguration" After="RestoreConfiguration" Condition="WIX_UPGRADE_DETECTED" />
             <!-- Must precede LaunchConditions: the launch gate reads -->
             <!-- WINDOWSBUILDNUMBER that this CA populates.            -->
             <Custom Action="CheckGpuCapability" Before="LaunchConditions" />
             <!-- Must precede PatchAppSettings: the SetProperty Value below  -->
             <!-- substitutes the _ESCAPED variants of MONGOCONNECTION etc.   -->
-            <Custom Action="EscapeAppSettingsProperties" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
+            <Custom Action="EscapeAppSettingsProperties" After="CompleteConfiguration" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="PatchAppSettings" After="SetPatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterAiClients" After="PatchAppSettings" Condition="NOT Installed OR REINSTALL" />
             <Custom Action="RegisterExternalTools" After="RegisterAiClients" Condition="NOT Installed OR REINSTALL" />

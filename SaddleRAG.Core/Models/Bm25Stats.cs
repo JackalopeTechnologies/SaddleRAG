@@ -17,7 +17,7 @@ namespace SaddleRAG.Core.Models;
 public record Bm25Stats
 {
     /// <summary>
-    ///     Chunk id → token count for that chunk's content. Used by the
+    ///     Chunk id → token count for that chunk's indexed content and metadata. Used by the
     ///     scorer for length normalization; consulted per matching posting
     ///     so it must be available alongside the postings at score time.
     /// </summary>
@@ -42,4 +42,11 @@ public record Bm25Stats
     ///     expected number of documents for this (library, version).
     /// </summary>
     public int ShardCount { get; init; }
+
+    /// <summary>
+    ///     Text-selection version used to build the postings. Version 1 indexed
+    ///     only content; version 2 also indexes the title and source filename.
+    ///     Defaults to 1 for indexes saved before this field existed.
+    /// </summary>
+    public int TextVersion { get; init; } = 1;
 }
