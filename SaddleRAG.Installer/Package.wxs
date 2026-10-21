@@ -626,7 +626,10 @@
 
         <InstallExecuteSequence>
             <Custom Action="SnapshotConfiguration" Before="InstallInitialize" Condition="WIX_UPGRADE_DETECTED" />
-            <Custom Action="RollbackConfiguration" After="InstallInitialize" Condition="WIX_UPGRADE_DETECTED" />
+            <!-- RemoveExistingProducts must run before any script actions (ICE63).
+                 MSI rolls back that removal; this action then covers changes
+                 made by the new product's deferred configuration actions. -->
+            <Custom Action="RollbackConfiguration" After="RemoveExistingProducts" Condition="WIX_UPGRADE_DETECTED" />
             <Custom Action="RestoreConfiguration" After="InstallFiles" Condition="WIX_UPGRADE_DETECTED" />
             <Custom Action="CompleteConfiguration" After="RestoreConfiguration" Condition="WIX_UPGRADE_DETECTED" />
             <!-- Must precede LaunchConditions: the launch gate reads -->

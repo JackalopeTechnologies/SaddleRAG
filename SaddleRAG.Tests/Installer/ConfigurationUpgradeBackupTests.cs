@@ -128,6 +128,7 @@ public sealed class ConfigurationUpgradeBackupTests : IDisposable
         var sequence = package.Descendants(ns + "InstallExecuteSequence").Single();
         XElement Step(string name) => sequence.Elements(ns + "Custom").Single(e => (string?)e.Attribute("Action") == name);
         Assert.Equal("InstallInitialize", (string?)Step("SnapshotConfiguration").Attribute("Before"));
+        Assert.Equal("RemoveExistingProducts", (string?)Step("RollbackConfiguration").Attribute("After"));
         Assert.Equal("InstallFiles", (string?)Step("RestoreConfiguration").Attribute("After"));
         Assert.Equal("RestoreConfiguration", (string?)Step("CompleteConfiguration").Attribute("After"));
         Assert.Equal("CompleteConfiguration", (string?)Step("EscapeAppSettingsProperties").Attribute("After"));

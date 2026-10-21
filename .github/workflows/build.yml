@@ -160,6 +160,10 @@ jobs:
       - name: Validate MSI
         run: wix msi validate ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi -pdb ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.wixpdb
 
+      - name: Verify MSI configuration preservation order
+        shell: pwsh
+        run: ./scripts/Test-MsiConfigurationSequence.ps1 -Path ./artifacts/${{ steps.version.outputs.PackageVersion }}/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}.msi
+
       - name: Pack Desktop extension (.mcpb)
         # The Claude Desktop Extension (durable registration on the newer Desktop
         # build, which strips externally-written claude_desktop_config.json
