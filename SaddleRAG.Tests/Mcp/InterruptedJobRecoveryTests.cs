@@ -14,6 +14,19 @@ namespace SaddleRAG.Tests.Mcp;
 public sealed class InterruptedJobRecoveryTests
 {
     [Fact]
+    public async Task TerminalWriteFailureRemainsObservableAfterRunnerUnregisters()
+    {
+        var registry = new JobCancellationRegistry();
+        var broadcaster = Substitute.For<IMonitorBroadcaster>();
+        await JobTaskObserver.RunAsync(() => Task.FromException(new IOException("Final write failed")),
+            "job", "local", registry, broadcaster, NullLogger.Instance);
+        Assert.False(registry.IsRegistered("job"));
+        InterruptedJob pending = Assert.Single(registry.GetInterrupted());
+        Assert.Equal("local", pending.Profile);
+        broadcaster.Received(1).RecordJobFailed("job", JobTaskObserver.FailureDetail);
+    }
+
+    [Fact]
     public async Task OutageCancelsOnlyAffectedJobsAndSavesFailureAfterRecovery()
     {
         var settings = new SaddleRagDbSettings

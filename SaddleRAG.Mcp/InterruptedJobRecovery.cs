@@ -13,7 +13,6 @@ public sealed class InterruptedJobRecovery(JobCancellationRegistry registry, Sad
                                            RepositoryFactory repositories, IMonitorBroadcaster broadcaster,
                                            ILogger<InterruptedJobRecovery> logger)
 {
-    private readonly Dictionary<string, string?> mInterrupted = new(StringComparer.Ordinal);
     private const string InterruptedMessage =
         "MongoDB became unavailable during this job. Work was interrupted; review partial results before starting a new job.";
 
@@ -23,39 +22,40 @@ public sealed class InterruptedJobRecovery(JobCancellationRegistry registry, Sad
         {
             if (contexts.GetForProfile(job.Value).Reachability.HealthCheckFailed)
             {
-                mInterrupted[job.Key] = job.Value;
+                registry.RecordInterrupted(job.Key, job.Value, InterruptedMessage);
                 broadcaster.RecordJobFailed(job.Key, InterruptedMessage);
                 await registry.TryCancelAsync(job.Key);
             }
         }
 
-        foreach (var job in mInterrupted.ToArray())
+        foreach (var job in registry.GetInterrupted())
         {
-            if (!registry.IsRegistered(job.Key)
-                && !contexts.GetForProfile(job.Value).Reachability.HealthCheckFailed)
+            broadcaster.RecordJobFailed(job.JobId, job.Detail);
+            if (!registry.IsRegistered(job.JobId)
+                && !contexts.GetForProfile(job.Profile).Reachability.HealthCheckFailed)
             {
                 try
                 {
-                    var repository = repositories.GetJobRepository(job.Value);
-                    await SaveInterruptedAsync(repository, job.Key, cancellationToken);
-                    mInterrupted.Remove(job.Key);
+                    var repository = repositories.GetJobRepository(job.Profile);
+                    await SaveInterruptedAsync(repository, job, cancellationToken);
+                    registry.AcknowledgeInterrupted(job.JobId);
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
-                    logger.LogWarning(exception, "Could not save interrupted status for job {JobId}; will retry", job.Key);
+                    logger.LogWarning(exception, "Could not save interrupted status for job {JobId}; will retry", job.JobId);
                 }
             }
         }
     }
 
-    private static async Task SaveInterruptedAsync(IJobRepository repository, string jobId,
+    private static async Task SaveInterruptedAsync(IJobRepository repository, InterruptedJob job,
                                                     CancellationToken cancellationToken)
     {
-        JobRecord? record = await repository.GetAsync(jobId, cancellationToken);
+        JobRecord? record = await repository.GetAsync(job.JobId, cancellationToken);
         if (record is not null)
         {
             record.Status = JobStatus.Failed;
-            record.ErrorMessage = InterruptedMessage;
+            record.ErrorMessage = job.Detail;
             record.PipelineState = nameof(JobStatus.Failed);
             record.CompletedAt = DateTime.UtcNow;
             await repository.UpsertAsync(record, cancellationToken);

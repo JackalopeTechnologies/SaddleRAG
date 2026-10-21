@@ -7,6 +7,7 @@
 
 using System.Collections.Concurrent;
 using SaddleRAG.Core.Interfaces;
+using SaddleRAG.Core.Models;
 
 #endregion
 
@@ -22,6 +23,33 @@ namespace SaddleRAG.Ingestion;
 public class JobCancellationRegistry : IJobCancellationRegistry
 {
     private readonly ConcurrentDictionary<string, RunningJobRegistration> mEntries = new();
+    private readonly ConcurrentDictionary<string, InterruptedJob> mInterrupted = new();
+    private readonly Lock mRecoveryLock = new();
+    private const int MaximumPendingRecoveries = 10000;
+    private const string RecoveryCapacityMessage = "Too many interrupted jobs await database recovery. Stop creating jobs and restore MongoDB.";
+
+    /// <inheritdoc />
+    public void RecordInterrupted(string jobId, string? profile, string detail)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        ArgumentException.ThrowIfNullOrEmpty(detail);
+        lock (mRecoveryLock)
+        {
+            if (mInterrupted.Count >= MaximumPendingRecoveries && !mInterrupted.ContainsKey(jobId))
+                throw new InvalidOperationException(RecoveryCapacityMessage);
+            mInterrupted.TryAdd(jobId, new InterruptedJob(jobId, profile, detail));
+        }
+    }
+
+    /// <summary>Returns interrupted statuses awaiting a durable database write.</summary>
+    public IReadOnlyList<InterruptedJob> GetInterrupted() => mInterrupted.Values.ToArray();
+
+    /// <summary>Removes a status only after its database write succeeds.</summary>
+    public void AcknowledgeInterrupted(string jobId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        mInterrupted.TryRemove(jobId, out _);
+    }
 
     public void Register(string jobId, CancellationTokenSource cts)
     {

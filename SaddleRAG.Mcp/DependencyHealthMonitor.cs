@@ -42,6 +42,11 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
     private static readonly TimeSpan smCheckTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan smCheckInterval = TimeSpan.FromSeconds(10);
     private readonly HttpClient mHttp = new();
+    private const string MonitorName = "Service health checks";
+    private const string HealthyStatus = "Healthy";
+    private const string UnavailableStatus = "Unavailable";
+    private const string MonitorWork = "Dependency monitoring";
+    private const string MonitorRemediation = "Review the server logs and correct service settings. Checks retry automatically.";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -49,24 +54,35 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                foreach (DependencyProbe probe in CreateProbes())
-                    await DependencyProbeRunner.CheckAsync(probe, state, smCheckTimeout, logger, stoppingToken);
-                using var recoveryTimeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                recoveryTimeout.CancelAfter(smCheckTimeout);
-                try
-                {
-                    await services.GetRequiredService<InterruptedJobRecovery>().CheckAsync(recoveryTimeout.Token);
-                }
-                catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
-                {
-                    // Retain interrupted statuses for the next pass.
-                }
+                await CheckOnceAsync(stoppingToken);
                 await Task.Delay(smCheckInterval, stoppingToken);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             // Normal host shutdown.
+        }
+    }
+
+    internal async Task CheckOnceAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            foreach (DependencyProbe probe in CreateProbes())
+                await DependencyProbeRunner.CheckAsync(probe, state, smCheckTimeout, logger, stoppingToken);
+            using var recoveryTimeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            recoveryTimeout.CancelAfter(smCheckTimeout);
+            await services.GetRequiredService<InterruptedJobRecovery>().CheckAsync(recoveryTimeout.Token);
+            if (state.Snapshot().Any(entry => entry.Name == MonitorName))
+                state.Record(new DependencyHealth(MonitorName, HealthyStatus, true, MonitorWork,
+                    string.Empty, MonitorRemediation, DateTimeOffset.UtcNow));
+        }
+        catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
+        {
+            bool changed = state.Record(new DependencyHealth(MonitorName, UnavailableStatus, true, MonitorWork,
+                exception.GetType().Name, MonitorRemediation, DateTimeOffset.UtcNow));
+            if (changed)
+                logger.LogError(exception, "Service health monitoring failed; the host remains available and checks will retry");
         }
     }
 
@@ -129,6 +145,9 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
                 services.GetRequiredService<IDoclingCapabilityService>().RecordServiceObservation(observation);
                 if (!observation.Succeeded)
                     throw new InvalidOperationException(observation.ReasonCode);
+                var capability = services.GetRequiredService<IDoclingCapabilityService>().CurrentStatus;
+                if (capability.State == DoclingCapabilityState.Unavailable)
+                    throw new InvalidOperationException(capability.ReasonCode);
                 return observation.Detail;
     }
 

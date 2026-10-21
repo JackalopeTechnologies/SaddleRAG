@@ -14,6 +14,26 @@ namespace SaddleRAG.Tests.Documents.Docling;
 public sealed class DoclingReadinessProbeTests
 {
     [Fact]
+    public async Task ContinuingStatusRecoversWithoutRepeatingDocumentConversion()
+    {
+        var client = new ScriptedDoclingClient();
+        client.EnqueueHealth(DoclingServiceObservation.Success());
+        client.EnqueueReadiness(DoclingServiceObservation.Success());
+        client.EnqueueConversions(SuccessfulConversion());
+        var clock = new MutableDoclingTimeProvider(new DateTimeOffset(2026, 8, 4, 12, 0, 0, TimeSpan.Zero));
+        var probe = MakeProbe(client, clock, graceSeconds: 5);
+        await probe.ProbeAsync(ProbeFile(), TestContext.Current.CancellationToken);
+        var capability = new DoclingCapabilityService(probe);
+
+        capability.RecordServiceObservation(DoclingServiceObservation.Failure(
+            DoclingReasonCodes.EndpointUnreachable, "offline"));
+        Assert.Equal(DoclingCapabilityState.Unavailable, capability.CurrentStatus.State);
+        capability.RecordServiceObservation(DoclingServiceObservation.Success());
+        Assert.Equal(DoclingCapabilityState.Ready, capability.CurrentStatus.State);
+        Assert.Equal(1, client.ConversionCalls);
+    }
+
+    [Fact]
     public async Task TransientConnectionAndModelStartupThenKnownConversionReturnsReady()
     {
         var client = new ScriptedDoclingClient();

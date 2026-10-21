@@ -26,7 +26,7 @@ internal static class ServiceHealthResponseFactory
         string result = HealthyStatus;
         if (entries.Count == 0 || warmup.Status is NotStartedStatus or RunningStatus)
             result = StartingStatus;
-        if (entries.Any(entry => entry.Status == UnavailableStatus && !entry.Required))
+        if (result == HealthyStatus && entries.Any(entry => entry.Status == UnavailableStatus && !entry.Required))
             result = DegradedStatus;
         if (warmup.Status == FailedStatus || entries.Any(entry => entry.Status == UnavailableStatus && entry.Required))
             result = UnavailableStatus;

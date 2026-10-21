@@ -86,7 +86,8 @@ public class RescrubJobRunner
                             };
 
         await jobRepo.UpsertAsync(jobRecord, ct);
-        _ = Task.Run(() => RunJobAsync(jobRecord), mAppStoppingToken);
+        _ = Task.Run(() => JobTaskObserver.RunAsync(() => RunJobAsync(jobRecord),
+            jobRecord.Id, jobRecord.Profile, mCancellationRegistry, mBroadcaster, mLogger), mAppStoppingToken);
         return jobRecord.Id;
     }
 

@@ -50,6 +50,7 @@ public sealed class McpWarmupService : BackgroundService
 
     private readonly McpWarmupState mWarmupState;
     private readonly HashSet<string?> mPendingProfiles = [];
+    private const string EmbeddingStartupFailedMessage = "The embedding provider is unavailable; startup will retry.";
     private static readonly TimeSpan smRecoveryInterval = TimeSpan.FromSeconds(10);
 
 
@@ -409,6 +410,8 @@ public sealed class McpWarmupService : BackgroundService
                                                          ollamaWarmSucceeded
                                                         );
 
+            if (!embeddingProviderReady)
+                throw new InvalidOperationException(EmbeddingStartupFailedMessage);
             mWarmupState.MarkCompleted(classifierWarm ? nameof(ScrapeJobStatus.Completed) : PhaseClassifierDegraded);
 
             mLogger.LogInformation("[Warmup] T+{Sec:F1}s - Completed", startupSw.Elapsed.TotalSeconds);

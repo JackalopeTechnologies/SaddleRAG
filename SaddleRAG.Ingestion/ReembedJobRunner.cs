@@ -128,6 +128,8 @@ public class ReembedJobRunner : IReembedJobDispatcher
         }
         catch(Exception ex)
         {
+            mBroadcaster.RecordJobFailed(candidate.Id, JobTaskObserver.FailureDetail);
+            mCancellationRegistry.RecordInterrupted(candidate.Id, candidate.Profile, JobTaskObserver.FailureDetail);
             mLogger.LogError(ex,
                              "Reembed job {JobId} dispatch or execution failed",
                              candidate.Id);

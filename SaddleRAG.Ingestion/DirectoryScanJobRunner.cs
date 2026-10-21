@@ -158,7 +158,8 @@ public sealed class DirectoryScanJobRunner : IDirectoryScanJobQueue
         JobRecord job = CreateQueuedJob(jobId, request);
         IJobRepository jobs = mRepositoryFactory.GetJobRepository(profile);
         await jobs.UpsertAsync(job, cancellationToken);
-        _ = Task.Run(() => RunAsync(job, request, definition.RootPath), mApplicationStopping);
+        _ = Task.Run(() => JobTaskObserver.RunAsync(() => RunAsync(job, request, definition.RootPath),
+            job.Id, request.Profile, mCancellationRegistry, null, mLogger), mApplicationStopping);
         return new DirectoryScanQueueResult(DirectoryScanQueueStatuses.Queued,
                                             libraryId,
                                             captured.Value,

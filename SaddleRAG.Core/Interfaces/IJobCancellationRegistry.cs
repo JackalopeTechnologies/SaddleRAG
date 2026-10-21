@@ -27,6 +27,9 @@ public interface IJobCancellationRegistry
     /// <summary>Associates the running job with its database profile for outage cancellation.</summary>
     void Register(string jobId, CancellationTokenSource cts, string? profile) => Register(jobId, cts);
 
+    /// <summary>Retains a job whose final status could not be saved, for recovery without rerunning it.</summary>
+    void RecordInterrupted(string jobId, string? profile, string detail) { }
+
     /// <summary>
     ///     Remove <paramref name="jobId" /> from the registry. Does not
     ///     dispose the underlying <see cref="CancellationTokenSource" />.

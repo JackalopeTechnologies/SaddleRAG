@@ -137,6 +137,27 @@ The assistant will use the `scrape_docs` tool to index the site.
 ### Verify the Service
 
 - **Health check**: visit `http://localhost:6100/health` in a browser
+
+The tray checks service health automatically. A red or orange status indicator and
+a warning notification identify unavailable services or unread warning/error logs.
+Open **Service health** or **Server warnings and errors** from the tray menu.
+Reading logs acknowledges their notifications; service warnings remain until recovery.
+The health page at `http://localhost:6100/monitor/health` remains available during
+MongoDB outages. Affected jobs stop and are marked interrupted after reconnection;
+partially completed work is not automatically repeated.
+
+SaddleRAG checks MongoDB, selected Ollama models, and document conversion every
+ten seconds, allowing up to three seconds per check. Checks list installed Ollama
+models without loading them, and document readiness checks do not repeat conversions.
+The health response returns 503 while required services or startup are unavailable,
+and 200 with a Degraded status when only an optional capability is unavailable.
+
+For one shared Ollama installation, set `Ollama:ExecutablePath` to its existing
+executable and `Ollama:ModelsDirectory` to its existing shared model directory.
+When the model directory is omitted, a launched server inherits `OLLAMA_MODELS`.
+Automatic installation requires an explicit `Ollama:AllowAutomaticInstallation`
+opt-in. Startup and ordinary model requests honor the Ollama server's retention
+setting, including `OLLAMA_KEEP_ALIVE=0`; they do not pin Devstral indefinitely.
 - **Service status**: run `Get-Service SaddleRAGMcp` in PowerShell
 - **Logs**: check `%ProgramData%\SaddleRAG\logs\` or use the `get_server_logs` MCP tool
 
