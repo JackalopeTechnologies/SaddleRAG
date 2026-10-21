@@ -1,2 +1,3 @@
 [fix/service-health-and-ollama] Verify the complete Google migration, content/vector audit, installed server and tray, complete searches, and bounded model unloading; record results in issue 189.
 [fix/service-health-and-ollama] Resolve or file the 543 stored passages under h-notifyicon-wpf and automation1.net that lack library/version records; preserve data during the embedding migration.
+[fix/service-health-and-ollama] Resolve or file the observed full-search quality gap: the correct NSubstitute return-for-any-args page ranks first by combined embedding/keyword score but falls to 16th after the current result sorter; compare broader queries before changing sorting policy (issue 189).
