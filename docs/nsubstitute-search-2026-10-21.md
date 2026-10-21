@@ -37,7 +37,7 @@ The reported NSubstitute timings were 23/19/19 ms without DirectML and 423/415/4
 
 The new question “NSubstitute: return a constant without caring about any of the arguments.” does not retrieve the direct explanation within five in either mode. The intended `ReturnsForAnyArgs` page is semantic candidate 5; keyword evidence promotes other pages, and DirectML does not recover the direct answer. The returned getting-started page contains a calculated-return example using `Arg.Any` for both inputs, but that is not counted as a direct fixed-value answer.
 
-This is retained as a shared quality gap under issue 189 and in the branch ledger. It does not invalidate the reported duplicate-crowding repair. A further controlled investigation should compare extraction of the documentation body and keyword ordering independently. Repeated navigation is present in stored passages; its causal effect on this wording has not been proven. No speculative text cleanup or ranking adjustment was installed.
+This is retained as a shared quality gap under issue 189, which remains open after this release. It does not invalidate the reported duplicate-crowding repair. A further controlled investigation should compare extraction of the documentation body and keyword ordering independently. Repeated navigation is present in stored passages; its causal effect on this wording has not been proven. No speculative text cleanup or ranking adjustment was installed.
 
 ## Verification and installation
 
