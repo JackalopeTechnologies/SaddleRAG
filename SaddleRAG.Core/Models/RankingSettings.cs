@@ -18,9 +18,10 @@ namespace SaddleRAG.Core.Models;
 public class RankingSettings
 {
     /// <summary>
-    ///     Weight applied to the BM25 score when blending with vector
-    ///     similarity. Hybrid score is (1 - Bm25Weight) * vector +
-    ///     Bm25Weight * bm25, both normalized to [0,1].
+    ///     Weight applied to keyword rank within eligible vector candidates.
+    ///     Hybrid score is (1 - Bm25Weight) / vectorRank +
+    ///     Bm25Weight / keywordRank. Missing keyword matches contribute zero.
+    ///     Provider scores remain available separately for diagnostics.
     /// </summary>
     public float Bm25Weight { get; set; } = DefaultBm25Weight;
 

@@ -26,10 +26,10 @@ using SaddleRAG.Ingestion.Subjects;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tools for searching documentation content. Uses hybrid scoring
-///     (vector cosine ∥ BM25 keyword overlap) with an optional LLM
-///     reranker. The reranker score is blended with hybrid (not replaced),
-///     so the reranker's mistakes stay recoverable.
+///     MCP tools for searching documentation content. Combines vector and
+///     keyword rank positions, then optionally combines that ordering with
+///     the local reranker's ordering. Independent leaders remain competitive
+///     without assuming the providers' score scales are interchangeable.
 /// </summary>
 [McpServerToolType]
 public static class SearchTools
@@ -43,7 +43,7 @@ public static class SearchTools
         public required double HybridScore { get; init; }
     }
 
-    private record RankedResult
+    internal record RankedResult
     {
         public required DocChunk Chunk { get; init; }
         public required float FinalScore { get; init; }
@@ -707,13 +707,21 @@ public static class SearchTools
         return result;
     }
 
-    private static IReadOnlyList<HybridCandidate> BlendVectorAndBm25(IReadOnlyList<VectorSearchResult> vectorResults,
+    internal static IReadOnlyList<HybridCandidate> BlendVectorAndBm25(IReadOnlyList<VectorSearchResult> vectorResults,
                                                                      IReadOnlyDictionary<string, double> bm25Scores,
                                                                      float bm25Weight,
                                                                      string? inferredSubjectId)
     {
+        ArgumentNullException.ThrowIfNull(vectorResults);
+        ArgumentNullException.ThrowIfNull(bm25Scores);
         var maxBm25 = bm25Scores.Count > 0 ? bm25Scores.Values.Max() : 0.0;
         var vectorWeight = 1.0f - bm25Weight;
+        var vectorRanks = RankScores(vectorResults.Select(vr =>
+            (vr.Chunk.Id, (double) vr.Score + SubjectSearchPolicy.GetBoost(vr.Chunk, inferredSubjectId))));
+        // Rank only eligible candidates: scores from other categories, subjects,
+        // or pages outside the retrieved pool must not dilute keyword evidence.
+        var keywordRanks = RankScores(vectorResults.Where(vr => bm25Scores.GetValueOrDefault(vr.Chunk.Id) > 0)
+            .Select(vr => (vr.Chunk.Id, bm25Scores[vr.Chunk.Id])));
 
         var blended = vectorResults
                       .Select(vr => BuildHybridCandidate(vr,
@@ -721,7 +729,9 @@ public static class SearchTools
                                                          maxBm25,
                                                          bm25Weight,
                                                          vectorWeight,
-                                                         inferredSubjectId))
+                                                         inferredSubjectId,
+                                                         vectorRanks[vr.Chunk.Id],
+                                                         keywordRanks.GetValueOrDefault(vr.Chunk.Id)))
                       .OrderByDescending(c => c.HybridScore)
                       .ToList();
         return blended;
@@ -732,12 +742,15 @@ public static class SearchTools
                                                         double maxBm25,
                                                         float bm25Weight,
                                                         float vectorWeight,
-                                                        string? inferredSubjectId)
+                                                        string? inferredSubjectId,
+                                                        int vectorRank,
+                                                        int keywordRank)
     {
         var bm25 = bm25Scores.TryGetValue(vr.Chunk.Id, out var s) ? s : 0.0;
         var bm25Norm = maxBm25 > 0 ? bm25 / maxBm25 : 0.0;
         double subjectBoost = SubjectSearchPolicy.GetBoost(vr.Chunk, inferredSubjectId);
-        var hybrid = (vectorWeight * vr.Score) + (bm25Weight * bm25Norm) + subjectBoost;
+        var hybrid = (vectorWeight * ReciprocalRank(vectorRank)) +
+                     (bm25Weight * ReciprocalRank(keywordRank));
         var result = new HybridCandidate
                          {
                              Chunk = vr.Chunk,
@@ -748,6 +761,28 @@ public static class SearchTools
                          };
         return result;
     }
+
+    private static Dictionary<string, int> RankScores(IEnumerable<(string Id, double Score)> scores)
+    {
+        var ranks = new Dictionary<string, int>(StringComparer.Ordinal);
+        double? previousScore = null;
+        var position = 0;
+        var rank = 0;
+        foreach(var candidate in scores.OrderByDescending(candidate => candidate.Score))
+        {
+            position++;
+            // Use the same exact ordering comparison as OrderByDescending:
+            // equal sort keys share a rank; nearby distinct scores do not.
+            if (!previousScore.HasValue || candidate.Score.CompareTo(previousScore.Value) != 0)
+                rank = position;
+            ranks.Add(candidate.Id, rank);
+            previousScore = candidate.Score;
+        }
+
+        return ranks;
+    }
+
+    private static double ReciprocalRank(int rank) => rank > 0 ? 1.0 / rank : 0.0;
 
     private static bool ShouldRerank(ReRankerStrategy strategy, bool queryIsIdentifierShape, int candidateCount)
     {
@@ -768,7 +803,7 @@ public static class SearchTools
         return result;
     }
 
-    private static async Task<IReadOnlyList<RankedResult>> ApplyRerankerOrPassThroughAsync(IReRanker reRanker,
+    internal static async Task<IReadOnlyList<RankedResult>> ApplyRerankerOrPassThroughAsync(IReRanker reRanker,
         IQueryMetrics metrics,
         string query,
         IReadOnlyList<HybridCandidate> hybrid,
@@ -777,6 +812,10 @@ public static class SearchTools
         int maxReRankCandidates,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(reRanker);
+        ArgumentNullException.ThrowIfNull(metrics);
+        ArgumentException.ThrowIfNullOrEmpty(query);
+        ArgumentNullException.ThrowIfNull(hybrid);
         IReadOnlyList<RankedResult> result;
 
         if (!rerankActive)
@@ -809,16 +848,11 @@ public static class SearchTools
     }
 
     /// <summary>
-    ///     Cross-encoder is authoritative on the candidates it scored.
-    ///     The top <paramref name="maxReRankCandidates" /> hybrid items
-    ///     are fed to the reranker and ordered by its score
-    ///     (sigmoid-mapped logits ∈ (0, 1), see
-    ///     <see cref="OnnxReRanker.NormalizeLogit" />). The pass-through
-    ///     tail keeps its hybrid score and is appended below the reranked
-    ///     tier — never interleaved. This replaces the pre-Phase-4 linear
-    ///     blend, which mixed unbounded raw logits with [0, 1] hybrid
-    ///     scores and let pass-through items leapfrog low-rerank items
-    ///     into the top-N.
+    ///     Give retrieval and the local reranker equal votes using reciprocal
+    ///     ranks. A first-place vote stays useful even when the other method
+    ///     disagrees. Unscored candidates receive only their retrieval vote;
+    ///     raw model scores are retained for diagnostics, never mixed with
+    ///     retrieval scores. Tied scores receive the same rank.
     /// </summary>
     private static async Task<IReadOnlyList<RankedResult>> ApplyRerankerOrderingAsync(IReRanker reRanker,
         IQueryMetrics metrics,
@@ -841,47 +875,41 @@ public static class SearchTools
                                                     r => r.Count
                                                    );
 
-        var reranked = rerankResults
-                      .Select(rr => CreateReRankedResult(rr, hybridByChunkId))
-                      .OrderByDescending(r => r.FinalScore);
-        var passThrough = hybrid.Skip(reRankCandidateCount)
-                                .Select(CreatePassThroughRankedResult);
-        var ordered = reranked.Concat(passThrough)
+        var rerankedById = rerankResults.Where(rr => hybridByChunkId.ContainsKey(rr.Chunk.Id))
+                                       .DistinctBy(rr => rr.Chunk.Id)
+                                       .ToDictionary(rr => rr.Chunk.Id, StringComparer.Ordinal);
+        var retrievalRanks = RankScores(hybrid.Select(candidate => (candidate.Chunk.Id, candidate.HybridScore)));
+        var rerankRanks = RankScores(rerankedById.Values.Select(rr => (rr.Chunk.Id, (double) rr.RelevanceScore)));
+        var ordered = hybrid.Select(candidate => CreateReRankedResult(candidate,
+                                                                      retrievalRanks,
+                                                                      rerankRanks,
+                                                                      rerankedById))
+                      .OrderByDescending(r => r.FinalScore)
                       .Take(maxResults)
                       .ToList();
         return ordered;
     }
 
-    private static RankedResult CreatePassThroughRankedResult(HybridCandidate candidate)
+    private static RankedResult CreateReRankedResult(HybridCandidate candidate,
+                                                     IReadOnlyDictionary<string, int> retrievalRanks,
+                                                     IReadOnlyDictionary<string, int> rerankRanks,
+                                                     IReadOnlyDictionary<string, ReRankResult> rerankedById)
     {
+        var id = candidate.Chunk.Id;
+        var score = RerankerVoteWeight * ReciprocalRank(retrievalRanks[id]) +
+                    RerankerVoteWeight * ReciprocalRank(rerankRanks.GetValueOrDefault(id));
         var result = new RankedResult
                          {
                              Chunk = candidate.Chunk,
-                             FinalScore = (float) candidate.HybridScore,
+                             FinalScore = (float) score,
                              VectorScore = candidate.VectorScore,
                              Bm25Score = (float) candidate.Bm25Score,
-                             RerankScore = null
+                             RerankScore = rerankedById.GetValueOrDefault(id)?.RelevanceScore
                          };
         return result;
     }
 
-    private static RankedResult CreateReRankedResult(ReRankResult rr,
-                                                     IReadOnlyDictionary<string, HybridCandidate> hybridByChunkId)
-    {
-        var hybridCandidate = hybridByChunkId.TryGetValue(rr.Chunk.Id, out var hc) ? hc : null;
-        var vectorScore = hybridCandidate?.VectorScore ?? 0f;
-        var bm25Score = hybridCandidate != null ? (float) hybridCandidate.Bm25Score : 0f;
-
-        var result = new RankedResult
-                         {
-                             Chunk = rr.Chunk,
-                             FinalScore = rr.RelevanceScore,
-                             VectorScore = vectorScore,
-                             Bm25Score = bm25Score,
-                             RerankScore = rr.RelevanceScore
-                         };
-        return result;
-    }
+    private const double RerankerVoteWeight = 0.5;
 
     private static string SerializeSearchResponse(IReadOnlyList<RankedResult> ranked,
                                                   Stopwatch embedSw,
