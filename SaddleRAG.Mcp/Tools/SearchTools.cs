@@ -820,7 +820,8 @@ public static class SearchTools
 
         if (!rerankActive)
         {
-            result = hybrid.Take(maxResults)
+            result = hybrid.OrderByDescending(c => c.HybridScore)
+                           .Take(maxResults)
                            .Select(c => new RankedResult
                                             {
                                                 Chunk = c.Chunk,
@@ -878,7 +879,8 @@ public static class SearchTools
         var rerankedById = rerankResults.Where(rr => hybridByChunkId.ContainsKey(rr.Chunk.Id))
                                        .DistinctBy(rr => rr.Chunk.Id)
                                        .ToDictionary(rr => rr.Chunk.Id, StringComparer.Ordinal);
-        var retrievalRanks = RankScores(hybrid.Select(candidate => (candidate.Chunk.Id, candidate.HybridScore)));
+        var retrievalRanks = RankScores(hybrid.Where(candidate => candidate.HybridScore > 0)
+                                             .Select(candidate => (candidate.Chunk.Id, candidate.HybridScore)));
         var rerankRanks = RankScores(rerankedById.Values.Select(rr => (rr.Chunk.Id, (double) rr.RelevanceScore)));
         var ordered = hybrid.Select(candidate => CreateReRankedResult(candidate,
                                                                       retrievalRanks,
@@ -896,7 +898,7 @@ public static class SearchTools
                                                      IReadOnlyDictionary<string, ReRankResult> rerankedById)
     {
         var id = candidate.Chunk.Id;
-        var score = RerankerVoteWeight * ReciprocalRank(retrievalRanks[id]) +
+        var score = RerankerVoteWeight * ReciprocalRank(retrievalRanks.GetValueOrDefault(id)) +
                     RerankerVoteWeight * ReciprocalRank(rerankRanks.GetValueOrDefault(id));
         var result = new RankedResult
                          {

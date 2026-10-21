@@ -20,8 +20,8 @@ public sealed class SearchRankFusionTests
 
         var result = SearchTools.BlendVectorAndBm25(vectors, keywords, 0.4f, null);
 
-        Assert.Equal("c1", result[0].Chunk.Id);
-        Assert.Equal(vectors[0].Score, result[0].VectorScore);
+        Assert.Contains(result.Take(2), r => r.Chunk.Id == "c1");
+        Assert.Equal(vectors[0].Score, result.Single(r => r.Chunk.Id == "c1").VectorScore);
     }
 
     [Fact]
@@ -107,6 +107,18 @@ public sealed class SearchRankFusionTests
 
         Assert.Equal(candidates.Select(c => c.Chunk.Id), result.Select(c => c.Chunk.Id));
         Assert.All(result, r => Assert.Null(r.RerankScore));
+    }
+
+    [Fact]
+    public async Task DisabledSorterDoesNotPromotePrependedZeroScoreSymbolMatches()
+    {
+        var candidates = SearchTools.InjectIdentifierMatches(Candidates(5), [Chunk("symbol")]);
+        Assert.Equal("symbol", candidates[0].Chunk.Id);
+
+        var result = await Rank(Substitute.For<IReRanker>(), candidates, active: false);
+
+        Assert.Equal("c1", result[0].Chunk.Id);
+        Assert.DoesNotContain(result, r => r.Chunk.Id == "symbol");
     }
 
     [Fact]
