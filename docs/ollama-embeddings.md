@@ -22,6 +22,13 @@ These are fields under `Ollama`:
 | `EmbeddingBatchSize` | `16` | Texts per request; range 1–64 |
 | `EmbeddingKeepAliveSeconds` | `60` | Idle retention; range 0–300 seconds, with zero unloading after each request |
 | `EmbeddingThreads` | `4` | CPU threads available to the embedding runner |
+| `EmbeddingContextLength` | Model-specific | Positive token capacity sent as both `num_ctx` and `num_batch`; defaults to 8192 for `embeddinggemma-2`, otherwise leaves Ollama's defaults unchanged |
+
+Ollama's internal token batch must accommodate each complete passage. A large
+advertised context alone is insufficient: during full-library testing, 2400-character
+passages received HTTP 413 with Ollama's defaults. Explicit `num_ctx=8192` and
+`num_batch=8192` accepted the complete inputs with truncation disabled. This token
+capacity is separate from `EmbeddingBatchSize`, which counts texts per request.
 
 Task instructions are opt-in to preserve the meaning of vectors created by older
 SaddleRAG releases. Enable them for a new library or as part of a coordinated

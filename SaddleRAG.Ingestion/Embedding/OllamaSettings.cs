@@ -67,6 +67,12 @@ public class OllamaSettings
     public int EmbeddingThreads { get; set; } = DefaultEmbeddingThreads;
 
     /// <summary>
+    ///     Optional token capacity for both context and the internal embedding
+    ///     batch. Null uses 8192 for embeddinggemma-2 and Ollama defaults otherwise.
+    /// </summary>
+    public int? EmbeddingContextLength { get; set; }
+
+    /// <summary>
     ///     Name of the <see cref="ClassificationModels" /> entry to use for
     ///     symbol categorization in <c>reextract_library</c>. Missing or
     ///     empty falls back to the first entry. Invalid name throws at

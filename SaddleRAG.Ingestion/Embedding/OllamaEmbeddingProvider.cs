@@ -123,7 +123,14 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
                     KeepAlive = mSettings.EmbeddingKeepAliveSeconds.ToString(CultureInfo.InvariantCulture) + "s",
                     // Reject oversize inputs; silently dropping content damages retrieval.
                     Truncate = false,
-                    Options = new RequestOptions { NumThread = mSettings.EmbeddingThreads }
+                    Options = new RequestOptions
+                    {
+                        NumThread = mSettings.EmbeddingThreads,
+                        NumCtx = ResolveContextLength(),
+                        // Non-causal embedding runners must fit one complete input
+                        // in their physical token batch, even with a larger context.
+                        NumBatch = ResolveContextLength()
+                    }
                 }, ct);
                 result = ValidateResponse(response, input.Length);
                 succeeded = true;
@@ -133,6 +140,14 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
                 mLogger.LogWarning(ex, "Ollama embedding attempt {Attempt} failed; retrying", attempt + 1);
             }
         }
+        return result;
+    }
+
+    private int? ResolveContextLength()
+    {
+        int? result = mSettings.EmbeddingContextLength;
+        if (result == null && ModelName.Split(':')[0] == GemmaTwoModelFamily)
+            result = GemmaTwoContextLength;
         return result;
     }
 
@@ -182,6 +197,8 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
         ArgumentOutOfRangeException.ThrowIfNegative(settings.EmbeddingKeepAliveSeconds);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(settings.EmbeddingKeepAliveSeconds, OllamaSettings.MaximumEmbeddingKeepAliveSeconds);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(settings.EmbeddingThreads);
+        if (settings.EmbeddingContextLength.HasValue)
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(settings.EmbeddingContextLength.Value);
     }
 
     /// <summary>Identifier persisted with Ollama-embedded library versions.</summary>
@@ -193,6 +210,8 @@ public class OllamaEmbeddingProvider : IEmbeddingProvider
     private const string GemmaDocumentPrefix = "title: none | text: ";
     private const string GemmaQueryPrefix = "task: search result | query: ";
     private const int MaxRetryAttempts = 3;
+    private const int GemmaTwoContextLength = 8192;
+    private const string GemmaTwoModelFamily = "embeddinggemma-2";
     private const int InitialRetryDelayMs = 1000;
     private readonly OllamaApiClient mClient;
     private readonly ILogger<OllamaEmbeddingProvider> mLogger;

@@ -1,0 +1,2 @@
+[fix/service-health-and-ollama] Verify the complete Google migration, content/vector audit, installed server and tray, complete searches, and bounded model unloading; record results in issue 189.
+[fix/service-health-and-ollama] Resolve or file the 543 stored passages under h-notifyicon-wpf and automation1.net that lack library/version records; preserve data during the embedding migration.

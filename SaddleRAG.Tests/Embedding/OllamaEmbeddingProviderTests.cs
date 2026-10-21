@@ -193,6 +193,49 @@ public sealed class OllamaEmbeddingProviderTests
 
     private static OllamaSettings Settings() => new() { EmbeddingDimensions = 2, EmbeddingUseTaskPrefixes = true };
 
+    [Theory]
+    [InlineData("embeddinggemma-2:270m", null, 8192)]
+    [InlineData("embeddinggemma-2:270m", 4096, 4096)]
+    [InlineData("nomic-embed-text", 2048, 2048)]
+    public async Task FitsCompleteInputInRunnerTokenBatch(string model, int? configured, int expected)
+    {
+        using var handler = new EmbeddingResponseHandler();
+        var settings = Settings();
+        settings.EmbeddingModel = model;
+        settings.EmbeddingContextLength = configured;
+
+        await Provider(settings, handler).EmbedAsync([new string('x', 2400)], ct: TestContext.Current.CancellationToken);
+
+        using var request = JsonDocument.Parse(Assert.Single(handler.Requests));
+        var options = request.RootElement.GetProperty("options");
+        Assert.Equal(expected, options.GetProperty("num_ctx").GetInt32());
+        Assert.Equal(expected, options.GetProperty("num_batch").GetInt32());
+        Assert.False(request.RootElement.GetProperty("truncate").GetBoolean());
+    }
+
+    [Fact]
+    public async Task PreservesOtherModelContextDefaults()
+    {
+        using var handler = new EmbeddingResponseHandler();
+        await Provider(Settings(), handler).EmbedAsync(["passage"], ct: TestContext.Current.CancellationToken);
+        using var request = JsonDocument.Parse(Assert.Single(handler.Requests));
+        var options = request.RootElement.GetProperty("options");
+        Assert.False(options.TryGetProperty("num_ctx", out _));
+        Assert.False(options.TryGetProperty("num_batch", out _));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void RejectsInvalidContextBeforeSendingRequest(int contextLength)
+    {
+        using var handler = new EmbeddingResponseHandler();
+        var settings = Settings();
+        settings.EmbeddingContextLength = contextLength;
+        Assert.Throws<ArgumentOutOfRangeException>(() => Provider(settings, handler));
+        Assert.Empty(handler.Requests);
+    }
+
     private static OllamaEmbeddingProvider Provider(OllamaSettings settings, EmbeddingResponseHandler handler) =>
         new(Options.Create(settings), NullLogger<OllamaEmbeddingProvider>.Instance,
             new OllamaApiClient(new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") }));
