@@ -22,8 +22,11 @@ public sealed class ConfigurationUpgradeBackupTests : IDisposable
     [Fact]
     public void UpgradeAndRollbackRestoreOriginalBytesUntilCommit()
     {
-        byte[] settings = [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes("{\"EmbeddingModel\":\"Google\"}\r\n")];
-        byte[] overrides = Encoding.UTF8.GetBytes("{\"Sorter\":\"Onnx\"}");
+        byte[] settings = [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(
+            "{\"Ollama\":{\"EmbeddingModel\":\"nomic-embed-text\",\"EmbeddingUseTaskPrefixes\":false}," +
+            "\"Onnx\":{\"Enabled\":true,\"EmbeddingEnabled\":true,\"ActiveRerankerModel\":\"mxbai-rerank-base-v1\"}}\r\n")];
+        byte[] overrides = Encoding.UTF8.GetBytes(
+            "{\"Classification\":{\"Backend\":\"onnx\"},\"Ranking\":{\"ReRankerStrategy\":\"Onnx\"}}");
         File.WriteAllBytes(SettingsPath, settings);
         File.WriteAllBytes(OverridesPath, overrides);
         var backup = CreateBackup();
@@ -31,7 +34,9 @@ public sealed class ConfigurationUpgradeBackupTests : IDisposable
 
         File.Delete(SettingsPath);
         File.Delete(OverridesPath);
-        File.WriteAllText(SettingsPath, "new package defaults");
+        string? root = InstallerSourceTreeResolver.TryResolveRepositoryRoot();
+        Assert.NotNull(root);
+        File.Copy(Path.Combine(root, "SaddleRAG.Mcp", "appsettings.json"), SettingsPath);
         backup.Restore();
         Assert.Equal(settings, File.ReadAllBytes(SettingsPath));
         Assert.Equal(overrides, File.ReadAllBytes(OverridesPath));

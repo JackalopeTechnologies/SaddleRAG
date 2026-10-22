@@ -356,6 +356,7 @@ builder.Services.AddSingleton<ClassifierBackendSwitch>(sp =>
                                 sp.GetRequiredService<IOllamaProbe>(),
                                 sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>(),
                                 builder.Configuration[ClassifierBackendSwitch.BackendConfigurationPath]
+                                // Preserve the implicit backend of older configuration files.
                                 ?? ClassifierBackendNames.Onnx
                                )
 );

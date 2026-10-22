@@ -178,6 +178,7 @@ services.AddSingleton<ClassifierBackendSwitch>(sp =>
                                 sp.GetRequiredService<IOllamaProbe>(),
                                 sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>(),
                                 configuration[ClassifierBackendSwitch.BackendConfigurationPath]
+                                // Preserve the implicit backend of older configuration files.
                                 ?? ClassifierBackendNames.Onnx
                                ));
 services.AddSingleton<ILlmClassifier>(sp => sp.GetRequiredService<ClassifierBackendSwitch>());

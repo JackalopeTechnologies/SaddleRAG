@@ -11,8 +11,7 @@ services:
       Kestrel__Endpoints__Http__Url: http://+:6100
       MongoDB__Profiles__local__ConnectionString: mongodb://mongo:27017
       Ollama__Endpoint: http://ollama:11434
-      Onnx__Enabled: "true"
-      Onnx__EmbeddingEnabled: "true"
+      # Model/backend defaults come from the packaged appsettings.json.
       Onnx__ModelsDir: /data/models
     volumes:
       - onnx-models:/data/models
