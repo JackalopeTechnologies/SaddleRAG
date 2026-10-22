@@ -156,7 +156,7 @@ services.AddSingleton<OnnxClassifierGenerator>(sp =>
     }
 
     string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
-    return new OnnxClassifierGenerator(modelFolder, entry);
+    return new OnnxClassifierGenerator(modelFolder, entry, sp.GetRequiredService<ILogger<OnnxClassifierGenerator>>());
 });
 // SerializedClassifierGenerator: onnxruntime-genai Generator creation over a
 // shared Model is not thread-safe; overlapping generate calls crash the whole
