@@ -143,7 +143,7 @@ public sealed class Bm25ScorerTests
     }
 
     [Fact]
-    public async Task ConnectingWordsCannotPromoteAnUnrelatedPage()
+    public async Task ConnectingWordsHaveLessInfluenceWithoutDiscardingEvidence()
     {
         var chunks = new[]
         {
@@ -155,9 +155,13 @@ public sealed class Bm25ScorerTests
 
         var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "Tell me about return values",
             TestContext.Current.CancellationToken);
+        var literal = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "Tell me `about` return values",
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("answer", scores.Keys);
-        Assert.DoesNotContain("unrelated", scores.Keys);
+        Assert.True(scores["unrelated"] > 0);
+        Assert.True(scores["unrelated"] < literal["unrelated"]);
+        Assert.Equal(literal["answer"], scores["answer"]);
     }
 
     [Theory]
@@ -167,11 +171,15 @@ public sealed class Bm25ScorerTests
     [InlineData("Explain the \"about\" parameter")]
     [InlineData("Explain the 'about' parameter")]
     [InlineData("How does About() work?")]
-    public void LiteralAndStandaloneConnectingWordsRemainSearchable(string query)
+    public async Task LiteralAndStandaloneConnectingWordsRetainFullWeight(string query)
     {
-        var terms = Bm25Scorer.ExtractQueryTerms(query);
+        var build = Bm25IndexBuilder.Build("lib", "1.0", [MakeChunk("answer", "About")]);
+        var lookup = new InMemoryBm25TermLookup(build);
+        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, query, TestContext.Current.CancellationToken);
+        var baseline = await Bm25Scorer.ScoreAsync(lookup, build.Stats,
+            query.Contains("About", StringComparison.Ordinal) ? "About" : "about", TestContext.Current.CancellationToken);
 
-        Assert.Contains("about", terms);
+        Assert.Equal(baseline["answer"], scores["answer"]);
     }
 
     [Fact]
@@ -180,8 +188,8 @@ public sealed class Bm25ScorerTests
         var terms = Bm25Scorer.ExtractQueryTerms(
             "How does Widget.About return any value for all arguments without matching not null?");
 
-        Assert.DoesNotContain("how", terms);
-        Assert.DoesNotContain("for", terms);
+        Assert.Contains("how", terms);
+        Assert.Contains("for", terms);
         Assert.Contains("Widget.About", terms);
         Assert.Contains("widget.about", terms);
         Assert.All(new[] { "return", "any", "value", "all", "arguments", "without", "matching", "not", "null" },
