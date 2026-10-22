@@ -901,12 +901,13 @@ public static class SearchTools
         // so duplicates cannot crowd a different answer out of the response.
         // Preserve version, section, symbol, and local-document context: equal
         // prose alone does not make two technical references interchangeable.
+        // Category is an import classification, not answer identity: aliases
+        // of the same passage can receive different labels on separate imports.
         var result = candidates.OrderByDescending(candidate => candidate.FinalScore)
                                .DistinctBy(candidate => new
                                                             {
                                                                 candidate.Chunk.LibraryId,
                                                                 candidate.Chunk.Version,
-                                                                candidate.Chunk.Category,
                                                                 candidate.Chunk.PageTitle,
                                                                 candidate.Chunk.SectionPath,
                                                                 candidate.Chunk.QualifiedName,

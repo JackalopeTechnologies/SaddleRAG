@@ -135,13 +135,21 @@ public sealed class SearchRankFusionTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task DuplicateWebPassageCannotCrowdOutFifthDistinctAnswer(bool active)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task DuplicateWebPassageCannotCrowdOutFifthDistinctAnswer(bool active, bool differentCategory)
     {
         var candidates = Candidates(6);
         candidates[4] = candidates[4] with
-            { Chunk = candidates[3].Chunk with { Id = "duplicate", PageUrl = "https://example.test/c4/index" } };
+            {
+                Chunk = candidates[3].Chunk with
+                {
+                    Id = "duplicate", PageUrl = "https://example.test/c4/index",
+                    Category = differentCategory ? DocCategory.HowTo : candidates[3].Chunk.Category
+                }
+            };
         var sorter = OrderedSorter();
 
         var result = await Rank(sorter, candidates, active);
@@ -165,7 +173,6 @@ public sealed class SearchRankFusionTests
             original,
             original with { Id = "library", LibraryId = "another-library" },
             original with { Id = "version", Version = "v2" },
-            original with { Id = "category", Category = DocCategory.HowTo },
             original with { Id = "title", PageTitle = "another title" },
             original with { Id = "section", SectionPath = "another section" },
             original with { Id = "symbol", QualifiedName = "Another.Symbol" },
