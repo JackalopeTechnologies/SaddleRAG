@@ -1,0 +1,72 @@
+Issue 189: repeated DirectML graph-setting warning
+================================================
+
+Observed behavior and cause
+---------------------------
+The real Phi-3 DirectML smoke test classified its document correctly but printed
+the same gpu_graph_id overwrite warning once per generated token. GenAI 0.14.1
+intentionally writes this setting in State::Run, including when its value has
+not changed. ONNX Runtime 1.24.4 warns on every replacement of an existing key.
+The NuGet feeds still list these as the latest compatible DirectML releases.
+
+Correction
+----------
+SaddleRAG now initializes native diagnostic routing immediately before native
+model/session creation. The false-positive message is retained at Debug only
+when all of these match: Warning severity, onnxruntime category, the native
+ConfigOptions::AddConfigEntry source location, gpu_graph_id as the exact key,
+the complete known message shape, and a valid numeric graph identifier.
+
+Different keys, invalid values, unrelated sources/categories, device-loss
+warnings, and every Error/Fatal message retain their normal severity. The
+application logger receives native messages; callers without an application
+logger retain stderr warnings/errors and Trace diagnostics. Managed logging
+exceptions cannot unwind through the native callback.
+
+This is a documented, narrowly scoped workaround for a third-party false
+positive. Microsoft's native binaries have not been patched. No graph-capture,
+inference, provider-selection, model-setting, or global severity setting was
+disabled to eliminate the message. The native environment remains process-wide;
+the helper does not replace an environment already initialized by another owner.
+All SaddleRAG native model-loading paths initialize routing before that point.
+
+The original two-argument OnnxClassifierGenerator constructor is preserved.
+The server and CLI use the new overload to supply application logging. Ollama
+selection alone does not initialize this native environment. The test assembly
+fixture initializes routing before tests that deliberately bypass application
+loaders and construct raw native session options.
+
+Verification
+------------
+The focused run passed all 13 checks with no skips: 12 warning/error boundary
+cases and a real DirectML classification using the staged Phi-3 model. Its
+captured native output contains zero gpu_graph_id overwrite warnings and still
+shows the three native messages about CPU shape operations and node placement.
+Those remaining messages are not the repeated-setting false positive and are
+not suppressed.
+
+Final clean Release rebuild: zero warnings and zero errors.
+Full suite: 2,526 total, 2,502 passed, zero failed/errors, 24 skipped.
+The captured native output again contains zero repeated graph-setting warnings
+and retains the other three native placement diagnostics. Skipped checks need
+unstaged optional models, another provider/build variant, symbolic-link support,
+or explicitly enabled conversion/diagnostic checks.
+
+Combined Windows publication verified all 538 package files, including the
+server, CLI, tray and installer helper, at 1.13.1-local.diagnostics.20261022.
+This verifies the built package; no MSI was released or installed.
+
+After verification, the installed service remains Healthy, with zero warning
+or error notifications. Both installed configuration file hashes still match
+the values saved before this work. Devstral remains selected and Ollama reports
+no resident models. Live embedding and sorter settings have not been changed.
+
+Evidence
+--------
+E:\CodexScratch\saddlerag-directml-diagnostics-20261022
+targeted-tests.xml, targeted-tests.log, targeted-native.log
+rebuild.log, tests.xml, tests.log, native.log, publish.log, windows-package
+
+The source commits were verified from the NuGet package metadata:
+https://github.com/microsoft/onnxruntime-genai/blob/a30f479af016cb098688726831a9acbb8d19f0b2/src/models/model.cpp#L84-L92
+https://github.com/microsoft/onnxruntime/blob/2d924974ef147392ced8409d36bd6d2e7fcc8a74/onnxruntime/core/framework/config_options.cc#L37-L43

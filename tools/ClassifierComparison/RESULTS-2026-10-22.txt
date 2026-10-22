@@ -129,13 +129,17 @@ helper passed the shared-file equality, bundled-runtime and copied-file checks:
 released or installed. Package and logs remain in the local evidence directory.
 
 The optional DirectML Phi-3 smoke passed but emitted native runtime warnings.
+The initial comparison-round findings below are followed by an authorized
+logging correction documented in DIRECTML-DIAGNOSTICS-2026-10-22.txt.
 The repeated gpu_graph_id overwrite originates in GenAI 0.14.1 State::Run,
 which adds the same configuration key during token generation. ONNX Runtime
 1.24.4 warns whenever an existing key is added, even with the same value.
 SaddleRAG does not set that key. A corrective native-package change would avoid
 re-adding an unchanged value; it needs a compatible package and DirectML
-qualification. No log suppression, runtime downgrade or graph-capture change
-was applied. This follow-up remains in issue 189. Other native diagnostics
+qualification. At that stage, no log suppression, runtime downgrade or
+graph-capture change was applied. The subsequent local diagnostic correction
+and its completed verification are in the companion report linked above and
+issue 189. Other native diagnostics
 describe CPU placement of shape-related operations in that optional model;
 they are separate from the GPU-only Ollama measurements above.
 

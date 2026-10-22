@@ -46,7 +46,13 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
     ///     laid down by <c>OnnxModelDownloader.DownloadModelFolderAsync</c>
     ///     by the time the first generate runs.
     /// </summary>
-    public OnnxClassifierGenerator(string modelFolder, ClassifierModelEntry entry, ILogger? logger = null)
+    public OnnxClassifierGenerator(string modelFolder, ClassifierModelEntry entry)
+        : this(modelFolder, entry, null)
+    {
+    }
+
+    /// <summary>Uses application logging for native model diagnostics when provided.</summary>
+    public OnnxClassifierGenerator(string modelFolder, ClassifierModelEntry entry, ILogger? logger)
     {
         ArgumentException.ThrowIfNullOrEmpty(modelFolder);
         ArgumentNullException.ThrowIfNull(entry);
