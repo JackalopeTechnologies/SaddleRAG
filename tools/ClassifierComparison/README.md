@@ -24,7 +24,10 @@ authorization. Run models sequentially. Fixed comparison settings are temperatur
 0, seed 42, context 8192, output limit 2048, thinking disabled, two CPU threads,
 all layers requested on the graphics card, and keep-alive 0. No other model or
 system settings are changed. These are comparison settings, not a proposed live
-configuration. They include model loading in the measured elapsed time.
+configuration. Measurements include any model loading that occurs. Consecutive
+requests can arrive before Ollama completes unloading, so these are batch
+timings, not guaranteed cold-load timings for every document. Verify an empty
+resident-model list before starting the next model's run and after the last run.
 
 Each document has a five-minute deadline, including the production retry.
 Ollama's resident-model endpoint is sampled every 250 milliseconds. If its

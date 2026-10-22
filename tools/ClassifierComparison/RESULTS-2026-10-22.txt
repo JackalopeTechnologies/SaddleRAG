@@ -1,0 +1,152 @@
+Issue 189: Ollama subject-classifier comparison and dependency updates
+====================================================================
+
+Recommendation
+--------------
+Retain Devstral Small 2 for now. It preserved the expected primary subject
+identity in all 27 files. Ministral 3 8B was faster and used less graphics
+memory, but misidentified the collection overview and repeated an extracted
+model-name error. Gemma 4 12B lost a product identity and repeated that spelling
+error in two files. No live classifier, embedding, or sorter setting changed.
+
+Measured results
+----------------
+Model                  Valid responses  Primary identity  Batch time  Median/file  Model GPU bytes
+Ministral 3 8B          27/27            25/27             36.20 s     0.891 s      6,022,221,312
+Gemma 4 12B             27/27            24/27            242.27 s     8.529 s      7,381,383,680
+Devstral Small 2 24B    27/27            27/27             81.33 s     1.982 s     15,177,370,240
+
+Each model made 27 requests: no validation retry was needed. All 81 document
+results observed full model placement in graphics memory. Ollama reported no
+resident models between model runs or after the final run. Reported allocation
+is for the model, not total graphics-card use. The two candidate downloads used
+the existing E:\Ollama Models store; no second Ollama installation was created.
+
+These are one-pass batch measurements including any loading that occurred.
+Keep-alive was zero, but requests can arrive before unloading completes. Do not
+interpret the median as a guaranteed cold-start time. Ministral also had one
+one-document smoke run before its batch; the other models did not. Operating
+system caches, first-use work and unload scheduling can affect the comparison.
+This experiment supports retaining Devstral for correctness, not a universal
+speed ranking or a production qualification of every possible model setting.
+
+Quality review
+--------------
+The score asks whether the primary label preserves the document's actual
+product identity, or identifies a collection overview as an overview. It is
+manual review of the 27 outputs, not a score for every word, numeric claim,
+retrieval ranking, or answer generation. REVIEW-2026-10-22.csv contains every
+primary label, identity verdict and exception note.
+
+* Ministral labeled README.md, titled "Toshiba inverter manuals and motor
+  datasheets", as a VF-S9 instruction manual. Its cited overview text contains
+  an inventory table; it selected an item from the inventory as the main subject.
+* Ministral and Gemma used TVF-AS3 for the VF-AS3 instruction PDF. The extracted
+  heading contains that spelling, while filename and body preserve VF-AS3.
+  Gemma also supplied VF-AS3 as an alias; the primary label still contains the
+  extra letter. Gemma repeated TVF-AS3 on the VF-AS3 communication PDF as well.
+* Gemma labeled the VF-S11 instruction PDF "TOSHIBA New Global Standard Inverter",
+  omitting VF-S11 even though it is present in the filename and evidence.
+* Ministral's VF-S11 instruction label preserves VF-S11 but incorrectly calls
+  E6581158 a model number; it is the manual's document number. This is a separate
+  wording defect, not an additional failed primary-identity score.
+* Gemma added five secondary labels across three motor PDFs: induction-motor,
+  connection-diagram and spare-parts subjects. The cited excerpts support them;
+  they were not counted as invented subjects. Ministral and Devstral returned
+  one subject per file. No unsupported broad alias was observed; Gemma's sole
+  nonempty alias list supplied VF-AS3 in the case noted above.
+* Devstral preserved all expected product identities, both Penske programming
+  identities and the collection overview. Some of its first evidence selections
+  are filenames or brief headings; this result does not certify description
+  quality. All three passed the application's structural/evidence-key checks.
+
+Before replacing Devstral, a follow-up should address overview-versus-inventory
+selection, conflicting extracted headings versus named product identity, and
+missing model designations. Candidate remedies are a general prompt clarification
+and an evidence-based identity check that can request correction when filename,
+title and selected label conflict. These have not been implemented or tested.
+Keep their evaluation in issue 189 and use a broader held-out set before a switch.
+No prompt was tuned to these results during this comparison.
+
+Method and provenance
+---------------------
+Machine: NVIDIA GeForce RTX 4090, 24,564 MiB total memory; Ollama 0.40.7.
+Tool source at benchmark: commit a88d1f1 on codex/ollama-install-defaults.
+The tool uses the production OllamaLlmClassifier, SubjectCatalogBuilder,
+subject-catalog-v6 prompt and structured response schema, validation, bounded
+retry, catalog reconciliation and subject assignment. Storage is substituted
+in memory; the tool never opens MongoDB or writes live classifications.
+
+Input: saved toshiba-manuals descriptors from the 2026-10-21 qualification export,
+library version 2026-10-07, source commit da7943457193a3279724f83f5947367a3bbb3950,
+export timestamp 2026-10-21T11:04:10.4492026Z. The source manifest records 3,919
+sections; inference used the bounded descriptors, not all sections in full.
+The 27 files represent 15 underlying documents: eight manuals and four motor
+datasheets each in PDF/text form, two Penske programming documents, and one
+collection overview. Paired exports are not independent samples.
+
+Input SHA256:
+3E1B709024822CC56BC87D151D4FE2D7A56D47A7B4BE60E9CCF8D5E85A3AF1BA
+
+Sequential runs, document order sorted by stored identifier. Fixed settings:
+temperature 0, seed 42, context 8192, output limit 2048, thinking false, CPU threads
+2, all model layers requested on GPU, keep-alive 0, five-minute document deadline.
+GPU placement sampled from Ollama every 250 ms; partial placement cancels the
+run. A separate catalog was created for each model. No live setting adopted
+these benchmark-only limits. Gemma's thinking mode was not evaluated.
+
+Tags and digests:
+ministral-3:8b
+1922accd5827ebe6829e536369195db25eaf664528dc66206d646ea3bb386b71
+gemma4:12b
+6114515d63c17436a7c0417d82820ac65ad643e2806c5a3c89cb62846436ed0b
+devstral-small-2:latest
+24277f07f62db8f9cb68e9dfc679ea1818a7fbac47a50eff0a701d3f645b63c8
+
+All three reported Q4_K_M quantization. Raw requests, responses, result rows,
+catalogs, input checksum and run settings remain local under:
+E:\CodexScratch\saddlerag-classifier-comparison-20261022
+Subdirectories: ministral-smoke, ministral-full, gemma-full, devstral-full.
+
+Dependency update verification
+------------------------------
+Microsoft.Extensions.AI:              10.8.3 -> 10.11.0
+Microsoft.Extensions.AI.Abstractions:  10.8.3 -> 10.11.0
+ModelContextProtocol.AspNetCore:      2.0.0  -> 2.3.0
+MongoDB.Driver:                      3.10.0 -> 3.12.0
+OllamaSharp:                         5.4.30 -> 5.5.0
+
+Clean Release rebuild: zero warnings, zero errors.
+Full suite: 2,514 total, 2,490 passed, zero failed/errors, 24 skipped.
+Skipped tests require unstaged optional models, another build/provider variant,
+symbolic-link support, or explicitly enabled diagnostics/conversion checks.
+Application and tray NuGet audits, including transitive dependencies: no reported
+vulnerabilities. These are findings from the queried feed, not a security guarantee.
+
+Combined self-contained Windows publication of server, CLI, tray and installer
+helper passed the shared-file equality, bundled-runtime and copied-file checks:
+538 files, runtime 10.0.13, local version 1.13.1-local.nuget.20261022. No MSI was
+released or installed. Package and logs remain in the local evidence directory.
+
+The optional DirectML Phi-3 smoke passed but emitted native runtime warnings.
+The repeated gpu_graph_id overwrite originates in GenAI 0.14.1 State::Run,
+which adds the same configuration key during token generation. ONNX Runtime
+1.24.4 warns whenever an existing key is added, even with the same value.
+SaddleRAG does not set that key. A corrective native-package change would avoid
+re-adding an unchanged value; it needs a compatible package and DirectML
+qualification. No log suppression, runtime downgrade or graph-capture change
+was applied. This follow-up remains in issue 189. Other native diagnostics
+describe CPU placement of shape-related operations in that optional model;
+they are separate from the GPU-only Ollama measurements above.
+
+Package source references, commits verified from the installed NuGet metadata:
+https://github.com/microsoft/onnxruntime-genai/blob/a30f479af016cb098688726831a9acbb8d19f0b2/src/models/model.cpp#L84-L92
+https://github.com/microsoft/onnxruntime/blob/2d924974ef147392ced8409d36bd6d2e7fcc8a74/onnxruntime/core/framework/config_options.cc#L37-L43
+
+Installed-state verification
+----------------------------
+The appsettings and runtime-overrides file hashes match before and after this
+work. The installed classifier remains devstral-small-2:latest, service health
+is Healthy, and the final resident Ollama model list is empty. Live embedding
+and sorter settings were not changed. Package publication is local build
+verification, not verification of a new installation.
