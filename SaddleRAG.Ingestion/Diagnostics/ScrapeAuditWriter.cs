@@ -273,9 +273,15 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         {
             await FlushAsync(mCts.Token);
         }
-        catch (Exception exception) when (!mCts.IsCancellationRequested)
+        catch (OperationCanceledException) when (mCts.IsCancellationRequested)
         {
-            if (!previousFailure)
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // A repository failure can arrive after shutdown cancellation. Retain
+            // the batch so DisposeAsync can make its final bounded save attempt.
+            if (!previousFailure && !mCts.IsCancellationRequested)
                 mLogger.LogWarning(exception, RetryMessage);
             failed = true;
         }

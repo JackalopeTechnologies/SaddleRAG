@@ -330,7 +330,7 @@ builder.Services.AddSingleton<OnnxClassifierGenerator>(sp =>
     }
 
     string modelFolder = Path.Combine(onnxSettings.ModelsDir, entry.Name);
-    return new OnnxClassifierGenerator(modelFolder, entry);
+    return new OnnxClassifierGenerator(modelFolder, entry, sp.GetRequiredService<ILogger<OnnxClassifierGenerator>>());
 });
 
 // SerializedClassifierGenerator: onnxruntime-genai Generator creation over a
@@ -356,6 +356,7 @@ builder.Services.AddSingleton<ClassifierBackendSwitch>(sp =>
                                 sp.GetRequiredService<IOllamaProbe>(),
                                 sp.GetRequiredService<ILogger<ClassifierBackendSwitch>>(),
                                 builder.Configuration[ClassifierBackendSwitch.BackendConfigurationPath]
+                                // Preserve the implicit backend of older configuration files.
                                 ?? ClassifierBackendNames.Onnx
                                )
 );

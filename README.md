@@ -38,7 +38,7 @@ learn.microsoft   --+      +------+------+
                            +------+------+
                                   |
                            +------v------+
-                           |   Ollama    |  nomic-embed-text
+                           |   Ollama    |  embeddinggemma-2:270m
                            |  Embedder   |  (768 dimensions)
                            +------+------+
                                   |
@@ -74,8 +74,13 @@ Ollama runs AI models locally for document classification and embedding generati
 3. After install, verify it's running: open a terminal and run `ollama list`
 
 SaddleRAG automatically pulls the required models on first use:
-- `nomic-embed-text` -- generates vector embeddings (768 dimensions)
-- `phi4-mini:3.8b` -- classifies documentation pages and optional re-ranking
+- `embeddinggemma-2:270m` -- Google's embedding model (768 dimensions)
+- `phi4-mini:3.8b` -- classifies documentation pages
+
+New installations use Ollama for embeddings and classification, with the search
+sorter off. No native embedding or sorter model is downloaded or loaded unless
+selected. DirectML remains available as an option. MSI upgrades preserve existing
+model and backend selections, including existing embedding formats.
 
 > **Running Ollama elsewhere?** The SaddleRAG installer lets you point to any Ollama endpoint (e.g. `http://your-gpu-server:11434`).
 
@@ -250,13 +255,13 @@ Requires Docker with Compose. Tested on Ubuntu 22.04+.
 docker compose up -d
 ```
 
-**Download models (one-time, ~3 GB):**
+**Download the selected models (one-time):**
 ```bash
 ./warmup.sh
 ```
 
-On first run, `warmup.sh` downloads ONNX embedding and reranker models from
-HuggingFace and the Ollama classification model (`phi4-mini:3.8b`). Models are
+On first run, `warmup.sh` downloads the selected models. New installations use
+Ollama's `embeddinggemma-2:270m` and `phi4-mini:3.8b`. Models are
 stored in named Docker volumes and are not re-downloaded on restart.
 
 The optional recon model (`phi4:14b`, ~8 GB) can be pulled separately:
@@ -298,8 +303,8 @@ Warmup sequence (logged to stdout / `journalctl`):
 
 ```
 [Warmup] MongoDB profiles discovered
-[Warmup] Ollama bootstrap — pulls phi4-mini:3.8b if absent
-[Warmup] ONNX models ready — downloads nomic-embed-text-v1.5 + mxbai-rerank-base-v1 from HuggingFace
+[Warmup] Ollama bootstrap — pulls embeddinggemma-2:270m and phi4-mini:3.8b if absent
+[Warmup] Native models — no embedding or sorter selected on new installations
 [Warmup] Vector indices loaded
 [Warmup] Full pipeline warm
 ```
@@ -533,9 +538,9 @@ Every MCP tool accepts an optional `profile` parameter to target a specific data
 
 ### Ollama Settings
 
-The service defaults to the ONNX classifier. Use `set_active_classifier_model`
-with `ollama` to select the configured Ollama classifier, or `onnx` to switch
-back. The selection takes effect immediately and is saved as
+New installations select the Ollama classifier. Use `set_active_classifier_model`
+with `ollama` or `onnx` to select the classifier backend. The selection takes
+effect immediately and is saved as
 `Classification.Backend` in `runtime-overrides.json`, so service restarts retain
 it. Ollama must be running when selected and when classifying documents.
 
@@ -543,14 +548,37 @@ it. Ollama must be running when selected and when classifying documents.
 {
   "Ollama": {
     "Endpoint": "http://localhost:11434",
-    "EmbeddingModel": "nomic-embed-text",
+    "EmbeddingModel": "embeddinggemma-2:270m",
     "EmbeddingDimensions": 768,
-    "ClassificationModel": "phi4-mini:3.8b",
-    "ReRankingModel": "phi4-mini:3.8b",
+    "EmbeddingUseTaskPrefixes": true,
+    "ActiveClassificationModel": "phi4-mini:3.8b",
     "ModelPullTimeoutSeconds": 600
+  },
+  "Classification": {
+    "Backend": "ollama"
+  },
+  "Onnx": {
+    "Enabled": true,
+    "EmbeddingEnabled": false,
+    "ActiveRerankerModel": "none"
+  },
+  "Ranking": {
+    "ReRankerStrategy": "Off"
   }
 }
 ```
+
+This is a settings excerpt; keep the packaged model lists. To opt into the
+DirectML sorter on Windows, select a registered sorter model such as
+`mxbai-rerank-base-v1`, set `Onnx.ExecutionProvider` to `DirectMl`, and set
+`Ranking.ReRankerStrategy` to `Onnx`. Restart the service so it can download and
+load the selected model. To keep the sorter off without retaining its model in
+memory, use both `Ranking.ReRankerStrategy: Off` and
+`Onnx.ActiveRerankerModel: none`, then restart.
+
+Existing installations keep their configured embedding model and task-prefix
+setting. Changing either requires re-embedding the stored libraries; a new
+installation starts with Google's model and task prefixes enabled.
 
 ### Environment Variables
 

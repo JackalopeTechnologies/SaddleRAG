@@ -73,6 +73,7 @@ public sealed class OnnxEmbeddingProvider : IEmbeddingProvider, IDisposable
 
     private SessionOptions CreateSessionOptions()
     {
+        OnnxRuntimeDiagnostics.EnsureInitialized(mLogger);
         var options = new SessionOptions
         {
             GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),

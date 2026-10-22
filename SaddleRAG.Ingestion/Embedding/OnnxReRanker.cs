@@ -188,6 +188,7 @@ public sealed class OnnxReRanker : IReRanker, IDisposable
 
     private SessionOptions CreateSessionOptions()
     {
+        OnnxRuntimeDiagnostics.EnsureInitialized(mLogger);
         var options = new SessionOptions
         {
             GraphOptimizationLevel = ParseGraphOptimizationLevel(mSettings.GraphOptimizationLevel),

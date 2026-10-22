@@ -7,8 +7,10 @@
 
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.ML.OnnxRuntimeGenAI;
 using SaddleRAG.Core.Models;
+using SaddleRAG.Ingestion.Embedding;
 
 #endregion
 
@@ -45,6 +47,12 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
     ///     by the time the first generate runs.
     /// </summary>
     public OnnxClassifierGenerator(string modelFolder, ClassifierModelEntry entry)
+        : this(modelFolder, entry, null)
+    {
+    }
+
+    /// <summary>Uses application logging for native model diagnostics when provided.</summary>
+    public OnnxClassifierGenerator(string modelFolder, ClassifierModelEntry entry, ILogger? logger)
     {
         ArgumentException.ThrowIfNullOrEmpty(modelFolder);
         ArgumentNullException.ThrowIfNull(entry);
@@ -52,10 +60,12 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
 
         mModelFolder = modelFolder;
         mEntry = entry;
+        mLogger = logger;
     }
 
     private readonly string mModelFolder;
     private readonly ClassifierModelEntry mEntry;
+    private readonly ILogger? mLogger;
     private readonly Lock mLoadLock = new();
     private Model? mModel;
     private Tokenizer? mTokenizer;
@@ -109,6 +119,7 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
         if (!Directory.Exists(mModelFolder))
             throw new DirectoryNotFoundException(string.Format(MissingModelFolderFormat, mModelFolder));
 
+        OnnxRuntimeDiagnostics.EnsureInitialized(mLogger);
         var model = new Model(mModelFolder);
         var tokenizer = new Tokenizer(model);
         mModel = model;

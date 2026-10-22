@@ -116,7 +116,8 @@ chmod +x "$INSTALL_DIR/SaddleRAG.Mcp"
 
 rm -f "/tmp/${TARBALL}" "/tmp/${CHECKSUM}"
 
-info "Writing configuration..."
+info "Preserving existing configuration or writing new-install paths..."
+if [ ! -f "$INSTALL_DIR/appsettings.Production.json" ]; then
 cat > "$INSTALL_DIR/appsettings.Production.json" <<APPSETTINGS
 {
   "Kestrel": { "Endpoints": { "Http": { "Url": "http://localhost:6100" } } },
@@ -132,12 +133,11 @@ cat > "$INSTALL_DIR/appsettings.Production.json" <<APPSETTINGS
   },
   "Ollama": { "Endpoint": "http://localhost:11434" },
   "Onnx": {
-    "Enabled": true,
-    "EmbeddingEnabled": true,
     "ModelsDir": "${DATA_DIR}/models"
   }
 }
 APPSETTINGS
+fi
 chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/appsettings.Production.json"
 chmod 640 "$INSTALL_DIR/appsettings.Production.json"
 
@@ -169,9 +169,9 @@ systemctl enable saddlerag
 # ── Phase 5: Prewarm (explicit model download) ────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Downloading ONNX models from HuggingFace and Ollama classification"
-echo "  model (phi4-mini:3.8b). This is a one-time step."
-echo "  Expected download: ~3 GB. Duration depends on connection speed."
+echo "  Downloading the configured models. New installations use Ollama"
+echo "  embeddinggemma-2:270m and phi4-mini:3.8b, with the sorter off."
+echo "  Download size and duration depend on the selected models."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 ASPNETCORE_ENVIRONMENT=Production sudo -u $SERVICE_USER "$INSTALL_DIR/SaddleRAG.Mcp" --prewarm

@@ -54,4 +54,37 @@ public sealed class ScrapeAuditRecoveryTests
         });
         Assert.InRange(accepted, 2, 3);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WriteFailureDuringShutdownStillAttemptsFinalFlush(bool finalWriteSucceeds)
+    {
+        var repository = Substitute.For<IScrapeAuditRepository>();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int attempts = 0;
+        repository.InsertManyAsync(Arg.Any<IEnumerable<ScrapeAuditLogEntry>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref attempts) == 1)
+                {
+                    using var registration = call.Arg<CancellationToken>().Register(() => canceled.TrySetResult());
+                    entered.TrySetResult();
+                    await canceled.Task;
+                    throw new IOException("offline during shutdown");
+                }
+                if (!finalWriteSucceeds)
+                    throw new IOException("still offline");
+            });
+        await using var writer = new ScrapeAuditWriter(repository, null, batchSize: 1,
+            flushInterval: TimeSpan.FromMilliseconds(20));
+        writer.RecordFetched(new AuditContext { JobId = "job", LibraryId = "library", Version = "1" },
+            "https://example.com/one", null, "example.com", 0);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        await writer.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, Volatile.Read(ref attempts));
+    }
 }
