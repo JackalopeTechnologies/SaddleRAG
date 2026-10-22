@@ -142,6 +142,52 @@ public sealed class Bm25ScorerTests
         Assert.True(scores.ContainsKey("a"));
     }
 
+    [Fact]
+    public async Task ConnectingWordsCannotPromoteAnUnrelatedPage()
+    {
+        var chunks = new[]
+        {
+            MakeChunk("answer", "Configure return values for any arguments."),
+            MakeChunk("unrelated", "Learn about hosting and configuring services.")
+        };
+        var build = Bm25IndexBuilder.Build("lib", "1.0", chunks);
+        var lookup = new InMemoryBm25TermLookup(build);
+
+        var scores = await Bm25Scorer.ScoreAsync(lookup, build.Stats, "Tell me about return values",
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("answer", scores.Keys);
+        Assert.DoesNotContain("unrelated", scores.Keys);
+    }
+
+    [Theory]
+    [InlineData("about")]
+    [InlineData("about the")]
+    [InlineData("Explain the `about` parameter")]
+    [InlineData("Explain the \"about\" parameter")]
+    [InlineData("Explain the 'about' parameter")]
+    [InlineData("How does About() work?")]
+    public void LiteralAndStandaloneConnectingWordsRemainSearchable(string query)
+    {
+        var terms = Bm25Scorer.ExtractQueryTerms(query);
+
+        Assert.Contains("about", terms);
+    }
+
+    [Fact]
+    public void QueryFilteringPreservesTechnicalIntentAndQualifiedNames()
+    {
+        var terms = Bm25Scorer.ExtractQueryTerms(
+            "How does Widget.About return any value for all arguments without matching not null?");
+
+        Assert.DoesNotContain("how", terms);
+        Assert.DoesNotContain("for", terms);
+        Assert.Contains("Widget.About", terms);
+        Assert.Contains("widget.about", terms);
+        Assert.All(new[] { "return", "any", "value", "all", "arguments", "without", "matching", "not", "null" },
+            term => Assert.Contains(term, terms));
+    }
+
     private static DocChunk MakeChunk(string id, string content) =>
         new DocChunk
             {

@@ -127,7 +127,10 @@ public static class Bm25Scorer
     ///     tokenizes chunks. Lowercased prose tokens AND identifier tokens
     ///     via <see cref="IdentifierTokenizer.EmitRawAndLowercase" />
     ///     (raw casing plus a lowercase mirror so case-mismatched dotted
-    ///     queries match indexed mixed-case identifiers), deduped.
+    ///     queries match indexed mixed-case identifiers), deduped. Common prose
+    ///     connecting words are omitted when useful terms remain. Explicitly
+    ///     quoted terms and callable names remain searchable, as do queries
+    ///     consisting entirely of connecting words.
     /// </summary>
     public static IReadOnlyList<string> ExtractQueryTerms(string query)
     {
@@ -141,13 +144,44 @@ public static class Bm25Scorer
         foreach(var token in IdentifierTokenizer.EmitRawAndLowercase(query, MinTokenLength))
             terms.Add(token);
 
-        var distinct = terms.Distinct(StringComparer.Ordinal).ToList();
+        var distinct = FilterProseTerms(query, terms.Distinct(StringComparer.Ordinal).ToList());
         return distinct;
+    }
+
+    private static IReadOnlyList<string> FilterProseTerms(string query, IReadOnlyList<string> terms)
+    {
+        // A rare occurrence of "about" in a small documentation collection
+        // must not outweigh the words describing the requested operation.
+        // Keep the index intact: this only filters query-side keyword votes;
+        // semantic search still receives the complete original question.
+        var explicitTerms = smExplicitTermRegex.Matches(query)
+                                              .SelectMany(match => IdentifierTokenizer.EmitRawAndLowercase(
+                                                  match.Value, MinTokenLength))
+                                              .ToHashSet(StringComparer.Ordinal);
+        var meaningful = terms.Where(term => !smProseStopWords.Contains(term) || explicitTerms.Contains(term)).ToList();
+        IReadOnlyList<string> result = meaningful.Count > 0 ? meaningful : terms;
+        return result;
     }
 
     private const int MinTokenLength = 2;
     private const double K1 = 1.5;
     private const double B = 0.75;
+
+    // Deliberately exclude technical words (return, value, argument, etc.),
+    // quantifiers (any, all) and negation (not, without). The symbol extractor's
+    // broader stoplist would discard useful search intent and is unsuitable here.
+    private const string ProseStopWordsA =
+        "about an are as at be been being by do does for from had has have how in is it its of on";
+    private const string ProseStopWordsB =
+        "that the their there these this those to was were what when where which who with would you your";
+
+    private static readonly HashSet<string> smProseStopWords =
+        new((ProseStopWordsA + " " + ProseStopWordsB).Split(' '), StringComparer.OrdinalIgnoreCase);
+
+    // Quotes/backticks express literal terms; parentheses express a callable
+    // name. Both must retain names such as About or Where despite prose filtering.
+    private static readonly Regex smExplicitTermRegex = new(
+        """(?<quote>["'`]).+?\k<quote>|\b[A-Za-z_][A-Za-z0-9_]*\s*\(""", RegexOptions.Compiled);
 
     private static readonly Regex smProseTokenRegex = new Regex("[A-Za-z][A-Za-z0-9]+", RegexOptions.Compiled);
 }
