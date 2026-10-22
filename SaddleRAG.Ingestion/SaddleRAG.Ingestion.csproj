@@ -88,6 +88,9 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>SaddleRAG.Tests</_Parameter1>
     </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>SaddleRAG.ClassifierComparison</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

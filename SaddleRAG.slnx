@@ -17,4 +17,5 @@
   <Project Path="SaddleRAG.Packaging/SaddleRAG.Packaging.csproj" />
   <Project Path="SaddleRAG.Tests/SaddleRAG.Tests.csproj" />
   <Project Path="SaddleRAG.Tray.Core/SaddleRAG.Tray.Core.csproj" />
+  <Project Path="tools/ClassifierComparison/ClassifierComparison.csproj" />
 </Solution>
