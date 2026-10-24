@@ -29,6 +29,12 @@
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
+  <!-- Keep isolated validation builds out of the default test-reference output. -->
+  <PropertyGroup Condition="'$(SaddleRagTestReference)' == 'true' and '$(UseArtifactsOutput)' == 'true'">
+    <IntermediateOutputPath>$(ArtifactsPath)\obj\$(MSBuildProjectName)\TestReference\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\</IntermediateOutputPath>
+    <OutputPath>$(ArtifactsPath)\bin\$(MSBuildProjectName)\TestReference\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\</OutputPath>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="CodeStructure.Analyzers" />
   </ItemGroup>
