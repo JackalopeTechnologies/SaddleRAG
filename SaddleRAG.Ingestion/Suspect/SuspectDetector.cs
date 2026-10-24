@@ -42,18 +42,8 @@ public sealed class SuspectDetector
         if (distinctHostCount == 1 && declaredLanguages.Count > 1)
             reasons.Add(SuspectReason.SingleHost);
 
-        if (declaredLanguages.Count > 0)
-        {
-            bool anyDeclaredAboveThreshold = declaredLanguages.Any(d =>
-                                                                       languageMix
-                                                                           .GetValueOrDefault(d.ToLowerInvariant(),
-                                                                                    defaultValue: 0.0
-                                                                               ) >=
-                                                                       LanguageMatchThreshold
-                                                                  );
-            if (!anyDeclaredAboveThreshold)
-                reasons.Add(SuspectReason.LanguageMismatch);
-        }
+        if (HasLanguageMismatch(languageMix, declaredLanguages))
+            reasons.Add(SuspectReason.LanguageMismatch);
 
         bool isGitHubRoot = Uri.TryCreate(rootUrl, UriKind.Absolute, out var u) &&
                             u.Host.Equals(GitHubHost, StringComparison.OrdinalIgnoreCase);
@@ -67,9 +57,42 @@ public sealed class SuspectDetector
         return Task.FromResult(result);
     }
 
+    private static bool HasLanguageMismatch(IReadOnlyDictionary<string, double> languageMix,
+                                             IReadOnlyList<string> declaredLanguages)
+    {
+        // Untagged prose is missing evidence, not evidence of another language.
+        // Compare the existing threshold within observed, tagged chunks only.
+        var tagged = languageMix.Where(item => item.Value > 0 &&
+                                               !string.IsNullOrWhiteSpace(item.Key) &&
+                                               !string.Equals(item.Key.Trim(), UnfencedLanguage,
+                                                              StringComparison.OrdinalIgnoreCase))
+                                .GroupBy(item => NormalizeLanguage(item.Key), StringComparer.Ordinal)
+                                .ToDictionary(group => group.Key, group => group.Sum(item => item.Value),
+                                              StringComparer.Ordinal);
+        double observedFraction = tagged.Values.Sum();
+        bool mismatch = false;
+        if (declaredLanguages.Count > 0 && observedFraction > 0)
+        {
+            bool anyDeclaredAboveThreshold = declaredLanguages.Any(language =>
+                tagged.GetValueOrDefault(NormalizeLanguage(language)) >= LanguageMatchThreshold * observedFraction);
+            mismatch = !anyDeclaredAboveThreshold;
+        }
+        return mismatch;
+    }
+
+    private static string NormalizeLanguage(string language)
+    {
+        string normalized = language.Trim().ToLowerInvariant();
+        return normalized is CSharpDisplayName or CSharpShortName ? CSharpLanguage : normalized;
+    }
+
     private const int OnePagerThreshold = 3;
     private const int SparseLinkThreshold = 10;
     private const double LanguageMatchThreshold = 0.30;
     private const string GitHubHost = "github.com";
     private const string ReadmeMarker = "readme";
+    private const string UnfencedLanguage = "unfenced";
+    private const string CSharpLanguage = "csharp";
+    private const string CSharpDisplayName = "c#";
+    private const string CSharpShortName = "cs";
 }
