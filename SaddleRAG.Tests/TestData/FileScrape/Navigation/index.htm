@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Original reference</title></head>
+<body>
+  <main>
+    <h1>Original reference</h1>
+    <p>ORIGINAL_ARTICLE_MARKER. This reference describes the requested document. Its title, content, and source address must stay together even when the documentation sidebar offers controls that also navigate to other articles.</p>
+    <a href="existing.htm">Existing article</a>
+  </main>
+  <nav>
+    <button aria-expanded="false" data-nav-href="wrong.htm" onclick="location.href=this.dataset.navHref">Authorization</button>
+    <a aria-expanded="false" href="wrong.htm">Navigating disclosure</a>
+    <button aria-expanded="false" aria-haspopup="menu" onclick="location.href='wrong.htm'">Version menu</button>
+    <button aria-expanded="false" onclick="this.setAttribute('aria-expanded','true'); document.getElementById('nested').innerHTML='&lt;a href=&quot;revealed.htm&quot;&gt;Revealed article&lt;/a&gt;'">Expand articles</button>
+    <div id="nested"></div>
+  </nav>
+</body>
+</html>

@@ -351,7 +351,6 @@ public class PageCrawler : IPageCrawler
                                                                   CancellationToken ct)
     {
         string title = await page.TitleAsync();
-        await ExpandCollapsibleNavigationAsync(page);
         string content = await ExtractMainContentAsync(page, waitForSelector: null, ct);
 
         string contentHash = ComputeHash(content);
@@ -1443,9 +1442,17 @@ public class PageCrawler : IPageCrawler
     {
         var sw = Stopwatch.StartNew();
         string title = await page.TitleAsync();
-        await ExpandCollapsibleNavigationAsync(page);
         string content = await ExtractMainContentAsync(page, ctx.Job.EffectiveContentSelector, ctx.Token);
         var links = await ExtractLinksAsync(page);
+
+        // Sidebar controls can navigate as well as expand. Preserve the requested article
+        // and its links before interacting, and only accept newly exposed links from the
+        // same document. Single-page fetches need no navigation expansion at all.
+        string documentUrl = page.Url;
+        await ExpandCollapsibleNavigationAsync(page);
+        var expandedLinks = await ExtractLinksAsync(page);
+        if (string.Equals(page.Url, documentUrl, StringComparison.Ordinal))
+            links = links.Concat(expandedLinks).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         string contentHash = ComputeHash(content);
         string urlHash = ComputeCanonicalUrlHash(fetchUrl);
@@ -2064,7 +2071,8 @@ public class PageCrawler : IPageCrawler
     ///     because expanding a node may reveal more collapsed nodes.
     ///     Handles common patterns: ARIA (aria-expanded="false"), generic
     ///     .collapsed class, and Infragistics ig-tree (ui-igtree-parentnode
-    ///     without ui-igtree-expanded).
+    ///     without ui-igtree-expanded). Controls with navigation targets and popup menus
+    ///     are excluded because activating them can replace the article or change settings.
     /// </summary>
     private static async Task ExpandCollapsibleNavigationAsync(IPage page)
     {
@@ -2086,8 +2094,13 @@ public class PageCrawler : IPageCrawler
                                                                                       const els = document.querySelectorAll(sel);
                                                                                       els.forEach(el => {
                                                                                           try {
-                                                                                              el.click();
-                                                                                              clicked++;
+                                                                                              const navigates = el.closest('[href], [data-nav-href], [role="link"]');
+                                                                                              const popup = el.hasAttribute('aria-haspopup') &&
+                                                                                                  el.getAttribute('aria-haspopup') !== 'false';
+                                                                                              if (!navigates && !popup) {
+                                                                                                  el.click();
+                                                                                                  clicked++;
+                                                                                              }
                                                                                           } catch (e) {}
                                                                                       });
                                                                                   }
