@@ -162,6 +162,18 @@ Release-workflow review also found inconsistent manual-version handling in integ
 
 The Linux delivery audit also found that the documented `install.sh` download was not uploaded as a release asset, the tar checksum named a build-directory path rather than the downloaded archive, and the advertised `uninstall.sh` was absent from the archive. The Linux packaging step now emits a basename-only checksum, includes the executable uninstaller, and uploads the install script. A harmless package fixture checks checksum verification from the download directory and archive membership; it does not execute either installer.
 
+## Default-profile search index identity
+
+Pre-install verification found a separate live defect: the three newly ingested MCP corpora were searchable with an omitted profile but missed their expected results with explicit `profile=local`. The same queries, library/version filters, and installed process were used; only the profile argument differed. All 43 older saved searches still passed with explicit `local`. Inventory checks confirmed the documents existed in the same configured database.
+
+The database resolves an omitted profile to its configured active name, but the in-memory vector provider previously used the raw selector in its cache key. Ingestion, single-page updates, reloads, and deletion therefore changed only one spelling's cache. Startup populated both current-version caches, so restart could hide the symptom without preventing recurrence.
+
+Commit `a02d62b` shares the default/empty selector's index with the valid configured active profile. All insert, exact/broad search, replacement, and removal paths use that identity. Genuinely different named profiles remain isolated; no equivalence is inferred from matching connection strings. Environment selection and invalid/empty-profile fallback reuse the database selection rules. Existing parameterless construction remains compatible; normal MCP and CLI dependency registration selects the configuration-aware constructor. Profile selection is captured at construction; unsupported in-process environment/settings mutation is not newly supported.
+
+Sixteen alias regressions failed before repair while two isolation/compatibility checks passed. After repair, 88 focused checks passed, including 37 new provider/settings cases, with a zero-warning Release build. Independent source review found no blocker. The installed corpus was not reloaded, reindexed, or rewritten to obtain this evidence. Post-install checks will additionally require the three paired profile searches to agree.
+
+The final clean solution rebuild after this change passed with zero warnings/errors in 15.95 seconds. The complete suite passed 2,679 tests, skipped the same 24 environment-dependent cases, and failed none (2,703 total; 1 minute 55 seconds). Evidence is `work/profile-alias-final-build.log` and `work/profile-alias-final-test-results/profile-alias-final-tests.trx`. The unchanged dependency/platform-package inputs retain their earlier audit evidence; GitHub and release packaging validate the final branch separately.
+
 ## Remaining deployment and research limits
 
 Build and test success do not establish installation, remote deployment security, or native inference on every supported platform. Updated NVIDIA container execution and native inference remain deployment qualification work. The source validation above precedes release packaging and installation; their results must be recorded separately.
