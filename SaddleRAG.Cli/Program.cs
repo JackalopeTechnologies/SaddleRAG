@@ -298,7 +298,8 @@ ingestCommand.SetAction(async (parseResult, ct) =>
                             var bootstrapper = provider.GetRequiredService<OllamaBootstrapper>();
                             await bootstrapper
                                 .BootstrapAsync(ClassifierBackendSwitch
-                                                    .IsOllamaActive(provider.GetRequiredService<ILlmClassifier>()));
+                                                    .IsOllamaActive(provider.GetRequiredService<ILlmClassifier>()),
+                                                ct: ct);
 
                             var job = new ScrapeJob
                                           {
@@ -320,7 +321,8 @@ ingestCommand.SetAction(async (parseResult, ct) =>
                                                                                .Write(IngestProgressFormatter
                                                                                           .Format(progress)
                                                                                      );
-                                                                       }
+                                                                       },
+                                                           ct: ct
                                                           );
                             Console.WriteLine();
                             return 0;

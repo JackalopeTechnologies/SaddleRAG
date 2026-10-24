@@ -16,6 +16,7 @@ ARG VERSION=0.0.0-dev
 WORKDIR /src
 COPY . .
 RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
+        -m:2 \
         -c Release \
         -r linux-x64 \
         --self-contained true \

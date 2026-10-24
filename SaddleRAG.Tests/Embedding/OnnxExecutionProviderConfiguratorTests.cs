@@ -100,8 +100,8 @@ public sealed class OnnxExecutionProviderConfiguratorTests
     [Fact]
     public void ConfigureWithInjectedDmlAppenderThatSucceedsRecordsDirectMl()
     {
-#if !USE_GPU
-        // On CPU-only builds the OnnxRuntimeCapabilities invariant rejects
+#if !USE_GPU || USE_GPU_CUDA
+        // On CPU-only and CUDA builds the OnnxRuntimeCapabilities invariant rejects
         // actual=DirectMl because it isn't in CompiledInProviders. The
         // delegate path can still succeed at the appender level — but the
         // recording layer (issue #18) refuses to lie about what loaded.
@@ -117,7 +117,7 @@ public sealed class OnnxExecutionProviderConfiguratorTests
                                                        )
         );
 #else
-        // On GPU builds DirectMl is in CompiledInProviders, so the no-op
+        // On DirectML builds DirectMl is in CompiledInProviders, so the no-op
         // appender path records the success cleanly.
         var capabilities = new OnnxRuntimeCapabilities();
         var options = new SessionOptions();

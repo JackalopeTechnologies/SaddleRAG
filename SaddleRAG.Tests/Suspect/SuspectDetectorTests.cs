@@ -13,6 +13,72 @@ namespace SaddleRAG.Tests.Suspect;
 
 public sealed class SuspectDetectorTests
 {
+    [Theory]
+    [InlineData("csharp")]
+    [InlineData("C#")]
+    public async Task EntirelyUnfencedContentDoesNotProveLanguageMismatch(string declared)
+    {
+        IReadOnlyList<string> reasons = await EvaluateLanguageAsync(
+            new Dictionary<string, double> { ["unfenced"] = 1.0 }, [declared]);
+
+        Assert.DoesNotContain(SuspectReason.LanguageMismatch, reasons);
+    }
+
+    [Fact]
+    public async Task MissingLanguageObservationsDoNotProveLanguageMismatch()
+    {
+        IReadOnlyList<string> reasons = await EvaluateLanguageAsync(new Dictionary<string, double>(), ["csharp"]);
+
+        Assert.DoesNotContain(SuspectReason.LanguageMismatch, reasons);
+    }
+
+    [Theory]
+    [InlineData("csharp", false)]
+    [InlineData("go", true)]
+    public async Task TaggedLanguageEvidenceIsEvaluatedIndependentlyOfUnfencedProse(string observed, bool mismatch)
+    {
+        IReadOnlyList<string> reasons = await EvaluateLanguageAsync(
+            new Dictionary<string, double> { ["unfenced"] = 0.9, [observed] = 0.1 }, ["csharp"]);
+
+        Assert.Equal(mismatch, reasons.Contains(SuspectReason.LanguageMismatch));
+    }
+
+    [Theory]
+    [InlineData(0.04, 0.16, true)]
+    [InlineData(0.08, 0.12, false)]
+    public async Task ExistingMatchThresholdAppliesWithinTaggedEvidence(double matching, double other, bool mismatch)
+    {
+        IReadOnlyList<string> reasons = await EvaluateLanguageAsync(new Dictionary<string, double>
+            { ["unfenced"] = 0.8, ["csharp"] = matching, ["go"] = other }, ["csharp"]);
+
+        Assert.Equal(mismatch, reasons.Contains(SuspectReason.LanguageMismatch));
+    }
+
+    [Theory]
+    [InlineData("C#", "csharp")]
+    [InlineData("csharp", "CS")]
+    [InlineData("cs", "C#")]
+    public async Task DocumentedCSharpAliasesRepresentTheSameObservedLanguage(string declared, string observed)
+    {
+        IReadOnlyList<string> reasons = await EvaluateLanguageAsync(
+            new Dictionary<string, double> { [observed] = 1.0 }, [declared]);
+
+        Assert.DoesNotContain(SuspectReason.LanguageMismatch, reasons);
+    }
+
+    [Fact]
+    public async Task ObservationsUsingDifferentCSharpAliasesContributeToOneLanguage()
+    {
+        IReadOnlyList<string> reasons = await EvaluateLanguageAsync(new Dictionary<string, double>
+            { ["csharp"] = 0.15, ["cs"] = 0.15, ["go"] = 0.70 }, ["C#"]);
+
+        Assert.DoesNotContain(SuspectReason.LanguageMismatch, reasons);
+    }
+
+    private static Task<IReadOnlyList<string>> EvaluateLanguageAsync(IReadOnlyDictionary<string, double> mix,
+        IReadOnlyList<string> declared) => new SuspectDetector().EvaluateAsync("lib", "1.0", "https://docs.example.com",
+            100, 3, 100, mix, declared, ["Reference"], TestContext.Current.CancellationToken);
+
     [Fact]
     public async Task OnePagerFlagsBelowThreshold()
     {

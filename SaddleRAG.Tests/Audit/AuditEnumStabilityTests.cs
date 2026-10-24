@@ -35,10 +35,13 @@ public sealed class AuditEnumStabilityTests
         Assert.Equal(expected: 5, (int) AuditSkipReason.HostGated);
         Assert.Equal(expected: 6, (int) AuditSkipReason.AlreadyVisited);
         Assert.Equal(expected: 7, (int) AuditSkipReason.QueueLimit);
+        Assert.Equal(expected: 8, (int) AuditSkipReason.InScopeDepth);
     }
 
-    [Fact]
-    public void ScrapeAuditLogEntryRoundTripsThroughJson()
+    [Theory]
+    [InlineData(AuditSkipReason.OffSiteDepth)]
+    [InlineData(AuditSkipReason.InScopeDepth)]
+    public void ScrapeAuditLogEntryRoundTripsThroughJson(AuditSkipReason reason)
     {
         var entry = new ScrapeAuditLogEntry
                         {
@@ -59,7 +62,7 @@ public sealed class AuditEnumStabilityTests
                                                         DateTimeKind.Utc
                                                        ),
                             Status = AuditStatus.Skipped,
-                            SkipReason = AuditSkipReason.OffSiteDepth,
+                            SkipReason = reason,
                             SkipDetail = "depth=2 limit=1",
                             PageOutcome = null
                         };

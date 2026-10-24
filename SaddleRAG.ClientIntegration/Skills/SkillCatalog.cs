@@ -5,8 +5,10 @@
 
 #region Usings
 
+using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Text;
+using System.Text.Json.Nodes;
 using SaddleRAG.ClientIntegration.Writers;
 
 #endregion
@@ -30,10 +32,46 @@ public static class SkillCatalog
     private const char NewLine = '\n';
     private const string WindowsNewLine = "\r\n";
     private const string UnixNewLine = "\n";
+    private const string SkillFileName = "SKILL.md";
+    private const string FrontmatterNameKey = "name";
+    private const string ResourcePrefix = "SaddleRAG.ClientIntegration.Resources.";
+    private const string CaseStudyFileName = "case-study-infragistics-wpf.md";
+    private const string CaseStudyResourceName = ResourcePrefix + CaseStudyFileName;
 
     private static readonly SkillContent[] smAll = Load();
 
     public static IReadOnlyList<SkillContent> All => smAll;
+
+    /// <summary>Gets the exact embedded files belonging to a named skill.</summary>
+    /// <param name="name">The case-sensitive skill name from <see cref="All" />.</param>
+    /// <returns>A read-only mapping from relative file names to unchanged document text.</returns>
+    public static IReadOnlyDictionary<string, string> GetFiles(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        SkillDescriptor descriptor = SkillManifest.pmAll.FirstOrDefault(
+            entry => string.Equals(entry.FolderName, name, StringComparison.Ordinal))
+            ?? throw new ArgumentException($"Unknown SaddleRAG skill: {name}", nameof(name));
+        Assembly assembly = typeof(SkillCatalog).Assembly;
+        Dictionary<string, string> files = new(StringComparer.Ordinal)
+        {
+            [SkillFileName] = ReadResource(assembly, descriptor.ResourceName)
+        };
+        if (string.Equals(name, SkillManifest.ScrapeStrategyFolderName, StringComparison.Ordinal))
+            files.Add(CaseStudyFileName, ReadResource(assembly, CaseStudyResourceName));
+        return new ReadOnlyDictionary<string, string>(files);
+    }
+
+    /// <summary>Gets all YAML frontmatter fields from the skill's embedded SKILL.md.</summary>
+    /// <param name="name">The case-sensitive skill name from <see cref="All" />.</param>
+    /// <returns>A new JSON object retaining the frontmatter's fields and JSON-compatible types.</returns>
+    public static JsonObject GetFrontmatter(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        JsonObject frontmatter = SkillFrontmatter.Parse(GetFiles(name)[SkillFileName]);
+        if (!string.Equals(frontmatter[FrontmatterNameKey]?.GetValue<string>(), name, StringComparison.Ordinal))
+            throw new InvalidDataException($"Skill frontmatter name does not match its catalog entry: {name}");
+        return frontmatter;
+    }
 
     private static SkillContent[] Load()
     {

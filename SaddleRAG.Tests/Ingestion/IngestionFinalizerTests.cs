@@ -326,6 +326,46 @@ public sealed class IngestionFinalizerTests
                        .ClearSuspectAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("unfenced", false)]
+    [InlineData("go", true)]
+    public async Task FinalizationPersistsLanguageMismatchOnlyForObservedWrongLanguage(string observed, bool mismatch)
+    {
+        var libraries = Substitute.For<ILibraryRepository>();
+        var chunks = Substitute.For<IChunkRepository>();
+        chunks.GetChunksAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+              .Returns(Task.FromResult<IReadOnlyList<DocChunk>>([]));
+        chunks.GetLanguageMixAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+              .Returns(new Dictionary<string, double> { [observed] = 1.0 });
+        chunks.GetHostnameDistributionAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+              .Returns(new Dictionary<string, int> { ["docs.example.com"] = 100 });
+        chunks.GetSampleTitlesAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+              .Returns(new[] { "C# reference" });
+        var profiles = Substitute.For<ILibraryProfileRepository>();
+        profiles.GetAsync("lib", "v1", Arg.Any<CancellationToken>()).Returns(new LibraryProfile
+        {
+            Id = "lib/v1", LibraryId = "lib", Version = "v1", Languages = ["csharp"]
+        });
+        IngestionFinalizer finalizer = NewFinalizer(chunks: chunks, libraries: libraries, profiles: profiles);
+
+        await finalizer.RunAsync(NewJob(), NewProgress(pagesFetched: 100), TestContext.Current.CancellationToken);
+
+        if (mismatch)
+        {
+            await libraries.Received(1).SetSuspectAsync("lib", "v1",
+                Arg.Is<IReadOnlyList<string>>(reasons => reasons.Count == 1 && reasons.Contains(SuspectReason.LanguageMismatch)),
+                Arg.Any<CancellationToken>());
+            await libraries.DidNotReceive().ClearSuspectAsync(Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            await libraries.Received(1).ClearSuspectAsync("lib", "v1", Arg.Any<CancellationToken>());
+            await libraries.DidNotReceive().SetSuspectAsync(Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+        }
+    }
+
     [Fact]
     public async Task RunAsyncClearsSuspectWhenDetectorReturnsNoReasons()
     {

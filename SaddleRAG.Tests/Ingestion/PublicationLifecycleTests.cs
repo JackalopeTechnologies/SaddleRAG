@@ -4,6 +4,7 @@
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
 using System.Threading.Channels;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Interfaces;
@@ -13,8 +14,10 @@ using SaddleRAG.Ingestion;
 using SaddleRAG.Ingestion.Chunking;
 using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Crawling;
+using SaddleRAG.Ingestion.Diagnostics;
 using SaddleRAG.Ingestion.Suspect;
 using SaddleRAG.Ingestion.Symbols;
+using SaddleRAG.Mcp.Tools;
 
 namespace SaddleRAG.Tests.Ingestion;
 
@@ -38,13 +41,15 @@ public sealed class PublicationLifecycleTests
         Assert.Equal("v2", harness.ExistingLibrary.CurrentVersion);
     }
 
-    [Fact]
-    public async Task ExistingPublishedVersionIsRejectedBeforeCandidateStateIsTouched()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExistingPublishedVersionIsRejectedBeforeCandidateStateIsTouched(bool forceClean)
     {
         var harness = BuildHarness(publishedVersionExists: true);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Orchestrator.IngestAsync(
-            Job(), ct: TestContext.Current.CancellationToken));
+            Job(), forceClean: forceClean, ct: TestContext.Current.CancellationToken));
 
         Assert.Contains("already Published", exception.Message, StringComparison.Ordinal);
         Assert.Equal("v2", harness.ExistingLibrary.CurrentVersion);
@@ -119,9 +124,70 @@ public sealed class PublicationLifecycleTests
     }
 
     [Fact]
+    public async Task ReconnaissanceOnlyLibraryCanPublishItsFirstWebScrape()
+    {
+        var harness = BuildHarness();
+        ILibraryIngestionModeRepository modes = harness.RepositoryFactory.GetLibraryIngestionModeRepository();
+        modes.GetLibraryDataEvidenceAsync("lib", Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false, false, false, false, true)
+                          {
+                              HasLibraryProfileData = true
+                          });
+        harness.LibraryRepository.GetLibraryAsync("lib", Arg.Any<CancellationToken>())
+               .Returns((LibraryRecord?) null);
+
+        await harness.Orchestrator.IngestAsync(Job(), ct: TestContext.Current.CancellationToken);
+
+        await harness.ModeLease.Received(requiredNumberOfCalls: 1)
+                     .TryCommitAsync(Arg.Any<CancellationToken>());
+        Assert.Contains(VersionPublicationState.Published, harness.States);
+        await harness.LibraryRepository.Received(requiredNumberOfCalls: 1)
+                     .UpsertLibraryAsync(Arg.Is<LibraryRecord>(record => record.CurrentVersion == "v2"),
+                                         Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ReconnaissanceCannotHideUnclassifiedContent(bool hasChildContent,
+                                                                 bool hasDocumentLifecycleData)
+    {
+        var harness = BuildHarness();
+        ILibraryIngestionModeRepository modes = harness.RepositoryFactory.GetLibraryIngestionModeRepository();
+        modes.GetLibraryDataEvidenceAsync("lib", Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false,
+                                                       false,
+                                                       hasDocumentLifecycleData,
+                                                       hasChildContent,
+                                                       true)
+                          {
+                              HasLibraryProfileData = true
+                          });
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Orchestrator.IngestAsync(Job(), ct: TestContext.Current.CancellationToken));
+
+        Assert.Contains("unclassified partial data", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(harness.States);
+        Assert.Empty(harness.Events);
+        await harness.ModeLease.DidNotReceive().TryCommitAsync(Arg.Any<CancellationToken>());
+        await harness.LibraryRepository.DidNotReceive()
+                     .UpsertVersionAsync(Arg.Any<LibraryVersionRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task BusyWebModeLeaseStopsBeforeCandidateOrCrawlerMutation()
     {
         var harness = BuildHarness();
+        var reservedAt = new DateTime(2030, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        harness.RepositoryFactory.GetLibraryIngestionModeRepository(profile: null)
+               .GetAsync("lib", Arg.Any<CancellationToken>())
+               .Returns(new LibraryIngestionModeRecord
+                            {
+                                Id = "lib", Mode = LibraryIngestionMode.Web,
+                                ReservedAtUtc = reservedAt, UpdatedAtUtc = reservedAt,
+                                LeaseOwnerToken = "active-web-owner", LeaseExpiresAtUtc = reservedAt.AddSeconds(30)
+                            });
         harness.ModeLeaseManager.TryAcquireAsync(Arg.Any<string?>(),
                                                  "lib",
                                                  LibraryIngestionMode.Web,
@@ -202,8 +268,12 @@ public sealed class PublicationLifecycleTests
                      .DeleteVersionAsync(default!, default!, TestContext.Current.CancellationToken);
     }
 
-    [Fact]
-    public async Task NamedProfileSinglePageWritesNoDefaultRepository()
+    [Theory]
+    [InlineData(VersionPublicationState.Published)]
+    [InlineData(VersionPublicationState.Building)]
+    [InlineData(VersionPublicationState.Failed)]
+    public async Task NamedProfileSinglePageRefreshesIndexesAndCountsWithoutChangingPublicationMetadata(
+        VersionPublicationState publicationState)
     {
         var harness = BuildHarness();
         var namedLibraries = Substitute.For<ILibraryRepository>();
@@ -214,12 +284,42 @@ public sealed class PublicationLifecycleTests
         var namedShards = Substitute.For<IBm25ShardRepository>();
         var namedSources = Substitute.For<ISourceDocumentRepository>();
         var namedModes = Substitute.For<ILibraryIngestionModeRepository>();
-        var storedChunks = new List<DocChunk>();
+        var priorChunk = new DocChunk
+                             {
+                                 Id = "lib/v2/prior/0", LibraryId = "lib", Version = "v2",
+                                 PageUrl = "https://example.test/prior", PageTitle = "Prior page",
+                                 Category = DocCategory.HowTo, Content = "Previously indexed content.",
+                                 Embedding = [0f, 1f]
+                             };
+        var storedChunks = new List<DocChunk> { priorChunk };
+        var priorVersion = new LibraryVersionRecord
+                               {
+                                   Id = "lib/v2", LibraryId = "lib", Version = "v2",
+                                   ScrapedAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+                                   PageCount = 334, ChunkCount = 668,
+                                   EmbeddingProviderId = "original-provider",
+                                   EmbeddingModelName = "original-model", EmbeddingDimensions = 2,
+                                   ClassifierBackend = "original-backend", ClassifierModel = "original-classifier",
+                                   PublicationState = publicationState, PublicationError = "retained-detail",
+                                   ImportOperationId = "original-import", ScanRunId = "original-scan",
+                                   RegistrationRevision = 3, CleanupInProgress = true,
+                                   SubjectTaxonomyVersion = "original-taxonomy", PreviousVersion = "v1",
+                                   BoundaryIssuePct = 1.5, Suspect = true, SuspectReasons = ["retained-reason"],
+                                   LastSuspectEvaluatedAt = new DateTime(2026, 2, 3, 4, 5, 6, DateTimeKind.Utc)
+                               };
+        LibraryVersionRecord? refreshedVersion = null;
+        namedLibraries.GetVersionAsync("lib", "v2", Arg.Any<CancellationToken>()).Returns(priorVersion);
+        namedLibraries.UpsertVersionAsync(Arg.Do<LibraryVersionRecord>(record => refreshedVersion = record),
+                                          Arg.Any<CancellationToken>())
+                      .Returns(Task.CompletedTask);
+        namedPages.GetPageCountAsync("lib", "v2", Arg.Any<CancellationToken>()).Returns(335);
         namedChunks.UpsertChunksAsync(Arg.Do<IReadOnlyList<DocChunk>>(storedChunks.AddRange),
                                      Arg.Any<CancellationToken>())
                    .Returns(Task.CompletedTask);
         namedChunks.GetChunksAsync("lib", "v2", Arg.Any<CancellationToken>())
                    .Returns(_ => storedChunks.ToList());
+        namedChunks.GetChunkCountAsync("lib", "v2", Arg.Any<CancellationToken>())
+                   .Returns(_ => storedChunks.Count);
         namedIndexes.GetAsync("lib", "v2", Arg.Any<CancellationToken>())
                     .Returns((LibraryIndex?)null);
         namedModes.GetLibraryDataEvidenceAsync("lib", Arg.Any<CancellationToken>())
@@ -253,6 +353,12 @@ public sealed class PublicationLifecycleTests
                                             TestContext.Current.CancellationToken);
 
         Assert.Equal("Indexed", result.Status);
+        Assert.Equal(priorVersion with { PageCount = 335, ChunkCount = storedChunks.Count }, refreshedVersion);
+        Assert.Equal(1, harness.Vector.IndexCalls);
+        Assert.Equal(ProfileName, harness.Vector.LastProfile);
+        Assert.Equal(storedChunks, harness.Vector.LastChunks);
+        Assert.Contains(priorChunk, harness.Vector.LastChunks);
+        Assert.True(storedChunks.Count > 1);
         await namedChunks.Received(requiredNumberOfCalls: 1)
                          .UpsertChunksAsync(Arg.Any<IReadOnlyList<DocChunk>>(),
                                             Arg.Any<CancellationToken>());
@@ -272,10 +378,101 @@ public sealed class PublicationLifecycleTests
                                          TestContext.Current.CancellationToken);
         await harness.Indexes.DidNotReceiveWithAnyArgs()
                      .UpsertAsync(default!, TestContext.Current.CancellationToken);
+        await namedLibraries.DidNotReceiveWithAnyArgs()
+                            .UpsertLibraryAsync(default!, TestContext.Current.CancellationToken);
+        await namedSources.DidNotReceiveWithAnyArgs()
+                          .PublishCandidateScanRunAsync(default!, default!, default!,
+                                                        TestContext.Current.CancellationToken);
+        await harness.LibraryRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertVersionAsync(default!, TestContext.Current.CancellationToken);
+        await harness.PageRepository.DidNotReceiveWithAnyArgs()
+                     .GetPageCountAsync(default!, default!, TestContext.Current.CancellationToken);
+        Assert.Equal("v1", harness.ExistingLibrary.CurrentVersion);
+    }
+
+    [Fact]
+    public async Task SinglePageWithoutVersionMetadataRefreshesIndexesWithoutPublishing()
+    {
+        var harness = BuildHarness();
+        harness.Crawler.SinglePage = SinglePage();
+
+        SinglePageIngestResult result = await harness.Orchestrator.IngestSinglePageAsync(
+                                            "lib", "v2", "https://example.test/page",
+                                            ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal("Indexed", result.Status);
+        Assert.Equal(1, harness.Vector.IndexCalls);
+        Assert.Null(harness.Vector.LastProfile);
+        Assert.NotEmpty(harness.Vector.LastChunks);
+        await harness.LibraryRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertVersionAsync(default!, TestContext.Current.CancellationToken);
+        await harness.LibraryRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertLibraryAsync(default!, TestContext.Current.CancellationToken);
+        Assert.Equal("v1", harness.ExistingLibrary.CurrentVersion);
+    }
+
+    [Theory]
+    [InlineData(FailurePoint.Bm25)]
+    [InlineData(FailurePoint.VectorLoad)]
+    public async Task SinglePageIndexFailureDoesNotRefreshCountsOrPublish(FailurePoint point)
+    {
+        var harness = BuildHarness(point, publishedVersionExists: true);
+        harness.Crawler.SinglePage = SinglePage();
+        if (point == FailurePoint.VectorLoad)
+            harness.Vector.FailOnIndexCall = 1;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.Orchestrator.IngestSinglePageAsync(
+                                                                  "lib", "v2", "https://example.test/page",
+                                                                  ct: TestContext.Current.CancellationToken));
+
+        await harness.LibraryRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertVersionAsync(default!, TestContext.Current.CancellationToken);
+        await harness.LibraryRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertLibraryAsync(default!, TestContext.Current.CancellationToken);
+        await harness.PageRepository.DidNotReceiveWithAnyArgs()
+                     .GetPageCountAsync(default!, default!, TestContext.Current.CancellationToken);
+        Assert.Equal("v2", harness.ExistingLibrary.CurrentVersion);
+    }
+
+    [Fact]
+    public async Task EmptySinglePageRefreshesCountsWithoutRebuildingIndexes()
+    {
+        var harness = BuildHarness(publishedVersionExists: true, classificationCategory: DocCategory.Sample);
+        harness.Crawler.SinglePage = SinglePage() with { RawContent = new string('\n', count: 4000) };
+        harness.PageRepository.GetPageCountAsync("lib", "v2", Arg.Any<CancellationToken>()).Returns(2);
+        harness.ChunkRepository.GetChunkCountAsync("lib", "v2", Arg.Any<CancellationToken>()).Returns(1);
+        LibraryVersionRecord? prior = await harness.LibraryRepository.GetVersionAsync(
+                                          "lib", "v2", TestContext.Current.CancellationToken);
+        Assert.NotNull(prior);
+        LibraryVersionRecord expected = prior with { PageCount = 2 };
+
+        SinglePageIngestResult result = await harness.Orchestrator.IngestSinglePageAsync(
+                                            "lib", "v2", "https://example.test/page",
+                                            ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal("Empty", result.Status);
+        Assert.Equal(0, result.ChunksAdded);
+        Assert.Equal(0, harness.Vector.IndexCalls);
+        await harness.PageRepository.Received(requiredNumberOfCalls: 1)
+                     .UpsertPageAsync(Arg.Is<PageRecord>(page => page.Category == DocCategory.Sample),
+                                       Arg.Any<CancellationToken>());
+        await harness.LibraryRepository.Received(requiredNumberOfCalls: 1)
+                     .UpsertVersionAsync(Arg.Is<LibraryVersionRecord>(record => record == expected),
+                                          Arg.Any<CancellationToken>());
+        await harness.ChunkRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertChunksAsync(default!, TestContext.Current.CancellationToken);
+        await harness.Shards.DidNotReceiveWithAnyArgs()
+                     .ReplaceShardsAsync(default!, default!, default!, TestContext.Current.CancellationToken);
+        await harness.Indexes.DidNotReceiveWithAnyArgs()
+                     .UpsertAsync(default!, TestContext.Current.CancellationToken);
+        await harness.LibraryRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertLibraryAsync(default!, TestContext.Current.CancellationToken);
+        Assert.Equal("v2", harness.ExistingLibrary.CurrentVersion);
     }
 
     [Theory]
     [InlineData(FailurePoint.Acquisition)]
+    [InlineData(FailurePoint.AuditBuffer)]
     [InlineData(FailurePoint.Embedding)]
     [InlineData(FailurePoint.Bm25)]
     [InlineData(FailurePoint.VectorLoad)]
@@ -283,8 +480,11 @@ public sealed class PublicationLifecycleTests
     {
         var harness = BuildHarness(point);
 
-        await Assert.ThrowsAnyAsync<Exception>(() => harness.Orchestrator.IngestAsync(
+        Exception error = await Assert.ThrowsAnyAsync<Exception>(() => harness.Orchestrator.IngestAsync(
             Job(), ct: TestContext.Current.CancellationToken));
+
+        if (point == FailurePoint.AuditBuffer)
+            Assert.IsType<ScrapeAuditBufferException>(error);
 
         Assert.Equal("v1", harness.ExistingLibrary.CurrentVersion);
         Assert.DoesNotContain(VersionPublicationState.Published, harness.States);
@@ -296,6 +496,103 @@ public sealed class PublicationLifecycleTests
                       .DeleteAsync("lib", "v2", Arg.Any<CancellationToken>());
         await harness.SourceDocuments.Received(1)
                      .DeleteVersionAsync("lib", "v2", Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(LibraryIngestionMode.Directory, false, false, "recorded source mode is directory ingestion")]
+    [InlineData(LibraryIngestionMode.Web, false, true, "another web-ingestion operation")]
+    [InlineData(LibraryIngestionMode.Web, true, true, "a library rename is pending")]
+    [InlineData(LibraryIngestionMode.Web, false, false, "exclusive web-ingestion ownership was unavailable")]
+    [InlineData(null, false, false, "exclusive web-ingestion ownership was unavailable")]
+    public async Task LeaseRefusalReportsRecordedConflictWithoutFetching(
+        LibraryIngestionMode? mode, bool pendingRename, bool activeLease, string expected)
+    {
+        var harness = BuildHarness();
+        var expiry = new DateTime(2030, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        ILibraryIngestionModeRepository modes = harness.RepositoryFactory.GetLibraryIngestionModeRepository(ProfileName);
+        LibraryIngestionModeRecord? recorded = mode.HasValue
+                                                  ? new LibraryIngestionModeRecord
+                                                        {
+                                                            Id = "lib", Mode = mode.Value,
+                                                            ReservedAtUtc = expiry.AddSeconds(-30),
+                                                            UpdatedAtUtc = expiry.AddSeconds(-30),
+                                                            LeaseOwnerToken = activeLease ? "active-owner" : null,
+                                                            LeaseExpiresAtUtc = activeLease ? expiry : null,
+                                                            PendingRenameOperationId = pendingRename ? "rename" : null
+                                                        }
+                                                  : null;
+        modes.GetAsync("lib", Arg.Any<CancellationToken>()).Returns(recorded);
+        harness.ModeLeaseManager.TryAcquireAsync(ProfileName, "lib", LibraryIngestionMode.Web,
+                                                 Arg.Any<CancellationToken>())
+               .Returns((ILibraryIngestionModeLease?)null);
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+                                              () => harness.Orchestrator.IngestSinglePageAsync(
+                                                  "lib", "v2", "https://example.test/page", ProfileName,
+                                                  TestContext.Current.CancellationToken));
+
+        Assert.Contains(expected, error.Message, StringComparison.Ordinal);
+        if (activeLease && !pendingRename)
+            Assert.Contains("2030-01-02T03:04:05.0000000Z", error.Message, StringComparison.Ordinal);
+        if (mode != LibraryIngestionMode.Directory)
+            Assert.DoesNotContain("directory ingestion", error.Message, StringComparison.Ordinal);
+        Assert.Empty(harness.Events);
+        await harness.ModeLease.DidNotReceiveWithAnyArgs().TryCommitAsync(TestContext.Current.CancellationToken);
+        await harness.PageRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertPageAsync(default!, TestContext.Current.CancellationToken);
+        harness.RepositoryFactory.DidNotReceive().GetLibraryIngestionModeRepository(profile: null);
+    }
+
+    [Fact]
+    public async Task AddPageForwardsExplicitSelectorBeforeClassification()
+    {
+        var harness = BuildHarness(publishedVersionExists: true);
+        harness.RepositoryFactory.GetPageRepository(profile: null).Returns(harness.PageRepository);
+        harness.Crawler.SinglePage = SinglePage() with
+                                        {
+                                            RawContent = "Release v2.3.0\nChanges to registration order and shutdown."
+                                        };
+
+        string result = await PageTools.AddPage(harness.Orchestrator, harness.RepositoryFactory,
+                                                 "lib", "v2", "https://example.test/page",
+                                                 contentSelector: "#release-notes",
+                                                 ct: TestContext.Current.CancellationToken);
+
+        Assert.Contains("Indexed", result, StringComparison.Ordinal);
+        Assert.Equal("#release-notes", harness.Crawler.LastContentSelector);
+        await harness.Classifier.Received(requiredNumberOfCalls: 1)
+                     .ClassifyAsync(Arg.Is<PageRecord>(page => page.RawContent.StartsWith("Release v2.3.0",
+                                                                                         StringComparison.Ordinal)),
+                                     "lib", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AddPageReturnsSelectionFailureReasonWithoutPersistenceOrClassification()
+    {
+        var harness = BuildHarness(publishedVersionExists: true);
+        harness.RepositoryFactory.GetPageRepository(profile: null).Returns(harness.PageRepository);
+        harness.Crawler.SinglePageError = new PageContentSelectionException(
+            "#missing", "https://example.test/page", "No element matched the selector.");
+
+        string json = await PageTools.AddPage(harness.Orchestrator, harness.RepositoryFactory,
+                                               "lib", "v2", "https://example.test/page",
+                                               contentSelector: "#missing",
+                                               ct: TestContext.Current.CancellationToken);
+
+        SinglePageIngestResult result = Assert.IsType<SinglePageIngestResult>(
+            JsonSerializer.Deserialize<SinglePageIngestResult>(json));
+        Assert.Equal("Failed", result.Status);
+        Assert.Equal(harness.Crawler.SinglePageError.Message, result.Reason);
+        Assert.Equal("lib", result.Library);
+        Assert.Equal("v2", result.Version);
+        Assert.Equal("https://example.test/page", result.Url);
+        await harness.PageRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertPageAsync(default!, TestContext.Current.CancellationToken);
+        await harness.Classifier.DidNotReceiveWithAnyArgs()
+                     .ClassifyAsync(default!, default!, TestContext.Current.CancellationToken);
+        await harness.ChunkRepository.DidNotReceiveWithAnyArgs()
+                     .UpsertChunksAsync(default!, TestContext.Current.CancellationToken);
+        Assert.Equal(0, harness.Vector.IndexCalls);
     }
 
     [Fact]
@@ -358,7 +655,8 @@ public sealed class PublicationLifecycleTests
     private static Harness BuildHarness(FailurePoint point = FailurePoint.None,
                                          bool publishedVersionExists = false,
                                          bool cleanupFails = false,
-                                         bool directoryDefinitionExists = false)
+                                         bool directoryDefinitionExists = false,
+                                         DocCategory classificationCategory = DocCategory.HowTo)
     {
         var events = new List<string>();
         var states = new List<VersionPublicationState>();
@@ -366,7 +664,7 @@ public sealed class PublicationLifecycleTests
                           {
                               Error = point == FailurePoint.Acquisition
                                           ? new InvalidOperationException("acquisition-failed")
-                                          : null,
+                                          : point == FailurePoint.AuditBuffer ? new ScrapeAuditBufferException() : null,
                               Cancel = point == FailurePoint.Cancellation,
                               OnStart = () => events.Add("acquisition")
                           };
@@ -375,7 +673,7 @@ public sealed class PublicationLifecycleTests
         classifier.ModelId.Returns("test-model");
         classifier.GetCurrentVersion().Returns("test-model-v1");
         classifier.ClassifyAsync(Arg.Any<PageRecord>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                  .Returns((DocCategory.HowTo, 0.9f));
+                  .Returns((classificationCategory, 0.9f));
 
         var embedding = Substitute.For<IEmbeddingProvider>();
         embedding.ProviderId.Returns("test");
@@ -547,13 +845,22 @@ public sealed class PublicationLifecycleTests
                            sources,
                            repositoryFactory,
                            modeLeaseManager,
-                           modeLease);
+                           modeLease,
+                           classifier);
     }
 
     private static ScrapeJob Job() => new()
         {
             LibraryId = "lib", Version = "v2", RootUrl = "https://example.test/", LibraryHint = "h",
             AllowedUrlPatterns = ["example.test"]
+        };
+
+    private static PageRecord SinglePage() => new()
+        {
+            Id = "lib/v2/page", LibraryId = "lib", Version = "v2",
+            Url = "https://example.test/page", Title = "Page", Category = DocCategory.Unclassified,
+            RawContent = "# Heading\nA sufficiently descriptive paragraph for single-page refresh testing.",
+            FetchedAt = DateTime.UtcNow, ContentHash = "hash"
         };
 
     private static DirectoryLibraryDefinition DirectoryDefinition() => new()
@@ -579,6 +886,7 @@ public sealed class PublicationLifecycleTests
     {
         None,
         Acquisition,
+        AuditBuffer,
         Embedding,
         Bm25,
         VectorLoad,
@@ -599,7 +907,8 @@ public sealed class PublicationLifecycleTests
                                   ISourceDocumentRepository SourceDocuments,
                                   RepositoryFactory RepositoryFactory,
                                   ILibraryIngestionModeLeaseManager ModeLeaseManager,
-                                  ILibraryIngestionModeLease ModeLease);
+                                  ILibraryIngestionModeLease ModeLease,
+                                  ILlmClassifier Classifier);
 
     private const string ProfileName = "team-profile";
 
@@ -609,6 +918,8 @@ public sealed class PublicationLifecycleTests
         public bool Cancel { get; init; }
         public Action? OnStart { get; init; }
         public PageRecord? SinglePage { get; set; }
+        public Exception? SinglePageError { get; set; }
+        public string? LastContentSelector { get; private set; }
 
         public async Task CrawlAsync(ScrapeJob job,
                                      ChannelWriter<PageRecord> output,
@@ -645,7 +956,20 @@ public sealed class PublicationLifecycleTests
                                                        CancellationToken ct = default)
         {
             OnStart?.Invoke();
+            if (SinglePageError != null)
+                throw SinglePageError;
             return Task.FromResult(SinglePage);
+        }
+
+        public Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+                                                                 string version,
+                                                                 string url,
+                                                                 string? profile,
+                                                                 string? contentSelector,
+                                                                 CancellationToken ct = default)
+        {
+            LastContentSelector = contentSelector;
+            return FetchSinglePageAsync(libraryId, version, url, ct);
         }
     }
 
@@ -653,6 +977,9 @@ public sealed class PublicationLifecycleTests
     {
         public int RemoveCalls { get; private set; }
         public int IndexCalls => mIndexCalls;
+        public int? FailOnIndexCall { get; set; } = failFullLoad ? 2 : null;
+        public string? LastProfile { get; private set; }
+        public IReadOnlyList<DocChunk> LastChunks { get; private set; } = [];
         private int mIndexCalls;
 
         public Task IndexChunksAsync(string? profile,
@@ -662,8 +989,10 @@ public sealed class PublicationLifecycleTests
                                      CancellationToken ct = default)
         {
             mIndexCalls++;
+            LastProfile = profile;
+            LastChunks = chunks;
             events.Add(mIndexCalls == 1 ? "vector-batch" : "vector-full");
-            if (failFullLoad && mIndexCalls == 2)
+            if (mIndexCalls == FailOnIndexCall)
                 throw new InvalidOperationException("vector-load-failed");
             return Task.CompletedTask;
         }

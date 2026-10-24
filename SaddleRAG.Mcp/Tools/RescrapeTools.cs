@@ -19,8 +19,7 @@ using SaddleRAG.Ingestion;
 namespace SaddleRAG.Mcp.Tools;
 
 /// <summary>
-///     MCP tool exposing rescrape_library — the canonical "refresh an
-///     already-scraped library from its source site" entry point. Pulls
+///     MCP tool retrying an unpublished scrape from its source site. Pulls
 ///     crawl configuration (RootUrl, AllowedUrlPatterns, ExcludedUrlPatterns,
 ///     LibraryHint) from the most recent ScrapeJob for (library, version),
 ///     and seeds the crawl queue from every stored PageRecord URL so dead
@@ -38,7 +37,8 @@ public static class RescrapeTools
                  "those keys, reuses its RootUrl / AllowedUrlPatterns / ExcludedUrlPatterns / LibraryHint, and seeds " +
                  "the crawl queue from every stored page URL so the pipeline re-fetches everything you already have " +
                  "(dead pages become orphans, unchanged pages are picked up, new pages are discovered through normal " +
-                 "link-following). Use this for routine refreshes of an already-indexed library. For first-time ingest " +
+                 "link-following). Only unpublished partial attempts can be retried. A published target returns " +
+                 "Refused/PUBLISHED_VERSION before queueing; use scrape_docs with a new version identifier for a full refresh. For first-time ingest " +
                  "of a brand-new library, or when you need to override URL or pattern configuration, use scrape_docs " +
                  "instead. Returns { JobId, Status: 'Queued' } immediately — poll get_scrape_status(jobId) for " +
                  "progress; rescrape jobs land in the same scrapeJobs collection as scrape_docs jobs. Returns " +
@@ -54,7 +54,7 @@ public static class RescrapeTools
                                                      int maxPages = DefaultMaxPages,
                                                      [Description("Delay between fetches in ms (default 500)")]
                                                      int fetchDelayMs = DefaultFetchDelayMs,
-                                                     [Description("If true, clear existing chunks before the rescrape starts. " +
+                                                     [Description("If true, clear an unpublished attempt's existing chunks before the retry starts. Published versions are refused. " +
                                                                   "Default false — the index stage replaces chunks naturally as new content arrives."
                                                                  )]
                                                      bool force = false,
@@ -81,7 +81,7 @@ public static class RescrapeTools
                               {
                                   Status = StatusNoPriorJob,
                                   Message = $"No prior scrape job found for {library} v{version}. " +
-                                            $"Call scrape_docs(url, library='{library}', version='{version}') first."
+                                            $"Call scrape_docs with the source URL and library='{library}'. If v{version} is already published, choose a new version identifier; force cannot overwrite it."
                               };
             json = JsonSerializer.Serialize(noPrior, smJsonOptions);
         }
@@ -89,46 +89,53 @@ public static class RescrapeTools
         {
             var libraryRepo = repositoryFactory.GetLibraryRepository(profile);
             var versionRecord = await libraryRepo.GetVersionAsync(library, version, ct);
-            if (versionRecord is { Suspect: true })
+            if (versionRecord?.PublicationState == VersionPublicationState.Published)
             {
-                var refused = new
-                                  {
-                                      Status = StatusRefused,
-                                      Reason = ReasonUrlSuspect,
-                                      versionRecord.SuspectReasons,
-                                      Hint = "Call submit_url_correction(library, version, newUrl) with a corrected URL."
-                                  };
-                json = JsonSerializer.Serialize(refused, smJsonOptions);
+                json = PublishedVersionRefusal.Create(library, version);
             }
             else
             {
-                var job = new ScrapeJob
-                              {
-                                  RootUrl = previousJob.RootUrl,
-                                  LibraryId = library,
-                                  Version = version,
-                                  LibraryHint = previousJob.LibraryHint,
-                                  AllowedUrlPatterns = previousJob.AllowedUrlPatterns,
-                                  ExcludedUrlPatterns = previousJob.ExcludedUrlPatterns,
-                                  MaxPages = maxPages,
-                                  FetchDelayMs = fetchDelayMs,
-                                  ForceClean = force,
-                                  SeedFromStoredPages = true
-                              };
+                if (versionRecord is { Suspect: true })
+                {
+                    var refused = new
+                                      {
+                                          Status = StatusRefused,
+                                          Reason = ReasonUrlSuspect,
+                                          versionRecord.SuspectReasons,
+                                          Hint = "Call submit_url_correction(library, version, newUrl) with a corrected URL."
+                                      };
+                    json = JsonSerializer.Serialize(refused, smJsonOptions);
+                }
+                else
+                {
+                    var job = new ScrapeJob
+                                  {
+                                      RootUrl = previousJob.RootUrl,
+                                      LibraryId = library,
+                                      Version = version,
+                                      LibraryHint = previousJob.LibraryHint,
+                                      AllowedUrlPatterns = previousJob.AllowedUrlPatterns,
+                                      ExcludedUrlPatterns = previousJob.ExcludedUrlPatterns,
+                                      MaxPages = maxPages,
+                                      FetchDelayMs = fetchDelayMs,
+                                      ForceClean = force,
+                                      SeedFromStoredPages = true
+                                  };
 
-                var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
-                await scrapeAuditRepo.DeleteByLibraryVersionAsync(library, version, ct);
-                var jobId = await runner.QueueAsync(job, profile, ct);
+                    var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
+                    await scrapeAuditRepo.DeleteByLibraryVersionAsync(library, version, ct);
+                    var jobId = await runner.QueueAsync(job, profile, ct);
 
-                var response = new
-                                   {
-                                       JobId = jobId,
-                                       Status = nameof(JobStatus.Queued),
-                                       LibraryId = library,
-                                       Version = version,
-                                       Message = $"Rescrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
-                                   };
-                json = JsonSerializer.Serialize(response, smJsonOptions);
+                    var response = new
+                                       {
+                                           JobId = jobId,
+                                           Status = nameof(JobStatus.Queued),
+                                           LibraryId = library,
+                                           Version = version,
+                                           Message = $"Rescrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
+                                       };
+                    json = JsonSerializer.Serialize(response, smJsonOptions);
+                }
             }
         }
 

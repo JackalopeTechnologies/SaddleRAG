@@ -12,6 +12,7 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database.Repositories;
 using SaddleRAG.Ingestion;
+using SaddleRAG.Ingestion.Crawling;
 
 #endregion
 
@@ -106,7 +107,8 @@ public static class PageTools
                  "a normal scrape, but skips link extraction so we don't BFS off the page. Use this " +
                  "to top up pages the main scrape missed (e.g. WAF-gated docs that need extra retries). " +
                  "Idempotent: skips if the URL is already indexed for this (library, version) unless " +
-                 "force=true."
+                 "force=true. Optional contentSelector restricts extraction to one nonempty article element; " +
+                 "an invalid, unmatched, or empty explicit selection fails before saving the page."
                 )]
     public static async Task<string> AddPage(IngestionOrchestrator orchestrator,
                                              RepositoryFactory repositoryFactory,
@@ -120,6 +122,8 @@ public static class PageTools
                                              bool force = false,
                                              [Description("Optional database profile name")]
                                              string? profile = null,
+                                             [Description("Optional CSS selector for the article element; must match nonempty text")]
+                                             string? contentSelector = null,
                                              CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(orchestrator);
@@ -151,6 +155,7 @@ public static class PageTools
                                                     url,
                                                     force,
                                                     profile,
+                                                    contentSelector,
                                                     ct
                                                    )
             };
@@ -165,6 +170,7 @@ public static class PageTools
                                                            string url,
                                                            bool force,
                                                            string? profile,
+                                                           string? contentSelector,
                                                            CancellationToken ct)
     {
         string result;
@@ -183,7 +189,22 @@ public static class PageTools
         }
         else
         {
-            var outcome = await orchestrator.IngestSinglePageAsync(library, version, url, profile, ct);
+            SinglePageIngestResult outcome;
+            try
+            {
+                outcome = await orchestrator.IngestSinglePageAsync(library, version, url, profile, contentSelector, ct);
+            }
+            catch(PageContentSelectionException ex)
+            {
+                outcome = new SinglePageIngestResult
+                              {
+                                  Status = StatusFailed,
+                                  Url = url,
+                                  Library = library,
+                                  Version = version,
+                                  Reason = ex.Message
+                              };
+            }
             result = JsonSerializer.Serialize(outcome, smJsonOptions);
         }
 
@@ -191,6 +212,7 @@ public static class PageTools
     }
 
     private const string StatusSkipped = "Skipped";
+    private const string StatusFailed = "Failed";
 
     private const string ReasonAlreadyIndexed =
         "URL is already indexed for this library/version. Pass force=true to re-fetch.";

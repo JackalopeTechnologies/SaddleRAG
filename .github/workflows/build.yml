@@ -41,13 +41,19 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${RELEASE_VERSION_INPUT}"
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="0.0.0"
+          fi
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version must contain three numeric components (for example, 1.14.0)."
+            exit 1
           fi
           if [[ "${VERSION}" == 0.* ]]; then
             PRERELEASE_FLAG="--prerelease"
@@ -71,6 +77,7 @@ jobs:
           else
             gh release create "$TAG" \
               --draft \
+              --target "$GITHUB_SHA" \
               ${{ steps.version.outputs.PrereleaseFlag }} \
               --generate-notes \
               --title "$TAG"
@@ -92,13 +99,18 @@ jobs:
       - name: Determine version
         id: version
         shell: pwsh
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-              $version = "${{ inputs.version }}"
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+              $version = $env:RELEASE_VERSION_INPUT
           } elseif ($env:GITHUB_REF -like 'refs/tags/v*') {
               $version = $env:GITHUB_REF -replace 'refs/tags/v', ''
           } else {
               $version = "0.0.0"
+          }
+          if ($version -notmatch '\A[0-9]+\.[0-9]+\.[0-9]+\z') {
+              throw "Release version must contain three numeric components (for example, 1.14.0)."
           }
 
           # The git tag IS the MSI ProductVersion - no translation. Versioning policy:
@@ -123,17 +135,17 @@ jobs:
           Write-Host "Version: $version (MSI: $msiVersion, Prerelease: $isPrerelease)"
 
       - name: Restore
-        run: dotnet restore SaddleRAG.slnx
+        run: dotnet restore SaddleRAG.slnx -m:2
 
       - name: Build
-        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:Version=${{ steps.version.outputs.PackageVersion }}
+        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -m:2 -p:TreatWarningsAsErrors=true -p:Version=${{ steps.version.outputs.PackageVersion }}
 
       - name: Test
         # Integration tests (Mongo-backed repositories, Playwright-driven
         # crawler scenarios) require services that aren't running on the
         # GitHub-hosted runner. They're tagged [Trait("Category","Integration")]
         # and run locally and on self-hosted runners that have those services.
-        run: dotnet test SaddleRAG.slnx --configuration Release --no-build --filter "Category!=Integration"
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -m:2 --filter "Category!=Integration" -- xUnit.MaxParallelThreads=4
 
       - name: Test combined package guards
         shell: pwsh
@@ -235,13 +247,19 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${RELEASE_VERSION_INPUT}"
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="0.0.0"
+          fi
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version must contain three numeric components (for example, 1.14.0)."
+            exit 1
           fi
           if [[ "${VERSION}" == 0.* ]]; then
             IS_PRERELEASE="true"
@@ -262,10 +280,10 @@ jobs:
         # the conditional but the CPU package's native asset isn't in the
         # restore cache, and the test bin ends up without libonnxruntime.so
         # (DllNotFoundException at test time).
-        run: dotnet restore SaddleRAG.slnx -p:UseGpu=false
+        run: dotnet restore SaddleRAG.slnx -m:2 -p:UseGpu=false
 
       - name: Build
-        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }}
+        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -m:2 -p:TreatWarningsAsErrors=true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }}
 
       - name: Test (with coverage)
         # --collect:"XPlat Code Coverage" picks up coverlet.collector
@@ -274,7 +292,7 @@ jobs:
         # test project run. The downstream coverage-report job merges this
         # with integration-test-linux's coverage XML and renders a single
         # combined report + sticky PR comment.
-        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category!=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -m:2 -p:UseGpu=false --filter "Category!=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results -- xUnit.MaxParallelThreads=4
 
       - name: Upload unit coverage XML
         if: success() || failure()
@@ -288,14 +306,16 @@ jobs:
           if-no-files-found: error
 
       - name: Publish
-        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime linux-x64 --self-contained true -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }} --output ./artifacts/linux/publish
+        run: dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj --configuration Release --runtime linux-x64 --self-contained true -m:2 -p:UseGpu=false -p:Version=${{ steps.version.outputs.PackageVersion }} --output ./artifacts/linux/publish
 
       - name: Package tarball
         run: |
           VERSION="${{ steps.version.outputs.PackageVersion }}"
           TARBALL="SaddleRAG.Mcp-${VERSION}-linux-x64.tar.gz"
+          install -m 0755 uninstall.sh ./artifacts/linux/publish/uninstall.sh
           tar -czf "./artifacts/${TARBALL}" -C ./artifacts/linux/publish .
-          sha256sum "./artifacts/${TARBALL}" > "./artifacts/${TARBALL}.sha256"
+          SHA256=$(sha256sum "./artifacts/${TARBALL}")
+          printf '%s  %s\n' "${SHA256%% *}" "${TARBALL}" > "./artifacts/${TARBALL}.sha256"
 
       - name: Upload linux artifact
         uses: actions/upload-artifact@v7
@@ -304,6 +324,7 @@ jobs:
           path: |
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
+            ./install.sh
 
       - name: Check release state
         # Mirrors build-windows: gate the asset upload on the release being
@@ -318,7 +339,7 @@ jobs:
           echo "is_draft=${STATE}" >> "$GITHUB_OUTPUT"
           echo "Release ${TAG}: isDraft=${STATE}"
 
-      - name: Upload tarball to draft release
+      - name: Upload Linux archive and installer to draft release
         # Both jobs run in parallel; whichever arrives first finds the draft
         # and uploads its artifact; the other appends to it.
         if: (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) && steps.release-state.outputs.is_draft != 'false'
@@ -328,6 +349,7 @@ jobs:
           files: |
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz
             ./artifacts/SaddleRAG.Mcp-${{ steps.version.outputs.PackageVersion }}-linux-x64.tar.gz.sha256
+            ./install.sh
           prerelease: ${{ steps.version.outputs.IsPrerelease }}
           draft: true
 
@@ -344,13 +366,19 @@ jobs:
         # the tag name; anything else (PR / master push) is "0.0.0" and skips
         # the push paths below.
         id: version
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${RELEASE_VERSION_INPUT}"
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="0.0.0"
+          fi
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version must contain three numeric components (for example, 1.14.0)."
+            exit 1
           fi
           echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}"
@@ -464,19 +492,27 @@ jobs:
         # Matches build-linux so the coverage artifact uploaded below can be
         # paired with the unit-coverage artifact by the coverage-report job.
         id: version
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${RELEASE_VERSION_INPUT}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="0.0.0"
           fi
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version must contain three numeric components (for example, 1.14.0)."
+            exit 1
+          fi
           echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Restore
-        run: dotnet restore SaddleRAG.slnx -p:UseGpu=false
+        run: dotnet restore SaddleRAG.slnx -m:2 -p:UseGpu=false
 
       - name: Build
-        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -p:TreatWarningsAsErrors=true -p:UseGpu=false
+        run: dotnet build SaddleRAG.slnx --configuration Release --no-restore -m:2 -p:TreatWarningsAsErrors=true -p:UseGpu=false
 
       - name: Install Playwright browsers
         # FileScrapeAuditTests and DryRunAuditTests instantiate the real
@@ -529,7 +565,7 @@ jobs:
         # Playwright paths, ONNX provider). The coverage-report job merges
         # this XML with build-linux's unit XML so the PR comment reflects the
         # union, not unit-only.
-        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -p:UseGpu=false --filter "Category=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results
+        run: dotnet test SaddleRAG.slnx --configuration Release --no-build -m:2 -p:UseGpu=false --filter "Category=Integration" --collect:"XPlat Code Coverage" --results-directory ./coverage-results -- xUnit.MaxParallelThreads=4
 
       - name: Upload integration coverage XML
         # No test report can exist when container startup/build prevented tests.
@@ -571,11 +607,19 @@ jobs:
 
       - name: Determine version
         id: version
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${RELEASE_VERSION_INPUT}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="0.0.0"
+          fi
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version must contain three numeric components (for example, 1.14.0)."
+            exit 1
           fi
           echo "PackageVersion=${VERSION}" >> "$GITHUB_OUTPUT"
 

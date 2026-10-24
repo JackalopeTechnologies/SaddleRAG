@@ -110,8 +110,13 @@ public sealed class OnnxToolsTests : IDisposable
         Assert.NotNull(accepted);
         var acceptedNames = accepted.Select(n => n?.GetValue<string>()).ToArray();
         Assert.Contains(OnnxSettings.ExecutionProviderCpu, acceptedNames);
+#if USE_GPU_CUDA
+        Assert.DoesNotContain(OnnxSettings.ExecutionProviderDirectMl, acceptedNames);
+        Assert.Contains(OnnxSettings.ExecutionProviderCuda, acceptedNames);
+#else
         Assert.Contains(OnnxSettings.ExecutionProviderDirectMl, acceptedNames);
         Assert.DoesNotContain(OnnxSettings.ExecutionProviderCuda, acceptedNames);
+#endif
 
         Assert.Equal(OnnxSettings.ExecutionProviderDirectMl, root["ActiveSetting"]?.GetValue<string>());
         Assert.Equal(OnnxSettings.ExecutionProviderCpu, root["ActiveProvider"]?.GetValue<string>());
@@ -191,18 +196,25 @@ public sealed class OnnxToolsTests : IDisposable
     [Fact]
     public void SetExecutionProviderAcceptsCanonicalNames()
     {
+#if USE_GPU_CUDA
+        const string ProviderName = OnnxSettings.ExecutionProviderCuda;
+        const OnnxExecutionProvider Provider = OnnxExecutionProvider.Cuda;
+#else
+        const string ProviderName = OnnxSettings.ExecutionProviderDirectMl;
+        const OnnxExecutionProvider Provider = OnnxExecutionProvider.DirectMl;
+#endif
         var settings = new OnnxSettings();
         var store = BuildStore(settings);
 
         string json = OnnxTools.SetExecutionProvider(store, Options.Create(settings),
-                                                     OnnxSettings.ExecutionProviderDirectMl
+                                                     ProviderName
                                                     );
 
         var root = JsonNode.Parse(json) as JsonObject;
         Assert.NotNull(root);
-        Assert.Equal(OnnxSettings.ExecutionProviderDirectMl, root["ExecutionProvider"]?.GetValue<string>());
+        Assert.Equal(ProviderName, root["ExecutionProvider"]?.GetValue<string>());
         Assert.True(root["RequiresRestart"]?.GetValue<bool>());
-        Assert.Equal(OnnxExecutionProvider.DirectMl, settings.ExecutionProvider);
+        Assert.Equal(Provider, settings.ExecutionProvider);
     }
 
     [Fact]

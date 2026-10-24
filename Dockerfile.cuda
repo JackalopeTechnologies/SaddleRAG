@@ -5,13 +5,14 @@
 # provider binary for linux-x64).
 #
 # Runtime requirements:
-#   • NVIDIA GPU with CUDA 12.x support
+#   • NVIDIA GPU and host driver compatible with CUDA 13.0
 #   • NVIDIA Container Toolkit on the host (installs nvidia-container-runtime)
 #   • docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
 #
-# Base image note: nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 provides
-# CUDA 12.6.3 + cuDNN runtime on Ubuntu 24.04 (Noble), matching the SDK
-# build stage. ONNX Runtime 1.26 requires CUDA 12.x and cuDNN 9.x; the
+# Base image note: nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 provides
+# CUDA 13.0.3 + cuDNN runtime on Ubuntu 24.04 (Noble), matching the SDK
+# build stage. ONNX Runtime 1.31 and GenAI 0.18 import CUDA 13 libraries;
+# ONNX Runtime's CUDA provider also requires cuDNN 9. The
 # cudnn-runtime tag bundles cuDNN so no separate cuDNN install is needed.
 # The self-contained publish includes the .NET runtime, so we do not need
 # mcr.microsoft.com/dotnet/aspnet as the base here.
@@ -22,6 +23,7 @@ ARG VERSION=0.0.0-dev
 WORKDIR /src
 COPY . .
 RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
+        -m:2 \
         -c Release \
         -r linux-x64 \
         --self-contained true \
@@ -32,7 +34,7 @@ RUN dotnet publish SaddleRAG.Mcp/SaddleRAG.Mcp.csproj \
 RUN grep -Fq "\"SaddleRAG.Mcp/${VERSION}\"" /app/publish/SaddleRAG.Mcp.deps.json
 
 # ── Stage 2: CUDA runtime ────────────────────────────────────────────────────
-FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 AS runtime
+FROM nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 AS runtime
 
 # Playwright / Chromium system dependencies + PowerShell (for playwright.ps1).
 # libgomp1 — OpenMP required by ORT CUDA execution provider.

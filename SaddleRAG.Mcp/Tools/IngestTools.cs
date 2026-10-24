@@ -33,7 +33,7 @@ public static class IngestTools
     [Description("Single ingestion entrypoint — call this first when you want to ingest or refresh a library. " +
                  "Inspects (library, version) state and returns one of six states: " +
                  "IN_PROGRESS (scrape already running — poll get_scrape_status or call cancel_job), " +
-                 "URL_SUSPECT (indexed content looks wrong — browse URL and call submit_url_correction), " +
+                 "URL_SUSPECT (review the URL; published content needs a new version identifier for a full scrape, unpublished attempts can use submit_url_correction), " +
                  "RECON_NEEDED (no profile — call recon_library then submit_library_profile), " +
                  "READY_TO_SCRAPE (profile cached, no chunks — call scrape_docs), " +
                  "STALE (chunks exist but parser-derived metadata is outdated — call reextract_library), " +
@@ -52,7 +52,7 @@ public static class IngestTools
                                                  [Description("Reserved for future auto-follow behavior. Ignored today; follow NextTool manually."
                                                              )]
                                                  bool auto = false,
-                                                 [Description("If true, return READY_TO_SCRAPE for an otherwise READY library so the caller can intentionally refresh via scrape_docs."
+                                                 [Description("If true, return READY_TO_SCRAPE guidance for an otherwise READY library. A full refresh of published content requires a new version identifier."
                                                              )]
                                                  bool force = false,
                                                  [Description("Optional database profile name")]
@@ -89,6 +89,7 @@ public static class IngestTools
                                                               version,
                                                               url,
                                                               suspectReasons,
+                                                              versionRecord?.PublicationState == VersionPublicationState.Published,
                                                               chunkRepo,
                                                               ct
                                                              )
@@ -228,6 +229,7 @@ public static class IngestTools
                                                                         string version,
                                                                         string url,
                                                                         IReadOnlyList<string> suspectReasons,
+                                                                        bool published,
                                                                         IChunkRepository chunkRepo,
                                                                         CancellationToken ct)
     {
@@ -244,17 +246,14 @@ public static class IngestTools
                              LibraryId = library,
                              Version = version,
                              Url = url,
-                             NextTool = "submit_url_correction",
+                             NextTool = published ? ToolScrapeDocs : ToolCorrectUrl,
                              Message = $"Indexed content looks wrong: {reasonsJoined}. " +
                                        $"Sample titles: {sampleTitlesJoined}. " +
                                        $"Hostnames: {hostnamesJoined}. " +
-                                       "Browse the URL and call submit_url_correction with a better one if needed. " +
-                                       "The library and version are pre-filled in NextToolArgs; you must supply newUrl yourself after browsing.",
-                             NextToolArgs = new Dictionary<string, string>
-                                                {
-                                                    ["library"] = library,
-                                                    ["version"] = version
-                                                }
+                                       (published ? PublishedSuspectGuidance : UnpublishedSuspectGuidance),
+                             NextToolArgs = published
+                                                ? new Dictionary<string, string> { ["library"] = library, ["url"] = url }
+                                                : new Dictionary<string, string> { ["library"] = library, ["version"] = version }
                          };
         return result;
     }
@@ -262,13 +261,17 @@ public static class IngestTools
     private const string MessageExcludedPatternHint =
         "If RecommendedExcludedUrlPatterns is non-empty, pass it as scrape_docs.excludedUrlPatterns.";
 
+    private const string ToolScrapeDocs = "scrape_docs";
+    private const string ToolCorrectUrl = "submit_url_correction";
+    private const string PublishedSuspectGuidance = "This target is published. Review the source URL and use scrape_docs with an explicit new version identifier for a full scrape. The version is deliberately omitted from NextToolArgs; choose a new identifier before calling. submit_url_correction and force cannot replace this published target.";
+    private const string UnpublishedSuspectGuidance = "Browse the URL and call submit_url_correction with a better one if needed. The library and version are pre-filled in NextToolArgs; you must supply newUrl yourself after browsing.";
+
     private const string MessageReadyToScrapeFresh =
         "Profile cached, no chunks indexed. Call scrape_docs (args in NextToolArgs) to begin ingestion. " +
         MessageExcludedPatternHint;
 
-    private const string MessageReadyToScrapeForce =
-        "force=true: index exists but caller requested re-ingest. Call scrape_docs (args in NextToolArgs) to refresh. " +
-        MessageExcludedPatternHint;
+    private const string MessageReadyToScrapeForceNote = "force=true: index exists but caller requested re-ingest. If this version is published, choose a new version identifier and repeat start_ingest for that target before scraping. scrape_docs(force=true) only retries unpublished partial attempts. ";
+    private const string MessageReadyToScrapeForce = MessageReadyToScrapeForceNote + MessageExcludedPatternHint;
 
     private const int UrlSuspectSampleTitleLimit = 5;
     private const int UrlSuspectSampleTitlesShown = 3;

@@ -18,6 +18,7 @@ using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Database.Repositories;
+using SaddleRAG.Ingestion.Diagnostics;
 
 #endregion
 
@@ -78,7 +79,8 @@ public class PageCrawler : IPageCrawler
         public required Action<int>? OnPageFetched { get; init; }
         public required Action<int>? OnQueued { get; init; }
         public required Action? OnFetchError { get; init; }
-        public required CancellationToken Token { get; init; }
+        public required CancellationTokenSource Cancellation { get; init; }
+        public CancellationToken Token => Cancellation.Token;
         public required AuditContext AuditCtx { get; init; }
         public required IPageRepository PageRepository { get; init; }
         public required IngestionPersistenceMode PersistMode { get; init; }
@@ -103,6 +105,10 @@ public class PageCrawler : IPageCrawler
 
         private int mInFlight;
         private int mPageCount;
+        // Reservations cover pending and processed targets. Visited alone cannot
+        // stop shared sidebars from filling the queue before workers reach a URL.
+        private readonly ConcurrentDictionary<string, byte> mScheduled = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, byte> mRejectedDiscoveries = new(StringComparer.OrdinalIgnoreCase);
 
         public int IncrementPageCount() => Interlocked.Increment(ref mPageCount);
         public void IncrementInFlight() => Interlocked.Increment(ref mInFlight);
@@ -111,11 +117,47 @@ public class PageCrawler : IPageCrawler
         public void EnqueueChild(CrawlEntry entry, bool inScope)
         {
             ArgumentNullException.ThrowIfNull(entry);
+            TryEnqueueChild(entry, inScope);
+        }
 
-            IncrementInFlight();
-            var writer = inScope ? InScopeEntries.Writer : OffPathEntries.Writer;
-            if (!writer.TryWrite(entry))
-                DecrementInFlight();
+        public bool TryEnqueueChild(CrawlEntry entry, bool inScope)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+            string key = CanonicalUrl(entry.Url);
+            bool accepted = !Token.IsCancellationRequested && !Visited.ContainsKey(key) && mScheduled.TryAdd(key, value: 0);
+            if (accepted)
+            {
+                IncrementInFlight();
+                var writer = inScope ? InScopeEntries.Writer : OffPathEntries.Writer;
+                accepted = writer.TryWrite(entry);
+                if (!accepted)
+                {
+                    DecrementInFlight();
+                    mScheduled.TryRemove(key, out _);
+                }
+            }
+            return accepted;
+        }
+
+        public void RequeueForEscalation(CrawlEntry entry)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+            string key = CanonicalUrl(entry.Url);
+            Visited.TryRemove(key, out _);
+            mScheduled.TryRemove(key, out _);
+            EnqueueChild(entry, inScope: true);
+        }
+
+        public bool TryRecordRejectedDiscovery(string url)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(url);
+            return mRejectedDiscoveries.TryAdd(url, value: 0);
+        }
+
+        public async Task StopAsync()
+        {
+            CompleteAllEntries();
+            await Cancellation.CancelAsync();
         }
 
         /// <summary>
@@ -160,7 +202,7 @@ public class PageCrawler : IPageCrawler
         {
             ArgumentException.ThrowIfNullOrEmpty(url);
 
-            bool result = Visited.ContainsKey(url);
+            bool result = Visited.ContainsKey(CanonicalUrl(url));
             return result;
         }
 
@@ -247,7 +289,7 @@ public class PageCrawler : IPageCrawler
         return FetchSinglePageForProfileAsync(libraryId, version, url, profile: null, ct);
     }
 
-    public async Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+    public Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
                                                                   string version,
                                                                   string url,
                                                                   string? profile,
@@ -256,6 +298,22 @@ public class PageCrawler : IPageCrawler
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(url);
+        return FetchSinglePageForProfileAsync(libraryId, version, url, profile, contentSelector: null, ct);
+    }
+
+    /// <summary>Fetch one page, requiring the supplied selector to match nonempty article content when present.</summary>
+    public async Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+                                                                  string version,
+                                                                  string url,
+                                                                  string? profile,
+                                                                  string? contentSelector,
+                                                                  CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(url);
+        if (contentSelector != null && string.IsNullOrWhiteSpace(contentSelector))
+            throw new PageContentSelectionException(contentSelector, url, "The selector must contain a non-whitespace expression.");
 
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -290,6 +348,7 @@ public class PageCrawler : IPageCrawler
                                                    libraryId,
                                                    version,
                                                    url,
+                                                   contentSelector,
                                                    ResolvePageRepository(profile),
                                                    ct);
             attempt++;
@@ -305,6 +364,7 @@ public class PageCrawler : IPageCrawler
                                                             string libraryId,
                                                             string version,
                                                             string url,
+                                                            string? contentSelector,
                                                             IPageRepository pageRepository,
                                                             CancellationToken ct)
     {
@@ -322,6 +382,7 @@ public class PageCrawler : IPageCrawler
                                                               libraryId,
                                                               version,
                                                               url,
+                                                              contentSelector,
                                                               pageRepository,
                                                               ct);
             }
@@ -331,7 +392,7 @@ public class PageCrawler : IPageCrawler
                 mLogger.LogWarning("Single-page fetch got status {Status} for {Url}", status, url);
             }
         }
-        catch(Exception ex) when(ex is not OperationCanceledException)
+        catch(Exception ex) when(ex is not OperationCanceledException and not PageContentSelectionException)
         {
             mLogger.LogWarning(ex, "Single-page fetch error for {Url}", url);
         }
@@ -347,12 +408,14 @@ public class PageCrawler : IPageCrawler
                                                                   string libraryId,
                                                                   string version,
                                                                   string url,
+                                                                  string? contentSelector,
                                                                   IPageRepository pageRepository,
                                                                   CancellationToken ct)
     {
         string title = await page.TitleAsync();
-        await ExpandCollapsibleNavigationAsync(page);
-        string content = await ExtractMainContentAsync(page, waitForSelector: null, ct);
+        string content = contentSelector == null
+                             ? await ExtractMainContentAsync(page, waitForSelector: null, ct)
+                             : await ExtractRequiredSinglePageContentAsync(page, url, contentSelector, ct);
 
         string contentHash = ComputeHash(content);
         string urlHash = ComputeCanonicalUrlHash(url);
@@ -372,6 +435,34 @@ public class PageCrawler : IPageCrawler
 
         await pageRepository.UpsertPageAsync(record, ct);
         return record;
+    }
+
+    private static async Task<string> ExtractRequiredSinglePageContentAsync(IPage page,
+                                                                              string url,
+                                                                              string contentSelector,
+                                                                              CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        string content;
+        try
+        {
+            IElementHandle? element = await page.QuerySelectorAsync(contentSelector);
+            if (element == null)
+                throw new PageContentSelectionException(contentSelector, url, "No element matched the selector.");
+            content = (await element.InnerTextAsync()).Trim();
+        }
+        catch(PlaywrightException ex)
+        {
+            throw new PageContentSelectionException(contentSelector,
+                                                      url,
+                                                      "The selector could not be evaluated or its element became unavailable.",
+                                                      ex);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        if (content.Length == 0)
+            throw new PageContentSelectionException(contentSelector, url, "The selected element contained no text.");
+        return content;
     }
 
     /// <summary>
@@ -405,6 +496,7 @@ public class PageCrawler : IPageCrawler
                                Version = job.Version,
                                Profile = job.DatabaseProfile
                            };
+        using var crawlCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var launchedBrowser = await LaunchBrowserAsync(output);
         using var playwright = launchedBrowser.Playwright;
@@ -432,16 +524,13 @@ public class PageCrawler : IPageCrawler
                 {
                     foreach(string u in urls)
                     {
-                        c.Visited.TryRemove(u, out _);
                         var requeue = new CrawlEntry(u,
                                                      InScopeDepth: 0,
                                                      SameHostDepth: 0,
                                                      OffSiteDepth: 0,
                                                      AllowExtensionRecovery: false
                                                     );
-                        c.IncrementInFlight();
-                        if (!c.InScopeEntries.Writer.TryWrite(requeue))
-                            c.DecrementInFlight();
+                        c.RequeueForEscalation(requeue);
                     }
                 }
             };
@@ -468,7 +557,7 @@ public class PageCrawler : IPageCrawler
                           OnPageFetched = onPageFetched,
                           OnQueued = onQueued,
                           OnFetchError = onFetchError,
-                          Token = ct,
+                          Cancellation = crawlCancellation,
                           AuditCtx = auditCtx,
                           PageRepository = ResolvePageRepository(job.DatabaseProfile),
                           Voter = new RenderModeVoter(),
@@ -482,41 +571,17 @@ public class PageCrawler : IPageCrawler
         if (resumeUrls != null)
         {
             foreach(string resumeUrl in resumeUrls)
-                ctx.Visited.TryAdd(resumeUrl, value: 0);
+                ctx.Visited.TryAdd(CanonicalUrl(resumeUrl), value: 0);
             mLogger.LogInformation("Resume: seeded visited set with {Count} existing URLs", resumeUrls.Count);
-        }
-
-        string normalizedRoot = NormalizeUrl(job.RootUrl) ?? job.RootUrl;
-        var rootEntry = new CrawlEntry(normalizedRoot, InScopeDepth: 0, SameHostDepth: 0, OffSiteDepth: 0);
-        ctx.IncrementInFlight();
-        ctx.InScopeEntries.Writer.TryWrite(rootEntry);
-
-        if (seedUrls != null)
-        {
-            var seedCount = 0;
-            foreach(string seedUrl in seedUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
-            {
-                string normalizedSeed = NormalizeUrl(seedUrl) ?? seedUrl;
-                if (!string.Equals(normalizedSeed, normalizedRoot, StringComparison.OrdinalIgnoreCase))
-                {
-                    var seedEntry = new CrawlEntry(normalizedSeed,
-                                                    InScopeDepth: 0,
-                                                    SameHostDepth: 0,
-                                                    OffSiteDepth: 0
-                                                   );
-                    ctx.IncrementInFlight();
-                    ctx.InScopeEntries.Writer.TryWrite(seedEntry);
-                    seedCount++;
-                }
-            }
-
-            mLogger.LogInformation("Seeded crawl queue with {Count} stored URLs (in addition to RootUrl)", seedCount);
         }
 
         try
         {
+            SeedCrawlQueue(ctx, seedUrls);
+            if (ctx.InFlightCount == 0)
+                ctx.CompleteAllEntries();
             int workerCount = Math.Max(val1: 1, MaxParallelWorkers);
-            await RunWorkerPoolAsync(ctx, browser, workerCount, ct);
+            await RunWorkerPoolAsync(ctx, browser, workerCount, ctx.Token);
 
             if (ctx.DroppedInScopeUrls.Count > 0)
             {
@@ -547,6 +612,55 @@ public class PageCrawler : IPageCrawler
             output.TryComplete(ex);
             throw;
         }
+    }
+
+    private void SeedCrawlQueue(CrawlContext ctx, IReadOnlyList<string>? seedUrls)
+    {
+        string normalizedRoot = NormalizeUrl(ctx.Job.RootUrl, keepExtension: true) ?? ctx.Job.RootUrl;
+        EnqueueInitialEntry(new CrawlEntry(normalizedRoot, InScopeDepth: 0, SameHostDepth: 0, OffSiteDepth: 0), ctx);
+        if (seedUrls != null)
+        {
+            var seedCount = 0;
+            foreach(string seedUrl in seedUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+            {
+                string normalizedSeed = NormalizeUrl(seedUrl, keepExtension: true) ?? seedUrl;
+                var seedEntry = new CrawlEntry(normalizedSeed, InScopeDepth: 0, SameHostDepth: 0, OffSiteDepth: 0);
+                seedCount += EnqueueInitialEntry(seedEntry, ctx) ? 1 : 0;
+            }
+            mLogger.LogInformation("Seeded crawl queue with {Count} stored URLs (in addition to RootUrl)", seedCount);
+        }
+    }
+
+    private bool EnqueueInitialEntry(CrawlEntry entry, CrawlContext ctx)
+    {
+        bool accepted = false;
+        var skipReason = IsAllowed(entry.Url, ctx.Job);
+        if (skipReason == null)
+            accepted = TryEnqueueAllowedEntry(entry, inScopePriority: true, ctx);
+        else
+        {
+            if (ctx.TryRecordRejectedDiscovery(entry.Url))
+            {
+                mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, entry.ParentUrl, SafeGetHost(entry.Url),
+                                           depth: 0, skipReason.Value.Reason, skipReason.Value.Detail);
+                mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, skipReason.Value.Reason.ToString());
+                ctx.DryRunAcc?.RecordFilteredSkip();
+            }
+        }
+        return accepted;
+    }
+
+    private bool TryEnqueueAllowedEntry(CrawlEntry entry, bool inScopePriority, CrawlContext ctx)
+    {
+        bool inScope = IsInRootScope(entry.Url, ctx.RootScope);
+        bool sameHost = !inScope && IsSameHost(entry.Url, ctx.RootScope);
+        bool accepted = false;
+        bool delegatesRepository = GitHubRepoScraper.TryParseGitHubUrl(entry.Url, out _, out _);
+        if (!delegatesRepository && DepthExceeded(entry, ctx.Job, inScope, sameHost))
+            RecordDepthLimitSkip(entry, ctx, inScope, sameHost);
+        else
+            accepted = ctx.TryEnqueueChild(entry, inScopePriority);
+        return accepted;
     }
 
     private static async Task<(IPlaywright Playwright, IBrowser Browser)> LaunchBrowserAsync(
@@ -745,6 +859,11 @@ public class PageCrawler : IPageCrawler
         {
             await ProcessCrawlEntryAsync(entry, ctx, page);
         }
+        catch(ScrapeAuditBufferException)
+        {
+            await ctx.StopAsync();
+            throw;
+        }
         catch(Exception ex) when(ex is not OperationCanceledException
                                       and not SupportedDocumentIngestionException)
         {
@@ -769,7 +888,7 @@ public class PageCrawler : IPageCrawler
         try
         {
             bool gated = ctx.IsGated(entry.Url);
-            bool firstVisit = !gated && ctx.Visited.TryAdd(entry.Url, value: 0);
+            bool firstVisit = !gated && ctx.Visited.TryAdd(CanonicalUrl(entry.Url), value: 0);
 
             if (gated)
             {
@@ -809,6 +928,11 @@ public class PageCrawler : IPageCrawler
 
             if (firstVisit && !ctx.Token.IsCancellationRequested)
                 await ProcessCrawlEntryAsync(entry, ctx, page);
+        }
+        catch(ScrapeAuditBufferException)
+        {
+            await ctx.StopAsync();
+            throw;
         }
         catch(Exception ex) when(ex is not OperationCanceledException
                                       and not SupportedDocumentIngestionException)
@@ -879,32 +1003,8 @@ public class PageCrawler : IPageCrawler
         string url = entry.Url;
         bool inScope = IsInRootScope(url, ctx.RootScope);
         bool sameHost = !inScope && IsSameHost(url, ctx.RootScope);
-        bool depthExceeded = inScope  ? ctx.Job.InScopeDepth > 0 && entry.InScopeDepth >= ctx.Job.InScopeDepth :
-                             sameHost ? entry.SameHostDepth >= ctx.Job.SameHostDepth :
-                                        entry.OffSiteDepth >= ctx.Job.OffSiteDepth;
-
-        if (depthExceeded)
-        {
-            int displayDepth = inScope  ? entry.InScopeDepth :
-                               sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
-            mLogger.LogDebug("Skipping {Url} - depth {Depth} exceeded", url, displayDepth);
-
-            string host = SafeGetHost(url);
-            var skipReason = sameHost ? AuditSkipReason.SameHostDepth : AuditSkipReason.OffSiteDepth;
-            string detail = sameHost
-                                ? $"depth={displayDepth} limit={ctx.Job.SameHostDepth}"
-                                : $"depth={displayDepth} limit={ctx.Job.OffSiteDepth}";
-            mAuditWriter.RecordSkipped(ctx.AuditCtx,
-                                       url,
-                                       parentUrl: null,
-                                       host,
-                                       displayDepth,
-                                       skipReason,
-                                       detail
-                                      );
-            mBroadcaster.RecordReject(ctx.AuditCtx.JobId, url, skipReason.ToString());
-            ctx.DryRunAcc?.RecordDepthLimitedSkip();
-        }
+        if (DepthExceeded(entry, ctx.Job, inScope, sameHost))
+            RecordDepthLimitSkip(entry, ctx, inScope, sameHost);
         else
         {
             switch(ctx.PageQuota.TryReserve())
@@ -920,6 +1020,26 @@ public class PageCrawler : IPageCrawler
                     RecordQueueLimitSkip(entry, ctx, inScope, sameHost);
                     break;
             }
+        }
+    }
+
+    private static bool DepthExceeded(CrawlEntry entry, ScrapeJob job, bool inScope, bool sameHost) =>
+        inScope ? job.InScopeDepth > 0 && entry.InScopeDepth >= job.InScopeDepth :
+        sameHost ? entry.SameHostDepth >= job.SameHostDepth : entry.OffSiteDepth >= job.OffSiteDepth;
+
+    private void RecordDepthLimitSkip(CrawlEntry entry, CrawlContext ctx, bool inScope, bool sameHost)
+    {
+        if (ctx.TryRecordRejectedDiscovery(entry.Url))
+        {
+            int depth = inScope ? entry.InScopeDepth : sameHost ? entry.SameHostDepth : entry.OffSiteDepth;
+            int limit = inScope ? ctx.Job.InScopeDepth : sameHost ? ctx.Job.SameHostDepth : ctx.Job.OffSiteDepth;
+            var reason = inScope ? AuditSkipReason.InScopeDepth :
+                         sameHost ? AuditSkipReason.SameHostDepth : AuditSkipReason.OffSiteDepth;
+            string detail = $"depth={depth} limit={limit}";
+            mLogger.LogDebug("Skipping {Url} - depth {Depth} exceeded", entry.Url, depth);
+            mAuditWriter.RecordSkipped(ctx.AuditCtx, entry.Url, entry.ParentUrl, SafeGetHost(entry.Url), depth, reason, detail);
+            mBroadcaster.RecordReject(ctx.AuditCtx.JobId, entry.Url, reason.ToString());
+            ctx.DryRunAcc?.RecordDepthLimitedSkip();
         }
     }
 
@@ -977,7 +1097,8 @@ public class PageCrawler : IPageCrawler
             }
         }
         catch(Exception ex) when(ex is not OperationCanceledException
-                                      and not SupportedDocumentIngestionException)
+                                      and not SupportedDocumentIngestionException
+                                      and not ScrapeAuditBufferException)
         {
             limiter.ReportTransientError();
             ctx.OnFetchError?.Invoke();
@@ -1443,9 +1564,17 @@ public class PageCrawler : IPageCrawler
     {
         var sw = Stopwatch.StartNew();
         string title = await page.TitleAsync();
-        await ExpandCollapsibleNavigationAsync(page);
         string content = await ExtractMainContentAsync(page, ctx.Job.EffectiveContentSelector, ctx.Token);
         var links = await ExtractLinksAsync(page);
+
+        // Sidebar controls can navigate as well as expand. Preserve the requested article
+        // and its links before interacting, and only accept newly exposed links from the
+        // same document. Single-page fetches need no navigation expansion at all.
+        string documentUrl = page.Url;
+        await ExpandCollapsibleNavigationAsync(page);
+        var expandedLinks = await ExtractLinksAsync(page);
+        if (string.Equals(page.Url, documentUrl, StringComparison.Ordinal))
+            links = links.Concat(expandedLinks).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         string contentHash = ComputeHash(content);
         string urlHash = ComputeCanonicalUrlHash(fetchUrl);
@@ -1501,8 +1630,9 @@ public class PageCrawler : IPageCrawler
                                ctx.Job,
                                ctx.RootScope,
                                entry,
-                               ctx.EnqueueChild,
-                               ctx.AuditCtx
+                               (child, inScope) => TryEnqueueAllowedEntry(child, inScope, ctx),
+                               ctx.AuditCtx,
+                               ctx.TryRecordRejectedDiscovery
                               );
 
         ctx.OnPageFetched?.Invoke(newCount);
@@ -1709,7 +1839,8 @@ public class PageCrawler : IPageCrawler
                                         RootScope rootScope,
                                         CrawlEntry parentEntry,
                                         Action<CrawlEntry, bool> enqueue,
-                                        AuditContext? auditCtx = null)
+                                        AuditContext? auditCtx = null,
+                                        Func<string, bool>? tryRecordRejected = null)
     {
         foreach(string normalized in links
                                      .Select(u => NormalizeUrl(u, keepExtension: true))
@@ -1719,7 +1850,7 @@ public class PageCrawler : IPageCrawler
             var skipReason = IsAllowed(normalized, job);
             if (skipReason != null)
             {
-                if (auditCtx != null)
+                if (auditCtx != null && (tryRecordRejected?.Invoke(normalized) ?? true))
                 {
                     string host = SafeGetHost(normalized);
                     bool linkInScope = IsInRootScope(normalized, rootScope);
@@ -2064,7 +2195,8 @@ public class PageCrawler : IPageCrawler
     ///     because expanding a node may reveal more collapsed nodes.
     ///     Handles common patterns: ARIA (aria-expanded="false"), generic
     ///     .collapsed class, and Infragistics ig-tree (ui-igtree-parentnode
-    ///     without ui-igtree-expanded).
+    ///     without ui-igtree-expanded). Controls with navigation targets and popup menus
+    ///     are excluded because activating them can replace the article or change settings.
     /// </summary>
     private static async Task ExpandCollapsibleNavigationAsync(IPage page)
     {
@@ -2086,8 +2218,13 @@ public class PageCrawler : IPageCrawler
                                                                                       const els = document.querySelectorAll(sel);
                                                                                       els.forEach(el => {
                                                                                           try {
-                                                                                              el.click();
-                                                                                              clicked++;
+                                                                                              const navigates = el.closest('[href], [data-nav-href], [role="link"]');
+                                                                                              const popup = el.hasAttribute('aria-haspopup') &&
+                                                                                                  el.getAttribute('aria-haspopup') !== 'false';
+                                                                                              if (!navigates && !popup) {
+                                                                                                  el.click();
+                                                                                                  clicked++;
+                                                                                              }
                                                                                           } catch (e) {}
                                                                                       });
                                                                                   }
@@ -2187,10 +2324,10 @@ public class PageCrawler : IPageCrawler
     ///     (.html, .htm, .aspx) and stop at the first that returns 200,
     ///     recording it on <paramref name="extensionState" /> so subsequent
     ///     link extraction keeps extensions on discovered URLs. Once the
-    ///     extension is known, applies it upfront to URLs that were enqueued
-    ///     (and normalized to extension-stripped form) before discovery — the
-    ///     probe only fires when extensionState.Value is null, so without the
-    ///     upfront apply every pre-discovery URL would 404 and never recover.
+    ///     extension is known, applies it upfront to explicitly extensionless
+    ///     root and seed URLs. Discovered links preserve their actual paths and
+    ///     disable extension recovery. The probe only fires while the extension
+    ///     is unknown, so queued extensionless seeds also need the upfront apply.
     ///     Shared by the real crawl and dry-run paths so they can't drift.
     /// </summary>
     private async Task<(IResponse? Response, string FetchUrl, int DomCount, int LoadCount, bool SkipPersist)>
@@ -2354,6 +2491,8 @@ public class PageCrawler : IPageCrawler
         return result;
     }
 
+    private static string CanonicalUrl(string url) => NormalizeUrl(url, keepExtension: false) ?? url;
+
     private static string ComputeHash(string content)
     {
         byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(content));
@@ -2384,7 +2523,7 @@ public class PageCrawler : IPageCrawler
     /// </summary>
     internal static string ComputeCanonicalUrlHash(string url)
     {
-        string canonical = NormalizeUrl(url, keepExtension: false) ?? url;
+        string canonical = CanonicalUrl(url);
         return ComputeHash(canonical);
     }
 

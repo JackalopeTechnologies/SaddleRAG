@@ -34,7 +34,7 @@ public enum OnnxExecutionProvider
     /// <summary>
     ///     CUDA execution on NVIDIA GPUs. Requires the build to reference
     ///     <c>Microsoft.ML.OnnxRuntime.Gpu</c> (<c>UseGpuCuda=true</c> at build
-    ///     time) and the host to have CUDA 12.x + cuDNN 9.x installed. Available
+    ///     time) and the host to have CUDA 13.x + cuDNN 9.x installed. Available
     ///     in the Docker <c>:cuda</c> image when run with the NVIDIA Container
     ///     Toolkit. Not available in the Windows MSI or the CPU Docker image.
     /// </summary>

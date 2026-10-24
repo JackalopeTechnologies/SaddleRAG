@@ -34,8 +34,8 @@ public static class HealthTools
                  "distribution, language mix, boundary-issue rate, suspect markers, and " +
                  "duplicateContentPct with a contentSuspect flag (near-identical content across " +
                  "pages - the extractor likely captured a boilerplate widget). Also returns a " +
-                 "suggestedNextAction field (rescrape_library if contentSuspect, " +
-                 "submit_url_correction if suspect, rechunk_library if boundaryIssuePct >= 10%, " +
+                 "suggestedNextAction field (scrape_docs with a new version identifier if published content is suspect, " +
+                 "scrape_docs with a new version identifier if the published source is suspect, rechunk_library if boundaryIssuePct >= 10%, " +
                  "null if healthy). For the actual library content, use get_library_overview instead."
                 )]
     public static async Task<string> GetLibraryHealth(RepositoryFactory repositoryFactory,
@@ -194,8 +194,8 @@ public static class HealthTools
          versionRecord.Suspect,
          versionRecord.BoundaryIssuePct >= BoundaryHintRecommendThreshold) switch
             {
-                (true, var _, var _) => new { tool = (string?) SuggestToolRescrape, message = ContentSuspectSuggestion },
-                (var _, true, var _) => new { tool = (string?) SuggestToolCorrectUrl, message = SuspectSuggestion },
+                (true, var _, var _) => new { tool = (string?) SuggestToolScrape, message = ContentSuspectSuggestion },
+                (var _, true, var _) => new { tool = (string?) SuggestToolScrape, message = SuspectSuggestion },
                 (var _, var _, true) => new { tool = (string?) SuggestToolRechunk, message = BoundaryRechunkSuggestion },
                 var _ => new { tool = (string?) null, message = HealthySuggestion }
             };
@@ -290,6 +290,7 @@ public static class HealthTools
         var mergedJobs = MergeRecentAndRunning(recentJobs, runningJobs);
 
         var suspectList = new List<object>();
+        bool hasPublishedSuspect = false;
         var versionCount = 0;
         foreach(var lib in libraries)
         {
@@ -298,7 +299,11 @@ public static class HealthTools
                 versionCount++;
                 var versionRecord = await libraryRepo.GetVersionAsync(lib.Id, v, ct);
                 if (versionRecord is { Suspect: true } && suspectList.Count < SuspectListCap)
-                    suspectList.Add(new { library = lib.Id, version = v, reasons = versionRecord.SuspectReasons });
+                {
+                    hasPublishedSuspect |= versionRecord.PublicationState == VersionPublicationState.Published;
+                    suspectList.Add(new { library = lib.Id, version = v, reasons = versionRecord.SuspectReasons,
+                        publicationState = versionRecord.PublicationState.ToString() });
+                }
             }
         }
 
@@ -332,6 +337,11 @@ public static class HealthTools
                                                            $"Warmup did not complete (phase: {warmupState.CurrentPhase}). Restart Ollama (kill duplicate ollama processes), then restart the MCP server. LastError: {warmupState.LastError ?? "(none)"}"
                                                    },
                 (var _, true, var _, var _) => new { tool = (string?) SuggestToolScrape, message = EmptyDbSuggestion },
+                (var _, var _, true, var _) when hasPublishedSuspect => new
+                {
+                    tool = (string?) SuggestToolScrape,
+                    message = PublishedSuspectDashboardSuggestion
+                },
                 (var _, var _, true, var _) => new
                                                    {
                                                        tool = (string?) SuggestToolCorrectUrl,
@@ -401,10 +411,10 @@ public static class HealthTools
     private const int DuplicateContentSampleCap = 200;
     private const int MinContentSampleForSuspect = 5;
     private const double DuplicateContentSuspectThreshold = 60.0;
-    private const string SuggestToolRescrape = "rescrape_library";
     private const string SuggestToolRechunk = "rechunk_library";
-    private const string ContentSuspectSuggestion = "Most pages hold near-identical content - extraction likely captured a boilerplate widget instead of the article. Raw HTML is not retained, so reextract/rechunk cannot recover it; rescrape (scrape_docs force=true, optionally with contentSelector) to re-run extraction.";
-    private const string SuspectSuggestion = "Library is marked suspect - review the source and call submit_url_correction with a corrected URL.";
+    private const string ContentSuspectSuggestion = "Most pages hold near-identical content - extraction likely captured a boilerplate widget instead of the article. Raw HTML is not retained, so reextract/rechunk cannot recover it. Use scrape_docs with a new version identifier and, if needed, contentSelector; force=true only retries unpublished partial attempts.";
+    private const string SuspectSuggestion = "Published content is marked suspect. Review the source URL and use scrape_docs with a new version identifier for a full scrape; submit_url_correction cannot replace this published target.";
+    private const string PublishedSuspectDashboardSuggestion = "Published suspect targets need scrape_docs with a new version identifier after reviewing the source URL. Unpublished suspect attempts can use submit_url_correction. Check publicationState in suspectLibraries before choosing the target.";
     private const string BoundaryRechunkSuggestion = "Chunk boundary issues are high - rechunk_library is recommended.";
     private const string HealthySuggestion = "Library looks healthy.";
 

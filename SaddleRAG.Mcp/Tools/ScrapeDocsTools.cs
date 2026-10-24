@@ -45,10 +45,10 @@ public static class ScrapeDocsTools
     [McpServerTool(Name = "scrape_docs")]
     [Description("Fetch documentation from a URL and run the full ingest pipeline against the live source site: " +
                  "crawl, classify, chunk, embed, and persist the refreshed indexable content. Cache-aware: returns " +
-                 "AlreadyCached unless force=true. Use this for first-time ingest, or when you need to override the " +
-                 "URL or crawl patterns. For routine refreshes of an already-scraped library, prefer rescrape_library " +
-                 "(library + version only — config is pulled from the most recent scrape job and stored pages seed " +
-                 "the crawl). Pass allowedUrlPatterns / excludedUrlPatterns only if the auto-derived host filter is too " +
+                 "AlreadyCached unless force=true. Published targets cannot be overwritten: force=true returns " +
+                 "Refused/PUBLISHED_VERSION before queueing. Use a new version identifier for a full refresh. " +
+                 "force only cleans unpublished partial attempts; rescrape_library can retry those using prior " +
+                 "configuration and stored page URLs. Pass allowedUrlPatterns / excludedUrlPatterns only if the auto-derived host filter is too " +
                  "narrow or too broad. Pass seedUrls when the home page does not link to all sections that need indexing " +
                  "(e.g., DocFX-generated sites where the /api/ tree is reachable only through namespace index pages, not " +
                  "from the nav bar) — each seed URL is added to the crawl queue alongside the root, so a single scrape " +
@@ -79,7 +79,7 @@ public static class ScrapeDocsTools
                                                 int maxPages = DefaultMaxPages,
                                                 [Description("Delay between fetches in ms (default 500)")]
                                                 int fetchDelayMs = 500,
-                                                [Description("Re-scrape even if already cached")]
+                                                [Description("Clean and retry an unpublished partial attempt. Published versions are refused even when true.")]
                                                 bool force = false,
                                                 [Description("Optional URL patterns (regex) to allow. Defaults to the rootUrl host when omitted."
                                                             )]
@@ -177,7 +177,7 @@ public static class ScrapeDocsTools
                                   {
                                       Status = StatusNoPriorJob,
                                       Message =
-                                          $"resume=true but no previous scrape job exists for {resolvedLibrary} v{version}. Pass url to start a fresh scrape."
+                                          $"resume=true but no previous scrape job exists for {resolvedLibrary} v{version}. Pass url to start a fresh scrape. If this target is already published, choose a new version identifier; force cannot overwrite it."
                                   };
                 json = JsonSerializer.Serialize(noPrior, new JsonSerializerOptions { WriteIndented = true });
                 earlyResponseEmitted = true;
@@ -185,7 +185,12 @@ public static class ScrapeDocsTools
             else
             {
                 var versionRecord = await libraryRepo.GetVersionAsync(resolvedLibrary, version, ct);
-                if (versionRecord is { Suspect: true })
+                if (versionRecord?.PublicationState == VersionPublicationState.Published)
+                {
+                    json = PublishedVersionRefusal.Create(resolvedLibrary, version);
+                    earlyResponseEmitted = true;
+                }
+                if (!earlyResponseEmitted && versionRecord is { Suspect: true })
                 {
                     var refused = new
                                       {
@@ -198,7 +203,7 @@ public static class ScrapeDocsTools
                     json = JsonSerializer.Serialize(refused, new JsonSerializerOptions { WriteIndented = true });
                     earlyResponseEmitted = true;
                 }
-                else
+                if (!earlyResponseEmitted)
                 {
                     jobToQueue = new ScrapeJob
                                      {
@@ -224,49 +229,57 @@ public static class ScrapeDocsTools
         if (!earlyResponseEmitted)
         {
             var existingVersion = await libraryRepo.GetVersionAsync(resolvedLibrary, version, ct);
-            if (existingVersion != null && !force)
+            if (existingVersion?.PublicationState == VersionPublicationState.Published && force)
             {
-                var cached = new
-                                 {
-                                     Status = StatusAlreadyCached,
-                                     LibraryId = resolvedLibrary,
-                                     Version = version,
-                                     Message = $"Documentation for {resolvedLibrary} v{version} is already indexed " +
-                                               $"({existingVersion.ChunkCount} chunks). Use force=true to re-scrape."
-                                 };
-                json = JsonSerializer.Serialize(cached, new JsonSerializerOptions { WriteIndented = true });
+                json = PublishedVersionRefusal.Create(resolvedLibrary, version);
             }
             else
             {
-                string resolvedUrl = url ?? string.Empty;
-                jobToQueue ??= BuildJobForUrl(resolvedUrl,
-                                              resolvedLibrary,
-                                              version,
-                                              hint,
-                                              maxPages,
-                                              fetchDelayMs,
-                                              force,
-                                              parsedAllowedUrlPatterns,
-                                              parsedExcludedUrlPatterns,
-                                              parsedAdditionalRateLimitStatusCodes,
-                                              parsedSeedUrls,
-                                              waitForSelector,
-                                              contentSelector,
-                                              spaWaitMs ?? 0
-                                             );
-                var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
-                await scrapeAuditRepo.DeleteByLibraryVersionAsync(resolvedLibrary, version, ct);
-                var jobId = await runner.QueueAsync(jobToQueue, profile, ct);
-                var response = new
-                                   {
-                                       JobId = jobId,
-                                       Status = nameof(ScrapeJobStatus.Queued),
-                                       LibraryId = resolvedLibrary,
-                                       Version = version,
-                                       Message =
-                                           $"Scrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
-                                   };
-                json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+                if (existingVersion != null && !force)
+                {
+                    var cached = new
+                                     {
+                                         Status = StatusAlreadyCached,
+                                         LibraryId = resolvedLibrary,
+                                         Version = version,
+                                         Message = $"Documentation for {resolvedLibrary} v{version} is already indexed " +
+                                                   $"({existingVersion.ChunkCount} chunks). Published versions need a new version identifier for a full refresh; " +
+                                                   ForceRetryGuidance
+                                     };
+                    json = JsonSerializer.Serialize(cached, new JsonSerializerOptions { WriteIndented = true });
+                }
+                else
+                {
+                    string resolvedUrl = url ?? string.Empty;
+                    jobToQueue ??= BuildJobForUrl(resolvedUrl,
+                                                  resolvedLibrary,
+                                                  version,
+                                                  hint,
+                                                  maxPages,
+                                                  fetchDelayMs,
+                                                  force,
+                                                  parsedAllowedUrlPatterns,
+                                                  parsedExcludedUrlPatterns,
+                                                  parsedAdditionalRateLimitStatusCodes,
+                                                  parsedSeedUrls,
+                                                  waitForSelector,
+                                                  contentSelector,
+                                                  spaWaitMs ?? 0
+                                                 );
+                    var scrapeAuditRepo = repositoryFactory.GetScrapeAuditRepository(profile);
+                    await scrapeAuditRepo.DeleteByLibraryVersionAsync(resolvedLibrary, version, ct);
+                    var jobId = await runner.QueueAsync(jobToQueue, profile, ct);
+                    var response = new
+                                       {
+                                           JobId = jobId,
+                                           Status = nameof(ScrapeJobStatus.Queued),
+                                           LibraryId = resolvedLibrary,
+                                           Version = version,
+                                           Message =
+                                               $"Scrape job queued. Poll get_scrape_status with jobId='{jobId}' for progress."
+                                       };
+                    json = JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = true });
+                }
             }
         }
 
@@ -398,6 +411,7 @@ public static class ScrapeDocsTools
     }
 
     private const string StatusAlreadyCached = "AlreadyCached";
+    private const string ForceRetryGuidance = "force=true only retries an unpublished partial attempt.";
     private const string StatusNoPriorJob = "NoPriorJob";
     private const string StatusRefused = "Refused";
     private const string ReasonUrlSuspect = "URL_SUSPECT";

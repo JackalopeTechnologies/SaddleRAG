@@ -17,9 +17,8 @@ using SaddleRAG.Database.Repositories;
 namespace SaddleRAG.Ingestion.Diagnostics;
 
 /// <summary>
-///     Buffers scrape audit events in memory and flushes them to the repository
-///     either when the batch reaches <see cref="DefaultBatchSize" /> entries or
-///     after <see cref="smDefaultFlushInterval" />, whichever comes first.
+///     Buffers scrape audit events in memory and periodically flushes them to the repository
+///     in batches of at most <see cref="DefaultBatchSize" /> entries.
 ///     <see cref="DisposeAsync" /> drains any remaining buffered entries.
 /// </summary>
 public sealed class ScrapeAuditWriter : IScrapeAuditWriter
@@ -68,7 +67,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
     private readonly SemaphoreSlim mFlushGate = new(1, 1);
     private readonly List<PendingAuditEntry> mPending = [];
     private const int DefaultCapacity = 10000;
-    private const string QueueFullMessage = "Audit buffering is full or stopping. Stop ingestion and restore MongoDB before retrying.";
+    private const string QueueFullMessage = "Scrape audit buffering is full or stopping; ingestion cannot continue without recording audit events.";
     private const string RetryMessage = "Audit persistence failed; retaining the batch and retrying after recovery";
     private const string ShutdownMessage = "Audit shutdown could not persist all pending events";
     private static readonly TimeSpan smWriteTimeout = TimeSpan.FromSeconds(5);
@@ -245,7 +244,7 @@ public sealed class ScrapeAuditWriter : IScrapeAuditWriter
         if (!mChannel.Writer.TryWrite(new PendingAuditEntry(profile, entry)))
         {
             mLogger.LogError(QueueFullMessage);
-            throw new InvalidOperationException(QueueFullMessage);
+            throw new ScrapeAuditBufferException();
         }
     }
 

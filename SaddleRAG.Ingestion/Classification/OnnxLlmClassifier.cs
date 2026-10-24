@@ -51,7 +51,7 @@ public class OnnxLlmClassifier : ILlmClassifier, IClassifierTextGenerator
 
     /// <summary>
     ///     Classify a page with the local ONNX GenAI model. Returns category
-    ///     and confidence. Never throws: a generation failure is logged and the
+    ///     and confidence. Caller cancellation propagates; a generation failure is logged and the
     ///     safe default (<see cref="DocCategory.Unclassified" />, 0 confidence)
     ///     is returned, matching the Ollama classifier's failure handling so
     ///     the pipeline treats the two backends identically.
@@ -82,7 +82,8 @@ public class OnnxLlmClassifier : ILlmClassifier, IClassifierTextGenerator
                              confidence
                             );
         }
-        catch(Exception ex)
+        // Preserve the safe default for an internal timeout while honoring the caller's cancellation.
+        catch(Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             mLogger.LogWarning(ex, "ONNX classification failed for {Url}", page.Url);
         }

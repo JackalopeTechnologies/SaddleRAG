@@ -65,6 +65,40 @@ public sealed class OnnxLlmClassifierTests
         new(generator, NullLogger<OnnxLlmClassifier>.Instance);
 
     [Fact]
+    public async Task IndependentGenerationCancellationReturnsSafeDefault()
+    {
+        using var internalCancellation = new CancellationTokenSource();
+        await internalCancellation.CancelAsync();
+        var generator = new FakeGenerator
+                            {
+                                ToThrow = new OperationCanceledException(internalCancellation.Token)
+                            };
+        var classifier = NewClassifier(generator);
+        var page = NewPage("https://docs.test/about", "About", "Conceptual overview.");
+
+        var result = await classifier.ClassifyAsync(page, "lib-hint", TestContext.Current.CancellationToken);
+
+        Assert.Equal(DocCategory.Unclassified, result.Category);
+        Assert.Equal(0f, result.Confidence);
+    }
+
+    [Fact]
+    public async Task GenerationCancellationPropagatesInsteadOfReturningUnclassified()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var generator = new FakeGenerator
+                            {
+                                ToThrow = new OperationCanceledException(cancellation.Token)
+                            };
+        var classifier = NewClassifier(generator);
+        var page = NewPage("https://docs.test/about", "About", "Conceptual overview.");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            classifier.ClassifyAsync(page, "lib-hint", cancellation.Token));
+    }
+
+    [Fact]
     public async Task ClassifyOverviewPageReturnsOverviewCategory()
     {
         var generator = new FakeGenerator

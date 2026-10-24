@@ -149,6 +149,46 @@ internal sealed class IngestionFinalizer
         await PublishLibraryMetadataAsync(job, progress, ct);
     }
 
+    /// <summary>
+    ///     Refresh search indexes and persisted content counts after a single-page
+    ///     addition without publishing a version or moving the current-version pointer.
+    /// </summary>
+    internal async Task RefreshExistingVersionAsync(ScrapeJob job,
+                                                      IPageRepository pageRepository,
+                                                      string? profile,
+                                                      CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(pageRepository);
+        var chunks = await mChunkRepository.GetChunksAsync(job.LibraryId, job.Version, ct);
+        await mPrepareIndexes(profile, job, chunks, ct);
+        await RefreshExistingVersionCountsAsync(job, pageRepository, ct);
+    }
+
+    /// <summary>
+    ///     Refresh only persisted content counts, including when a fetched page
+    ///     produced no chunks and the existing search indexes remain valid.
+    /// </summary>
+    internal async Task RefreshExistingVersionCountsAsync(ScrapeJob job,
+                                                            IPageRepository pageRepository,
+                                                            CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(pageRepository);
+        var existing = await mLibraryRepository.GetVersionAsync(job.LibraryId, job.Version, ct);
+        if (existing != null)
+        {
+            int pageCount = await pageRepository.GetPageCountAsync(job.LibraryId, job.Version, ct);
+            int chunkCount = await mChunkRepository.GetChunkCountAsync(job.LibraryId, job.Version, ct);
+            await mLibraryRepository.UpsertVersionAsync(existing with
+                                                           {
+                                                               PageCount = pageCount,
+                                                               ChunkCount = chunkCount
+                                                           },
+                                                        ct);
+        }
+    }
+
     private async Task PrepareLegacyIndexesAsync(string? profile,
                                                  ScrapeJob job,
                                                  IReadOnlyList<DocChunk> chunks,
@@ -166,9 +206,7 @@ internal sealed class IngestionFinalizer
     ///     index exists, its <c>CodeFenceSymbols</c> and <c>Manifest</c>
     ///     fields are preserved so a re-scrape doesn't blow away
     ///     symbol-extraction state until the next rescrub recomputes it.
-    ///     Exposed as <c>internal</c> so the single-page ingest path on
-    ///     <see cref="IngestionOrchestrator" /> can refresh the BM25 index
-    ///     after adding one page.
+    ///     Used by legacy finalizer construction to prepare the persisted index.
     /// </summary>
     internal async Task BuildBm25IndexAsync(ScrapeJob job, CancellationToken ct)
     {

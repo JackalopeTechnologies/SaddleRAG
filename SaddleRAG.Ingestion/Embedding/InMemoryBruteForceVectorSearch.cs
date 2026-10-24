@@ -7,6 +7,8 @@
 
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
+using Microsoft.Extensions.Options;
+using SaddleRAG.Database;
 
 #endregion
 
@@ -22,8 +24,32 @@ public class InMemoryBruteForceVectorSearch : IVectorSearchProvider
 
 {
     /// <summary>
-    ///     Index keyed by "{profile}/{libraryId}/{version}".
-    ///     Default profile uses empty string.
+    ///     Creates an index without a configured default-profile alias.
+    /// </summary>
+    public InMemoryBruteForceVectorSearch() : this(defaultProfileName: null)
+    {
+    }
+
+    /// <summary>
+    ///     Shares the omitted-profile index with the configured database profile
+    ///     selected at construction. Other named profiles retain separate indexes.
+    /// </summary>
+    public InMemoryBruteForceVectorSearch(IOptions<SaddleRagDbSettings> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        mDefaultProfileName = settings.Value.ResolveConfiguredProfileName() ?? string.Empty;
+    }
+
+    internal InMemoryBruteForceVectorSearch(string? defaultProfileName)
+    {
+        mDefaultProfileName = defaultProfileName ?? string.Empty;
+    }
+
+    private readonly string mDefaultProfileName;
+
+    /// <summary>
+    ///     Index keyed by "{resolved profile}/{libraryId}/{version}".
+    ///     Direct connection settings use an empty profile name.
     /// </summary>
     private readonly Dictionary<string, List<DocChunk>> mIndices = new Dictionary<string, List<DocChunk>>();
 
@@ -213,19 +239,17 @@ public class InMemoryBruteForceVectorSearch : IVectorSearchProvider
     }
 
 
-    private static string MakeKey(string? profile, string libraryId, string version)
+    private string MakeKey(string? profile, string libraryId, string version)
 
     {
-        string profilePart = profile ?? string.Empty;
-
-        return $"{profilePart}/{libraryId}/{version}";
+        return $"{MakeProfilePrefix(profile)}{libraryId}/{version}";
     }
 
 
-    private static string MakeProfilePrefix(string? profile)
+    private string MakeProfilePrefix(string? profile)
 
     {
-        string profilePart = profile ?? string.Empty;
+        string profilePart = string.IsNullOrEmpty(profile) ? mDefaultProfileName : profile;
 
         return $"{profilePart}/";
     }
