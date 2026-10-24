@@ -141,7 +141,7 @@ internal sealed class ClassifyStage
     ///     non-zero confidence and a non-Unclassified category and persistence
     ///     mode is Full. <paramref name="onError" /> is invoked exactly once on
     ///     classifier failures so callers can opt into error counting without
-    ///     owning a try/catch. Cancellation propagates to stop the operation.
+    ///     owning a try/catch. Caller cancellation propagates to stop the operation.
     /// </summary>
     internal async Task<PageRecord> ClassifyPageAsync(
         PageRecord page,
@@ -167,7 +167,8 @@ internal sealed class ClassifyStage
                                    confidence
                                   );
         }
-        catch(Exception ex) when (ex is not OperationCanceledException)
+        // A classifier's independent timeout is a page failure, not cancellation of the pipeline.
+        catch(Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             long classifyMs = sw.ElapsedMilliseconds;
             mLogger.LogWarning(ex,

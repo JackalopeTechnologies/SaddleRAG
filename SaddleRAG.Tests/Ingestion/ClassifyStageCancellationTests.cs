@@ -19,6 +19,60 @@ public sealed class ClassifyStageCancellationTests
     private static readonly TimeSpan smCompletionTimeout = TimeSpan.FromSeconds(5);
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IndependentClassifierCancellationCountsAnErrorAndContinues(bool useSharedProcessor)
+    {
+        using var internalCancellation = new CancellationTokenSource();
+        await internalCancellation.CancelAsync();
+        var classifier = Substitute.For<ILlmClassifier>();
+        classifier.ClassifyAsync(Arg.Any<PageRecord>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+                  .Returns(Task.FromException<(DocCategory Category, float Confidence)>(
+                               new OperationCanceledException(internalCancellation.Token)),
+                           Task.FromResult((DocCategory.HowTo, 1.0f)));
+        var pages = Substitute.For<IPageRepository>();
+        var broadcaster = Substitute.For<IMonitorBroadcaster>();
+        var processor = new IngestionPageProcessor(classifier,
+                                                   new CategoryAwareChunker(new SymbolExtractor()),
+                                                   Substitute.For<IEmbeddingProvider>(),
+                                                   Substitute.For<IVectorSearchProvider>(),
+                                                   NullLogger<IngestionPageProcessor>.Instance);
+        var stage = useSharedProcessor
+                        ? new ClassifyStage(processor, pages, broadcaster, NullLogger.Instance)
+                        : new ClassifyStage(classifier, pages, broadcaster, NullLogger.Instance);
+        var job = new ScrapeJob
+                      {
+                          LibraryId = "lib",
+                          Version = "v1",
+                          RootUrl = "https://example.test/",
+                          LibraryHint = "lib-hint",
+                          AllowedUrlPatterns = []
+                      };
+        var progress = new ScrapeJobRecord { Id = "job", Job = job };
+        var input = Channel.CreateBounded<PageRecord>(2);
+        var output = Channel.CreateUnbounded<PageRecord>();
+        await input.Writer.WriteAsync(CreatePage(), TestContext.Current.CancellationToken);
+        await input.Writer.WriteAsync(CreatePage() with { Id = "lib/v1/next" }, TestContext.Current.CancellationToken);
+        input.Writer.Complete();
+        using var cancellation = new CancellationTokenSource();
+
+        await stage.RunAsync(job, input.Reader, output.Writer, progress, null, cancellation)
+                   .WaitAsync(smCompletionTimeout, TestContext.Current.CancellationToken);
+
+        Assert.False(cancellation.IsCancellationRequested);
+        Assert.Equal(1, progress.ErrorCount);
+        Assert.Equal(2, progress.PagesClassified);
+        Assert.True(output.Reader.TryRead(out PageRecord? first));
+        Assert.NotNull(first);
+        Assert.Equal(DocCategory.Unclassified, first.Category);
+        Assert.True(output.Reader.TryRead(out PageRecord? second));
+        Assert.NotNull(second);
+        Assert.Equal(DocCategory.HowTo, second.Category);
+        await output.Reader.Completion.WaitAsync(smCompletionTimeout, TestContext.Current.CancellationToken);
+        await pages.Received(1).UpsertPageAsync(Arg.Any<PageRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
     [InlineData(false, IngestionPersistenceMode.Full)]
     [InlineData(true, IngestionPersistenceMode.Full)]
     [InlineData(false, IngestionPersistenceMode.DryRun)]
