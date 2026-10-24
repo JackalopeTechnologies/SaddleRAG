@@ -160,6 +160,8 @@ A fresh clean Release solution rebuild after that repair passed with zero warnin
 
 Release-workflow review also found inconsistent manual-version handling in integration and coverage jobs, and an implicit default-branch target when creating a missing release tag. All version steps now consume the input through an environment variable and validate three numeric components before exposing outputs; draft creation explicitly targets the checked-out commit. This also prevents manual input from becoming executable shell text. Existing test selection, coverage collection, independent jobs, and tag-triggered release behavior are retained, with two build workers and four test threads.
 
+The Linux delivery audit also found that the documented `install.sh` download was not uploaded as a release asset, the tar checksum named a build-directory path rather than the downloaded archive, and the advertised `uninstall.sh` was absent from the archive. The Linux packaging step now emits a basename-only checksum, includes the executable uninstaller, and uploads the install script. A harmless package fixture checks checksum verification from the download directory and archive membership; it does not execute either installer.
+
 ## Remaining deployment and research limits
 
 Build and test success do not establish installation, remote deployment security, or native inference on every supported platform. Updated NVIDIA container execution and native inference remain deployment qualification work. The source validation above precedes release packaging and installation; their results must be recorded separately.
