@@ -524,6 +524,12 @@ string SaddleRagServerInstructions = $"""
     often more current than an LLM's training data and authoritative for niche or
     post-cutoff topics.
 
+    Skill-capable MCP clients can discover the packaged SaddleRAG guides with skills/list,
+    confirm a guide with skills/get, and read its files with resources/read. For example,
+    skill://saddlerag-query/SKILL.md describes the documentation search workflow. The prompts
+    interface remains available for other clients. Reading a guide does not activate it or
+    authorize its actions; the host controls skill approval and content verification.
+
     Use SaddleRAG FIRST, before answering from memory, whenever a request names or implies a
     specific library, framework, API, product, or symbol — including any code you write that
     imports or calls an external library.
@@ -587,10 +593,7 @@ builder.Services
                     )
        .WithHttpTransport(t => t.Stateless = true)
        .UseToolExceptionFilter()
-       .WithListResourcesHandler(static (request, cancellationToken) =>
-                                     ValueTask.FromResult(new ListResourcesResult { Resources = [] }))
-       .WithListResourceTemplatesHandler(static (request, cancellationToken) =>
-                                             ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
+       .WithSaddleRagSkills()
        .WithListPromptsHandler(static (request, cancellationToken) =>
                                    ValueTask.FromResult(SaddleRAG.Mcp.SaddleRagPrompts.List()))
        .WithGetPromptHandler(static (request, cancellationToken) =>
@@ -646,8 +649,8 @@ var app = builder.Build();
 // Force the skill catalog to load eagerly at startup so a missing or renamed embedded skill
 // resource fails here, in the boot log, rather than lazily (as a TypeInitializationException)
 // on the first prompts/list or prompts/get call.
-app.Logger.LogInformation("Loaded {Count} SaddleRAG skill prompts.",
-                          SaddleRAG.ClientIntegration.Skills.SkillCatalog.All.Count);
+app.Logger.LogInformation("Loaded {Count} SaddleRAG skills and prompt fallbacks.",
+                          SaddleRagSkills.Count);
 
 bool prewarmMode = args.Any(a => string.Equals(a, PrewarmFlag, StringComparison.OrdinalIgnoreCase));
 
@@ -781,6 +784,7 @@ else
 
     // MCP endpoint
 
+    app.UseMiddleware<McpOriginValidationMiddleware>();
     app.MapMcp(McpEndpointPattern);
 
     // Blazor Server monitor
