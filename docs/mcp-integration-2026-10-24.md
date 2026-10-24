@@ -109,7 +109,7 @@ Raw-source limits: browser titles are empty, and Markdown frontmatter, component
 
 Completed checks include 215 focused default-build tests, 15 cancellation tests, four browser navigation regressions, and separate processor-only and NVIDIA builds with 65 and 54 focused tests respectively. The variant builds and restores produced zero warnings/errors and no known vulnerable or deprecated packages. These test counts describe separate runs and must not be added together as unique tests. The package assembly check rejected conflicting shared files, dependent runtimes, and incorrect runtime versions, then accepted the consistent fixture.
 
-Final verification:
+Initial completed verification (executable source at `8fe4111`):
 
 | Check | Observed result |
 | --- | --- |
@@ -152,8 +152,16 @@ All covering tests named below passed in the complete final run. This table dist
 | Untagged text was diagnosed as wrong language | `576af41`; unknown/empty/mixed language evidence, threshold, C# aliases and persisted suspect decisions | Source language-markup extraction and migration of saved suspect markers remain outside this correction. |
 | Busy web ownership was described as directory ownership | `8fe4111`; five diagnostic cases and controlled-time active-owner/expiry tests for both source modes | No actual installed-service restart test; ownership duration and exclusion rules are unchanged. The separate reconnaissance-only first-ingestion defect is repaired in `acb55c8`. |
 
+## Release review follow-up
+
+Final review found that URL correction could acquire a new Web reservation without checking directory registration or protected partial data. Eight regression cases reproduced deletion being allowed before the ordinary ingestion path would refuse the target. Commit `76a322a` extracts the existing source-mode policy into `WebIngestionOwnership.CommitAsync` and applies it before URL cleanup while the lease is held. All 64 URL-correction and publication-lifecycle checks passed, including allowed reconnaissance-only and established-web states, lost ownership, named profiles, and refusal without destructive calls.
+
+A fresh clean Release solution rebuild after that repair passed with zero warnings and errors in 18.04 seconds. The complete default test run passed 2,642 tests, skipped the same 24 environment-dependent cases described above, and failed none (2,666 total; 2 minutes 1 second). Evidence is `work/release-final-build.log` and `work/release-final-test-results/release-final-tests.trx` in the task directory. The commands are the same bounded build/test commands above with separate output filenames. Unchanged tray, dependency, variant, and packaging-rule evidence remains applicable; release packaging runs again in GitHub Actions.
+
+Release-workflow review also found inconsistent manual-version handling in integration and coverage jobs, and an implicit default-branch target when creating a missing release tag. All version steps now consume the input through an environment variable and validate three numeric components before exposing outputs; draft creation explicitly targets the checked-out commit. This also prevents manual input from becoming executable shell text. Existing test selection, coverage collection, independent jobs, and tag-triggered release behavior are retained, with two build workers and four test threads.
+
 ## Remaining deployment and research limits
 
-Build and test success do not establish installation, remote deployment security, or native inference on every supported platform. Updated NVIDIA container execution and native inference remain deployment qualification work. No release, installer execution, pull request, or installed service replacement is part of this change.
+Build and test success do not establish installation, remote deployment security, or native inference on every supported platform. Updated NVIDIA container execution and native inference remain deployment qualification work. The source validation above precedes release packaging and installation; their results must be recorded separately.
 
 The separately authorized switch to the already installed Phi-3 classifier allowed documentation ingestion to finish. It does not explain the earlier Devstral inference delay. That latency investigation remains separate from the verified cancellation-propagation repair.
