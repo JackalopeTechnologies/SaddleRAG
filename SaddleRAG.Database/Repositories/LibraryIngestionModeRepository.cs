@@ -322,10 +322,11 @@ public sealed class LibraryIngestionModeRepository : ILibraryIngestionModeReposi
             await ExistsAsync(mContext.Pages, record => record.LibraryId == libraryId, ct) ||
             await ExistsAsync(mContext.Chunks, record => record.LibraryId == libraryId, ct) ||
             await ExistsAsync(mContext.VersionDiffs, record => record.LibraryId == libraryId, ct) ||
-            await ExistsAsync(mContext.LibraryProfiles, record => record.LibraryId == libraryId, ct) ||
             await ExistsAsync(mContext.LibraryIndexes, record => record.LibraryId == libraryId, ct) ||
             await ExistsAsync(mContext.Bm25Shards, record => record.LibraryId == libraryId, ct) ||
             await ExistsAsync(mContext.ExcludedSymbols, record => record.LibraryId == libraryId, ct);
+        bool hasLibraryProfiles =
+            await ExistsAsync(mContext.LibraryProfiles, record => record.LibraryId == libraryId, ct);
         bool hasOperationalHistory =
             await ExistsAsync(mContext.ScrapeAuditLog, record => record.LibraryId == libraryId, ct) ||
             await ExistsAsync(mContext.Jobs, record => record.LibraryId == libraryId, ct);
@@ -333,7 +334,10 @@ public sealed class LibraryIngestionModeRepository : ILibraryIngestionModeReposi
                                                       hasDefinition,
                                                       hasDirectoryDocuments,
                                                       hasChildContent,
-                                                      hasOperationalHistory);
+                                                      hasOperationalHistory)
+                         {
+                             HasLibraryProfileData = hasLibraryProfiles
+                         };
         return result;
     }
 

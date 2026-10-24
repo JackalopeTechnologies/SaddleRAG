@@ -119,6 +119,58 @@ public sealed class PublicationLifecycleTests
     }
 
     [Fact]
+    public async Task ReconnaissanceOnlyLibraryCanPublishItsFirstWebScrape()
+    {
+        var harness = BuildHarness();
+        ILibraryIngestionModeRepository modes = harness.RepositoryFactory.GetLibraryIngestionModeRepository();
+        modes.GetLibraryDataEvidenceAsync("lib", Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false, false, false, false, true)
+                          {
+                              HasLibraryProfileData = true
+                          });
+        harness.LibraryRepository.GetLibraryAsync("lib", Arg.Any<CancellationToken>())
+               .Returns((LibraryRecord?) null);
+
+        await harness.Orchestrator.IngestAsync(Job(), ct: TestContext.Current.CancellationToken);
+
+        await harness.ModeLease.Received(requiredNumberOfCalls: 1)
+                     .TryCommitAsync(Arg.Any<CancellationToken>());
+        Assert.Contains(VersionPublicationState.Published, harness.States);
+        await harness.LibraryRepository.Received(requiredNumberOfCalls: 1)
+                     .UpsertLibraryAsync(Arg.Is<LibraryRecord>(record => record.CurrentVersion == "v2"),
+                                         Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ReconnaissanceCannotHideUnclassifiedContent(bool hasChildContent,
+                                                                 bool hasDocumentLifecycleData)
+    {
+        var harness = BuildHarness();
+        ILibraryIngestionModeRepository modes = harness.RepositoryFactory.GetLibraryIngestionModeRepository();
+        modes.GetLibraryDataEvidenceAsync("lib", Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false,
+                                                       false,
+                                                       hasDocumentLifecycleData,
+                                                       hasChildContent,
+                                                       true)
+                          {
+                              HasLibraryProfileData = true
+                          });
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            harness.Orchestrator.IngestAsync(Job(), ct: TestContext.Current.CancellationToken));
+
+        Assert.Contains("unclassified partial data", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(harness.States);
+        Assert.Empty(harness.Events);
+        await harness.ModeLease.DidNotReceive().TryCommitAsync(Arg.Any<CancellationToken>());
+        await harness.LibraryRepository.DidNotReceive()
+                     .UpsertVersionAsync(Arg.Any<LibraryVersionRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task BusyWebModeLeaseStopsBeforeCandidateOrCrawlerMutation()
     {
         var harness = BuildHarness();

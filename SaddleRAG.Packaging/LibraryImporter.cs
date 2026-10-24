@@ -930,7 +930,8 @@ public sealed class LibraryImporter
 
         bool hasUnclassifiedPartialData = !evidence.HasLibraryRecord &&
                                           (evidence.HasDocumentLifecycleData ||
-                                           evidence.HasChildContentData);
+                                           evidence.HasChildContentData ||
+                                           evidence.HasLibraryProfileData);
         if (hasUnclassifiedPartialData)
             throw new InvalidOperationException(
                 "The library has unclassified partial data; web package import was not started.");

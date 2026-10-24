@@ -80,8 +80,11 @@ public sealed class DirectoryLibraryToolsTests
         Assert.Empty(fileSystem.ReadPaths);
     }
 
-    [Fact]
-    public async Task ReservedRegistrationWithChildOnlyDataFailsClosedWithoutMutationOrFenceAbandonment()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReservedRegistrationWithChildOrProfileDataFailsClosedWithoutMutationOrFenceAbandonment(
+        bool profileOnly)
     {
         var fileSystem = new ScriptedDirectoryScanFileSystem();
         fileSystem.SetInspection(RootPath,
@@ -99,7 +102,10 @@ public sealed class DirectoryLibraryToolsTests
         factory.GetSourceDocumentRepository(ProfileName).Returns(sources);
         factory.GetLibraryIngestionModeRepository(ProfileName).Returns(modes);
         modes.GetLibraryDataEvidenceAsync(LibraryId, Arg.Any<CancellationToken>())
-             .Returns(new LibraryIngestionDataEvidence(false, false, false, true, false));
+             .Returns(new LibraryIngestionDataEvidence(false, false, false, !profileOnly, false)
+                          {
+                              HasLibraryProfileData = profileOnly
+                          });
         modeLease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
         modeLease.OwnershipLostToken.Returns(CancellationToken.None);
         modeLeaseManager.TryAcquireAsync(ProfileName,

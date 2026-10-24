@@ -12,10 +12,17 @@ public sealed record LibraryIngestionDataEvidence(bool HasLibraryRecord,
                                                   bool HasChildContentData,
                                                   bool HasOperationalHistory)
 {
+    /// <summary>
+    ///     Reconnaissance configuration may exist before the first web scrape creates a library.
+    ///     Keep it distinct from acquired content while retaining ownership and cleanup protection.
+    /// </summary>
+    public bool HasLibraryProfileData { get; init; }
+
     public bool HasOwnedContent => HasLibraryRecord ||
                                    HasDirectoryDefinition ||
                                    HasDocumentLifecycleData ||
-                                   HasChildContentData;
+                                   HasChildContentData ||
+                                   HasLibraryProfileData;
 
     public bool HasAnyData => HasOwnedContent || HasOperationalHistory;
 }

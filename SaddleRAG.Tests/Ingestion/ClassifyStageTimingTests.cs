@@ -78,7 +78,7 @@ public sealed class ClassifyStageTimingTests
                                       logger
                                      );
 
-        await stage.ClassifyPageAsync(NewPage(), "lib-hint");
+        await stage.ClassifyPageAsync(NewPage(), "lib-hint", ct: TestContext.Current.CancellationToken);
 
         var info = logger.Entries.FirstOrDefault(e => e.Level == LogLevel.Information);
         Assert.NotEqual(default, info);

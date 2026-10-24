@@ -331,6 +331,45 @@ public sealed class LibraryIngestionModeRepositoryIntegrationTests : IAsyncLifet
         Assert.True(await mRepository.HasAnyLibraryDataAsync(LibraryId, ct));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReconnaissanceProfileIsDistinguishedFromAcquiredContent(bool includePage)
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await mDefaultContext.LibraryProfiles.InsertOneAsync(new LibraryProfile
+                                                                 {
+                                                                     Id = $"{LibraryId}/v1",
+                                                                     LibraryId = LibraryId,
+                                                                     Version = "v1"
+                                                                 },
+                                                             cancellationToken: ct);
+        if (includePage)
+        {
+            await mDefaultContext.Pages.InsertOneAsync(new PageRecord
+                                                           {
+                                                               Id = $"{LibraryId}/v1/page",
+                                                               LibraryId = LibraryId,
+                                                               Version = "v1",
+                                                               Url = "https://partial.test/",
+                                                               Title = "Partial",
+                                                               Category = DocCategory.Unclassified,
+                                                               RawContent = "partial",
+                                                               ContentHash = "hash",
+                                                               FetchedAt = DateTime.UtcNow
+                                                           },
+                                                       cancellationToken: ct);
+        }
+
+        LibraryIngestionDataEvidence evidence = await mRepository.GetLibraryDataEvidenceAsync(LibraryId, ct);
+
+        Assert.False(evidence.HasLibraryRecord);
+        Assert.True(evidence.HasLibraryProfileData);
+        Assert.Equal(includePage, evidence.HasChildContentData);
+        Assert.True(evidence.HasOwnedContent);
+        Assert.True(await mRepository.HasAnyLibraryDataAsync(LibraryId, ct));
+    }
+
     private const string TestConnectionString = "mongodb://localhost:27017";
     private const string LibraryId = "shared-library";
     private const string FirstProfile = "first";

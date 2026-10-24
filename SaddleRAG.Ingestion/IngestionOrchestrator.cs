@@ -785,6 +785,8 @@ public class IngestionOrchestrator
                     $"Library '{libraryId}' contains directory-ingestion data and cannot be mutated by web ingestion.");
             }
 
+            // A saved reconnaissance profile is expected before the first scrape. Only acquired
+            // content or document lifecycle state needs an existing parent to establish ownership.
             if (!evidence.HasLibraryRecord &&
                 (evidence.HasDocumentLifecycleData || evidence.HasChildContentData))
                 throw new InvalidOperationException(
@@ -807,7 +809,7 @@ public class IngestionOrchestrator
         // so the single-page path can't drift on prompt format, confidence
         // threshold, or retry semantics. The orchestrator owns only the
         // single-page result shape and BM25 refresh.
-        var classified = await repositories.Classify.ClassifyPageAsync(page, libraryId);
+        var classified = await repositories.Classify.ClassifyPageAsync(page, libraryId, ct: ct);
         var chunks = mChunker.Chunk(classified);
 
         SinglePageIngestResult result;

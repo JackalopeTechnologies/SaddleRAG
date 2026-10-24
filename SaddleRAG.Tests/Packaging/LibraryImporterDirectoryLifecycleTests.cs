@@ -559,6 +559,41 @@ public sealed class LibraryImporterDirectoryLifecycleTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WebPackagePreservesUnpublishedReconnaissanceProfile()
+    {
+        string bundle = CreateValidBundle(isDirectory: false);
+        ImportFixture fixture = Fixture(existingDefinition: null);
+        fixture.ModeLease.Mode.Returns(LibraryIngestionMode.Web);
+        fixture.ModeLease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        fixture.Modes.GetLibraryDataEvidenceAsync(LibraryId, Arg.Any<CancellationToken>())
+               .Returns(new LibraryIngestionDataEvidence(false, false, false, false, false)
+                            {
+                                HasLibraryProfileData = true
+                            });
+        fixture.ModeManager.TryAcquireAsync(Arg.Any<string?>(),
+                                            LibraryId,
+                                            LibraryIngestionMode.Web,
+                                            Arg.Any<CancellationToken>())
+               .Returns(fixture.ModeLease);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Importer.ImportAsync(new ImportRequest { BundlePath = bundle },
+                                         progress: null,
+                                         TestContext.Current.CancellationToken));
+
+        Assert.Contains("unclassified partial data", exception.Message, StringComparison.Ordinal);
+        await fixture.ModeLease.Received(requiredNumberOfCalls: 1)
+                     .TryAbandonReservationAsync(Arg.Any<CancellationToken>());
+        await fixture.ModeLease.DidNotReceive().TryCommitAsync(Arg.Any<CancellationToken>());
+        await fixture.Libraries.DidNotReceive()
+                     .UpsertVersionAsync(Arg.Any<LibraryVersionRecord>(), Arg.Any<CancellationToken>());
+        await fixture.Profiles.DidNotReceive()
+                     .UpsertAsync(Arg.Any<LibraryProfile>(), Arg.Any<CancellationToken>());
+        await fixture.Profiles.DidNotReceive()
+                     .DeleteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task WebOverwriteHoldsOneModeLeaseThroughPurgeWriteAndLibraryPublication()
     {
         string bundle = CreateValidBundle(isDirectory: false);

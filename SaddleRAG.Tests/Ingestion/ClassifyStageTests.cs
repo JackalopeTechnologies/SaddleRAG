@@ -86,7 +86,10 @@ public sealed class ClassifyStageTests
         var stage = new ClassifyStage(classifier, pages, Substitute.For<IMonitorBroadcaster>(), NullLogger.Instance);
         var errorCount = 0;
 
-        var result = await stage.ClassifyPageAsync(NewPage("https://example.test/p1"), "lib-hint", () => errorCount++);
+        var result = await stage.ClassifyPageAsync(NewPage("https://example.test/p1"),
+                                                   "lib-hint",
+                                                   () => errorCount++,
+                                                   ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(DocCategory.HowTo, result.Category);
         Assert.Equal(0, errorCount);
@@ -113,7 +116,7 @@ public sealed class ClassifyStageTests
                                      );
         var page = NewPage("https://example.test/p1");
 
-        var result = await stage.ClassifyPageAsync(page, "lib-hint");
+        var result = await stage.ClassifyPageAsync(page, "lib-hint", ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(DocCategory.Unclassified, result.Category);
     }
@@ -132,7 +135,10 @@ public sealed class ClassifyStageTests
                                      );
         var errorCount = 0;
 
-        await stage.ClassifyPageAsync(NewPage("https://example.test/p1"), "lib-hint", () => errorCount++);
+        await stage.ClassifyPageAsync(NewPage("https://example.test/p1"),
+                                      "lib-hint",
+                                      () => errorCount++,
+                                      ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, errorCount);
     }
