@@ -116,7 +116,7 @@ Final verification:
 | Clean Release solution rebuild | Passed; 0 warnings, 0 errors; 14.13 seconds |
 | Clean Release tray rebuild, isolated outputs | Passed; 0 warnings, 0 errors; 2.70 seconds; retained because its source/configuration inputs remained unchanged |
 | Complete normal `dotnet test` run | 2,631 passed, 24 skipped, 0 failed; 2,655 total; 1 minute 39 seconds |
-| Real staged Phi-3 native generation | Passed within the full suite; 8.102 seconds, 10:00:28.856–10:00:36.959 America/Denver on 2026-10-24 |
+| Real staged Phi-3 native test | Passed within the full suite; whole-test wall time including model setup and one generation: 8.102 seconds, 10:00:28.856–10:00:36.959 America/Denver on 2026-10-24 |
 | Windows package assembly | Passed; 548 verified files, version `0.0.0-mcp-review`, bundled runtime `10.0.13` |
 | Package assembly rejection fixtures | Passed: conflicting shared files, dependent runtime, and incorrect bundled-runtime version rejected; consistent files accepted |
 | Dependency audits | Default solution, tray, processor-only and NVIDIA variants: no known vulnerable or deprecated packages at audit time |
