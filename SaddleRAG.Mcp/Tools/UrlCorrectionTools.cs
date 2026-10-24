@@ -202,6 +202,8 @@ public static class UrlCorrectionTools
         if (!await lease.TryRenewAsync(operation.Token))
             throw new InvalidOperationException("URL correction did not change data: its library ownership lease was lost.");
         operation.Token.ThrowIfCancellationRequested();
+        await WebIngestionOwnership.CommitAsync(repositoryFactory, profile, library, lease, operation.Token);
+        operation.Token.ThrowIfCancellationRequested();
 
         long chunks = await repositoryFactory.GetChunkRepository(profile).DeleteChunksAsync(library, version, operation.Token);
         long pages = await repositoryFactory.GetPageRepository(profile).DeleteAsync(library, version, operation.Token);

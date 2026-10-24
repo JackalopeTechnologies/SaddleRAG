@@ -34,6 +34,8 @@ public sealed class UrlCorrectionToolsTests
         IBm25ShardRepository Bm25Repo,
         IJobRepository JobRepo,
         IScrapeAuditRepository AuditRepo,
+        ISourceDocumentRepository Sources,
+        ILibraryIngestionModeRepository Modes,
         ILibraryIngestionModeLeaseManager LeaseManager,
         ILibraryIngestionModeLease Lease,
         JobCancellationService Cancellation);
@@ -200,9 +202,69 @@ public sealed class UrlCorrectionToolsTests
         }));
 
     [Theory]
+    [InlineData("directory", null)]
+    [InlineData("directory", "team-profile")]
+    [InlineData("directory-evidence", null)]
+    [InlineData("directory-evidence", "team-profile")]
+    [InlineData("documents", null)]
+    [InlineData("documents", "team-profile")]
+    [InlineData("children", null)]
+    [InlineData("children", "team-profile")]
+    public async Task UrlCorrectionRefusesProtectedDataAfterAcquiringWebReservation(string protection, string? profile)
+    {
+        var harness = MakeFactory();
+        harness.Lease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        if (protection == "directory")
+            harness.Sources.GetDirectoryDefinitionAsync("foo", Arg.Any<CancellationToken>()).Returns(new DirectoryLibraryDefinition
+            {
+                Id = "foo", RootPath = "E:/isolated-directory-fixture", RegisteredAtUtc = DateTime.UtcNow
+            });
+        harness.Modes.GetLibraryDataEvidenceAsync("foo", Arg.Any<CancellationToken>()).Returns(
+            new LibraryIngestionDataEvidence(false, protection == "directory-evidence",
+                protection == "documents", protection == "children", false));
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            UrlCorrectionTools.SubmitUrlCorrection(harness.Factory, harness.Runner, MakeInlineBackgroundRunner(),
+                harness.Cancellation, harness.LeaseManager, "foo", "1.0", "https://docs.foo.com",
+                profile: profile, ct: TestContext.Current.CancellationToken));
+
+        Assert.Contains("cannot be mutated by web ingestion", failure.Message, StringComparison.Ordinal);
+        await AssertNoDestructiveWorkAsync(harness);
+        harness.Factory.Received().GetSourceDocumentRepository(profile);
+        harness.Factory.DidNotReceive().GetSourceDocumentRepository(Arg.Is<string?>(value => value != profile));
+        harness.Factory.DidNotReceive().GetLibraryIngestionModeRepository(Arg.Is<string?>(value => value != profile));
+        await harness.Lease.DidNotReceive().TryCommitAsync(Arg.Any<CancellationToken>());
+        await harness.Lease.Received(1).DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UrlCorrectionAllowsReconnaissanceOnlyAndEstablishedWebData(bool hasAcquiredContent)
+    {
+        var harness = MakeFactory();
+        harness.Lease.OwnershipStateAtAcquisition.Returns(LibraryIngestionOwnershipState.Reserved);
+        harness.Modes.GetLibraryDataEvidenceAsync("foo", Arg.Any<CancellationToken>()).Returns(
+            new LibraryIngestionDataEvidence(hasAcquiredContent, false, false, hasAcquiredContent, false)
+            {
+                HasLibraryProfileData = true
+            });
+
+        await UrlCorrectionTools.SubmitUrlCorrection(harness.Factory, harness.Runner, MakeInlineBackgroundRunner(),
+            harness.Cancellation, harness.LeaseManager, "foo", "1.0", "https://docs.foo.com",
+            profile: "team-profile", ct: TestContext.Current.CancellationToken);
+
+        await harness.Modes.Received(1).GetLibraryDataEvidenceAsync("foo", Arg.Any<CancellationToken>());
+        await harness.Lease.Received(1).TryCommitAsync(Arg.Any<CancellationToken>());
+        await harness.ChunkRepo.Received(1).DeleteChunksAsync("foo", "1.0", Arg.Any<CancellationToken>());
+        await harness.Runner.Received(1).QueueAsync(Arg.Any<ScrapeJob>(), "team-profile", Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
     [InlineData("busy")]
     [InlineData("lost")]
     [InlineData("cancelled")]
+    [InlineData("commit-lost")]
     public async Task UrlCorrectionRefusesDeletionWhenItCannotHoldLibraryOwnership(string condition)
     {
         var harness = MakeFactory();
@@ -212,6 +274,8 @@ public sealed class UrlCorrectionToolsTests
                    .Returns((ILibraryIngestionModeLease?)null);
         if (condition == "lost")
             harness.Lease.TryRenewAsync(Arg.Any<CancellationToken>()).Returns(false);
+        if (condition == "commit-lost")
+            harness.Lease.TryCommitAsync(Arg.Any<CancellationToken>()).Returns(false);
         if (condition == "cancelled")
         {
             await ownershipLost.CancelAsync();
@@ -251,6 +315,7 @@ public sealed class UrlCorrectionToolsTests
             "foo", "1.0", "https://docs.foo.com", profile: profile, ct: TestContext.Current.CancellationToken);
 
         await harness.LeaseManager.Received(1).TryAcquireAsync(profile, "foo", LibraryIngestionMode.Web, Arg.Any<CancellationToken>());
+        await harness.Lease.Received(1).TryCommitAsync(Arg.Any<CancellationToken>());
         await harness.Runner.Received(1).QueueAsync(Arg.Any<ScrapeJob>(), profile, Arg.Any<CancellationToken>());
     }
 
@@ -407,9 +472,15 @@ public sealed class UrlCorrectionToolsTests
         var bm25Repo = Substitute.For<IBm25ShardRepository>();
         var jobRepo = Substitute.For<IJobRepository>();
         var auditRepo = Substitute.For<IScrapeAuditRepository>();
+        var sources = Substitute.For<ISourceDocumentRepository>();
+        var modes = Substitute.For<ILibraryIngestionModeRepository>();
+        modes.GetLibraryDataEvidenceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(new LibraryIngestionDataEvidence(false, false, false, false, false));
         var leaseManager = Substitute.For<ILibraryIngestionModeLeaseManager>();
         var lease = Substitute.For<ILibraryIngestionModeLease>();
         lease.TryRenewAsync(Arg.Any<CancellationToken>()).Returns(true);
+        lease.TryCommitAsync(Arg.Any<CancellationToken>()).Returns(true);
+        lease.TryReconcileReservedModeAsync(Arg.Any<LibraryIngestionMode>(), Arg.Any<CancellationToken>()).Returns(true);
         lease.OwnershipLostToken.Returns(CancellationToken.None);
         leaseManager.TryAcquireAsync(Arg.Any<string?>(), Arg.Any<string>(), LibraryIngestionMode.Web, Arg.Any<CancellationToken>())
                     .Returns(lease);
@@ -427,6 +498,8 @@ public sealed class UrlCorrectionToolsTests
         factory.GetBm25ShardRepository(Arg.Any<string?>()).Returns(bm25Repo);
         factory.GetJobRepository(Arg.Any<string?>()).Returns(jobRepo);
         factory.GetScrapeAuditRepository(Arg.Any<string?>()).Returns(auditRepo);
+        factory.GetSourceDocumentRepository(Arg.Any<string?>()).Returns(sources);
+        factory.GetLibraryIngestionModeRepository(Arg.Any<string?>()).Returns(modes);
 
         var lifetime = Substitute.For<IHostApplicationLifetime>();
         lifetime.ApplicationStopping.Returns(CancellationToken.None);
@@ -459,6 +532,8 @@ public sealed class UrlCorrectionToolsTests
                                bm25Repo,
                                jobRepo,
                                auditRepo,
+                               sources,
+                               modes,
                                leaseManager,
                                lease,
                                cancellation

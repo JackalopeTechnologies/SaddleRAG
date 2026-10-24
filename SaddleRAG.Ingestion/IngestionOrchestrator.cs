@@ -136,7 +136,7 @@ public class IngestionOrchestrator
             await AcquireWebModeLeaseAsync(profile, job.LibraryId, ct);
         using CancellationTokenSource operation =
             CancellationTokenSource.CreateLinkedTokenSource(ct, modeLease.OwnershipLostToken);
-        await CommitWebOwnershipAsync(profile, job.LibraryId, modeLease, operation.Token);
+        await WebIngestionOwnership.CommitAsync(mRepositoryFactory, profile, job.LibraryId, modeLease, operation.Token);
         ProfileRepositories repositories = ResolveRepositories(profile);
         await EnsurePublishedVersionDoesNotExistAsync(job, repositories.Libraries, operation.Token);
         await WriteBuildingVersionAsync(job, repositories.Libraries, operation.Token);
@@ -727,7 +727,7 @@ public class IngestionOrchestrator
         await using ILibraryIngestionModeLease modeLease = await AcquireWebModeLeaseAsync(profile, libraryId, ct);
         using CancellationTokenSource operation =
             CancellationTokenSource.CreateLinkedTokenSource(ct, modeLease.OwnershipLostToken);
-        await CommitWebOwnershipAsync(profile, libraryId, modeLease, operation.Token);
+        await WebIngestionOwnership.CommitAsync(mRepositoryFactory, profile, libraryId, modeLease, operation.Token);
         ProfileRepositories repositories = ResolveRepositories(profile);
 
         mLogger.LogInformation("Adding single page {Url} to {LibraryId} v{Version}", url, libraryId, version);
@@ -791,51 +791,6 @@ public class IngestionOrchestrator
                 var _ => WebModeUnavailableMessage
             };
         return $"Cannot ingest library '{libraryId}': {detail}";
-    }
-
-    private async Task CommitWebOwnershipAsync(string? profile,
-                                               string libraryId,
-                                               ILibraryIngestionModeLease modeLease,
-                                               CancellationToken ct)
-    {
-        ISourceDocumentRepository sources = mRepositoryFactory.GetSourceDocumentRepository(profile);
-        DirectoryLibraryDefinition? definition = await sources.GetDirectoryDefinitionAsync(libraryId, ct);
-        if (definition != null)
-        {
-            if (modeLease.OwnershipStateAtAcquisition == LibraryIngestionOwnershipState.Reserved)
-                await modeLease.TryReconcileReservedModeAsync(LibraryIngestionMode.Directory,
-                                                               CancellationToken.None);
-            throw new InvalidOperationException(
-                $"Library '{libraryId}' is registered for directory ingestion and cannot be mutated by web ingestion.");
-        }
-
-
-        if (modeLease.OwnershipStateAtAcquisition == LibraryIngestionOwnershipState.Reserved)
-        {
-            ILibraryIngestionModeRepository modes =
-                mRepositoryFactory.GetLibraryIngestionModeRepository(profile);
-            LibraryIngestionDataEvidence evidence = await modes.GetLibraryDataEvidenceAsync(libraryId, ct);
-            if (evidence.HasDirectoryDefinition)
-            {
-                bool reconciled = await modeLease.TryReconcileReservedModeAsync(LibraryIngestionMode.Directory, ct);
-                if (!reconciled)
-                    throw new InvalidOperationException(
-                        "The web ingestion operation no longer owns its source-mode lease.");
-                throw new InvalidOperationException(
-                    $"Library '{libraryId}' contains directory-ingestion data and cannot be mutated by web ingestion.");
-            }
-
-            // A saved reconnaissance profile is expected before the first scrape. Only acquired
-            // content or document lifecycle state needs an existing parent to establish ownership.
-            if (!evidence.HasLibraryRecord &&
-                (evidence.HasDocumentLifecycleData || evidence.HasChildContentData))
-                throw new InvalidOperationException(
-                    $"Library '{libraryId}' has unclassified partial data and cannot be mutated by web ingestion.");
-        }
-
-        bool committed = await modeLease.TryCommitAsync(ct);
-        if (!committed)
-            throw new InvalidOperationException("The web ingestion operation no longer owns its source-mode lease.");
     }
 
     private async Task<SinglePageIngestResult> ProcessSinglePageAsync(PageRecord page,
