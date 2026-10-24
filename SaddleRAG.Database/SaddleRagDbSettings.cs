@@ -58,19 +58,39 @@ public class SaddleRagDbSettings
     public (string ConnectionString, string DatabaseName) Resolve()
 
     {
-        var profileOverride = Environment.GetEnvironmentVariable(ProfileEnvVar);
+        var result = Resolve(Environment.GetEnvironmentVariable(ProfileEnvVar));
+        return result;
+    }
 
-        var profileName = profileOverride ?? ActiveProfile;
-
-
+    internal (string ConnectionString, string DatabaseName) Resolve(string? profileOverride)
+    {
+        string? profileName = ResolveConfiguredProfileName(profileOverride);
         var result = (ConnectionString, DatabaseName);
-
-
-        if (!string.IsNullOrEmpty(profileName) && Profiles.TryGetValue(profileName, out var profile))
-
+        if (profileName != null)
+        {
+            MongoDbProfile profile = Profiles[profileName];
             result = (profile.ConnectionString, profile.DatabaseName);
+        }
 
+        return result;
+    }
 
+    /// <summary>
+    ///     Returns the configured profile selected by the environment override or
+    ///     active profile, or null when resolution uses the direct connection settings.
+    /// </summary>
+    public string? ResolveConfiguredProfileName()
+    {
+        string? result = ResolveConfiguredProfileName(Environment.GetEnvironmentVariable(ProfileEnvVar));
+        return result;
+    }
+
+    internal string? ResolveConfiguredProfileName(string? profileOverride)
+    {
+        string? profileName = profileOverride ?? ActiveProfile;
+        string? result = !string.IsNullOrEmpty(profileName) && Profiles.ContainsKey(profileName)
+                             ? profileName
+                             : null;
         return result;
     }
 
