@@ -5,7 +5,7 @@
 # Ollama container (GPU-accelerated LLM inference via CUDA).
 #
 # Prerequisites:
-#   • NVIDIA GPU with CUDA 12.x support
+#   • NVIDIA GPU and host driver compatible with CUDA 13.0
 #   • NVIDIA Container Toolkit installed on the host
 #     (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 #

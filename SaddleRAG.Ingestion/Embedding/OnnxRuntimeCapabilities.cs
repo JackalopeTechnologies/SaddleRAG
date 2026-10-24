@@ -21,10 +21,9 @@ namespace SaddleRAG.Ingestion.Embedding;
 ///     silently fell back to CPU.
 ///     "Compiled in" means the C# bindings + native ORT binaries for
 ///     that EP are present. CPU is always compiled in. DirectML and CUDA
-///     are gated on the <c>USE_GPU</c> conditional-compilation symbol,
-///     which the <c>UseGpu</c> MSBuild property in
-///     <c>SaddleRAG.Ingestion.csproj</c> defines when the GPU NuGet is
-///     referenced. A provider being compiled in is necessary but not
+///     follow the <c>USE_GPU</c> and <c>USE_GPU_CUDA</c> symbols defined by
+///     <c>SaddleRAG.Ingestion.csproj</c> for the selected native package.
+///     A provider being compiled in is necessary but not
 ///     sufficient for it to load — the underlying hardware / drivers
 ///     have to support it too; the actual outcome is captured in
 ///     <see cref="ActiveProvider" /> and <see cref="LastLoadWarning" />
@@ -35,7 +34,9 @@ public class OnnxRuntimeCapabilities
     public OnnxRuntimeCapabilities()
     {
         var compiled = new List<OnnxExecutionProvider> { OnnxExecutionProvider.Cpu };
-#if USE_GPU
+#if USE_GPU_CUDA
+        compiled.Add(OnnxExecutionProvider.Cuda);
+#elif USE_GPU
         compiled.Add(OnnxExecutionProvider.DirectMl);
 #endif
         mCompiledInProviders = compiled;
@@ -45,7 +46,7 @@ public class OnnxRuntimeCapabilities
 
     /// <summary>
     ///     EPs the running build is capable of attempting. CPU is always
-    ///     present. DirectML is present when <c>USE_GPU</c> is defined.
+    ///     present. CUDA builds include CUDA; other GPU builds include DirectML.
     /// </summary>
     public IReadOnlyList<OnnxExecutionProvider> CompiledInProviders => mCompiledInProviders;
 

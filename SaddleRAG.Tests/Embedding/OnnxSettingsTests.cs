@@ -43,10 +43,17 @@ public sealed class OnnxSettingsTests
     [Theory]
     [InlineData("Cpu", true)]
     [InlineData("cpu", true)]
+#if USE_GPU_CUDA
+    [InlineData("DirectMl", false)]
+    [InlineData("directml", false)]
+    [InlineData("Cuda", true)]
+    [InlineData("cuda", true)]
+#else
     [InlineData("DirectMl", true)]
     [InlineData("directml", true)]
     [InlineData("Cuda", false)]
     [InlineData("cuda", false)]
+#endif
     [InlineData("", false)]
     [InlineData("OpenVino", false)]
     public void IsKnownExecutionProviderRecognizesValidValuesOnly(string input, bool expected)

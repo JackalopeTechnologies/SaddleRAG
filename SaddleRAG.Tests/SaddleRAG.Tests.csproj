@@ -13,8 +13,10 @@
       symbol the production assembly does. Override with -p:UseGpu=false to
       run the CPU-only-build assertion paths.
     -->
-    <UseGpu Condition="'$(UseGpu)' == ''">true</UseGpu>
-    <DefineConstants Condition="'$(UseGpu)' == 'true'">$(DefineConstants);USE_GPU</DefineConstants>
+    <UseGpuCuda Condition="'$(UseGpuCuda)' == ''">false</UseGpuCuda>
+    <UseGpu Condition="'$(UseGpu)' == '' and '$(UseGpuCuda)' != 'true'">true</UseGpu>
+    <DefineConstants Condition="'$(UseGpu)' == 'true' or '$(UseGpuCuda)' == 'true'">$(DefineConstants);USE_GPU</DefineConstants>
+    <DefineConstants Condition="'$(UseGpuCuda)' == 'true'">$(DefineConstants);USE_GPU_CUDA</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

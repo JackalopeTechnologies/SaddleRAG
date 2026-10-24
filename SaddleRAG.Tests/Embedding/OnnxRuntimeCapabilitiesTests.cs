@@ -29,19 +29,17 @@ public sealed class OnnxRuntimeCapabilitiesTests
     {
         var capabilities = new OnnxRuntimeCapabilities();
 
-        // CPU is always compiled in; DirectMl is only compiled in when the
-        // USE_GPU symbol is defined. The capability list must match.
-        // Cuda must never appear today regardless of flavor — the GPU NuGet
-        // is the DirectML one, not Microsoft.ML.OnnxRuntime.Gpu. Asserting
-        // its absence locks the IsSupportedByBuild contract documented on
-        // OnnxExecutionProvider.Cuda; relax this assertion only when a
-        // Cuda-flavored build flavor is actually added.
-#if USE_GPU
+        // The reported provider must match the native package selected at build time.
+#if USE_GPU_CUDA
+        Assert.Contains(OnnxExecutionProvider.Cuda, capabilities.CompiledInProviders);
+        Assert.DoesNotContain(OnnxExecutionProvider.DirectMl, capabilities.CompiledInProviders);
+#elif USE_GPU
         Assert.Contains(OnnxExecutionProvider.DirectMl, capabilities.CompiledInProviders);
+        Assert.DoesNotContain(OnnxExecutionProvider.Cuda, capabilities.CompiledInProviders);
 #else
         Assert.DoesNotContain(OnnxExecutionProvider.DirectMl, capabilities.CompiledInProviders);
-#endif
         Assert.DoesNotContain(OnnxExecutionProvider.Cuda, capabilities.CompiledInProviders);
+#endif
     }
 
     [Fact]
@@ -80,16 +78,28 @@ public sealed class OnnxRuntimeCapabilitiesTests
     {
         var capabilities = new OnnxRuntimeCapabilities();
 
-        // CPU-only build can't legitimately have recorded actual=Cuda;
-        // GPU build doesn't compile in Cuda either (only DirectMl). Either
-        // way recording Cuda as the actual loaded EP is a bug.
+        OnnxExecutionProvider unsupported = Enum.GetValues<OnnxExecutionProvider>()
+            .First(provider => !capabilities.CompiledInProviders.Contains(provider));
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            capabilities.RecordLoadOutcome(OnnxExecutionProvider.Cuda,
-                                           OnnxExecutionProvider.Cuda,
+            capabilities.RecordLoadOutcome(unsupported,
+                                           unsupported,
                                            warning: null
                                           )
         );
         Assert.Contains("CompiledInProviders", ex.Message);
+    }
+
+    [Fact]
+    public void RecordLoadOutcomeAcceptsEveryCompiledProvider()
+    {
+        var capabilities = new OnnxRuntimeCapabilities();
+        foreach (OnnxExecutionProvider provider in capabilities.CompiledInProviders)
+        {
+            capabilities.RecordLoadOutcome(provider, provider, warning: null);
+            Assert.Equal(provider, capabilities.ActiveProvider);
+            Assert.Equal(provider, capabilities.RequestedProvider);
+            Assert.Null(capabilities.LastLoadWarning);
+        }
     }
 
     [Fact]

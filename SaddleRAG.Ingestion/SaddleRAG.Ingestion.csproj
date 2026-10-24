@@ -58,7 +58,7 @@
     <!--
       CUDA execution provider. Ships AppendExecutionProvider_CUDA and the
       libonnxruntime_providers_cuda native binary for Linux x64.
-      Requires CUDA 12.x + cuDNN 9.x at runtime (provided by the nvidia/cuda
+      Requires CUDA 13.x + cuDNN 9.x at runtime (provided by the nvidia/cuda
       base image in Dockerfile.cuda). Version matches the CPU NuGet.
     -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu"
