@@ -57,7 +57,7 @@ public sealed class ScrapeAuditWriterTests
     }
 
     [Fact]
-    public async Task FlushesWhenBufferReachesSizeThreshold()
+    public async Task DisposeFlushesOneFullBatch()
     {
         var spy = new SpyRepository();
         var writer = new ScrapeAuditWriter(spy,

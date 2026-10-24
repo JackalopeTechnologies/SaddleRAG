@@ -19,6 +19,7 @@ using SaddleRAG.Ingestion.Crawling;
 namespace SaddleRAG.Tests.Crawling;
 
 /// <summary>Exercises real browser navigation controls against a local documentation fixture.</summary>
+[Trait("Category", "Integration")]
 public sealed class NavigationExpansionTests
 {
     [Theory]

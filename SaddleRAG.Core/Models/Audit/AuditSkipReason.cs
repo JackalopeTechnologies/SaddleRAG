@@ -17,5 +17,6 @@ public enum AuditSkipReason
     SameHostDepth = 4,
     HostGated = 5,
     AlreadyVisited = 6,
-    QueueLimit = 7
+    QueueLimit = 7,
+    InScopeDepth = 8
 }

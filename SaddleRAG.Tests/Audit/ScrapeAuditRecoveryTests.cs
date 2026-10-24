@@ -8,6 +8,37 @@ namespace SaddleRAG.Tests.Audit;
 public sealed class ScrapeAuditRecoveryTests
 {
     [Fact]
+    public async Task TemporaryPersistenceDelayProducesCapacityFailureWithoutAssumingDatabaseOutage()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = Substitute.For<IScrapeAuditRepository>();
+        repository.InsertManyAsync(Arg.Any<IEnumerable<ScrapeAuditLogEntry>>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                entered.TrySetResult();
+                await release.Task.WaitAsync(call.Arg<CancellationToken>());
+            });
+        await using var writer = new ScrapeAuditWriter(repository, null, batchSize: 1,
+            flushInterval: TimeSpan.FromMilliseconds(20), capacity: 1);
+        var context = new AuditContext { JobId = "burst", LibraryId = "library", Version = "1" };
+        try
+        {
+            writer.RecordFetched(context, "https://example.com/one", null, "example.com", 0);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            writer.RecordFetched(context, "https://example.com/two", null, "example.com", 0);
+            ScrapeAuditBufferException failure = Assert.Throws<ScrapeAuditBufferException>(() =>
+                writer.RecordFetched(context, "https://example.com/three", null, "example.com", 0));
+            Assert.DoesNotContain("MongoDB", failure.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+        await writer.FlushAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task FailedBatchIsRetainedAndLaterEventsStillFlush()
     {
         var repository = Substitute.For<IScrapeAuditRepository>();
@@ -43,7 +74,7 @@ public sealed class ScrapeAuditRecoveryTests
         await using var writer = new ScrapeAuditWriter(repository, null, batchSize: 1,
             flushInterval: TimeSpan.FromHours(1), capacity: 2);
         int accepted = 0;
-        Assert.Throws<InvalidOperationException>(() =>
+        Assert.Throws<ScrapeAuditBufferException>(() =>
         {
             for (int index = 0; index < 10; index++)
             {
