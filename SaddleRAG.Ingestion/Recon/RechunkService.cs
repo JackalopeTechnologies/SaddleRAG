@@ -29,7 +29,7 @@ namespace SaddleRAG.Ingestion.Recon;
 ///     5. Reload the in-memory vector index
 ///     6. (Optionally) audit chunk boundaries before/after
 ///     What it does NOT do:
-///     - Re-crawl pages (that's <c>scrape_docs force=true</c>)
+///     - Re-crawl pages (use <c>scrape_docs</c> with a new version identifier for published content)
 ///     - Re-classify pages (that's the <c>reclassify</c> CLI command)
 ///     - Build the full corpus-aware Symbols[] / QualifiedName — the
 ///     freshly-chunked symbols are first-pass shape-only. Call

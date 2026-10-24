@@ -251,8 +251,10 @@ public sealed class HealthToolsTests
         Assert.Equal("Reachable", database["status"]?.GetValue<string>());
     }
 
-    [Fact]
-    public async Task GetDashboardIndexPopulatedDbAggregatesAcrossLibraries()
+    [Theory]
+    [InlineData(VersionPublicationState.Published, "scrape_docs")]
+    [InlineData(VersionPublicationState.Building, "submit_url_correction")]
+    public async Task GetDashboardIndexPopulatedDbAggregatesAcrossLibraries(VersionPublicationState state, string expectedTool)
     {
         (var factory, var libraryRepo, var _, var _) = MakeFactory();
         libraryRepo.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
@@ -279,6 +281,7 @@ public sealed class HealthToolsTests
                                     EmbeddingModelName = "nomic-embed-text",
                                     EmbeddingDimensions = 768,
                                     Suspect = true,
+                                    PublicationState = state,
                                     SuspectReasons = ["LanguageMismatch"]
                                 }
                            );
@@ -305,6 +308,8 @@ public sealed class HealthToolsTests
         Assert.Contains("\"libraryCount\": 2", json);
         Assert.Contains("\"suspectCount\": 1", json);
         Assert.Contains("\"a\"", json);
+        Assert.Contains($"\"tool\": \"{expectedTool}\"", json);
+        Assert.Contains($"\"publicationState\": \"{state}\"", json);
     }
 
     [Fact]
@@ -438,7 +443,7 @@ public sealed class HealthToolsTests
     }
 
     // Every page reduced to the same boilerplate widget: a bounded content sample is nearly all
-    // identical, so get_library_health must flag contentSuspect and steer to a rescrape.
+    // identical, so get_library_health must flag contentSuspect and steer to a new full scrape.
     [Fact]
     public async Task GetLibraryHealthFlagsContentSuspectWhenChunksAreDuplicated()
     {
@@ -459,7 +464,9 @@ public sealed class HealthToolsTests
                                                      );
 
         Assert.Contains("\"contentSuspect\": true", json);
-        Assert.Contains("rescrape_library", json);
+        Assert.Contains("\"tool\": \"scrape_docs\"", json);
+        Assert.Contains("new version identifier", json);
+        Assert.DoesNotContain("rescrape_library", json);
     }
 
     // A healthy, varied library: distinct content per page, so contentSuspect is false and the
@@ -484,10 +491,26 @@ public sealed class HealthToolsTests
                                                      );
 
         Assert.Contains("\"contentSuspect\": false", json);
-        Assert.DoesNotContain("rescrape_library", json);
+        Assert.DoesNotContain("\"tool\": \"scrape_docs\"", json);
     }
 
-    private static void StubLibraryAndVersion(ILibraryRepository libraryRepo, double boundaryIssuePct)
+    [Fact]
+    public async Task GetLibraryHealthSendsPublishedSuspectContentToNewVersionScrape()
+    {
+        (var factory, var libraryRepo, var chunkRepo, var _) = MakeFactory();
+        StubLibraryAndVersion(libraryRepo, boundaryIssuePct: 0.0, suspect: true);
+        chunkRepo.GetLanguageMixAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(new Dictionary<string, double>());
+        chunkRepo.GetHostnameDistributionAsync("foo", "1.0", Arg.Any<CancellationToken>()).Returns(new Dictionary<string, int>());
+        chunkRepo.GetContentSampleAsync("foo", "1.0", Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([]);
+
+        string json = await HealthTools.GetLibraryHealth(factory, "foo", ct: TestContext.Current.CancellationToken);
+
+        Assert.Contains("\"tool\": \"scrape_docs\"", json);
+        Assert.Contains("new version identifier", json);
+        Assert.DoesNotContain("\"tool\": \"submit_url_correction\"", json);
+    }
+
+    private static void StubLibraryAndVersion(ILibraryRepository libraryRepo, double boundaryIssuePct, bool suspect = false)
     {
         libraryRepo.GetLibraryAsync("foo", Arg.Any<CancellationToken>())
                    .Returns(new LibraryRecord
@@ -506,6 +529,7 @@ public sealed class HealthToolsTests
                                     EmbeddingProviderId = "ollama",
                                     EmbeddingModelName = "nomic-embed-text",
                                     EmbeddingDimensions = 768,
+                                    Suspect = suspect,
                                     BoundaryIssuePct = boundaryIssuePct
                                 }
                            );

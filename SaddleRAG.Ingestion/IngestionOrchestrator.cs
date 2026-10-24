@@ -689,9 +689,8 @@ public class IngestionOrchestrator
     ///     Ingest one URL into an existing (library, version) without
     ///     re-crawling. Fetches the page through the same Playwright
     ///     path as a regular scrape, classifies it, chunks it, embeds
-    ///     the chunks, upserts them, and refreshes the BM25 index over
-    ///     the full chunk corpus so search picks the new content up
-    ///     immediately.
+    ///     the chunks, upserts them, and refreshes search indexes over
+    ///     the full chunk corpus and the existing version's content counts.
     /// </summary>
     public async Task<SinglePageIngestResult> IngestSinglePageAsync(string libraryId,
                                                                     string version,
@@ -733,6 +732,7 @@ public class IngestionOrchestrator
                                                   libraryId,
                                                   version,
                                                   url,
+                                                  profile,
                                                   repositories,
                                                   operation.Token);
 
@@ -802,19 +802,29 @@ public class IngestionOrchestrator
                                                                       string libraryId,
                                                                       string version,
                                                                       string url,
+                                                                      string? profile,
                                                                       ProfileRepositories repositories,
                                                                       CancellationToken ct)
     {
         // Reuse the streaming pipeline's per-page classify + embed primitives
         // so the single-page path can't drift on prompt format, confidence
         // threshold, or retry semantics. The orchestrator owns only the
-        // single-page result shape and BM25 refresh.
+        // single-page result shape and search/count refresh.
         var classified = await repositories.Classify.ClassifyPageAsync(page, libraryId, ct: ct);
         var chunks = mChunker.Chunk(classified);
+        var refreshJob = new ScrapeJob
+                             {
+                                 RootUrl = url,
+                                 LibraryId = libraryId,
+                                 Version = version,
+                                 LibraryHint = libraryId,
+                                 AllowedUrlPatterns = []
+                             };
 
         SinglePageIngestResult result;
         if (chunks.Count == 0)
         {
+            await repositories.Finalizer.RefreshExistingVersionCountsAsync(refreshJob, repositories.Pages, ct);
             result = new SinglePageIngestResult
                          {
                              Status = SinglePageStatusEmpty,
@@ -829,15 +839,10 @@ public class IngestionOrchestrator
             var embedded = await EmbedStage.EmbedBatchAsync(mEmbeddingProvider, mLogger, chunks, ct);
             await repositories.Chunks.UpsertChunksAsync(embedded, ct);
 
-            var bm25Job = new ScrapeJob
-                              {
-                                  RootUrl = url,
-                                  LibraryId = libraryId,
-                                  Version = version,
-                                  LibraryHint = libraryId,
-                                  AllowedUrlPatterns = []
-                              };
-            await repositories.Finalizer.BuildBm25IndexAsync(bm25Job, ct);
+            await repositories.Finalizer.RefreshExistingVersionAsync(refreshJob,
+                                                                       repositories.Pages,
+                                                                       profile,
+                                                                       ct);
 
             result = new SinglePageIngestResult
                          {

@@ -556,8 +556,8 @@ string SaddleRagServerInstructions = $"""
     - dryrun_scrape validates crawl scope (what would be fetched) WITHOUT ingesting; review it
       before committing to a large crawl.
     - scrape_docs runs the full pipeline (crawl, classify, chunk, embed, index) against the
-      live site and returns a job id. It is long-running; for routine refreshes of an
-      already-indexed library prefer rescrape_library.
+      live site and returns a job id. Full refreshes of published content require a new
+      version identifier. rescrape_library retries unpublished attempts using prior configuration.
     - Manage in-flight work with get_scrape_status / get_job_status / list_scrape_jobs, and
       cancel_job to stop a runaway crawl. Diagnose thin or noisy results with inspect_scrape
       and get_library_health; if results are wrong, recon again and adjust patterns before

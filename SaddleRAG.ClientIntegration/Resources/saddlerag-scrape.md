@@ -15,14 +15,14 @@ This skill covers how to run `scrape_docs` effectively. If you're uncertain abou
 |---|---|---|
 | `url` | Crawl entry point | Must be the docs hub, not the product homepage |
 | `library` | Storage key | Use a stable slug: `react`, `infragistics-wpf`, `mongodb-csharp`. (`libraryId` is accepted as a deprecated alias for one release.) |
-| `version` | Storage key | `current` unless you need version-pinned docs |
+| `version` | Storage key | Use a new identifier for a full refresh; full scraping cannot overwrite a published target |
 | `hint` | Seeds the LLM classifier | Be specific: `"Infragistics WPF controls — how-to guides and API reference"` |
 | `fetchDelayMs` | Floor delay per worker | Not a global rate cap — see concurrency note below |
 | `excludedUrlPatterns` | Regex list against full URL | Applied before fetch; blocks both the page and its children |
 | `seedUrls` | Extra URLs added to the crawl queue alongside `url` | Use when the home page does not link to every section — see "Multi-seed sites" below |
 | `additionalRateLimitStatusCodes` | Extra HTTP codes to treat as rate-limit signals, added on top of the built-in defaults (429, 503) | Omit for most sites; add [502] for Infragistics-style CDNs, [520, 521, 522] for Cloudflare |
 | `maxPages` | Safety cap | Set to a few hundred for a first run on an unknown site |
-| `force` | Re-scrape even if cached | Use when source docs have changed |
+| `force` | Clean and retry an unpublished partial attempt | Published targets are refused; use a new version identifier when source docs have changed |
 | `resume` | Restart from where a cancelled job left off | Reuses stored job config (including `seedUrls`); `url` is optional |
 
 ---
@@ -125,7 +125,7 @@ cancel_job(jobId="<id>")
 
 Partial results are kept. Fix your patterns, then either:
 - `scrape_docs(library=..., version=..., resume=true)` — restart from stored state, reusing the previous job's URL and patterns (you can override individual params)
-- `scrape_docs(url=..., ..., force=true)` — start clean (clears partial data first)
+- `scrape_docs(url=..., ..., force=true)` — restart an unpublished attempt (clears partial chunks first). A published target is refused; use a new version identifier for a full refresh.
 
 ---
 

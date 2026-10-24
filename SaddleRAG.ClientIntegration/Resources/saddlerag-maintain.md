@@ -77,11 +77,11 @@ Call `get_library_health(library=..., version=...)` first. It reports:
 
 ```
 Is the source site content out of date?
-  → Yes: rescrape_library (re-crawls from stored page URLs, no config needed)
+  → Yes: scrape_docs with a new version identifier for published content; rescrape_library can retry an unpublished attempt
   → No, continue:
 
 Are the wrong pages indexed (noise, stubs, navigation)?
-  → Yes: fix excludedUrlPatterns → scrape_docs(force=true)
+  → Yes: fix excludedUrlPatterns → scrape_docs with a new version identifier; force=true only cleans unpublished attempts
   → No, continue:
 
 Is the Unclassified % high (>20%)?
@@ -103,14 +103,14 @@ Are chunks too large / too small / splitting in wrong places?
 
 | Tool | What it does | When to use |
 |---|---|---|
-| `rescrape_library` | Re-crawls from stored page URLs; link-following picks up new pages | Routine refresh when source docs have changed |
-| `scrape_docs(force=true)` | Clears existing data, re-crawls from root URL with full config | Wrong root URL or wrong crawl patterns |
+| `rescrape_library` | Retries an unpublished attempt from stored page URLs; published targets are refused | Recover an incomplete scrape using its prior configuration |
+| `scrape_docs(force=true)` | Clears unpublished partial chunks and re-crawls from the configured URL | Retry incomplete ingestion; use a new version identifier for a published target |
 | `reextract_library` | Re-runs classify + content extraction on already-fetched pages | High Unclassified %, bad category tags, extractor updated |
 | `rechunk_library` | Re-chunks existing extracted content | Chunk size/strategy mismatch |
 | `reembed_library` | Re-embeds existing chunks (e.g. after switching embedding model) | Embedding model changed, coverage gap |
 | `get_library_health` | Diagnostic report: counts, categories, coverage | First step in any diagnosis |
 | `inspect_scrape` | URL-by-URL audit log from a scrape job | Understanding what was fetched, excluded, or errored |
-| `submit_url_correction` | Clears suspect flag, corrects URL, re-queues | Suspect library with wrong root URL |
+| `submit_url_correction` | Clears an unpublished attempt, corrects its URL, and re-queues; published targets are refused | Incomplete scrape with wrong root URL |
 | `delete_version` | Removes all data for a (library, version) | Starting completely fresh |
 | `cancel_job` | Stops any cancellable running or stale job (scrape, dryrun_scrape, rechunk, reembed, reextract) | Stale job, wrong config caught mid-run |
 
