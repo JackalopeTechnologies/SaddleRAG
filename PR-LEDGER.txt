@@ -1,0 +1,2 @@
+[codex/mcp-spec-skills] Complete focused MCP, ingestion ownership and cancellation tests, then the final clean solution and tray rebuild and full test run.
+[codex/mcp-spec-skills] Verify CPU and CUDA dependency variants and record native runtime qualification limits.

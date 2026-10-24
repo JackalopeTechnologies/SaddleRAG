@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="CodeStructure.Analyzers" />
     <PackageReference Include="Tomlyn" />
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
   <ItemGroup>

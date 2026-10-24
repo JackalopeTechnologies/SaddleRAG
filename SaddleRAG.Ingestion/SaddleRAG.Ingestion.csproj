@@ -51,7 +51,7 @@
       Microsoft.ML.OnnxRuntime.DirectML lags Microsoft.ML.OnnxRuntime on
       NuGet — DirectML releases are gated on the upstream DirectML.dll
       cadence. 1.24.4 is the latest DirectML build at time of writing; the
-      CPU build can stay at 1.28.0. Bump this when DirectML 1.25+ ships.
+      CPU build can use 1.31.0. Keep managed bindings paired with each native package.
     -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML"
                       Condition="'$(UseGpu)' == 'true' and '$(UseGpuCuda)' != 'true'" />
@@ -66,9 +66,8 @@
     <!--
       Microsoft.ML.OnnxRuntimeGenAI — generative-inference runtime for the ONNX classifier.
       Mirrors the OnnxRuntime CPU/DirectML/CUDA condition pattern above exactly,
-      including the DirectML lag: GenAI.DirectML stopped at 0.14.1 while GenAI and
-      GenAI.Cuda moved on to 0.15.1, so the DirectML flavor runs a version behind the
-      other two. Bump it when GenAI.DirectML 0.15+ ships.
+      including the DirectML lag: GenAI.DirectML remains at 0.14.1 while GenAI and
+      GenAI.Cuda are at 0.18.0. Keep managed bindings paired with each native package.
     -->
     <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI"
                       Condition="'$(UseGpu)' != 'true' and '$(UseGpuCuda)' != 'true'" />
