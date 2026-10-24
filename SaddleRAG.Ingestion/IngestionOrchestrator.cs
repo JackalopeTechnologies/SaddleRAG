@@ -487,9 +487,16 @@ public class IngestionOrchestrator
     private const int PageChannelCapacity = 50;
     private const int ChunkChannelCapacity = 20;
     private const string PublicationCancelledMessage = "Publication cancelled.";
-    private const string WebModeConflictDetail = "or another web-ingestion operation.";
     private const string WebModeLeaseLostCleanupMessage =
         "Candidate cleanup stopped because web ingestion no longer owns its source-mode lease.";
+    private const string WebModePendingRenameMessage =
+        "a library rename is pending. Complete or recover that rename before retrying web ingestion.";
+    private const string WebModeDirectoryConflictMessage =
+        "the recorded source mode is directory ingestion. Web ingestion cannot change this source mode.";
+    private const string WebModeRetryInstruction =
+        "Retry after that UTC expiry or after the operation releases ownership; an active operation may renew it.";
+    private const string WebModeUnavailableMessage =
+        "exclusive web-ingestion ownership was unavailable. Another operation may have changed ownership or a rename may be in progress; retry after the current operation finishes.";
     private const string CandidateCannotBePublishedMessage = "the candidate cannot be published.";
     private const string CandidateCleanupFailureMessage = "One or more candidate cleanup operations failed.";
     private const string CandidateCleanupFailureDataKey = "SaddleRAG.CandidateCleanupFailure";
@@ -692,7 +699,7 @@ public class IngestionOrchestrator
     ///     the chunks, upserts them, and refreshes search indexes over
     ///     the full chunk corpus and the existing version's content counts.
     /// </summary>
-    public async Task<SinglePageIngestResult> IngestSinglePageAsync(string libraryId,
+    public Task<SinglePageIngestResult> IngestSinglePageAsync(string libraryId,
                                                                     string version,
                                                                     string url,
                                                                     string? profile = null,
@@ -701,6 +708,22 @@ public class IngestionOrchestrator
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(url);
+        return IngestSinglePageAsync(libraryId, version, url, profile, contentSelector: null, ct);
+    }
+
+    /// <summary>Ingest one page using an optional explicit article selector before classification and indexing.</summary>
+    public async Task<SinglePageIngestResult> IngestSinglePageAsync(string libraryId,
+                                                                    string version,
+                                                                    string url,
+                                                                    string? profile,
+                                                                    string? contentSelector,
+                                                                    CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(url);
+        if (contentSelector != null && string.IsNullOrWhiteSpace(contentSelector))
+            throw new PageContentSelectionException(contentSelector, url, "The selector must contain a non-whitespace expression.");
         await using ILibraryIngestionModeLease modeLease = await AcquireWebModeLeaseAsync(profile, libraryId, ct);
         using CancellationTokenSource operation =
             CancellationTokenSource.CreateLinkedTokenSource(ct, modeLease.OwnershipLostToken);
@@ -713,6 +736,7 @@ public class IngestionOrchestrator
                                                                   version,
                                                                   url,
                                                                   profile,
+                                                                  contentSelector,
                                                                   operation.Token);
 
         SinglePageIngestResult result;
@@ -748,9 +772,25 @@ public class IngestionOrchestrator
                                                                                          LibraryIngestionMode.Web,
                                                                                          ct);
         if (modeLease == null)
-            throw new InvalidOperationException($"Library '{libraryId}' is owned by directory ingestion " +
-                                                WebModeConflictDetail);
+            throw new InvalidOperationException(await DescribeWebModeConflictAsync(profile, libraryId, ct));
         return modeLease;
+    }
+
+    private async Task<string> DescribeWebModeConflictAsync(string? profile, string libraryId, CancellationToken ct)
+    {
+        ILibraryIngestionModeRepository modes = mRepositoryFactory.GetLibraryIngestionModeRepository(profile);
+        LibraryIngestionModeRecord? recorded = await modes.GetAsync(libraryId, ct);
+        string detail = recorded switch
+            {
+                { PendingRenameOperationId: not null } =>
+                    WebModePendingRenameMessage,
+                { Mode: LibraryIngestionMode.Directory } =>
+                    WebModeDirectoryConflictMessage,
+                { Mode: LibraryIngestionMode.Web, LeaseOwnerToken: not null, LeaseExpiresAtUtc: { } expiry } =>
+                    $"another web-ingestion operation holds the recorded lease through {expiry:O}. {WebModeRetryInstruction}",
+                var _ => WebModeUnavailableMessage
+            };
+        return $"Cannot ingest library '{libraryId}': {detail}";
     }
 
     private async Task CommitWebOwnershipAsync(string? profile,

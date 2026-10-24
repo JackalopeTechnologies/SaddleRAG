@@ -52,4 +52,20 @@ public interface IPageCrawler
                                                      string? profile,
                                                      CancellationToken ct = default) =>
         FetchSinglePageAsync(libraryId, version, url, ct);
+
+    /// <summary>
+    ///     Profile-aware single-page fetch with an explicit article selector.
+    ///     Implementations must honor the selector or reject it before persistence.
+    /// </summary>
+    Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+                                                     string version,
+                                                     string url,
+                                                     string? profile,
+                                                     string? contentSelector,
+                                                     CancellationToken ct = default)
+    {
+        if (contentSelector != null)
+            throw new NotSupportedException("This crawler does not support explicit single-page content selection.");
+        return FetchSinglePageForProfileAsync(libraryId, version, url, profile, ct);
+    }
 }

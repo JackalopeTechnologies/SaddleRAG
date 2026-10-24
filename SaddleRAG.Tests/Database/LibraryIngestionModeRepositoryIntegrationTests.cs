@@ -89,34 +89,45 @@ public sealed class LibraryIngestionModeRepositoryIntegrationTests : IAsyncLifet
         Assert.Equal(winner.LeaseOwnerToken, stored.LeaseOwnerToken);
     }
 
-    [Fact]
-    public async Task ExpiryAllowsSameModeRecoveryButStaleOwnerCannotReleaseOrFlipMode()
+    [Theory]
+    [InlineData(LibraryIngestionMode.Directory)]
+    [InlineData(LibraryIngestionMode.Web)]
+    public async Task ExpiryAllowsSameModeRecoveryButStaleOwnerCannotReleaseOrFlipMode(LibraryIngestionMode mode)
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
         DateTime startUtc = DateTime.UtcNow;
         LibraryIngestionModeRecord first = Assert.IsType<LibraryIngestionModeRecord>(
             await mRepository.TryAcquireAsync(LibraryId,
-                                              LibraryIngestionMode.Directory,
+                                              mode,
                                               "first-owner",
                                               startUtc,
                                               startUtc.AddSeconds(1),
                                               ct));
+        LibraryIngestionModeRecord? stillOwned = await mRepository.TryAcquireAsync(LibraryId,
+                                                                                   mode,
+                                                                                   "early-owner",
+                                                                                   startUtc.AddMilliseconds(500),
+                                                                                   startUtc.AddMinutes(1),
+                                                                                   ct);
+        Assert.Null(stillOwned);
         DateTime recoveryUtc = startUtc.AddSeconds(2);
         LibraryIngestionModeRecord second = Assert.IsType<LibraryIngestionModeRecord>(
             await mRepository.TryAcquireAsync(LibraryId,
-                                              LibraryIngestionMode.Directory,
+                                              mode,
                                               "second-owner",
                                               recoveryUtc,
                                               recoveryUtc.AddMinutes(1),
                                               ct));
 
         bool staleReleased = await mRepository.TryReleaseAsync(LibraryId,
-                                                                LibraryIngestionMode.Directory,
+                                                                mode,
                                                                 first.LeaseOwnerToken!,
                                                                 recoveryUtc,
                                                                 ct);
         LibraryIngestionModeRecord? opposite = await mRepository.TryAcquireAsync(LibraryId,
-                                                                                  LibraryIngestionMode.Web,
+                                                                                  mode == LibraryIngestionMode.Web
+                                                                                      ? LibraryIngestionMode.Directory
+                                                                                      : LibraryIngestionMode.Web,
                                                                                   "web-owner",
                                                                                   recoveryUtc.AddMinutes(2),
                                                                                   recoveryUtc.AddMinutes(3),
@@ -128,7 +139,7 @@ public sealed class LibraryIngestionModeRepositoryIntegrationTests : IAsyncLifet
         LibraryIngestionModeRecord stored = Assert.IsType<LibraryIngestionModeRecord>(
             await mRepository.GetAsync(LibraryId, ct));
         Assert.Equal("second-owner", stored.LeaseOwnerToken);
-        Assert.Equal(LibraryIngestionMode.Directory, stored.Mode);
+        Assert.Equal(mode, stored.Mode);
     }
 
     [Fact]

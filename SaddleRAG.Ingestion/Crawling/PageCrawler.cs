@@ -289,7 +289,7 @@ public class PageCrawler : IPageCrawler
         return FetchSinglePageForProfileAsync(libraryId, version, url, profile: null, ct);
     }
 
-    public async Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+    public Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
                                                                   string version,
                                                                   string url,
                                                                   string? profile,
@@ -298,6 +298,22 @@ public class PageCrawler : IPageCrawler
         ArgumentException.ThrowIfNullOrEmpty(libraryId);
         ArgumentException.ThrowIfNullOrEmpty(version);
         ArgumentException.ThrowIfNullOrEmpty(url);
+        return FetchSinglePageForProfileAsync(libraryId, version, url, profile, contentSelector: null, ct);
+    }
+
+    /// <summary>Fetch one page, requiring the supplied selector to match nonempty article content when present.</summary>
+    public async Task<PageRecord?> FetchSinglePageForProfileAsync(string libraryId,
+                                                                  string version,
+                                                                  string url,
+                                                                  string? profile,
+                                                                  string? contentSelector,
+                                                                  CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(libraryId);
+        ArgumentException.ThrowIfNullOrEmpty(version);
+        ArgumentException.ThrowIfNullOrEmpty(url);
+        if (contentSelector != null && string.IsNullOrWhiteSpace(contentSelector))
+            throw new PageContentSelectionException(contentSelector, url, "The selector must contain a non-whitespace expression.");
 
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -332,6 +348,7 @@ public class PageCrawler : IPageCrawler
                                                    libraryId,
                                                    version,
                                                    url,
+                                                   contentSelector,
                                                    ResolvePageRepository(profile),
                                                    ct);
             attempt++;
@@ -347,6 +364,7 @@ public class PageCrawler : IPageCrawler
                                                             string libraryId,
                                                             string version,
                                                             string url,
+                                                            string? contentSelector,
                                                             IPageRepository pageRepository,
                                                             CancellationToken ct)
     {
@@ -364,6 +382,7 @@ public class PageCrawler : IPageCrawler
                                                               libraryId,
                                                               version,
                                                               url,
+                                                              contentSelector,
                                                               pageRepository,
                                                               ct);
             }
@@ -373,7 +392,7 @@ public class PageCrawler : IPageCrawler
                 mLogger.LogWarning("Single-page fetch got status {Status} for {Url}", status, url);
             }
         }
-        catch(Exception ex) when(ex is not OperationCanceledException)
+        catch(Exception ex) when(ex is not OperationCanceledException and not PageContentSelectionException)
         {
             mLogger.LogWarning(ex, "Single-page fetch error for {Url}", url);
         }
@@ -389,11 +408,14 @@ public class PageCrawler : IPageCrawler
                                                                   string libraryId,
                                                                   string version,
                                                                   string url,
+                                                                  string? contentSelector,
                                                                   IPageRepository pageRepository,
                                                                   CancellationToken ct)
     {
         string title = await page.TitleAsync();
-        string content = await ExtractMainContentAsync(page, waitForSelector: null, ct);
+        string content = contentSelector == null
+                             ? await ExtractMainContentAsync(page, waitForSelector: null, ct)
+                             : await ExtractRequiredSinglePageContentAsync(page, url, contentSelector, ct);
 
         string contentHash = ComputeHash(content);
         string urlHash = ComputeCanonicalUrlHash(url);
@@ -413,6 +435,34 @@ public class PageCrawler : IPageCrawler
 
         await pageRepository.UpsertPageAsync(record, ct);
         return record;
+    }
+
+    private static async Task<string> ExtractRequiredSinglePageContentAsync(IPage page,
+                                                                              string url,
+                                                                              string contentSelector,
+                                                                              CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        string content;
+        try
+        {
+            IElementHandle? element = await page.QuerySelectorAsync(contentSelector);
+            if (element == null)
+                throw new PageContentSelectionException(contentSelector, url, "No element matched the selector.");
+            content = (await element.InnerTextAsync()).Trim();
+        }
+        catch(PlaywrightException ex)
+        {
+            throw new PageContentSelectionException(contentSelector,
+                                                      url,
+                                                      "The selector could not be evaluated or its element became unavailable.",
+                                                      ex);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        if (content.Length == 0)
+            throw new PageContentSelectionException(contentSelector, url, "The selected element contained no text.");
+        return content;
     }
 
     /// <summary>
