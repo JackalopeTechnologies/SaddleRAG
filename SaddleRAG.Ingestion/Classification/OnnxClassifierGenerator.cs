@@ -120,10 +120,23 @@ public sealed class OnnxClassifierGenerator : IClassifierGenerator, IDisposable
             throw new DirectoryNotFoundException(string.Format(MissingModelFolderFormat, mModelFolder));
 
         OnnxRuntimeDiagnostics.EnsureInitialized(mLogger);
-        var model = new Model(mModelFolder);
-        var tokenizer = new Tokenizer(model);
+        using var diagnostics = OnnxClassifierLoadDiagnostics.Begin(mEntry, mModelFolder, mLogger);
+        using var configuration = new Config(mModelFolder);
+        configuration.Overlay(diagnostics.CreateConfigurationOverlay());
+        var model = new Model(configuration);
+        Tokenizer tokenizer;
+        try
+        {
+            tokenizer = new Tokenizer(model);
+        }
+        catch
+        {
+            model.Dispose();
+            throw;
+        }
         mModel = model;
         mTokenizer = tokenizer;
+        diagnostics.Complete(OnnxClassifierDiagnosticEligibility.IsCurrentRuntimeReviewed());
         return (model, tokenizer);
     }
 

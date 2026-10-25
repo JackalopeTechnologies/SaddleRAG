@@ -10,7 +10,6 @@ using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Server;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -53,8 +52,7 @@ using Serilog.Events;
 
 
 const string AppName = "SaddleRAG";
-const string McpApplicationName = "SaddleRAG.Mcp";
-const string DataProtectionKeysSubdirectory = "DataProtection-Keys";
+const string PrewarmFlag = "--prewarm";
 const string CrashDumpsSubdirectory = "CrashDumps";
 const string WerReportArchiveRelativePath = @"Microsoft\Windows\WER\ReportArchive";
 const string WerReportQueueRelativePath = @"Microsoft\Windows\WER\ReportQueue";
@@ -141,6 +139,7 @@ TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
 };
 
 
+bool prewarmMode = args.Any(a => string.Equals(a, PrewarmFlag, StringComparison.OrdinalIgnoreCase));
 var builder = WebApplication.CreateBuilder(args);
 
 // Runtime overrides file: written by the set_active_embedding_model /
@@ -158,23 +157,10 @@ builder.Host.UseSerilog();
 if (OperatingSystem.IsWindows())
     builder.Host.UseWindowsService(options => { options.ServiceName = ServiceName; });
 
-if (builder.Environment.IsDevelopment())
-{
-    var dataProtectionDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                               AppName,
-                                               DataProtectionKeysSubdirectory,
-                                               builder.Environment.EnvironmentName
-                                              );
-
-    Directory.CreateDirectory(dataProtectionDirectory);
-
-    var dataProtectionBuilder = builder.Services.AddDataProtection()
-                                       .SetApplicationName($"{McpApplicationName}.{builder.Environment.EnvironmentName}")
-                                       .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionDirectory));
-
-    if (OperatingSystem.IsWindows())
-        dataProtectionBuilder.ProtectKeysWithDpapi();
-}
+SaddleRagDataProtection.ConfigureDevelopment(builder.Services,
+                                             builder.Environment,
+                                             prewarmMode,
+                                             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
 
 builder.Services.AddSingleton(levelSwitch);
 
@@ -640,7 +626,7 @@ builder.Services.AddSingleton<IAuthorizationHandler,
     DiagnosticsWriteHandler>();
 
 
-const string PrewarmFlag = "--prewarm";
+SaddleRagDataProtection.IsolatePrewarm(builder.Services, prewarmMode);
 
 var startupSw = Stopwatch.StartNew();
 
@@ -652,14 +638,12 @@ var app = builder.Build();
 app.Logger.LogInformation("Loaded {Count} SaddleRAG skills and prompt fallbacks.",
                           SaddleRagSkills.Count);
 
-bool prewarmMode = args.Any(a => string.Equals(a, PrewarmFlag, StringComparison.OrdinalIgnoreCase));
-
 var exitCode = 0;
 
 if (prewarmMode)
 
 {
-    app.Logger.LogWarning("[Prewarm] Host built in {Sec:F1}s, starting full host to warm cache",
+    app.Logger.LogInformation("[Prewarm] Host built in {Sec:F1}s, starting full host to warm cache",
                           startupSw.Elapsed.TotalSeconds
                          );
 
@@ -680,13 +664,13 @@ if (prewarmMode)
 
         await app.StopAsync(prewarmCts.Token);
 
-        app.Logger.LogWarning("[Prewarm] Host start+stop complete in {Sec:F1}s, reading install dir to warm OS file cache",
+        app.Logger.LogInformation("[Prewarm] Host start+stop complete in {Sec:F1}s, reading install dir to warm OS file cache",
                               startupSw.Elapsed.TotalSeconds
                              );
 
         (var fileCount, var totalBytes) = PrewarmHelpers.ReadAllFiles(AppContext.BaseDirectory);
 
-        app.Logger.LogWarning("[Prewarm] Read {Count} files ({MB:F0} MB) in {Sec:F1}s total",
+        app.Logger.LogInformation("[Prewarm] Read {Count} files ({MB:F0} MB) in {Sec:F1}s total",
                               fileCount,
                               totalBytes / (double) PrewarmHelpers.BytesPerMegabyte,
                               startupSw.Elapsed.TotalSeconds

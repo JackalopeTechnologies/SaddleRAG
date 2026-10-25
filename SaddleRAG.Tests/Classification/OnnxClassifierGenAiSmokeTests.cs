@@ -9,6 +9,8 @@ using SaddleRAG.Ingestion.Classification;
 using SaddleRAG.Ingestion.Embedding;
 using SaddleRAG.Ingestion.Subjects;
 using SaddleRAG.Tests.Subjects;
+using SaddleRAG.Tests.Embedding;
+using Microsoft.Extensions.Logging;
 
 namespace SaddleRAG.Tests.Classification;
 
@@ -24,6 +26,12 @@ namespace SaddleRAG.Tests.Classification;
 [Trait("Category", "Integration")]
 public sealed class OnnxClassifierGenAiSmokeTests
 {
+    public OnnxClassifierGenAiSmokeTests(ITestOutputHelper output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        mOutput = output;
+    }
+
     [Fact]
     public async Task StagedPhi3ModelLoadsTheGenAiNativeAndGeneratesOnce()
     {
@@ -41,7 +49,8 @@ public sealed class OnnxClassifierGenAiSmokeTests
         string modelDirectory = Path.Combine(settings.ModelsDir, entry.Name);
         Assert.SkipUnless(File.Exists(Path.Combine(modelDirectory, GenAiConfigFileName)), MissingModelMessage);
 
-        using var generator = new OnnxClassifierGenerator(modelDirectory, entry);
+        var nativeLogger = new NativeDiagnosticTestLogger();
+        using var generator = new OnnxClassifierGenerator(modelDirectory, entry, nativeLogger);
         var classifier = new OnnxLlmClassifier(generator,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OnnxLlmClassifier>.Instance);
         var subjectClassifier = new SubjectClassifier(classifier, new FixedSubjectTimeProvider());
@@ -54,8 +63,33 @@ public sealed class OnnxClassifierGenAiSmokeTests
         Assert.DoesNotContain(result.Secondary, selection => selection.SubjectId == "subject-electrical");
         Assert.NotEmpty(result.Primary.Evidence);
         Assert.Same(result, Assert.Single(assignments.Persisted));
+        bool reviewedDirectMl = requested == OnnxExecutionProvider.DirectMl &&
+                                OnnxClassifierDiagnosticEligibility.IsCurrentRuntimeReviewed() &&
+                                OnnxClassifierDiagnosticEligibility.IsEligible(entry,
+                                    await File.ReadAllTextAsync(Path.Combine(modelDirectory, GenAiConfigFileName),
+                                        TestContext.Current.CancellationToken),
+                                    OnnxClassifierDiagnosticEligibility.ReadGraphFingerprint(modelDirectory));
+        if (reviewedDirectMl)
+        {
+            Assert.DoesNotContain(nativeLogger.Entries, item => item.Level >= LogLevel.Warning);
+            Assert.Contains(nativeLogger.Entries, item => item.Level == LogLevel.Information &&
+                item.Message.EndsWith(OnnxClassifierLoadDiagnostics.ShapeMessage, StringComparison.Ordinal));
+            Assert.Contains(nativeLogger.Entries, item => item.Level == LogLevel.Information &&
+                item.Message.EndsWith(OnnxClassifierLoadDiagnostics.PlacementMessage, StringComparison.Ordinal));
+            Assert.Contains(nativeLogger.Entries, item => item.Level == LogLevel.Information &&
+                item.Message.EndsWith(OnnxClassifierLoadDiagnostics.VerboseMessage, StringComparison.Ordinal));
+            Assert.Equal(3, nativeLogger.Entries.Count(item => item.Level == LogLevel.Information));
+        }
+        var runtimeVersions = OnnxClassifierDiagnosticEligibility.ReadCurrentRuntimeVersions();
+        mOutput.WriteLine("Reviewed DirectML diagnostic eligibility: {0}; Runtime API: {1}; native GenAI: {2}.",
+            reviewedDirectMl, runtimeVersions.Runtime ?? "unavailable", runtimeVersions.GenAi ?? "unavailable");
+        if (requested == OnnxExecutionProvider.DirectMl)
+            mOutput.WriteLine("Graph SHA256: {0}", OnnxClassifierDiagnosticEligibility.ReadGraphFingerprint(modelDirectory));
+        foreach (var diagnostic in nativeLogger.Entries)
+            mOutput.WriteLine("{0}: {1}", diagnostic.Level, diagnostic.Message);
     }
 
+    private readonly ITestOutputHelper mOutput;
     private const string GenAiConfigFileName = "genai_config.json";
     private const string MissingModelMessage =
         "The Phi-3 GenAI classifier model is not staged for this execution provider; skipping the GenAI native smoke test.";

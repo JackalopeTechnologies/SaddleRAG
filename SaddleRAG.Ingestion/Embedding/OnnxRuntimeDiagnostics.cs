@@ -73,12 +73,9 @@ internal static partial class OnnxRuntimeDiagnostics
     {
         try
         {
-            LogLevel level = Classify(severity, category, location, message);
-            ILogger? logger = Volatile.Read(ref psLogger);
-            if (logger != null)
-                logger.Log(level, NativeMessageFormat, category, logId, location, message);
-            else
-                WriteFallback(level, category, logId, location, message);
+            if (!OnnxClassifierLoadDiagnostics.TryReceive(severity, category, logId, location, message))
+                Emit(Volatile.Read(ref psLogger), Classify(severity, category, location, message),
+                    category, logId, location, message);
         }
         catch (Exception exception)
         {
@@ -91,6 +88,33 @@ internal static partial class OnnxRuntimeDiagnostics
             catch (Exception)
             {
                 // stderr can be unavailable during process shutdown; no safe sink remains.
+            }
+        }
+    }
+
+    internal static void Emit(ILogger? logger, LogLevel level, string category, string logId, string location, string message)
+    {
+        ArgumentNullException.ThrowIfNull(category);
+        ArgumentNullException.ThrowIfNull(logId);
+        ArgumentNullException.ThrowIfNull(location);
+        ArgumentNullException.ThrowIfNull(message);
+        try
+        {
+            if (logger != null)
+                logger.Log(level, NativeMessageFormat, category, logId, location, message);
+            else
+                WriteFallback(level, category, logId, location, message);
+        }
+        catch (Exception)
+        {
+            // Preserve the diagnostic even if the application's logger rejects a buffered record.
+            try
+            {
+                WriteFallback(level, category, logId, location, message);
+            }
+            catch (Exception)
+            {
+                // A closed stderr or failing trace listener must not replace the model-load result.
             }
         }
     }
