@@ -112,7 +112,7 @@ The installer test is deliberately unauthenticated and never asks for, collects,
 3. **MongoDB Configuration** -- the installer defaults to `mongodb://localhost:27017` with database `SaddleRAG`. Use the **Test Connection** button to verify MongoDB is reachable. If your MongoDB is on a different host, enter the connection string. **Reset to Local Defaults** reverts to the standard local settings.
 4. **Ollama Configuration** -- defaults to `http://localhost:11434`. Use **Test Connection** to verify. Change only if Ollama is running on another machine.
 5. **Optional Document Ingestion** -- enter a user-managed, unauthenticated Docling Serve endpoint and click **Test Docling**. The page links to current Docling and Tesseract setup guidance but never installs or controls either product and never collects secrets. You can continue without Docling when PDF/DOCX ingestion is not needed.
-6. Click **Install** -- files are copied to `Program Files\SaddleRAG\SaddleRAG.Mcp`, your connection settings are written to `appsettings.json`, and the **SaddleRAGMcp** Windows service starts automatically.
+6. Click **Install** -- files are copied to `Program Files\SaddleRAG.Mcp`, your connection settings are written to `appsettings.json`, and the **SaddleRAGMcp** Windows service starts automatically.
 
 > **Don't have the prerequisites yet?** The installer opens the official MongoDB, Ollama, Docling, and Tesseract guidance in your browser. You remain in control of every external installation. Return to the installer and use its connection tests when ready.
 

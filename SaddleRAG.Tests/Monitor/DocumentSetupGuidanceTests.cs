@@ -149,6 +149,16 @@ public sealed class DocumentSetupGuidanceTests
                         StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ReadmeNamesTheInstallFolderTheInstallerUses()
+    {
+        string root = ResolveRepositoryRoot();
+        string readme = File.ReadAllText(Path.Combine(root, "README.md"));
+
+        Assert.Contains("files are copied to `Program Files\\SaddleRAG.Mcp`", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("SaddleRAG\\SaddleRAG.Mcp", readme, StringComparison.Ordinal);
+    }
+
     private const string TrayDoclingStopSentence =
         "When you ask, the tray can stop the process listening on Docling's configured local port and start your registered command again.";
 
