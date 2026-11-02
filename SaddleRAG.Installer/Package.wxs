@@ -234,6 +234,22 @@
             <File Source="Restart-SaddleRAGComponent.ps1" />
         </Component>
 
+        <!-- The install folder holds the LocalSystem service executable and the script the  -->
+        <!-- tray runs elevated, so ordinary users must not be able to change anything in    -->
+        <!-- it. With the default Program Files location they already cannot, but the       -->
+        <!-- install-folder dialog accepts any path, and a folder such as D:\Tools inherits   -->
+        <!-- write access for Authenticated Users. This sets the folder's DACL explicitly:  -->
+        <!-- SYSTEM and Administrators full control, Users read and execute only. The "P"   -->
+        <!-- flag stops inherited entries from the parent being merged in (util:PermissionEx -->
+        <!-- would only add to the existing DACL), and OICI makes every file and subfolder  -->
+        <!-- below inherit it. Windows Installer applies a CreateFolder permission before    -->
+        <!-- InstallFiles, so installed files inherit rather than being patched afterwards.  -->
+        <Component Id="InstallFolderPermissions" Directory="MCPFOLDER" Guid="A91C4E57-3B28-4D6F-8E10-5C7F2B93D4A8">
+            <CreateFolder>
+                <PermissionEx Sddl="D:PAI(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;BU)" />
+            </CreateFolder>
+        </Component>
+
         <!-- Event source for Restart-SaddleRAGComponent.ps1. The elevated script records each  -->
         <!-- service action in the Application event log, which an unprivileged user cannot    -->
         <!-- edit (a log file under ProgramData could be replaced by one). The script does not  -->
@@ -250,6 +266,7 @@
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
             <ComponentGroupRef Id="PublishOutput" />
+            <ComponentRef Id="InstallFolderPermissions" />
             <ComponentRef Id="ServiceActionsEventSource" />
             <ComponentRef Id="ServiceComponent" />
             <ComponentRef Id="HelperScripts" />
