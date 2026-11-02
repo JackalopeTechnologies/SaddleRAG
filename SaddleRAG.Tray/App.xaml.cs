@@ -126,6 +126,7 @@ public partial class App : Application
     private TrayHealthObserver? mHealthObserver;
     private TrayAttention? mAttention;
     private bool mHealthPollActive;
+    private bool mDoclingPollActive;
     private bool mServiceActionActive;
     private readonly CancellationTokenSource mShutdown = new();
 
@@ -485,11 +486,14 @@ public partial class App : Application
         mDoclingTimer.Start();
     }
 
+    // A launch can wait minutes for Docling to report ready while the timer keeps ticking, so, like
+    // the health poll, a tick that finds the previous poll still running does nothing.
     private async Task PollDoclingLaunchRequestAsync()
     {
         DoclingLaunchCoordinator? coordinator = mDoclingCoordinator;
-        if (coordinator is not null)
+        if (!mDoclingPollActive && coordinator is not null)
         {
+            mDoclingPollActive = true;
             try
             {
                 DoclingLaunchOutcome? outcome = await coordinator.PollOnceAsync(CancellationToken.None);
@@ -504,6 +508,10 @@ public partial class App : Application
                 // The coordinator already absorbs the expected transport failures. Anything
                 // reaching here is unexpected, but a timer tick must never take down the tray.
                 mLog?.LogWarning(ex, DoclingPollFailedLogMessage);
+            }
+            finally
+            {
+                mDoclingPollActive = false;
             }
         }
     }

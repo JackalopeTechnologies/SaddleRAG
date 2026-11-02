@@ -254,6 +254,21 @@ public sealed class TrayDoclingMenuTests
         Assert.Equal(expected: 1, CountOccurrences(code, "new ComponentController("));
     }
 
+    [Fact]
+    public void ADoclingLaunchPollIsNotStartedWhileThePreviousOneIsStillRunning()
+    {
+        // A launch can wait minutes for Docling to report ready while the timer keeps ticking every
+        // few seconds; like the health poll, a tick that finds a poll still running does nothing.
+        string code = TrayFile("App.xaml.cs");
+        string poll = MethodBody(code, "private async Task PollDoclingLaunchRequestAsync()");
+
+        Assert.Contains("!mDoclingPollActive", poll, StringComparison.Ordinal);
+        Assert.Contains("mDoclingPollActive = true;", poll, StringComparison.Ordinal);
+        int finallyBlock = poll.IndexOf("finally", StringComparison.Ordinal);
+        Assert.True(finallyBlock >= 0, "The poll does not clear its flag in a finally block.");
+        Assert.Contains("mDoclingPollActive = false;", poll[finallyBlock..], StringComparison.Ordinal);
+    }
+
     // The text of a method from its signature to the brace that closes it.
     private static string MethodBody(string code, string signature)
     {
