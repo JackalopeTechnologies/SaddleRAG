@@ -28,6 +28,7 @@ public sealed class ServiceImagePathTests
     [InlineData("\"C:\\evil\\mongod.exe.bat\"", "mongod.exe.bat")]
     [InlineData("C:\\Program Files\\MongoDB\\bin\\mongod.exe", "Program")]
     [InlineData("C:/MongoDB/bin/mongod.exe", "mongod.exe")]
+    [InlineData("%windir%\\system32\\svchost.exe -k netsvcs -p", "svchost.exe")]
     public void ExtractsTheExecutableFileNameTheSameWayTheElevatedScriptDoes(string imagePath, string expected)
     {
         Assert.Equal(expected, ServiceImagePath.ExecutableFileName(imagePath));

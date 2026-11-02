@@ -64,7 +64,11 @@ public sealed class RegistryWindowsServiceLocator : IWindowsServiceLocator
         try
         {
             using RegistryKey? serviceKey = servicesKey.OpenSubKey(serviceName, writable: false);
-            result = serviceKey?.GetValue(ImagePathValueName) as string;
+            // The stored text, not an expansion with the tray's environment: the elevated script reads
+            // it the same way, so the two can never disagree about which program a service runs.
+            result = serviceKey?.GetValue(ImagePathValueName,
+                                          defaultValue: null,
+                                          RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
         }
         catch(Exception ex) when (ex is SecurityException or UnauthorizedAccessException or IOException)
         {

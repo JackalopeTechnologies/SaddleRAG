@@ -165,7 +165,14 @@ function Get-RegisteredExecutableName
     {
         try
         {
-            $res = Get-ImagePathExecutableName -ImagePath ([string]$key.GetValue('ImagePath', ''))
+            # Read the stored text, never an expansion. ImagePath is often REG_EXPAND_SZ, and
+            # GetValue would otherwise expand it with THIS process's environment, which the
+            # unelevated caller supplies: a windir of "C:\mongod.exe " would turn
+            # %windir%\system32\svchost.exe into mongod.exe and allow-list a Windows service.
+            # Unexpanded, a %...% prefix is just text; only the file name is compared, and a real
+            # MongoDB ImagePath is a literal path, so it still ends in mongod.exe.
+            $raw = $key.GetValue('ImagePath', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $res = Get-ImagePathExecutableName -ImagePath ([string]$raw)
         }
         finally
         {

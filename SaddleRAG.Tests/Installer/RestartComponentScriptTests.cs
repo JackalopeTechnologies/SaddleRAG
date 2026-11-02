@@ -182,6 +182,7 @@ public sealed class RestartComponentScriptTests
     [InlineData(@"""C:\evil\mongod.exe.bat""", "mongod.exe.bat")]
     [InlineData(@"C:\Program Files\MongoDB\Server\8.2\bin\mongod.exe --service", "Program")]
     [InlineData(@"""C:\evil\tool.exe""mongod.exe", "")]
+    [InlineData(@"%windir%\system32\svchost.exe -k netsvcs -p", "svchost.exe")]
     public void ImagePathParserExtractsOnlyTheLaunchedExecutable(string imagePath, string expectedFileName)
     {
         // Diagnostic mode: parses the string and prints the executable file name; it never
@@ -193,6 +194,52 @@ public sealed class RestartComponentScriptTests
 
         Assert.Equal(ExitSucceeded, run.ExitCode);
         Assert.Equal(expectedFileName, run.StandardOutput.Trim());
+    }
+
+    [Fact]
+    public void ImagePathIsReadUnexpandedSoTheCallersEnvironmentCannotWidenTheAllowList()
+    {
+        // seclogon's ImagePath is %windir%\system32\svchost.exe -k netsvcs -p (REG_EXPAND_SZ). If the
+        // script let the registry expand it with its own environment, a windir of "C:\mongod.exe "
+        // would make it read as mongod.exe and allow-list a Windows service.
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip(WindowsOnlySkipReason);
+        if (!IsServiceRegistered(ExpandedImagePathServiceName))
+            Assert.Skip($"The {ExpandedImagePathServiceName} service is not registered on this machine.");
+
+        var environment = new Dictionary<string, string> { ["windir"] = MongodWindirOverride };
+        ScriptRun run = RunScriptCapture(environment,
+                                         "-ServiceName",
+                                         ExpandedImagePathServiceName,
+                                         "-Action",
+                                         "Stop",
+                                         "-ValidateOnly"
+                                        );
+
+        Assert.Equal(ExitNotAllowListed, run.ExitCode);
+    }
+
+    [Fact]
+    public void ScriptReadsTheImagePathWithoutExpandingEnvironmentNames()
+    {
+        string source = ReadScriptSource();
+
+        Assert.Contains("[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TrayServiceLocatorReadsTheImagePathWithoutExpandingEnvironmentNames()
+    {
+        // The tray must offer only what the script accepts, so it reads the same unexpanded text.
+        // SaddleRAG.Tests does not reference the WPF tray project, so the source is pinned.
+        string? root = InstallerSourceTreeResolver.TryResolveRepositoryRoot();
+        if (root == null)
+            Assert.Skip(RepositoryMissingSkipReason);
+        Assert.NotNull(root);
+
+        string source = File.ReadAllText(Path.Combine(root, "SaddleRAG.Tray", "Services", "RegistryWindowsServiceLocator.cs"));
+
+        Assert.Contains("RegistryValueOptions.DoNotExpandEnvironmentNames", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -467,6 +514,8 @@ public sealed class RestartComponentScriptTests
     private const string HelperScriptsComponentId = "HelperScripts";
     private const string McpServiceName = "SaddleRAGMcp";
     private const string UnregisteredServiceName = "SaddleRAGNoSuchServiceForTests";
+    private const string ExpandedImagePathServiceName = "seclogon";
+    private const string MongodWindirOverride = @"C:\mongod.exe ";
     private const string WindowsPowerShellExecutable = "powershell.exe";
     private const string EventSourceName = "SaddleRAG Service Actions";
     private const string ShadowModuleName = "SaddleRAGShadow";
