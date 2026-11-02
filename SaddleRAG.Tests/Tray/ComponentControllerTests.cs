@@ -961,6 +961,28 @@ public sealed class ComponentControllerTests
         Assert.NotEqual("runas", started.Verb);
     }
 
+    [Theory]
+    [InlineData("http://localhost:11500", 11500, "localhost:11500")]
+    [InlineData("http://127.0.0.1:11434", 11434, "127.0.0.1:11434")]
+    [InlineData("http://[::1]:11600", 11600, "[::1]:11600")]
+    public async Task OllamaIsStartedOnTheConfiguredAddress(string endpoint, int port, string expectedHost)
+    {
+        // ollama serve listens on OLLAMA_HOST (default 127.0.0.1:11434). Without it, a configured
+        // non-default port would be started on the default one and never answer where SaddleRAG asks.
+        var row = new ComponentDefinition(ComponentKind.Ollama, "Ollama", new Uri(endpoint), port,
+                                          HostedLocally: true, WindowsServiceName: null, smOllamaExe, smOllamaModels);
+        mStarter.OnStart = () =>
+                           {
+                               mPorts.Listeners[port] = Owner(pid: 300, "ollama");
+                               mHandler.Healthy = true;
+                           };
+
+        await mController.StartAsync(row, Ct);
+
+        ProcessStartInfo started = Assert.Single(mStarter.Started);
+        Assert.Equal(expectedHost, started.Environment["OLLAMA_HOST"]);
+    }
+
     [Fact]
     public async Task WithoutAModelFolderOllamaModelsIsLeftAlone()
     {

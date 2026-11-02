@@ -13,8 +13,8 @@ using System.Diagnostics;
 namespace SaddleRAG.Tray.Services;
 
 /// <summary>
-///     Starts <c>ollama serve</c> from the tray's own (unelevated) session, with the model folder
-///     from SaddleRAG's settings, and waits for it to answer.
+///     Starts <c>ollama serve</c> from the tray's own (unelevated) session, on the address and with
+///     the model folder from SaddleRAG's settings, and waits for it to answer.
 ///     <para>
 ///         A server is started only when nothing listens on Ollama's port. Ollama's desktop app
 ///         restarts <c>ollama serve</c> by itself when it is killed, and a second server would fight
@@ -77,7 +77,7 @@ internal sealed class OllamaServeLauncher
         }
         else
         {
-            string? failure = Launch(component.ExecutablePath, component.ModelsDirectory);
+            string? failure = Launch(component.ExecutablePath, component.ModelsDirectory, component.Endpoint);
             result = failure is null
                          ? await WaitForRunningAsync(component, StartedNotAnsweringFormat, ct)
                          : Result(component,
@@ -88,14 +88,14 @@ internal sealed class OllamaServeLauncher
         return result;
     }
 
-    private string? Launch(string executablePath, string? modelsDirectory)
+    private string? Launch(string executablePath, string? modelsDirectory, Uri? endpoint)
     {
         string? failure = null;
         try
         {
             // The handle is deliberately not disposed: disposing the Process would stop the drain of
             // its output into the launch log, and Ollama keeps running after this action ends.
-            _ = mStarter.Start(BuildStartInfo(executablePath, modelsDirectory));
+            _ = mStarter.Start(BuildStartInfo(executablePath, modelsDirectory, endpoint));
         }
         catch(Exception ex) when (ex is InvalidOperationException or Win32Exception or IOException
                                       or UnauthorizedAccessException)
@@ -106,7 +106,7 @@ internal sealed class OllamaServeLauncher
         return failure;
     }
 
-    private static ProcessStartInfo BuildStartInfo(string executablePath, string? modelsDirectory)
+    private static ProcessStartInfo BuildStartInfo(string executablePath, string? modelsDirectory, Uri? endpoint)
     {
         // UseShellExecute is false, so no "runas" verb can apply: Ollama always starts as the
         // signed-in user, never elevated.
@@ -121,6 +121,12 @@ internal sealed class OllamaServeLauncher
                                      };
         if (!string.IsNullOrWhiteSpace(modelsDirectory))
             startInfo.Environment[ModelsVariable] = modelsDirectory;
+
+        // ollama serve listens where OLLAMA_HOST says (127.0.0.1:11434 when unset), so it is told the
+        // address SaddleRAG is configured to use; otherwise a non-default port would never answer.
+        // Uri.Host keeps an IPv6 address in brackets, which OLLAMA_HOST expects.
+        if (endpoint is not null)
+            startInfo.Environment[HostVariable] = $"{endpoint.Host}:{endpoint.Port}";
 
         return startInfo;
     }
@@ -156,6 +162,7 @@ internal sealed class OllamaServeLauncher
 
     private const string ServeArgument = "serve";
     private const string ModelsVariable = "OLLAMA_MODELS";
+    private const string HostVariable = "OLLAMA_HOST";
     private const string AlreadyRunningFormat = "{0} is already running.";
     private const string StartedFormat = "{0} started.";
     private const string NoExecutableText = "Set Ollama:ExecutablePath in SaddleRAG's settings.";
