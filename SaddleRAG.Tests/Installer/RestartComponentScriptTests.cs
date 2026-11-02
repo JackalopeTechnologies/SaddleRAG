@@ -6,6 +6,7 @@
 #region Usings
 
 using System.Diagnostics;
+using System.Text;
 using System.Xml.Linq;
 using Microsoft.Win32;
 
@@ -158,23 +159,147 @@ public sealed class RestartComponentScriptTests
         Assert.Equal(expected, exitCode);
     }
 
+    [Theory]
+    [InlineData("Mongo*")]
+    [InlineData("[M]ongoDB")]
+    [InlineData("*")]
+    [InlineData("MongoDB?")]
+    public void WildcardServiceNameExitsTen(string serviceName)
+    {
+        // A wildcard must never expand to a real service (for example MongoDB) and so pass
+        // the allow-list through the service lookup.
+        int exitCode = RunScript(out _, "-ServiceName", serviceName, "-Action", "Restart", "-ValidateOnly");
+
+        Assert.Equal(ExitNotAllowListed, exitCode);
+    }
+
+    [Theory]
+    [InlineData(@"""C:\Program Files\MongoDB\Server\8.2\bin\mongod.exe"" --config ""C:\x y\mongod.cfg"" --service", "mongod.exe")]
+    [InlineData(@"C:\MongoDB\bin\mongod.exe --config C:\MongoDB\mongod.cfg --service", "mongod.exe")]
+    [InlineData(@"C:\MongoDB\bin\MONGOD.EXE", "MONGOD.EXE")]
+    [InlineData(@"C:\Windows\tool -log C:\data\mongod.exe", "tool")]
+    [InlineData(@"C:\Windows\tool.com -x C:/d/mongod.exe", "tool.com")]
+    [InlineData(@"""C:\evil\mongod.exe.bat""", "mongod.exe.bat")]
+    [InlineData(@"C:\Program Files\MongoDB\Server\8.2\bin\mongod.exe --service", "Program")]
+    [InlineData(@"""C:\evil\tool.exe""mongod.exe", "")]
+    public void ImagePathParserExtractsOnlyTheLaunchedExecutable(string imagePath, string expectedFileName)
+    {
+        // Diagnostic mode: parses the string and prints the executable file name; it never
+        // reads the registry or touches a service.
+        ScriptRun run = RunScriptCapture(new Dictionary<string, string>(),
+                                         "-TestImagePath",
+                                         imagePath
+                                        );
+
+        Assert.Equal(ExitSucceeded, run.ExitCode);
+        Assert.Equal(expectedFileName, run.StandardOutput.Trim());
+    }
+
     [Fact]
-    public void ValidateOnlyWritesNothingToTheActionLog()
+    public void ModuleAutoloadingIsDisabledBeforeAnyCommandRuns()
+    {
+        string[] lines = ReadScriptSource().Split('\n');
+        int paramEnd = Array.FindIndex(lines, l => l.TrimEnd('\r') == ")");
+        Assert.True(paramEnd >= 0, "The param block was not found.");
+
+        string firstStatement = lines.Skip(paramEnd + 1)
+                                     .Select(l => l.Trim())
+                                     .First(l => l.Length > 0 && !l.StartsWith('#'));
+
+        Assert.Equal("$PSModuleAutoloadingPreference = 'None'", firstStatement);
+    }
+
+    [Theory]
+    [InlineData("Get-Service")]
+    [InlineData("Add-Type")]
+    [InlineData("Add-Content")]
+    [InlineData("New-Item")]
+    [InlineData("Test-Path")]
+    [InlineData("Join-Path")]
+    [InlineData("Write-Output")]
+    [InlineData("Get-ItemProperty")]
+    [InlineData("Get-ChildItem")]
+    [InlineData("Out-Null")]
+    public void ScriptUsesNoModuleCommand(string command)
+    {
+        // With autoloading off these would not resolve; more importantly none may be used,
+        // because an elevated lookup could otherwise be satisfied from a user-writable module.
+        string code = string.Join('\n',
+                                  ReadScriptSource().Split('\n').Where(l => !l.TrimStart().StartsWith('#'))
+                                 );
+
+        Assert.DoesNotContain(command, code, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ScriptRecordsActionsInTheEventLogNotAFile()
+    {
+        string source = ReadScriptSource();
+
+        Assert.Contains(EventSourceName, source, StringComparison.Ordinal);
+        Assert.DoesNotContain("service-actions.log", source, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CommonApplicationData", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PackageWxsRegistersTheEventSourceInTheApplicationLog()
+    {
+        string? wxsPath = InstallerSourceTreeResolver.TryResolveInstallerFile(PackageWxsFileName);
+        if (wxsPath == null)
+            Assert.Skip(RepositoryMissingSkipReason);
+        Assert.NotNull(wxsPath);
+
+        XDocument doc = XDocument.Load(wxsPath);
+        XElement? eventSource = doc.Descendants(smWixUtil + "EventSource")
+                                   .FirstOrDefault(e => (string?) e.Attribute("Name") == EventSourceName);
+
+        Assert.NotNull(eventSource);
+        Assert.Equal("Application", (string?) eventSource.Attribute("Log"));
+        Assert.False(string.IsNullOrEmpty((string?) eventSource.Attribute("EventMessageFile")));
+    }
+
+    [Fact]
+    public void ShadowedModuleCommandsAreNeverRunByTheElevatedScript()
     {
         if (!OperatingSystem.IsWindows())
             Assert.Skip(WindowsOnlySkipReason);
 
-        string logPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                                      LogFolderName,
-                                      LogSubFolderName,
-                                      LogFileName
-                                     );
-        long? sizeBefore = File.Exists(logPath) ? new FileInfo(logPath).Length : null;
+        // A user-writable module folder on PSModulePath that exports look-alikes of commands
+        // the script once used. The script, running elevated, must not execute any of them.
+        string root = Path.Combine(Path.GetTempPath(), $"saddlerag-shadow-{Guid.NewGuid():N}");
+        string markerPath = Path.Combine(root, "marker.txt");
+        try
+        {
+            string moduleRoot = CreateShadowModules(root);
+            var environment = new Dictionary<string, string>
+            {
+                [ShadowMarkerVariable] = markerPath,
+                ["PSModulePath"] = moduleRoot + Path.PathSeparator + Environment.GetEnvironmentVariable("PSModulePath")
+            };
 
-        RunScript(out _, "-ServiceName", "Spooler", "-Action", "Restart", "-ValidateOnly");
+            // Control: a plain PowerShell session does pick the shadow up, so the test can fail.
+            RunPowerShellCommand(environment, "Get-Service -Name Spooler");
+            Assert.True(File.Exists(markerPath), "The shadow module was not loaded; the test is not exercising anything.");
+            File.Delete(markerPath);
 
-        long? sizeAfter = File.Exists(logPath) ? new FileInfo(logPath).Length : null;
-        Assert.Equal(sizeBefore, sizeAfter);
+            ScriptRun run = RunScriptCapture(environment,
+                                             "-ServiceName",
+                                             McpServiceName,
+                                             "-Action",
+                                             "Restart",
+                                             "-ValidateOnly"
+                                            );
+
+            Assert.False(File.Exists(markerPath),
+                         $"A shadowed command ran inside the script. marker: {ReadIfExists(markerPath)}"
+                        );
+            Assert.Equal(IsServiceRegistered(McpServiceName) ? ExitSucceeded : ExitNotInstalled, run.ExitCode);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
     }
 
     private static string ReadScriptSource()
@@ -207,10 +332,41 @@ public sealed class RestartComponentScriptTests
 
     private static int RunScript(out string standardError, params string[] scriptArguments)
     {
+        ScriptRun run = RunScriptCapture(new Dictionary<string, string>(), scriptArguments);
+        standardError = run.StandardError;
+        return run.ExitCode;
+    }
+
+    private static ScriptRun RunScriptCapture(IReadOnlyDictionary<string, string> environment,
+                                              params string[] scriptArguments)
+    {
+        string scriptPath = ReadScriptPath();
+
+        // The same switches the tray's elevated launch uses.
+        var arguments = new List<string>
+        {
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            scriptPath
+        };
+        arguments.AddRange(scriptArguments);
+        return RunPowerShell(environment, arguments);
+    }
+
+    private static void RunPowerShellCommand(IReadOnlyDictionary<string, string> environment, string command)
+    {
+        RunPowerShell(environment, ["-NoProfile", "-NonInteractive", "-Command", command]);
+    }
+
+    private static ScriptRun RunPowerShell(IReadOnlyDictionary<string, string> environment,
+                                           IEnumerable<string> arguments)
+    {
         if (!OperatingSystem.IsWindows())
             Assert.Skip(WindowsOnlySkipReason);
 
-        string scriptPath = ReadScriptPath();
         var startInfo = new ProcessStartInfo(WindowsPowerShellExecutable)
         {
             UseShellExecute = false,
@@ -218,16 +374,10 @@ public sealed class RestartComponentScriptTests
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-
-        // The same switches the tray's elevated launch uses.
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-NonInteractive");
-        startInfo.ArgumentList.Add("-ExecutionPolicy");
-        startInfo.ArgumentList.Add("Bypass");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(scriptPath);
-        foreach (string argument in scriptArguments)
+        foreach (string argument in arguments)
             startInfo.ArgumentList.Add(argument);
+        foreach (KeyValuePair<string, string> variable in environment)
+            startInfo.Environment[variable.Key] = variable.Value;
 
         using Process? process = Process.Start(startInfo);
         if (process == null)
@@ -238,12 +388,38 @@ public sealed class RestartComponentScriptTests
         Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
         Task<string> errorOutput = process.StandardError.ReadToEndAsync();
         if (!process.WaitForExit(smWaitForExitTimeout))
-            Assert.Fail($"{ScriptFileName} did not exit within {smWaitForExitTimeout.TotalSeconds:N0}s.");
+            Assert.Fail($"powershell.exe did not exit within {smWaitForExitTimeout.TotalSeconds:N0}s.");
         standardOutput.Wait();
         errorOutput.Wait();
-        standardError = errorOutput.Result;
-        return process.ExitCode;
+        return new ScriptRun(process.ExitCode, standardOutput.Result, errorOutput.Result);
     }
+
+    // Writes a module folder whose manifest exports look-alikes of commands the script once
+    // used; each look-alike records its name in the marker file and does nothing else.
+    private static string CreateShadowModules(string root)
+    {
+        string moduleRoot = Path.Combine(root, "Modules");
+        string moduleDirectory = Path.Combine(moduleRoot, ShadowModuleName);
+        Directory.CreateDirectory(moduleDirectory);
+
+        var body = new StringBuilder();
+        foreach (string command in smShadowedCommands)
+            body.AppendLine($"function {command} {{ [System.IO.File]::AppendAllText($env:{ShadowMarkerVariable}, '{command};') }}");
+        File.WriteAllText(Path.Combine(moduleDirectory, ShadowModuleName + ".psm1"), body.ToString());
+
+        string exported = string.Join(",", smShadowedCommands.Select(c => $"'{c}'"));
+        File.WriteAllText(Path.Combine(moduleDirectory, ShadowModuleName + ".psd1"),
+                          $"@{{ ModuleVersion = '1.0'; RootModule = '{ShadowModuleName}.psm1'; FunctionsToExport = @({exported}) }}"
+                         );
+        return moduleRoot;
+    }
+
+    private static string ReadIfExists(string path)
+    {
+        return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+    }
+
+    private sealed record ScriptRun(int ExitCode, string StandardOutput, string StandardError);
 
     private static string ReadScriptPath()
     {
@@ -259,6 +435,13 @@ public sealed class RestartComponentScriptTests
     private static readonly TimeSpan smWaitForExitTimeout = TimeSpan.FromSeconds(seconds: 120);
 
     private static readonly XNamespace smWix = "http://wixtoolset.org/schemas/v4/wxs";
+    private static readonly XNamespace smWixUtil = "http://wixtoolset.org/schemas/v4/wxs/util";
+
+    private static readonly string[] smShadowedCommands =
+    [
+        "Get-Service", "Add-Type", "Add-Content", "New-Item", "Test-Path", "Join-Path", "Write-Output",
+        "Get-ItemProperty", "Get-ChildItem", "Out-Null", "Set-StrictMode"
+    ];
 
     private const int ExitSucceeded = 0;
     private const int ExitNotAllowListed = 10;
@@ -270,9 +453,9 @@ public sealed class RestartComponentScriptTests
     private const string McpServiceName = "SaddleRAGMcp";
     private const string UnregisteredServiceName = "SaddleRAGNoSuchServiceForTests";
     private const string WindowsPowerShellExecutable = "powershell.exe";
-    private const string LogFolderName = "SaddleRAG";
-    private const string LogSubFolderName = "logs";
-    private const string LogFileName = "service-actions.log";
+    private const string EventSourceName = "SaddleRAG Service Actions";
+    private const string ShadowModuleName = "SaddleRAGShadow";
+    private const string ShadowMarkerVariable = "SADDLERAG_SHADOW_MARKER";
     private const string WindowsOnlySkipReason =
         "Restart-SaddleRAGComponent.ps1 is run by Windows PowerShell 5.1 through the tray; the test requires Windows.";
     private const string RepositoryMissingSkipReason = "The repository source tree is not available.";

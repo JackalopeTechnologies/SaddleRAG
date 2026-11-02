@@ -234,8 +234,23 @@
             <File Source="Restart-SaddleRAGComponent.ps1" />
         </Component>
 
+        <!-- Event source for Restart-SaddleRAGComponent.ps1. The elevated script records each  -->
+        <!-- service action in the Application event log, which an unprivileged user cannot    -->
+        <!-- edit (a log file under ProgramData could be replaced by one). The script does not  -->
+        <!-- create the source itself, so it must be registered here. EventLogMessages.dll is   -->
+        <!-- the .NET Framework's generic message file, so an entry shows its text as written.  -->
+        <Component Id="ServiceActionsEventSource" Directory="MCPFOLDER" Guid="6D2B8E31-4A57-4C1F-9E0A-7B53C8D41F26">
+            <util:EventSource Name="SaddleRAG Service Actions"
+                              Log="Application"
+                              EventMessageFile="[WindowsFolder]Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll"
+                              SupportsInformationals="yes"
+                              SupportsWarnings="yes"
+                              KeyPath="yes" />
+        </Component>
+
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
             <ComponentGroupRef Id="PublishOutput" />
+            <ComponentRef Id="ServiceActionsEventSource" />
             <ComponentRef Id="ServiceComponent" />
             <ComponentRef Id="HelperScripts" />
             <ComponentRef Id="TrayAutostartComponent" />

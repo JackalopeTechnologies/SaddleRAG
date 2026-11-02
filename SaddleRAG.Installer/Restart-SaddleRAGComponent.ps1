@@ -3,26 +3,42 @@
 # SPDX-License-Identifier: MIT
 # Licensed under the MIT License. See the LICENSE file in the repo root.
 
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Service')]
 param
 (
     # One or more service names. Windows PowerShell 5.1 delivers "A,B" as ONE string when the
     # script is started with -File, so every element is also split on ',' below.
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Service')]
     [string[]]$ServiceName,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Service')]
     [ValidateSet('Start','Stop','Restart')]
     [string]$Action,
 
-    # Longest wait for each service to reach its target state.
+    # Longest wait for each service to reach its target state (applied to every wait).
+    [Parameter(ParameterSetName = 'Service')]
     [ValidateRange(1, 3600)]
     [int]$TimeoutSeconds = 120,
 
     # Check the allow-list and installation, report through the exit code, change nothing
-    # (no service call, no log line).
-    [switch]$ValidateOnly
+    # (no service call, no event-log entry).
+    [Parameter(ParameterSetName = 'Service')]
+    [switch]$ValidateOnly,
+
+    # Diagnostic for the tests: parse the given ImagePath text, print the file name of the
+    # executable it launches (empty when it cannot be determined) and exit. It reads no
+    # registry value and touches no service.
+    [Parameter(Mandatory = $true, ParameterSetName = 'ImagePathProbe')]
+    [string]$TestImagePath
 )
+
+# No module may be auto-loaded. This process is elevated, and PSModulePath includes the
+# user's own Documents\WindowsPowerShell\Modules, which the user (or anything running as
+# the user, including a cloud-synced folder) can write: a look-alike of a cmdlet placed
+# there would otherwise run with administrator rights the moment the script called it.
+# Everything below therefore uses language keywords and .NET types only -- no cmdlet that
+# lives in a module. Keep it that way: RestartComponentScriptTests fails on any such command.
+$PSModuleAutoloadingPreference = 'None'
 
 # Starts, stops or restarts the SaddleRAG MCP service and the local MongoDB service on behalf
 # of the SaddleRAG tray. The tray runs unelevated; it launches THIS script elevated (UAC) from
@@ -34,21 +50,25 @@ param
 # so anyone who can edit it can run code as administrator the next time the operator approves
 # the prompt. It lives under Program Files, which is admin-writable; never relax its ACL, and
 # never copy it to a user-writable folder. It is therefore also kept as small as possible:
-# allow-listed service control and one log line, nothing else.
+# allow-listed service control and one event-log entry, nothing else.
 #
 # Allow-list: the service named SaddleRAGMcp, or a service whose registered executable
-# (ImagePath, quoted or not, arguments ignored) has the file name mongod.exe. Any other name
-# is refused before a service is touched.
+# (ImagePath: the quoted path, or the first whitespace-free token when unquoted) has the file
+# name mongod.exe. Any other name is refused before a service is touched.
 #
 # Names are processed in the order given. Every name is validated first; if any is refused or
 # not installed nothing at all is changed. After that the first failure stops processing.
 # Restart on a stopped service just starts it; Stop on a stopped service and Start on a
-# running service succeed without doing anything.
+# running service succeed without doing anything. A service that is mid-transition is waited
+# on first (a starting service is awaited before it is stopped, a stopping one before it is
+# started), each wait bounded by TimeoutSeconds.
 #
 # Exit codes: 0 succeeded, 10 a name is not allow-listed, 11 a service is not installed,
 # 12 timed out waiting for the target state, 13 the service control call failed.
 #
-# Each action appends one line to %ProgramData%\SaddleRAG\logs\service-actions.log.
+# Each action is recorded in the Windows Application event log under the source named below
+# (registered by the installer). The event log, unlike a file in ProgramData, cannot be edited
+# or replaced by an unprivileged user.
 
 # Strict mode and Stop turn typos and unexpected errors into failures instead of silently
 # carrying on as administrator. Nothing here builds or evaluates script text, and no other
@@ -56,7 +76,8 @@ param
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-Add-Type -AssemblyName System.ServiceProcess
+# By full name, so no PSModulePath or current-directory lookup can supply the assembly.
+$null = [System.Reflection.Assembly]::Load('System.ServiceProcess, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a')
 
 $ExitSucceeded     = 0
 $ExitNotAllowed    = 10
@@ -70,11 +91,23 @@ $ServicesRegistryPath = 'SYSTEM\CurrentControlSet\Services'
 $MaxLoggedNameLength  = 64
 $MaxLoggedTextLength  = 200
 
+$EventSourceName    = 'SaddleRAG Service Actions'
+$EventIdSucceeded   = 1000
+$EventIdNotSucceeded = 1001
+
 # \z, not $: in .NET a trailing '$' also matches before a final newline, which would let a name
 # ending in a line break through into the registry path and the log.
 $ServiceNamePattern = '^[A-Za-z0-9_.-]+\z'
 
-# Only a name that passed the pattern above may reach the registry or Get-Service; the
+# The executable an ImagePath launches: the contents of the leading quoted string, or, when it
+# is not quoted, ONLY the first whitespace-free token. Looking for ".exe" anywhere in the text
+# would accept "C:\Windows\tool -log C:\data\mongod.exe". An unquoted path with spaces therefore
+# yields its first token and is refused, which is also what the service control manager would
+# try to run (the unquoted-service-path weakness). A quoted string must be followed by
+# whitespace or the end, so "C:\x.exe"mongod.exe is rejected as ambiguous.
+$ImagePathPattern = '^\s*(?:"(?<path>[^"]+)"|(?<path>[^"\s]+))(?=\s|\z)'
+
+# Only a name that passed the pattern above may reach the registry or the service lookup; the
 # pattern excludes wildcards, path separators, spaces and control characters.
 function Test-ServiceNameFormat
 {
@@ -87,10 +120,35 @@ function Test-ServiceNameFormat
     return ($Name -match $ServiceNamePattern)
 }
 
+# Returns the file name of the executable named by an ImagePath string, or $null.
+function Get-ImagePathExecutableName
+{
+    param
+    (
+        [AllowEmptyString()]
+        [string]$ImagePath
+    )
+
+    $res = $null
+    $match = [regex]::Match($ImagePath, $ImagePathPattern)
+    if ($match.Success)
+    {
+        try
+        {
+            $res = [System.IO.Path]::GetFileName($match.Groups['path'].Value)
+        }
+        catch [System.ArgumentException]
+        {
+            # A path holding characters illegal in a path cannot name mongod.exe. Leaving the
+            # result $null makes the service not allow-listed, which is the safe answer.
+            $res = $null
+        }
+    }
+    return $res
+}
+
 # Returns the file name of the executable a service runs, or $null when it cannot be read.
-# ImagePath may be quoted with arguments ("C:\...\mongod.exe" --config "..." --service) or an
-# unquoted path followed by arguments; only the executable is compared.
-function Get-ServiceExecutableName
+function Get-RegisteredExecutableName
 {
     param
     (
@@ -104,18 +162,7 @@ function Get-ServiceExecutableName
     {
         try
         {
-            $imagePath = [string]$key.GetValue('ImagePath', '')
-            $match = [regex]::Match($imagePath, '^\s*(?:"(?<path>[^"]+)"|(?<path>.+?\.exe)(?=\s|$))', 'IgnoreCase')
-            if ($match.Success)
-            {
-                $res = [System.IO.Path]::GetFileName($match.Groups['path'].Value)
-            }
-        }
-        catch [System.ArgumentException]
-        {
-            # An ImagePath holding characters illegal in a path cannot name mongod.exe. Leaving
-            # the result $null makes the service not allow-listed, which is the safe answer.
-            $res = $null
+            $res = Get-ImagePathExecutableName -ImagePath ([string]$key.GetValue('ImagePath', ''))
         }
         finally
         {
@@ -140,12 +187,15 @@ function Test-ServiceAllowListed
     }
     else
     {
-        $executable = Get-ServiceExecutableName -Name $Name
+        $executable = Get-RegisteredExecutableName -Name $Name
         $res = ($null -ne $executable) -and $executable.Equals($MongoExecutableName, [StringComparison]::OrdinalIgnoreCase)
     }
     return $res
 }
 
+# The service with exactly this name, or $null. The list is enumerated and compared with an
+# exact ordinal-ignore-case match, rather than asking a cmdlet to resolve a (wildcard-capable)
+# name.
 function Get-InstalledService
 {
     param
@@ -154,7 +204,19 @@ function Get-InstalledService
         [string]$Name
     )
 
-    return (Get-Service -Name $Name -ErrorAction SilentlyContinue)
+    $res = $null
+    foreach ($candidate in [System.ServiceProcess.ServiceController]::GetServices())
+    {
+        if ($null -eq $res -and $candidate.ServiceName.Equals($Name, [StringComparison]::OrdinalIgnoreCase))
+        {
+            $res = $candidate
+        }
+        else
+        {
+            $candidate.Dispose()
+        }
+    }
+    return $res
 }
 
 # Exit code for one name before any change: 0 usable, 10 refused, 11 allow-listed but absent.
@@ -170,8 +232,10 @@ function Test-ServiceTarget
     if ((Test-ServiceNameFormat -Name $Name) -and (Test-ServiceAllowListed -Name $Name))
     {
         $res = $ExitNotInstalled
-        if ($null -ne (Get-InstalledService -Name $Name))
+        $service = Get-InstalledService -Name $Name
+        if ($null -ne $service)
         {
+            $service.Dispose()
             $res = $ExitSucceeded
         }
     }
@@ -205,7 +269,7 @@ function Resolve-RequestedNames
 }
 
 # A refused name is caller-supplied text, so it is reduced to the allowed alphabet and length
-# before it is written to the log; otherwise it could forge extra log lines.
+# before it is recorded; otherwise it could forge extra lines in the entry.
 function Get-LoggableName
 {
     param
@@ -223,7 +287,7 @@ function Get-LoggableName
 }
 
 # Free text from an exception message: control characters (line breaks above all) are replaced
-# so it cannot forge log lines, and the length is bounded.
+# so it cannot forge lines, and the length is bounded.
 function Get-LoggableText
 {
     param
@@ -240,6 +304,8 @@ function Get-LoggableText
     return $clean
 }
 
+# Writes one Application event-log entry: Information for success, Warning for a refused,
+# not-installed, timed-out or failed action.
 function Write-ActionLog
 {
     param
@@ -256,26 +322,33 @@ function Write-ActionLog
 
     try
     {
-        # The OS-defined ProgramData folder, not the %ProgramData% variable: this process
-        # inherits the unelevated caller's environment, which must not choose where an
-        # administrator process creates folders and appends text.
-        $logDirectory = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'SaddleRAG\logs'
-        if (-not (Test-Path -LiteralPath $logDirectory))
+        # The source is registered by the installer; it is deliberately not created here, so
+        # an administrator process does not register event sources on a caller's behalf.
+        if ([System.Diagnostics.EventLog]::SourceExists($EventSourceName))
         {
-            New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+            $timestamp = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+            $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+            $message = "timestamp=$timestamp user=$user service=$Service action=$ActionName result=$Result"
+            $entryType = [System.Diagnostics.EventLogEntryType]::Warning
+            $eventId = $EventIdNotSucceeded
+            if ($Result -eq 'Succeeded')
+            {
+                $entryType = [System.Diagnostics.EventLogEntryType]::Information
+                $eventId = $EventIdSucceeded
+            }
+            [System.Diagnostics.EventLog]::WriteEntry($EventSourceName, $message, $entryType, $eventId)
         }
-
-        $timestamp = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-        $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-        $line = "$timestamp`t$user`t$Service`t$ActionName`t$Result"
-        Add-Content -LiteralPath (Join-Path $logDirectory 'service-actions.log') -Value $line -Encoding UTF8
+        else
+        {
+            [Console]::Error.WriteLine("Restart-SaddleRAGComponent: event source '$EventSourceName' is not registered; the action was not recorded.")
+        }
     }
     catch
     {
-        # The log is an audit aid, not part of the action: a full disk, a locked file or a
-        # permissions problem must never turn a service change that worked into a failure
+        # The record is an audit aid, not part of the action: a missing source, a full log or
+        # a permissions problem must never turn a service change that worked into a failure
         # (or hide one that did not), so the exit code is left to the action alone.
-        [Console]::Error.WriteLine("Restart-SaddleRAGComponent: could not write the action log: " + $_.Exception.Message)
+        [Console]::Error.WriteLine("Restart-SaddleRAGComponent: could not write the event-log entry: " + $_.Exception.Message)
     }
 }
 
@@ -311,6 +384,14 @@ function Stop-TargetService
     )
 
     $Service.Refresh()
+
+    # Asking a service that is still starting to stop is refused or ignored by many services;
+    # let it finish starting first.
+    if ($Service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::StartPending)
+    {
+        $Service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, $Timeout)
+        $Service.Refresh()
+    }
     if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped)
     {
         if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::StopPending)
@@ -333,6 +414,13 @@ function Start-TargetService
     )
 
     $Service.Refresh()
+
+    # A service that is still stopping cannot be started; let it finish stopping first.
+    if ($Service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::StopPending)
+    {
+        $Service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, $Timeout)
+        $Service.Refresh()
+    }
     if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running)
     {
         if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::StartPending)
@@ -343,7 +431,7 @@ function Start-TargetService
     }
 }
 
-# Performs the action on one validated service and returns its exit code. The result is logged.
+# Performs the action on one validated service and returns its exit code. The result is recorded.
 function Invoke-ServiceAction
 {
     param
@@ -361,8 +449,10 @@ function Invoke-ServiceAction
     $service = Get-InstalledService -Name $Name
     $code = $ExitSucceeded
     $result = 'Succeeded'
+    $recordedName = Get-LoggableName -Name $Name
     try
     {
+        $recordedName = $service.ServiceName
         if ($ActionName -in @('Stop', 'Restart'))
         {
             Stop-TargetService -Service $service -Timeout $Timeout
@@ -385,51 +475,67 @@ function Invoke-ServiceAction
             $result = 'Failed: ' + (Get-LoggableText -Text $_.Exception.Message)
         }
     }
-    Write-ActionLog -Service $service.Name -ActionName $ActionName -Result $result
+    Write-ActionLog -Service $recordedName -ActionName $ActionName -Result $result
 
-    # Console, not Write-Output: anything written to the output stream would become part of
-    # this function's return value and corrupt the exit code.
-    [Console]::Out.WriteLine("Restart-SaddleRAGComponent: $($service.Name) $ActionName $result")
+    # Console, not the output stream: anything written to the output stream would become part
+    # of this function's return value and corrupt the exit code.
+    [Console]::Out.WriteLine("Restart-SaddleRAGComponent: $recordedName $ActionName $result")
     return $code
 }
 
 $exitCode = $ExitSucceeded
 try
 {
-    $names = @(Resolve-RequestedNames -Requested $ServiceName)
-    if ($names.Count -eq 0)
+    if ($PSCmdlet.ParameterSetName -eq 'ImagePathProbe')
     {
-        $exitCode = $ExitNotAllowed
-    }
-
-    # Validate every name before changing anything so a refused name can never leave the
-    # others half-processed.
-    foreach ($name in $names)
-    {
-        if ($exitCode -eq $ExitSucceeded)
+        $probed = Get-ImagePathExecutableName -ImagePath $TestImagePath
+        if ($null -eq $probed)
         {
-            $check = Test-ServiceTarget -Name $name
-            if ($check -ne $ExitSucceeded)
-            {
-                $exitCode = $check
-                $reason = if ($check -eq $ExitNotInstalled) { 'NotInstalled' } else { 'NotAllowListed' }
-                Write-Output "Restart-SaddleRAGComponent: $(Get-LoggableName -Name $name) $reason"
-                if (-not $ValidateOnly)
-                {
-                    Write-ActionLog -Service (Get-LoggableName -Name $name) -ActionName $Action -Result $reason
-                }
-            }
+            $probed = ''
         }
+        [Console]::Out.WriteLine($probed)
     }
-
-    if ($exitCode -eq $ExitSucceeded -and -not $ValidateOnly)
+    else
     {
-        $timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
+        $names = @(Resolve-RequestedNames -Requested $ServiceName)
+        if ($names.Count -eq 0)
+        {
+            $exitCode = $ExitNotAllowed
+        }
+
+        # Validate every name before changing anything so a refused name can never leave the
+        # others half-processed.
         foreach ($name in $names)
         {
             if ($exitCode -eq $ExitSucceeded)
             {
-                $exitCode = Invoke-ServiceAction -Name $name -ActionName $Action -Timeout $timeout
+                $check = Test-ServiceTarget -Name $name
+                if ($check -ne $ExitSucceeded)
+                {
+                    $exitCode = $check
+                    $reason = 'NotAllowListed'
+                    if ($check -eq $ExitNotInstalled)
+                    {
+                        $reason = 'NotInstalled'
+                    }
+                    [Console]::Out.WriteLine("Restart-SaddleRAGComponent: $(Get-LoggableName -Name $name) $reason")
+                    if (-not $ValidateOnly)
+                    {
+                        Write-ActionLog -Service (Get-LoggableName -Name $name) -ActionName $Action -Result $reason
+                    }
+                }
+            }
+        }
+
+        if ($exitCode -eq $ExitSucceeded -and -not $ValidateOnly)
+        {
+            $timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
+            foreach ($name in $names)
+            {
+                if ($exitCode -eq $ExitSucceeded)
+                {
+                    $exitCode = Invoke-ServiceAction -Name $name -ActionName $Action -Timeout $timeout
+                }
             }
         }
     }
