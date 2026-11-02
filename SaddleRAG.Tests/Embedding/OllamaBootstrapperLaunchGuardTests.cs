@@ -128,11 +128,34 @@ public sealed class OllamaBootstrapperLaunchGuardTests : IDisposable
         Assert.Equal(expected: 1, spawnCount);
     }
 
-    private static OllamaBootstrapper MakeBootstrapper()
+    [Theory]
+    [InlineData("http://127.0.0.1:39999", "127.0.0.1:39999")]
+    [InlineData("http://localhost:39998", "localhost:39998")]
+    [InlineData("http://[::1]:39997", "[::1]:39997")]
+    public async Task OllamaIsLaunchedOnTheConfiguredAddress(string endpoint, string expectedHost)
+    {
+        // ollama serve listens where OLLAMA_HOST says (127.0.0.1:11434 when unset); a configured
+        // non-default port must reach it, or the launched server never answers where it is probed.
+        ProcessStartInfo? launched = null;
+        OllamaBootstrapper.pmProcessStarterOverride = startInfo =>
+        {
+            launched = startInfo;
+            return null;
+        };
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(LaunchLoopCancelAfter);
+        await IgnoringExceptions(() => InvokeLaunchAsync(MakeBootstrapper(endpoint), cts.Token));
+
+        Assert.NotNull(launched);
+        Assert.Equal(expectedHost, launched.Environment["OLLAMA_HOST"]);
+    }
+
+    private static OllamaBootstrapper MakeBootstrapper(string endpoint = DefaultTestEndpoint)
     {
         var settings = Options.Create(new OllamaSettings
                                           {
-                                              Endpoint = "http://127.0.0.1:39999",
+                                              Endpoint = endpoint,
                                               ClassificationModels =
                                               [
                                                   new OllamaModelEntry
@@ -180,5 +203,6 @@ public sealed class OllamaBootstrapperLaunchGuardTests : IDisposable
     }
 
     private const int ConcurrentLaunchAttempts = 8;
+    private const string DefaultTestEndpoint = "http://127.0.0.1:39999";
     private static readonly TimeSpan LaunchLoopCancelAfter = TimeSpan.FromMilliseconds(milliseconds: 100);
 }

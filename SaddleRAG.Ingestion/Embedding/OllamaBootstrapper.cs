@@ -357,6 +357,7 @@ public class OllamaBootstrapper
     private const string SelectedExecutableMissingMessage = "Ollama:ExecutablePath must name an existing absolute executable path.";
     private const string ModelDirectoryMissingMessage = "Ollama:ModelsDirectory must name an existing absolute model directory.";
     private const string ModelsEnvironmentVariable = "OLLAMA_MODELS";
+    private const string HostEnvironmentVariable = "OLLAMA_HOST";
 
     /// <summary>
     ///     Search a PATH-style string and a fallback list of common install
@@ -551,6 +552,7 @@ public class OllamaBootstrapper
                                     RedirectStandardError = true
                                 };
             ConfigureModelDirectory(startInfo);
+            ConfigureHost(startInfo);
             var started = pmProcessStarterOverride != null
                               ? pmProcessStarterOverride(startInfo)
                               : Process.Start(startInfo);
@@ -600,6 +602,15 @@ public class OllamaBootstrapper
                 throw new InvalidOperationException(ModelDirectoryMissingMessage);
             startInfo.Environment[ModelsEnvironmentVariable] = mSettings.ModelsDirectory;
         }
+    }
+
+    // ollama serve listens where OLLAMA_HOST says (127.0.0.1:11434 when unset), so it is told the
+    // configured endpoint's host and port; otherwise a non-default port is never bound and the
+    // post-launch probe waits out its whole budget. Uri.Host keeps an IPv6 address in brackets.
+    private void ConfigureHost(ProcessStartInfo startInfo)
+    {
+        if (Uri.TryCreate(mSettings.Endpoint, UriKind.Absolute, out Uri? endpoint))
+            startInfo.Environment[HostEnvironmentVariable] = $"{endpoint.Host}:{endpoint.Port}";
     }
 
     /// <summary>
