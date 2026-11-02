@@ -270,8 +270,10 @@ public sealed class ComponentsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task RestartAllRunsOneElevatedRestartAndShowsEachResultOnItsOwnLine()
+    public async Task RestartAllRunsOneElevatedRestartAndShowsTheSharedResultOnce()
     {
+        // MongoDB and SaddleRAG are restarted in one elevated call and both rows carry its message;
+        // the same line twice in a row says nothing more, so it is shown once.
         ComponentsViewModel viewModel = NewViewModel(Mongo(), SaddleRag());
 
         Assert.True(viewModel.RestartAllCommand.CanExecute(parameter: null));
@@ -279,8 +281,21 @@ public sealed class ComponentsViewModelTests : IDisposable
         await viewModel.ActionCompletion;
 
         await mServices.Received(1).RunAsync(Arg.Any<IReadOnlyList<string>>(), ServiceAction.Restart, Arg.Any<CancellationToken>());
-        Assert.Equal(["MongoDB and SaddleRAG restarted.", "MongoDB and SaddleRAG restarted."],
-                     viewModel.LastActionMessage.Split('\n'));
+        Assert.Equal(["MongoDB and SaddleRAG restarted."], viewModel.LastActionMessage.Split('\n'));
+    }
+
+    [Fact]
+    public async Task RestartAllStillShowsEachDifferentResultOnItsOwnLine()
+    {
+        ComponentsViewModel viewModel = NewViewModel(Mongo(), SaddleRag(), RemoteOllama());
+
+        viewModel.RestartAllCommand.Execute(parameter: null);
+        await viewModel.ActionCompletion;
+
+        string[] lines = viewModel.LastActionMessage.Split('\n');
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("another computer", lines[0], StringComparison.Ordinal);
+        Assert.Equal("MongoDB and SaddleRAG restarted.", lines[1]);
     }
 
     [Fact]

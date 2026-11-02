@@ -237,7 +237,15 @@ public sealed class ComponentsViewModel : INotifyPropertyChanged
     private async Task<string> RestartAllAsync(CancellationToken ct)
     {
         IReadOnlyList<ComponentActionResult> results = await mController.RestartAllAsync(mComponents, ct);
-        return string.Join(LineSeparator, results.Select(result => result.Message));
+
+        // MongoDB and SaddleRAG are restarted in one elevated call, so both rows carry the same
+        // message; a line identical to the one before it is shown once.
+        IEnumerable<string> lines = results.Where((result, index) => index == 0 ||
+                                                                     !string.Equals(result.Message,
+                                                                                    results[index - 1].Message,
+                                                                                    StringComparison.Ordinal))
+                                           .Select(result => result.Message);
+        return string.Join(LineSeparator, lines);
     }
 
     private async Task RunExclusiveAsync(string subject, Func<CancellationToken, Task<string>> run)
