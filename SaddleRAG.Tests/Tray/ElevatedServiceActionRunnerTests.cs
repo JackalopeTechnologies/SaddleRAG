@@ -348,6 +348,41 @@ public sealed class ElevatedServiceActionRunnerTests
     }
 
     [Fact]
+    public void RejectsAWaitLimitOfZero()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Rig(TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void RejectsANegativeWaitLimit()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Rig(TimeSpan.FromSeconds(-1)));
+    }
+
+    [Fact]
+    public void RejectsAnInfiniteWaitLimit()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Rig(Timeout.InfiniteTimeSpan));
+    }
+
+    [Fact]
+    public void RejectsAWaitLimitBeyondWhatCancelAfterAccepts()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new Rig(ElevatedServiceActionRunner.MaxProcessWaitTimeout + TimeSpan.FromMilliseconds(1)));
+    }
+
+    [Fact]
+    public void AcceptsTheLongestWaitLimitCancelAfterAccepts()
+    {
+        Rig rig = new(ElevatedServiceActionRunner.MaxProcessWaitTimeout);
+
+        using CancellationTokenSource cts = new();
+        cts.CancelAfter(ElevatedServiceActionRunner.MaxProcessWaitTimeout);
+        Assert.NotNull(rig.Runner);
+    }
+
+    [Fact]
     public async Task UsesTheDefaultWaitLimitWhenNoneIsGiven()
     {
         Rig rig = new();

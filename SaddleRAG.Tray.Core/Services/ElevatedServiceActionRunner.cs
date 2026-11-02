@@ -43,6 +43,13 @@ public sealed partial class ElevatedServiceActionRunner : IServiceActionRunner
         ArgumentException.ThrowIfNullOrWhiteSpace(scriptPath);
         ArgumentNullException.ThrowIfNull(probe);
         ArgumentNullException.ThrowIfNull(guard);
+        if (processWaitTimeout is { } limit)
+        {
+            // The launcher hands this to CancelAfter after the process has started, where an
+            // out-of-range value would fail too late to matter. Refuse it before any launch.
+            ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(limit, TimeSpan.Zero);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, MaxProcessWaitTimeout);
+        }
 
         mLauncher = launcher;
         mScriptPath = scriptPath;
@@ -63,6 +70,11 @@ public sealed partial class ElevatedServiceActionRunner : IServiceActionRunner
     public const int MaxScriptWaitsPerAction = 3;
 
     public const int ProcessWaitMarginSeconds = 30;
+
+    // The longest CancellationTokenSource.CancelAfter accepts, in milliseconds.
+    private const long MaxProcessWaitMilliseconds = 4294967294;
+
+    public static TimeSpan MaxProcessWaitTimeout => TimeSpan.FromMilliseconds(MaxProcessWaitMilliseconds);
 
     public static TimeSpan DefaultProcessWaitTimeout =>
         TimeSpan.FromSeconds((MaxScriptWaitsPerAction * ScriptTimeoutSeconds) + ProcessWaitMarginSeconds);

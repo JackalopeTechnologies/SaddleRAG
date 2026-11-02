@@ -286,6 +286,8 @@ public sealed class AclInstallLocationGuardTests
 
             Assert.False(verdict.IsSafe);
             Assert.Contains(link, verdict.Reason);
+            Assert.Contains("junction", verdict.Reason);
+            Assert.Contains("folder above the install folder", verdict.Reason);
         }
         finally
         {
@@ -333,6 +335,49 @@ public sealed class AclInstallLocationGuardTests
         }
     }
 
+    [Theory]
+    [InlineData(@"\\server\share\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1")]
+    [InlineData(@"\\localhost\C$\Program Files\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1")]
+    [InlineData(@"\\?\UNC\server\share\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1")]
+    [InlineData(@"\\.\C:\Program Files\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1")]
+    [InlineData(@"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1")]
+    public void ANetworkOrDevicePathIsRefused(string path)
+    {
+        RequireWindows();
+
+        InstallLocationVerdict verdict = AclInstallLocationGuard.CheckPathForm(path);
+
+        Assert.False(verdict.IsSafe);
+        Assert.Contains("network share", verdict.Reason);
+        Assert.Contains(path, verdict.Reason);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Program Files\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1")]
+    [InlineData(@"\\?\C:\Program Files\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1")]
+    public void ALocalDrivePathPassesTheFormCheck(string path)
+    {
+        RequireWindows();
+
+        Assert.True(AclInstallLocationGuard.CheckPathForm(path).IsSafe);
+    }
+
+    [Fact]
+    public void ANetworkShareToTheLocalDriveIsUnsafeWhetherOrNotItCanBeOpened()
+    {
+        RequireWindows();
+
+        // The administrative share of this machine's own system drive. A non-administrator may
+        // not be able to open it at all; either way the result must be Unsafe, and it is decided
+        // by the path form before any file is read.
+        string path = @"\\localhost\C$\Program Files\SaddleRAG.Mcp\ConfigureCrashCapture.ps1";
+
+        InstallLocationVerdict verdict = new AclInstallLocationGuard().Check(path);
+
+        Assert.False(verdict.IsSafe);
+        Assert.Contains("network share", verdict.Reason);
+    }
+
     [Fact]
     public void AScriptThatCannotBeReadIsUnsafe()
     {
@@ -344,6 +389,8 @@ public sealed class AclInstallLocationGuardTests
 
         Assert.False(verdict.IsSafe);
         Assert.Contains(missing, verdict.Reason);
+        Assert.Contains("does not exist", verdict.Reason);
+        Assert.DoesNotContain("junction", verdict.Reason);
     }
 
     [Fact]

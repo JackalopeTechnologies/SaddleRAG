@@ -69,6 +69,14 @@ public sealed class AclInstallLocationGuard : IInstallLocationGuard
                                                          | GenericAll;
 
     private const string UnreadableMessage = "Could not read the permissions of {0}: {1}";
+    private const string RemotePathMessage =
+        "{0} is on a network share or is a device path; only a local fixed drive can be trusted.";
+    private const string NotFixedDriveMessage = "{0} is on a {1} drive; only a local fixed drive can be trusted.";
+    private const string MissingMessage = "The {0} ({1}) does not exist.";
+    private const string LongPathPrefix = @"\\?\";
+    private const char Backslash = '\\';
+    private const char DriveColon = ':';
+    private const int DriveRootLength = 3;
     private const string NoFolderMessage = "{0} has no containing folder, so it cannot be checked.";
     private const string ReparsePointMessage =
         "{0} ({1}) is a junction or symbolic link, so the permissions read there may not be those of the real location.";
@@ -150,7 +158,56 @@ public sealed class AclInstallLocationGuard : IInstallLocationGuard
         return result;
     }
 
-    private static InstallLocationVerdict CheckFullPath(string scriptPath)
+    /// <summary>
+    ///     Refuses any path that is not a local drive path. On a network share the trusted
+    ///     well-known principals would be the file server's, not this computer's, and the file
+    ///     crosses the network on its way here. This is the string-only part: a UNC path
+    ///     (<c>\\server\share</c>), a <c>\\?\UNC\</c> path and every other device path are refused;
+    ///     <c>\\?\C:\</c> is the same local drive as <c>C:\</c> and is accepted.
+    /// </summary>
+    internal static InstallLocationVerdict CheckPathForm(string fullPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fullPath);
+
+        string drivePath = StripLongPathPrefix(fullPath);
+        bool isDrivePath = drivePath.Length >= DriveRootLength
+                           && char.IsAsciiLetter(drivePath[0])
+                           && drivePath[1] == DriveColon
+                           && drivePath[2] == Backslash;
+
+        return isDrivePath
+                   ? InstallLocationVerdict.Safe
+                   : InstallLocationVerdict.Unsafe(string.Format(RemotePathMessage, fullPath));
+    }
+
+    private static string StripLongPathPrefix(string fullPath) =>
+        fullPath.StartsWith(LongPathPrefix, StringComparison.Ordinal) ? fullPath[LongPathPrefix.Length..] : fullPath;
+
+    private static InstallLocationVerdict CheckVolume(string fullPath)
+    {
+        InstallLocationVerdict result = CheckPathForm(fullPath);
+        if (result.IsSafe)
+        {
+            DriveType driveType = new DriveInfo(StripLongPathPrefix(fullPath)[..DriveRootLength]).DriveType;
+            if (driveType != DriveType.Fixed)
+                result = InstallLocationVerdict.Unsafe(string.Format(NotFixedDriveMessage, fullPath, driveType));
+        }
+
+        return result;
+    }
+
+    private static InstallLocationVerdict CheckFullPath(string fullPath)
+    {
+        // Before any reparse or ACL read: those reads would otherwise be trusted on a volume
+        // whose "SYSTEM" and "Administrators" are not this computer's.
+        InstallLocationVerdict result = CheckVolume(fullPath);
+        if (result.IsSafe)
+            result = CheckPermissions(fullPath);
+
+        return result;
+    }
+
+    private static InstallLocationVerdict CheckPermissions(string scriptPath)
     {
         FileInfo script = new(scriptPath);
         DirectoryInfo? folder = script.Directory;
@@ -200,6 +257,10 @@ public sealed class AclInstallLocationGuard : IInstallLocationGuard
         InstallLocationVerdict result = InstallLocationVerdict.Safe;
         foreach ((FileSystemInfo info, string label) in chain)
         {
+            // Exists first: the attributes of a missing path read as all bits set, which would
+            // wrongly include the reparse-point bit.
+            if (result.IsSafe && !info.Exists)
+                result = InstallLocationVerdict.Unsafe(string.Format(MissingMessage, label, info.FullName));
             if (result.IsSafe && info.Attributes.HasFlag(FileAttributes.ReparsePoint))
                 result = InstallLocationVerdict.Unsafe(string.Format(ReparsePointMessage, label, info.FullName));
         }
