@@ -9,4 +9,10 @@ namespace SaddleRAG.Tray.Services;
 public interface IDoclingLauncher
 {
     Task<DoclingLaunchOutcome> EnsureRunningAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Lets the next <see cref="EnsureRunningAsync" /> start Docling again in this session. Called
+    ///     only after the operator stopped Docling and its port was confirmed free.
+    /// </summary>
+    void AllowRelaunchAfterOperatorStop();
 }

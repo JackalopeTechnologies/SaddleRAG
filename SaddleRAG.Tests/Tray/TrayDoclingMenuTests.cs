@@ -38,6 +38,10 @@ public sealed class TrayDoclingMenuTests
             Calls++;
             return Task.FromResult(DoclingLaunchOutcome.Ready);
         }
+
+        public void AllowRelaunchAfterOperatorStop()
+        {
+        }
     }
 
     private static string TrayFile(string fileName) =>

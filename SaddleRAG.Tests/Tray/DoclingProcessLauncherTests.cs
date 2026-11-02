@@ -186,6 +186,25 @@ public sealed class DoclingProcessLauncherTests : IDisposable
         }
     }
 
+    // Lives here rather than in ComponentControllerTests because the guard is process-wide: this
+    // class runs its tests one at a time and resets the guard around each, so no other test races it.
+    [Fact]
+    public async Task AnOperatorStopLetsTheNextLaunchStartDoclingAgain()
+    {
+        WriteRegistry(RegisteredCommand());
+        (DoclingProcessLauncher launcher, FakeProcessStarter starter, _, HttpClient client) =
+            MakeLauncher(_ => Unhealthy());
+        using(client)
+        {
+            DoclingProcessLauncher.ResetLaunchGuardForTesting();
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
+            launcher.AllowRelaunchAfterOperatorStop();
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(expected: 2, starter.Started.Count);
+        }
+    }
+
     [Fact]
     public async Task TesseractRegistrationInjectsTessdataPrefixWithATrailingSeparator()
     {

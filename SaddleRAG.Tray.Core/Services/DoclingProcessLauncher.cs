@@ -50,7 +50,8 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
     // Atomic single-shot guard, mirroring OllamaBootstrapper.LaunchOllamaAsync. A transient
     // health-probe failure must not spawn a second server: the failure mode we already saw
     // with Ollama was several processes fighting over one port while the legitimate listener
-    // was still loading its models.
+    // was still loading its models. Only an operator stop confirmed by a free port clears it
+    // (AllowRelaunchAfterOperatorStop).
     private static int psLaunchAttempted;
 
     private readonly HttpClient mHttpClient;
@@ -63,6 +64,16 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
 
     /// <summary>Resets the process-wide single-shot flag. Tests only; never called in production.</summary>
     internal static void ResetLaunchGuardForTesting() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
+
+    /// <summary>
+    ///     Clears the single-shot guard so the next <see cref="EnsureRunningAsync" /> may start Docling
+    ///     again. The guard exists so a transient health-probe failure cannot spawn a second server
+    ///     beside one that is still loading. Once the operator has stopped Docling and its port has been
+    ///     confirmed free, no server is left to collide with, which is the one safe time to clear it.
+    ///     The component controller calls this only then: never on a plain start, and never when
+    ///     another process took the port.
+    /// </summary>
+    public void AllowRelaunchAfterOperatorStop() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
 
     /// <summary>
     ///     Ensures Docling is serving, starting the registered command if it is not.
