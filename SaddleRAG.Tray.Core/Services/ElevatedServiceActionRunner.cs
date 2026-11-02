@@ -76,14 +76,15 @@ public sealed partial class ElevatedServiceActionRunner : IServiceActionRunner
     // ERROR_CANCELLED: what Windows reports when the operator declines the administrator prompt.
     private const int ElevationDeclinedErrorCode = 1223;
 
-    private const string ServiceNamePattern = @"^[A-Za-z0-9_.-]+\z";
+    // The first character cannot be a hyphen, so a name can never be read as a parameter.
+    private const string ServiceNamePattern = @"^[A-Za-z0-9_.][A-Za-z0-9_.-]*\z";
     private const string PowerShellFolder = "WindowsPowerShell";
     private const string PowerShellVersionFolder = "v1.0";
     private const string PowerShellExecutable = "powershell.exe";
     private const string RunAsVerb = "runas";
 
     private const string InvalidNameMessage =
-        "Service names may contain only letters, digits, underscore, dot and hyphen.";
+        "Service names may contain only letters, digits, underscore, dot and hyphen, and may not start with a hyphen.";
     private const string NoNamesMessage = "At least one service name is required.";
 
     private const string SucceededLogMessage = "Service action {Action} on {Services} succeeded";
@@ -152,11 +153,9 @@ public sealed partial class ElevatedServiceActionRunner : IServiceActionRunner
     private async Task<ServiceActionOutcome> LaunchAsync(string services, ServiceAction action, CancellationToken ct)
     {
         ServiceActionOutcome result;
-        using CancellationTokenSource waitLimit = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        waitLimit.CancelAfter(mProcessWaitTimeout);
         try
         {
-            int exitCode = await mLauncher.RunAsync(BuildStartInfo(services, action), waitLimit.Token);
+            int exitCode = await mLauncher.RunAsync(BuildStartInfo(services, action), mProcessWaitTimeout, ct);
             result = MapExitCode(exitCode);
             LogExit(action, services, result, exitCode);
         }
@@ -170,10 +169,10 @@ public sealed partial class ElevatedServiceActionRunner : IServiceActionRunner
             mLogger?.LogWarning(ex, LaunchFailedLogMessage, action, services, mScriptPath);
             result = ServiceActionOutcome.Failed;
         }
-        catch(OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch(TimeoutException)
         {
-            // Only the wait limit fired. The elevated script is still running and will finish
-            // its service action on its own; the tray just stops waiting to hear back.
+            // The wait limit ran out. The elevated script is still running and will finish its
+            // service action on its own; the tray just stops waiting to hear back.
             mLogger?.LogWarning(TimedOutWaitingLogMessage, action, services, mProcessWaitTimeout);
             result = ServiceActionOutcome.TimedOut;
         }

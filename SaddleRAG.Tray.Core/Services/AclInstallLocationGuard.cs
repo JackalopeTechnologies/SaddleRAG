@@ -57,17 +57,26 @@ public sealed class AclInstallLocationGuard : IInstallLocationGuard
     private const FileSystemRights FolderWriteRights = ObjectWriteRights
                                                        | FileSystemRights.DeleteSubdirectoriesAndFiles;
 
-    private const FileSystemRights ParentWriteRights = FileSystemRights.DeleteSubdirectoriesAndFiles
-                                                       | GenericWrite
-                                                       | GenericAll;
+    // Anyone who can delete, rename or take over an ancestor can swap the install folder for another
+    // (DeleteSubdirectoriesAndFiles, Delete), or rewrite who may. Creating siblings (AppendData,
+    // WriteData) cannot replace the script, so those are not listed: a default C:\ lets
+    // Authenticated Users create folders in it.
+    private const FileSystemRights AncestorWriteRights = FileSystemRights.DeleteSubdirectoriesAndFiles
+                                                         | FileSystemRights.Delete
+                                                         | FileSystemRights.ChangePermissions
+                                                         | FileSystemRights.TakeOwnership
+                                                         | GenericWrite
+                                                         | GenericAll;
 
     private const string UnreadableMessage = "Could not read the permissions of {0}: {1}";
-    private const string NoParentMessage = "{0} is in a folder with no parent, so it cannot be checked.";
+    private const string NoFolderMessage = "{0} has no containing folder, so it cannot be checked.";
+    private const string ReparsePointMessage =
+        "{0} ({1}) is a junction or symbolic link, so the permissions read there may not be those of the real location.";
     private const string UntrustedGrantMessage = "{0} ({1}) grants {2} permission to change it.";
     private const string UntrustedOwnerMessage = "{0} ({1}) is owned by {2}, not by SYSTEM or Administrators.";
     private const string ScriptLabel = "script";
     private const string FolderLabel = "install folder";
-    private const string ParentLabel = "folder above the install folder";
+    private const string AncestorLabel = "folder above the install folder";
     private const string UnknownPrincipal = "an unknown principal";
 
     private static readonly SecurityIdentifier[] smTrustedPrincipals =
@@ -134,7 +143,7 @@ public sealed class AclInstallLocationGuard : IInstallLocationGuard
                           InstallLocationScope.Folder => (rights & FolderWriteRights) != 0,
                           // Modify and FullControl are tested as whole masks: Modify's individual
                           // bits (create files, write attributes) appear in harmless entries too.
-                          _ => (rights & ParentWriteRights) != 0
+                          _ => (rights & AncestorWriteRights) != 0
                                || (rights & FileSystemRights.Modify) == FileSystemRights.Modify
                                || (rights & FileSystemRights.FullControl) == FileSystemRights.FullControl
                       };
@@ -145,22 +154,54 @@ public sealed class AclInstallLocationGuard : IInstallLocationGuard
     {
         FileInfo script = new(scriptPath);
         DirectoryInfo? folder = script.Directory;
-        DirectoryInfo? parent = folder?.Parent;
 
         InstallLocationVerdict result;
-        if (folder is null || parent is null)
-            result = InstallLocationVerdict.Unsafe(string.Format(NoParentMessage, scriptPath));
+        if (folder is null)
+        {
+            result = InstallLocationVerdict.Unsafe(string.Format(NoFolderMessage, scriptPath));
+        }
         else
         {
-            FileSecurity scriptSecurity = script.GetAccessControl();
-            DirectorySecurity folderSecurity = folder.GetAccessControl();
-            DirectorySecurity parentSecurity = parent.GetAccessControl();
+            // Every folder from the install folder up to the volume root: whoever can delete or
+            // take over any of them can substitute the install folder.
+            List<DirectoryInfo> ancestors = [];
+            for (DirectoryInfo? ancestor = folder.Parent; ancestor is not null; ancestor = ancestor.Parent)
+                ancestors.Add(ancestor);
 
-            result = CheckObject(scriptPath, ScriptLabel, scriptSecurity, InstallLocationScope.Script);
+            result = CheckForReparsePoints(script, folder, ancestors);
             if (result.IsSafe)
-                result = CheckObject(folder.FullName, FolderLabel, folderSecurity, InstallLocationScope.Folder);
+                result = CheckObject(scriptPath, ScriptLabel, script.GetAccessControl(), InstallLocationScope.Script);
             if (result.IsSafe)
-                result = CheckObject(parent.FullName, ParentLabel, parentSecurity, InstallLocationScope.Parent);
+                result = CheckObject(folder.FullName, FolderLabel, folder.GetAccessControl(), InstallLocationScope.Folder);
+            foreach (DirectoryInfo ancestor in ancestors)
+            {
+                if (result.IsSafe)
+                    result = CheckObject(ancestor.FullName, AncestorLabel, ancestor.GetAccessControl(),
+                                         InstallLocationScope.Ancestor);
+            }
+        }
+
+        return result;
+    }
+
+    // A junction or symbolic link anywhere on the path means the ACL read for that step is the
+    // link's own, while the launch follows it to a target whose permissions were never checked.
+    private static InstallLocationVerdict CheckForReparsePoints(FileInfo script,
+                                                                DirectoryInfo folder,
+                                                                IEnumerable<DirectoryInfo> ancestors)
+    {
+        (FileSystemInfo Info, string Label)[] chain =
+        [
+            (script, ScriptLabel),
+            (folder, FolderLabel),
+            .. ancestors.Select(ancestor => ((FileSystemInfo) ancestor, AncestorLabel))
+        ];
+
+        InstallLocationVerdict result = InstallLocationVerdict.Safe;
+        foreach ((FileSystemInfo info, string label) in chain)
+        {
+            if (result.IsSafe && info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                result = InstallLocationVerdict.Unsafe(string.Format(ReparsePointMessage, label, info.FullName));
         }
 
         return result;

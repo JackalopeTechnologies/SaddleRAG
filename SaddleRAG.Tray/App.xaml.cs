@@ -310,32 +310,35 @@ public partial class App : Application
                                              ServiceAction action,
                                              string workingMessage)
     {
-        if (mServiceActionActive)
+        var started = false;
+        try
         {
-            ShowBalloon(ServiceActionBusyMessage);
-        }
-        else
-        {
-            mServiceActionActive = true;
-            try
+            if (mServiceActionActive)
             {
+                ShowBalloon(ServiceActionBusyMessage);
+            }
+            else
+            {
+                mServiceActionActive = true;
+                started = true;
                 ServiceActionOutcome outcome = await run(mShutdown.Token);
                 SyncMenu();
                 ShowBalloon(ServiceActionOutcomeText.Describe(outcome, action, McpServiceSubject));
             }
-            catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
-            {
-                // The tray is exiting; the elevated script finishes the action on its own.
-            }
-            catch (Exception ex)
-            {
-                mLog?.LogError(ex, ActionFailedLogMessage, workingMessage);
-                ShowBalloon($"{workingMessage}{ActionFailedSuffix}{ex.Message}");
-            }
-            finally
-            {
+        }
+        catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
+        {
+            // The tray is exiting; the elevated script finishes the action on its own.
+        }
+        catch (Exception ex)
+        {
+            mLog?.LogError(ex, ActionFailedLogMessage, workingMessage);
+            ShowBalloon($"{workingMessage}{ActionFailedSuffix}{ex.Message}");
+        }
+        finally
+        {
+            if (started)
                 mServiceActionActive = false;
-            }
         }
     }
 

@@ -28,11 +28,13 @@ public sealed class ElevatedServiceActionRunnerTests
 
         public int Calls { get; private set; }
         public ProcessStartInfo? StartInfo { get; private set; }
+        public TimeSpan? WaitLimit { get; private set; }
 
-        public Task<int> RunAsync(ProcessStartInfo startInfo, CancellationToken ct)
+        public Task<int> RunAsync(ProcessStartInfo startInfo, TimeSpan waitLimit, CancellationToken ct)
         {
             Calls++;
             StartInfo = startInfo;
+            WaitLimit = waitLimit;
             return Behavior(startInfo, ct);
         }
     }
@@ -271,6 +273,9 @@ public sealed class ElevatedServiceActionRunnerTests
     [InlineData("A&B")]
     [InlineData("A\"")]
     [InlineData("A\" -Action Stop")]
+    [InlineData("-Action")]
+    [InlineData("-")]
+    [InlineData("-ServiceName")]
     [InlineData("A\n")]
     [InlineData("A\r\nB")]
     [InlineData("A$B")]
@@ -333,14 +338,30 @@ public sealed class ElevatedServiceActionRunnerTests
     }
 
     [Fact]
-    public async Task StopsWaitingAndReportsTimedOutWhenTheElevatedProcessOutlastsTheWait()
+    public async Task PassesTheWaitLimitToTheLauncherSoItCanCountFromProcessStart()
     {
-        Rig rig = new(TimeSpan.FromMilliseconds(50));
-        rig.Launcher.Behavior = async (_, ct) =>
-                                {
-                                    await Task.Delay(Timeout.Infinite, ct);
-                                    return 0;
-                                };
+        Rig rig = new(TimeSpan.FromSeconds(42));
+
+        await rig.Runner.RunAsync(["SaddleRAGMcp"], ServiceAction.Restart, TestContext.Current.CancellationToken);
+
+        Assert.Equal(TimeSpan.FromSeconds(42), rig.Launcher.WaitLimit);
+    }
+
+    [Fact]
+    public async Task UsesTheDefaultWaitLimitWhenNoneIsGiven()
+    {
+        Rig rig = new();
+
+        await rig.Runner.RunAsync(["SaddleRAGMcp"], ServiceAction.Restart, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ElevatedServiceActionRunner.DefaultProcessWaitTimeout, rig.Launcher.WaitLimit);
+    }
+
+    [Fact]
+    public async Task ALauncherWaitThatRunsOutIsTimedOutWithAWarning()
+    {
+        Rig rig = new();
+        rig.Launcher.Behavior = (_, _) => throw new TimeoutException("wait limit");
 
         ServiceActionOutcome outcome = await rig.Runner.RunAsync(["SaddleRAGMcp"],
                                                                  ServiceAction.Restart,
@@ -348,6 +369,7 @@ public sealed class ElevatedServiceActionRunnerTests
 
         Assert.Equal(ServiceActionOutcome.TimedOut, outcome);
         Assert.Contains(rig.Logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.DoesNotContain(rig.Logger.Entries, e => e.Level >= LogLevel.Error);
     }
 
     [Fact]

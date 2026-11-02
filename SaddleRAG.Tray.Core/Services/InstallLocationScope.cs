@@ -14,6 +14,9 @@ public enum InstallLocationScope
     /// <summary>The folder holding the script.</summary>
     Folder,
 
-    /// <summary>The folder's parent: whoever can delete the folder there could swap it for another.</summary>
-    Parent
+    /// <summary>
+    ///     Any folder above that folder, up to the volume root: whoever can delete or take over one
+    ///     of them could swap the install folder for another.
+    /// </summary>
+    Ancestor
 }

@@ -26,13 +26,16 @@ public sealed class AclInstallLocationGuardTests
     private const FileSystemRights GenericWrite = (FileSystemRights) 0x40000000;
     private const FileSystemRights GenericAll = (FileSystemRights) 0x10000000;
 
-    private static readonly SecurityIdentifier smUsers = new(WellKnownSidType.BuiltinUsersSid, null);
-    private static readonly SecurityIdentifier smEveryone = new(WellKnownSidType.WorldSid, null);
-    private static readonly SecurityIdentifier smCreatorOwner = new(WellKnownSidType.CreatorOwnerSid, null);
-    private static readonly SecurityIdentifier smSystem = new(WellKnownSidType.LocalSystemSid, null);
-    private static readonly SecurityIdentifier smAdministrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
+    // Built on use, not in static fields: constructing a SecurityIdentifier throws off Windows,
+    // and a throwing type initializer would fail these tests before RequireWindows could skip them.
+    private static SecurityIdentifier UsersSid => new(WellKnownSidType.BuiltinUsersSid, null);
+    private static SecurityIdentifier EveryoneSid => new(WellKnownSidType.WorldSid, null);
+    private static SecurityIdentifier CreatorOwnerSid => new(WellKnownSidType.CreatorOwnerSid, null);
+    private static SecurityIdentifier SystemSid => new(WellKnownSidType.LocalSystemSid, null);
+    private static SecurityIdentifier AdministratorsSid => new(WellKnownSidType.BuiltinAdministratorsSid, null);
+    private static SecurityIdentifier AuthenticatedUsersSid => new(WellKnownSidType.AuthenticatedUserSid, null);
 
-    private static readonly SecurityIdentifier smTrustedInstaller =
+    private static SecurityIdentifier TrustedInstallerSid =>
         new("S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464");
 
     private static AclEntry Allow(SecurityIdentifier sid,
@@ -52,13 +55,13 @@ public sealed class AclInstallLocationGuardTests
     [Theory]
     [InlineData(InstallLocationScope.Script)]
     [InlineData(InstallLocationScope.Folder)]
-    [InlineData(InstallLocationScope.Parent)]
+    [InlineData(InstallLocationScope.Ancestor)]
     public void ReadAndExecuteForUsersIsHarmless(InstallLocationScope scope)
     {
         RequireWindows();
 
         SecurityIdentifier? offender = AclInstallLocationGuard.FindUntrustedGrant(
-            [Allow(smUsers, FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize)], scope);
+            [Allow(UsersSid, FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize)], scope);
 
         Assert.Null(offender);
     }
@@ -66,16 +69,16 @@ public sealed class AclInstallLocationGuardTests
     [Theory]
     [InlineData(InstallLocationScope.Script)]
     [InlineData(InstallLocationScope.Folder)]
-    [InlineData(InstallLocationScope.Parent)]
+    [InlineData(InstallLocationScope.Ancestor)]
     public void TrustedPrincipalsMayHoldFullControl(InstallLocationScope scope)
     {
         RequireWindows();
 
         AclEntry[] rules =
         [
-            Allow(smSystem, FileSystemRights.FullControl),
-            Allow(smAdministrators, FileSystemRights.FullControl),
-            Allow(smTrustedInstaller, FileSystemRights.FullControl)
+            Allow(SystemSid, FileSystemRights.FullControl),
+            Allow(AdministratorsSid, FileSystemRights.FullControl),
+            Allow(TrustedInstallerSid, FileSystemRights.FullControl)
         ];
 
         Assert.Null(AclInstallLocationGuard.FindUntrustedGrant(rules, scope));
@@ -105,46 +108,46 @@ public sealed class AclInstallLocationGuardTests
     [InlineData(InstallLocationScope.Folder, FileSystemRights.FullControl)]
     [InlineData(InstallLocationScope.Folder, GenericWrite)]
     [InlineData(InstallLocationScope.Folder, GenericAll)]
-    [InlineData(InstallLocationScope.Parent, FileSystemRights.DeleteSubdirectoriesAndFiles)]
-    [InlineData(InstallLocationScope.Parent, FileSystemRights.Modify)]
-    [InlineData(InstallLocationScope.Parent, FileSystemRights.FullControl)]
-    [InlineData(InstallLocationScope.Parent, GenericWrite)]
-    [InlineData(InstallLocationScope.Parent, GenericAll)]
+    [InlineData(InstallLocationScope.Ancestor, FileSystemRights.DeleteSubdirectoriesAndFiles)]
+    [InlineData(InstallLocationScope.Ancestor, FileSystemRights.Delete)]
+    [InlineData(InstallLocationScope.Ancestor, FileSystemRights.ChangePermissions)]
+    [InlineData(InstallLocationScope.Ancestor, FileSystemRights.TakeOwnership)]
+    [InlineData(InstallLocationScope.Ancestor, FileSystemRights.Modify)]
+    [InlineData(InstallLocationScope.Ancestor, FileSystemRights.FullControl)]
+    [InlineData(InstallLocationScope.Ancestor, GenericWrite)]
+    [InlineData(InstallLocationScope.Ancestor, GenericAll)]
     public void AnUntrustedWriteRightIsReported(InstallLocationScope scope, FileSystemRights rights)
     {
         RequireWindows();
 
-        SecurityIdentifier? offender = AclInstallLocationGuard.FindUntrustedGrant([Allow(smUsers, rights)], scope);
+        SecurityIdentifier? offender = AclInstallLocationGuard.FindUntrustedGrant([Allow(UsersSid, rights)], scope);
 
-        Assert.Equal(smUsers, offender);
+        Assert.Equal(UsersSid, offender);
     }
 
     [Theory]
     [InlineData(FileSystemRights.WriteData)]
     [InlineData(FileSystemRights.AppendData)]
-    [InlineData(FileSystemRights.Delete)]
-    [InlineData(FileSystemRights.ChangePermissions)]
-    [InlineData(FileSystemRights.TakeOwnership)]
-    public void AParentMayLetUsersCreateAndNothingWorseThanThat(FileSystemRights rights)
+    public void AnAncestorMayLetUsersCreateItemsAndNothingWorseThanThat(FileSystemRights rights)
     {
         RequireWindows();
 
-        // Only a parent grant that could move or delete the install folder matters; creating
-        // siblings, or touching the parent itself, cannot replace the script.
-        Assert.Null(AclInstallLocationGuard.FindUntrustedGrant([Allow(smUsers, rights)], InstallLocationScope.Parent));
+        // Only a grant that could delete, rename or take over an ancestor matters; creating
+        // siblings in it cannot replace the install folder or the script.
+        Assert.Null(AclInstallLocationGuard.FindUntrustedGrant([Allow(UsersSid, rights)], InstallLocationScope.Ancestor));
     }
 
     [Theory]
     [InlineData(InstallLocationScope.Script)]
     [InlineData(InstallLocationScope.Folder)]
-    [InlineData(InstallLocationScope.Parent)]
+    [InlineData(InstallLocationScope.Ancestor)]
     public void AnInheritOnlyEntryDoesNotApplyToTheObjectItself(InstallLocationScope scope)
     {
         RequireWindows();
 
         // Program Files carries "CREATOR OWNER: full control, inherit only" -- it governs new
         // children, not Program Files.
-        AclEntry rule = Allow(smCreatorOwner, GenericAll, PropagationFlags.InheritOnly);
+        AclEntry rule = Allow(CreatorOwnerSid, GenericAll, PropagationFlags.InheritOnly);
 
         Assert.Null(AclInstallLocationGuard.FindUntrustedGrant([rule], scope));
     }
@@ -154,10 +157,10 @@ public sealed class AclInstallLocationGuardTests
     {
         RequireWindows();
 
-        AclEntry rule = Allow(smCreatorOwner, GenericAll);
+        AclEntry rule = Allow(CreatorOwnerSid, GenericAll);
 
-        Assert.Equal(smCreatorOwner,
-                     AclInstallLocationGuard.FindUntrustedGrant([rule], InstallLocationScope.Parent));
+        Assert.Equal(CreatorOwnerSid,
+                     AclInstallLocationGuard.FindUntrustedGrant([rule], InstallLocationScope.Ancestor));
     }
 
     [Fact]
@@ -167,11 +170,11 @@ public sealed class AclInstallLocationGuardTests
 
         AclEntry[] rules =
         [
-            Deny(smUsers, FileSystemRights.FullControl),
-            Allow(smEveryone, FileSystemRights.WriteData)
+            Deny(UsersSid, FileSystemRights.FullControl),
+            Allow(EveryoneSid, FileSystemRights.WriteData)
         ];
 
-        Assert.Equal(smEveryone, AclInstallLocationGuard.FindUntrustedGrant(rules, InstallLocationScope.Script));
+        Assert.Equal(EveryoneSid, AclInstallLocationGuard.FindUntrustedGrant(rules, InstallLocationScope.Script));
     }
 
     [Fact]
@@ -179,7 +182,7 @@ public sealed class AclInstallLocationGuardTests
     {
         RequireWindows();
 
-        AclEntry deny = Deny(smUsers, FileSystemRights.FullControl);
+        AclEntry deny = Deny(UsersSid, FileSystemRights.FullControl);
 
         Assert.Null(AclInstallLocationGuard.FindUntrustedGrant([deny], InstallLocationScope.Script));
     }
@@ -189,12 +192,122 @@ public sealed class AclInstallLocationGuardTests
     {
         RequireWindows();
 
-        Assert.True(AclInstallLocationGuard.IsTrustedOwner(smSystem));
-        Assert.True(AclInstallLocationGuard.IsTrustedOwner(smAdministrators));
-        Assert.True(AclInstallLocationGuard.IsTrustedOwner(smTrustedInstaller));
-        Assert.False(AclInstallLocationGuard.IsTrustedOwner(smUsers));
+        Assert.True(AclInstallLocationGuard.IsTrustedOwner(SystemSid));
+        Assert.True(AclInstallLocationGuard.IsTrustedOwner(AdministratorsSid));
+        Assert.True(AclInstallLocationGuard.IsTrustedOwner(TrustedInstallerSid));
+        Assert.False(AclInstallLocationGuard.IsTrustedOwner(UsersSid));
         Assert.False(AclInstallLocationGuard.IsTrustedOwner(WindowsIdentity.GetCurrent().User));
         Assert.False(AclInstallLocationGuard.IsTrustedOwner(owner: null));
+    }
+
+    [Fact]
+    public void ADefaultVolumeRootPassesTheAncestorRule()
+    {
+        RequireWindows();
+
+        // Modelled on a default C:\ : Authenticated Users may create folders in the root itself,
+        // and their Modify (generic bits, 0xE0010000 as read from disk) is inherit-only.
+        AclEntry[] rules =
+        [
+            Allow(AuthenticatedUsersSid, FileSystemRights.CreateDirectories),
+            Allow(AuthenticatedUsersSid, (FileSystemRights) unchecked((int) 0xE0010000), PropagationFlags.InheritOnly),
+            Allow(SystemSid, FileSystemRights.FullControl),
+            Allow(AdministratorsSid, FileSystemRights.FullControl),
+            Allow(UsersSid, FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize)
+        ];
+
+        Assert.Null(AclInstallLocationGuard.FindUntrustedGrant(rules, InstallLocationScope.Ancestor));
+    }
+
+    [Fact]
+    public void ADefaultProgramFilesPassesTheAncestorRule()
+    {
+        RequireWindows();
+
+        AclEntry[] rules =
+        [
+            Allow(CreatorOwnerSid, GenericAll, PropagationFlags.InheritOnly),
+            Allow(SystemSid, FileSystemRights.Modify | FileSystemRights.Synchronize),
+            Allow(AdministratorsSid, FileSystemRights.Modify | FileSystemRights.Synchronize),
+            Allow(UsersSid, FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize),
+            Allow(UsersSid, (FileSystemRights) unchecked((int) 0xA0000000), PropagationFlags.InheritOnly),
+            Allow(TrustedInstallerSid, FileSystemRights.FullControl)
+        ];
+
+        Assert.Null(AclInstallLocationGuard.FindUntrustedGrant(rules, InstallLocationScope.Ancestor));
+    }
+
+    [Fact]
+    public void AScriptReachedThroughAJunctionIsUnsafe()
+    {
+        RequireWindows();
+
+        string root = Path.Combine(Path.GetTempPath(), $"saddlerag-junction-{Guid.NewGuid():N}");
+        string realFolder = Path.Combine(root, "real");
+        string link = Path.Combine(root, "link");
+        Directory.CreateDirectory(realFolder);
+        try
+        {
+            File.WriteAllText(Path.Combine(realFolder, "Restart-SaddleRAGComponent.ps1"), "# stand-in");
+            CreateJunction(link, realFolder);
+
+            InstallLocationVerdict verdict =
+                new AclInstallLocationGuard().Check(Path.Combine(link, "Restart-SaddleRAGComponent.ps1"));
+
+            Assert.False(verdict.IsSafe);
+            Assert.Contains(link, verdict.Reason);
+            Assert.Contains("junction", verdict.Reason);
+        }
+        finally
+        {
+            // Remove the junction itself first: deleting the root recursively must not follow it.
+            if (Directory.Exists(link))
+                Directory.Delete(link, recursive: false);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AJunctionHigherUpThePathIsUnsafe()
+    {
+        RequireWindows();
+
+        string root = Path.Combine(Path.GetTempPath(), $"saddlerag-junction-{Guid.NewGuid():N}");
+        string realParent = Path.Combine(root, "real");
+        string link = Path.Combine(root, "link");
+        Directory.CreateDirectory(Path.Combine(realParent, "install"));
+        try
+        {
+            File.WriteAllText(Path.Combine(realParent, "install", "Restart-SaddleRAGComponent.ps1"), "# stand-in");
+            CreateJunction(link, realParent);
+
+            InstallLocationVerdict verdict = new AclInstallLocationGuard()
+                .Check(Path.Combine(link, "install", "Restart-SaddleRAGComponent.ps1"));
+
+            Assert.False(verdict.IsSafe);
+            Assert.Contains(link, verdict.Reason);
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+                Directory.Delete(link, recursive: false);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // mklink /J needs no elevation, unlike Directory.CreateSymbolicLink.
+    private static void CreateJunction(string link, string target)
+    {
+        System.Diagnostics.ProcessStartInfo info = new("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+                                                   {
+                                                       CreateNoWindow = true,
+                                                       UseShellExecute = false,
+                                                       RedirectStandardOutput = true
+                                                   };
+        using System.Diagnostics.Process process = System.Diagnostics.Process.Start(info)!;
+        process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        Assert.Equal(expected: 0, process.ExitCode);
     }
 
     [Fact]
