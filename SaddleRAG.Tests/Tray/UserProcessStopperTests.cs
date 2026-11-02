@@ -70,12 +70,30 @@ public sealed class UserProcessStopperTests
 
     private static void KillIfRunning(Process process)
     {
-        if (!process.HasExited)
-            process.Kill(entireProcessTree: true);
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch(InvalidOperationException)
+        {
+            // The process is gone, or there is none to query: nothing is left to clean up, and the
+            // caller's next cleanup must still run.
+        }
     }
 
     private static ListeningProcess Describe(Process process) =>
         new(process.Id, process.ProcessName, ExecutablePath: null, process.StartTime.ToUniversalTime());
+
+    [Fact]
+    public void CleanupToleratesAProcessThatCannotBeQueried()
+    {
+        // The finally blocks clean up two processes in turn; one that has gone or was never started
+        // must not throw and leave the other running.
+        using Process neverStarted = new();
+
+        KillIfRunning(neverStarted);
+    }
 
     [Fact]
     public async Task StopsAChildProcessTheTestStarted()
