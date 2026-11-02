@@ -1,0 +1,31 @@
+PR-LEDGER — branch claude/saddle-rage-restart-ui-6fff27 (#196 Components window)
+Resolve every item and delete this file before opening the pull request.
+
+1. Installed-machine verification (needs Doug; UAC approvals). Install
+   E:\tmp\saddlerag-196-task10\SaddleRAG.Mcp-0.0.1.msi (local build of a322b79), then:
+   a. icacls "C:\Program Files\SaddleRAG.Mcp" shows owner BUILTIN\Administrators, protected
+      DACL: SYSTEM and Administrators full, Users read/execute. (Windows Installer applying
+      the O:BA owner part is unverified until this check.)
+   b. Event Viewer > Application has source "SaddleRAG Service Actions" after one action.
+   c. Tray menu Start MCP / Stop MCP work through one UAC prompt each.
+   d. Components window: Restart for MongoDB, SaddleRAG, Docling, Ollama; then Restart all.
+      After each, list_libraries and a real Toshiba search succeed.
+   e. Docling Restart after the tray itself launched Docling via start-docling.ps1
+      (checks the wrapper-exit wait, F2).
+   f. Decline a UAC prompt -> message line shows "Cancelled ...".
+   g. Stop MongoDB by hand, open Components -> MongoDB shows Stopped and Start works.
+   h. Stop Docling from the window while a directory scan waits -> it is not auto-restarted
+      until Start / Restart / Start Docling.
+2. Update #196 to match what was built (needs Doug's OK for the GitHub edit):
+   - Restart all order: Docling, Ollama, then MongoDB + SaddleRAG in one elevated call (R2).
+   - Service actions are logged to the Application event log, not a file (R4).
+   - Add the installed-machine results from item 1.
+3. Decision for Doug (R7): the LocalSystem service executable on a custom install path whose
+   parent folder a non-administrator can modify is still swappable by renaming the folder.
+   The tray refuses to elevate in that case, but the service itself is not protected.
+   Options: an install-time parent-folder check, or restrict installs to Program Files.
+4. Deferred minors judged "can wait" by the final review (no confirmed defect): listed in the
+   final review's triage (LocalEndpoint edge-case tests, GetConnectionString narrowing,
+   HealthPage source-scan tests, timing-sensitive probe tests, UI-thread probe cost,
+   status-line wording mix, SourceFileHeaderTests scanning untracked files). Decide whether
+   any become follow-up issues before the PR.
