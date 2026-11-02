@@ -111,6 +111,10 @@ public partial class App : Application
     private readonly ExternalToolDetector mToolDetector = new(new FileSystemProbe());
     private ElevatedServiceActionRunner? mServiceRunner;
     private DoclingProcessLauncher? mDoclingLauncher;
+
+    // Shared by the launch-request coordinator and the Components controller: an operator stop of
+    // Docling keeps the coordinator from starting it again until the operator starts it.
+    private readonly DoclingOperatorIntent mDoclingIntent = new();
     private IReadOnlyList<ComponentDefinition>? mCatalog;
     private Task mComponentsSetup = Task.CompletedTask;
     private ComponentsViewModel? mComponentsViewModel;
@@ -431,7 +435,8 @@ public partial class App : Application
         mDoclingCoordinator = new DoclingLaunchCoordinator(
             new MonitorDoclingLaunchRequestProbe(mDoclingHttpClient, new Uri(DashboardUrl)),
             mDoclingLauncher,
-            mLoggerFactory?.CreateLogger<DoclingLaunchCoordinator>());
+            mLoggerFactory?.CreateLogger<DoclingLaunchCoordinator>(),
+            mDoclingIntent);
     }
 
     private async Task<IReadOnlyList<ComponentDefinition>?> ReadCatalogAsync()
@@ -524,6 +529,11 @@ public partial class App : Application
             if (launcher is not null)
             {
                 DoclingLaunchOutcome outcome = await launcher.EnsureRunningAsync(CancellationToken.None);
+
+                // The menu item is an operator start: once Docling is up, a waiting scan may start it again later.
+                if (outcome is DoclingLaunchOutcome.Ready or DoclingLaunchOutcome.AlreadyRunning)
+                    mDoclingIntent.LiftAutoStartSuppression();
+
                 mLog?.LogInformation(DoclingLaunchLogMessage, outcome);
                 UpdateDoclingStatus(outcome.ToString());
                 ShowBalloon($"Docling — {outcome}");
@@ -572,8 +582,13 @@ public partial class App : Application
                                                  mDoclingLauncher,
                                                  new ProcessStarter(ComponentController.OllamaLaunchLogPath),
                                                  new MessageBoxOperatorConfirmation(),
-                                                 mLoggerFactory?.CreateLogger<ComponentController>());
-            ComponentsViewModel viewModel = new(mCatalog, probe.ProbeAsync, controller, shutdown: mShutdown.Token);
+                                                 mLoggerFactory?.CreateLogger<ComponentController>(),
+                                                 doclingIntent: mDoclingIntent);
+            ComponentsViewModel viewModel = new(mCatalog,
+                                                probe.ProbeAsync,
+                                                controller,
+                                                shutdown: mShutdown.Token,
+                                                logger: mLoggerFactory?.CreateLogger<ComponentsViewModel>());
             viewModel.OtherActionRunning = mServiceActionActive;
             viewModel.ActionFinished += (_, _) => SyncMenu();
             mComponentsViewModel = viewModel;

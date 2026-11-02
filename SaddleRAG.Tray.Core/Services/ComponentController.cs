@@ -32,6 +32,11 @@ namespace SaddleRAG.Tray.Services;
 ///             process still loading, keeps it in place, so a second server is never started beside one.
 ///         </item>
 ///         <item>
+///             An operator stop of Docling, or a restart whose start step fails after its stop worked,
+///             keeps the launch-request coordinator from starting it again until the operator next
+///             starts or restarts it successfully (<see cref="DoclingOperatorIntent" />).
+///         </item>
+///         <item>
 ///             A restart never stops what it cannot start again. Before asking the operator or stopping
 ///             anything it checks that Docling is registered and that Ollama has an executable path; if
 ///             not, nothing is touched. A plain stop is not affected.
@@ -62,7 +67,8 @@ public sealed class ComponentController
                                IProcessStarter ollamaStarter,
                                IOperatorConfirmation confirmation,
                                ILogger<ComponentController>? logger = null,
-                               TimeProvider? time = null)
+                               TimeProvider? time = null,
+                               DoclingOperatorIntent? doclingIntent = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(probe);
@@ -78,8 +84,10 @@ public sealed class ComponentController
         mListeners = new LocalListenerStopper(ports, stopper, confirmation, clock);
         mOllama = new OllamaServeLauncher(probe, ollamaStarter, clock);
         mLogger = logger;
+        mDoclingIntent = doclingIntent;
     }
 
+    private readonly DoclingOperatorIntent? mDoclingIntent;
     private readonly IServiceActionRunner mServices;
     private readonly IDoclingLauncher mDocling;
     private readonly LocalListenerStopper mListeners;
@@ -243,7 +251,7 @@ public sealed class ComponentController
             result = action switch
                      {
                          ServiceAction.Start => await StartListenerAsync(component, endpoint.Port, ct),
-                         ServiceAction.Stop => await mListeners.StopAsync(component, endpoint.Port, ct),
+                         ServiceAction.Stop => await StopListenerAsync(component, endpoint.Port, ct),
                          _ => await RestartListenerAsync(component, endpoint.Port, partOfRestartAll, ct)
                      };
         else
@@ -272,10 +280,24 @@ public sealed class ComponentController
         }
         else
         {
-            ComponentActionResult stop = await mListeners.StopAsync(component, port, ct);
+            ComponentActionResult stop = await StopListenerAsync(component, port, ct);
             bool stopped = stop.Status is ComponentActionStatus.Succeeded or ComponentActionStatus.AlreadyInState;
             result = stopped ? await StartListenerAsync(component, port, ct) : stop;
         }
+
+        return result;
+    }
+
+    // The operator's stop of Docling keeps the launch-request coordinator from starting it again
+    // (see DoclingOperatorIntent). It takes effect as soon as the stop has worked, so a restart whose
+    // start then fails leaves Docling stopped and suppressed, and the coordinator cannot start it in
+    // the gap between the two steps.
+    private async Task<ComponentActionResult> StopListenerAsync(ComponentDefinition component, int port, CancellationToken ct)
+    {
+        ComponentActionResult result = await mListeners.StopAsync(component, port, ct);
+        if (component.Kind == ComponentKind.Docling &&
+            result.Status is ComponentActionStatus.Succeeded or ComponentActionStatus.AlreadyInState)
+            mDoclingIntent?.SuppressAutoStart();
 
         return result;
     }
@@ -322,6 +344,9 @@ public sealed class ComponentController
                                                     ComponentActionStatus.Failed,
                                                     string.Format(DoclingFailedFormat, name, ProcessStarter.DefaultLogPath))
                                        };
+        if (result.Status == ComponentActionStatus.Succeeded)
+            mDoclingIntent?.LiftAutoStartSuppression();
+
         return result;
     }
 

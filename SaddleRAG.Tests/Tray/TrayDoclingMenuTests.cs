@@ -5,6 +5,7 @@
 
 #region Usings
 
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Tests.Documents.Docling;
 using SaddleRAG.Tray.Services;
 
@@ -86,6 +87,82 @@ public sealed class TrayDoclingMenuTests
         Assert.Equal(expected: 0, launcher.Calls);
     }
 
+    private sealed class RecordingCoordinatorLogger : ILogger<DoclingLaunchCoordinator>
+    {
+        public List<LogLevel> Levels { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel,
+                                EventId eventId,
+                                TState state,
+                                Exception? exception,
+                                Func<TState, Exception?, string> formatter)
+        {
+            Levels.Add(logLevel);
+        }
+    }
+
+    [Fact]
+    public async Task AStopByTheOperatorKeepsAWaitingRequestFromLaunchingUntilTheyStartAgain()
+    {
+        FakeLaunchRequestProbe probe = new() { Requested = true };
+        FakeLauncher launcher = new();
+        DoclingOperatorIntent intent = new();
+        DoclingLaunchCoordinator coordinator = new(probe, launcher, logger: null, intent);
+
+        intent.SuppressAutoStart();
+        DoclingLaunchOutcome? suppressed = await coordinator.PollOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(suppressed);
+        Assert.Equal(expected: 0, launcher.Calls);
+
+        intent.LiftAutoStartSuppression();
+        DoclingLaunchOutcome? lifted = await coordinator.PollOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(DoclingLaunchOutcome.Ready, lifted);
+        Assert.Equal(expected: 1, launcher.Calls);
+    }
+
+    [Fact]
+    public async Task ASuppressedPollLogsInformationOncePerSuppressionNotEveryTick()
+    {
+        FakeLaunchRequestProbe probe = new() { Requested = true };
+        FakeLauncher launcher = new();
+        DoclingOperatorIntent intent = new();
+        RecordingCoordinatorLogger logger = new();
+        DoclingLaunchCoordinator coordinator = new(probe, launcher, logger, intent);
+
+        intent.SuppressAutoStart();
+        for (var tick = 0; tick < 3; tick++)
+            await coordinator.PollOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal([LogLevel.Information], logger.Levels);
+
+        intent.LiftAutoStartSuppression();
+        intent.SuppressAutoStart();
+        await coordinator.PollOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal([LogLevel.Information, LogLevel.Information], logger.Levels);
+    }
+
+    [Fact]
+    public async Task ASuppressedPollWithNoRequestWaitingLogsNothing()
+    {
+        FakeLaunchRequestProbe probe = new() { Requested = false };
+        DoclingOperatorIntent intent = new();
+        RecordingCoordinatorLogger logger = new();
+        DoclingLaunchCoordinator coordinator = new(probe, new FakeLauncher(), logger, intent);
+
+        intent.SuppressAutoStart();
+        await coordinator.PollOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(logger.Levels);
+    }
+
     [Fact]
     public void RelayCommandInvokesItsAction()
     {
@@ -154,6 +231,10 @@ public sealed class TrayDoclingMenuTests
         Assert.Contains("new ProcessStarter(ComponentController.OllamaLaunchLogPath)", code, StringComparison.Ordinal);
         Assert.Equal(expected: 1, CountOccurrences(code, "new ElevatedServiceActionRunner("));
         Assert.Equal(expected: 1, CountOccurrences(code, "new DoclingProcessLauncher("));
+        Assert.Equal(expected: 1, CountOccurrences(code, "DoclingOperatorIntent mDoclingIntent = new();"));
+        Assert.Contains("mDoclingIntent);", code, StringComparison.Ordinal);
+        Assert.Contains("doclingIntent: mDoclingIntent", code, StringComparison.Ordinal);
+        Assert.Contains("mDoclingIntent.LiftAutoStartSuppression();", code, StringComparison.Ordinal);
     }
 
     private static int CountOccurrences(string text, string value)

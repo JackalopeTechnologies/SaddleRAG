@@ -9,6 +9,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 
 #endregion
 
@@ -44,11 +45,13 @@ public sealed class ComponentsViewModel : INotifyPropertyChanged
     /// <param name="controller">Carries out the operator's start, stop and restart.</param>
     /// <param name="time">The clock for the "last checked" text; defaults to the system clock.</param>
     /// <param name="shutdown">Cancelled when the tray exits; ends an action's wait and any refresh.</param>
+    /// <param name="logger">Optional; receives a Warning when an <see cref="ActionFinished" /> handler throws.</param>
     public ComponentsViewModel(IReadOnlyList<ComponentDefinition> components,
                                Func<ComponentDefinition, CancellationToken, Task<ComponentStatus>> probe,
                                ComponentController controller,
                                TimeProvider? time = null,
-                               CancellationToken shutdown = default)
+                               CancellationToken shutdown = default,
+                               ILogger<ComponentsViewModel>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(components);
         ArgumentNullException.ThrowIfNull(probe);
@@ -59,6 +62,7 @@ public sealed class ComponentsViewModel : INotifyPropertyChanged
         mController = controller;
         mTime = time ?? TimeProvider.System;
         mShutdown = shutdown;
+        mLogger = logger;
         Rows = [.. mComponents.Select(component => new ComponentRowViewModel(component, this))];
         RestartAllCommand = new RelayCommand(BeginRestartAll, () => CanAct);
     }
@@ -73,12 +77,14 @@ public sealed class ComponentsViewModel : INotifyPropertyChanged
     private const string StoppingSubject = "Stopping ";
     private const string RestartingSubject = "Restarting ";
     private const string RestartAllSubject = "Restarting all components";
+    private const string HandlerFailedLogMessage = "A handler of the Components window's action-finished event failed";
 
     private readonly IReadOnlyList<ComponentDefinition> mComponents;
     private readonly Func<ComponentDefinition, CancellationToken, Task<ComponentStatus>> mProbe;
     private readonly ComponentController mController;
     private readonly TimeProvider mTime;
     private readonly CancellationToken mShutdown;
+    private readonly ILogger<ComponentsViewModel>? mLogger;
 
     // Refreshes run one at a time so a slow timer refresh can never overwrite the newer rows an
     // action's own refresh has just shown. Only WaitAsync and Release are used, so there is no
@@ -246,7 +252,21 @@ public sealed class ComponentsViewModel : INotifyPropertyChanged
         finally
         {
             IsBusy = false;
+            RaiseActionFinished();
+        }
+    }
+
+    // The tray's handler redraws its menu and can fail (for example while the tray exits). That must
+    // not fault ActionCompletion, which promises never to fault.
+    private void RaiseActionFinished()
+    {
+        try
+        {
             ActionFinished?.Invoke(this, EventArgs.Empty);
+        }
+        catch(Exception ex)
+        {
+            mLogger?.LogWarning(ex, HandlerFailedLogMessage);
         }
     }
 

@@ -5,6 +5,7 @@
 
 #region Usings
 
+using Microsoft.Extensions.Logging;
 using SaddleRAG.Tray.Services;
 
 #endregion
@@ -332,5 +333,40 @@ public sealed class ComponentsViewModelTests : IDisposable
         Assert.Equal(expected: 1, finished);
     }
 
+    [Fact]
+    public async Task AnActionFinishedHandlerThatThrowsDoesNotFaultTheActionOrKeepTheCommandsDisabled()
+    {
+        RecordingLogger logger = new();
+        ComponentsViewModel viewModel = new([SaddleRag()], ProbeAsync, mController, logger: logger);
+        viewModel.ActionFinished += (_, _) => throw new InvalidOperationException("menu is gone");
+
+        viewModel.Rows[0].StartCommand.Execute(parameter: null);
+        await viewModel.ActionCompletion;
+
+        Assert.True(viewModel.ActionCompletion.IsCompletedSuccessfully);
+        Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.Rows[0].StartCommand.CanExecute(parameter: null));
+        Assert.Equal([LogLevel.Warning], logger.Levels);
+    }
+
     #endregion
+
+    private sealed class RecordingLogger : ILogger<ComponentsViewModel>
+    {
+        public List<LogLevel> Levels { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel,
+                                EventId eventId,
+                                TState state,
+                                Exception? exception,
+                                Func<TState, Exception?, string> formatter)
+        {
+            Levels.Add(logLevel);
+        }
+    }
 }

@@ -42,7 +42,8 @@ public sealed class ComponentControllerTests
                                               mStarter,
                                               mConfirmation,
                                               mLogger,
-                                              mTime);
+                                              mTime,
+                                              mIntent);
     }
 
     private const int DoclingPort = 5001;
@@ -64,6 +65,7 @@ public sealed class ComponentControllerTests
     private readonly RecordingLogger mLogger;
     private readonly SteppingTimeProvider mTime;
     private readonly ComponentController mController;
+    private readonly DoclingOperatorIntent mIntent = new();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -579,6 +581,125 @@ public sealed class ComponentControllerTests
 
         Assert.Equal(ComponentActionStatus.Failed, result.Status);
         Assert.Contains("the listener table could not be read", result.Message, StringComparison.Ordinal);
+    }
+
+    #endregion
+
+    #region The operator's intent for Docling
+
+    private static ILogger<DoclingLaunchCoordinator> NoLogger => Substitute.For<ILogger<DoclingLaunchCoordinator>>();
+
+    [Fact]
+    public async Task StoppingDoclingKeepsTheCoordinatorFromStartingItUntilTheOperatorStartsItAgain()
+    {
+        IDoclingLaunchRequestProbe request = Substitute.For<IDoclingLaunchRequestProbe>();
+        request.IsLaunchRequestedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        DoclingLaunchCoordinator coordinator = new(request, mDocling, NoLogger, mIntent);
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+
+        await mController.StopAsync(Docling(), Ct);
+        DoclingLaunchOutcome? whileStopped = await coordinator.PollOnceAsync(Ct);
+
+        Assert.Null(whileStopped);
+        Assert.Equal(0, mDocling.EnsureCalls);
+
+        await mController.StartAsync(Docling(), Ct);
+        int operatorStarts = mDocling.EnsureCalls;
+        DoclingLaunchOutcome? afterStart = await coordinator.PollOnceAsync(Ct);
+
+        Assert.Equal(DoclingLaunchOutcome.Ready, afterStart);
+        Assert.Equal(operatorStarts + 1, mDocling.EnsureCalls);
+    }
+
+    [Fact]
+    public async Task StoppingDoclingThatWasNotRunningStillSuppresses()
+    {
+        ComponentActionResult result = await mController.StopAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.AlreadyInState, result.Status);
+        Assert.True(mIntent.IsAutoStartSuppressed);
+    }
+
+    [Fact]
+    public async Task ADeclinedStopOfDoclingDoesNotSuppress()
+    {
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mConfirmation.Answer = false;
+
+        ComponentActionResult result = await mController.StopAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.Cancelled, result.Status);
+        Assert.False(mIntent.IsAutoStartSuppressed);
+    }
+
+    [Fact]
+    public async Task AFailedStopOfDoclingDoesNotSuppress()
+    {
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.Outcome = ProcessStopOutcome.AccessDenied;
+
+        ComponentActionResult result = await mController.StopAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.Denied, result.Status);
+        Assert.False(mIntent.IsAutoStartSuppressed);
+    }
+
+    [Fact]
+    public async Task StoppingOllamaDoesNotSuppressDocling()
+    {
+        await mController.StopAsync(Ollama(), Ct);
+
+        Assert.False(mIntent.IsAutoStartSuppressed);
+    }
+
+    [Fact]
+    public async Task ADoclingStartThatFailsDoesNotLiftTheSuppression()
+    {
+        mIntent.SuppressAutoStart();
+        mDocling.Outcome = DoclingLaunchOutcome.Failed;
+
+        await mController.StartAsync(Docling(), Ct);
+
+        Assert.True(mIntent.IsAutoStartSuppressed);
+    }
+
+    [Fact]
+    public async Task ASuccessfulDoclingRestartLeavesTheCoordinatorFree()
+    {
+        mIntent.SuppressAutoStart();
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+
+        ComponentActionResult result = await mController.RestartAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.Succeeded, result.Status);
+        Assert.False(mIntent.IsAutoStartSuppressed);
+    }
+
+    [Fact]
+    public async Task ADoclingRestartThatCannotStartAfterStoppingStaysSuppressed()
+    {
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+        mDocling.Outcome = DoclingLaunchOutcome.Failed;
+
+        ComponentActionResult result = await mController.RestartAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.Failed, result.Status);
+        Assert.Single(mStopper.Calls);
+        Assert.True(mIntent.IsAutoStartSuppressed);
+    }
+
+    [Fact]
+    public async Task ADoclingRestartWhoseStopWasDeclinedDoesNotSuppress()
+    {
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mConfirmation.Answer = false;
+
+        await mController.RestartAsync(Docling(), Ct);
+
+        Assert.False(mIntent.IsAutoStartSuppressed);
     }
 
     #endregion
