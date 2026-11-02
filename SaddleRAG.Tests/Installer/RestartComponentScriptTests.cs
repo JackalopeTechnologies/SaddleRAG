@@ -363,6 +363,132 @@ public sealed class RestartComponentScriptTests
         }
     }
 
+    [Fact]
+    public void ScriptWaitsForRunningOrStoppedWithoutACmdlet()
+    {
+        string source = ReadScriptSource();
+
+        Assert.Contains("function Wait-ServiceSettled", source, StringComparison.Ordinal);
+        Assert.Contains("[System.Threading.Thread]::Sleep($ServicePollMilliseconds)", source, StringComparison.Ordinal);
+        Assert.Contains("'The service started, then stopped.'", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start-Sleep", source, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    ///     Runs the script's own wait functions against a fake service. The script file is only parsed:
+    ///     its function definitions and constant assignments are loaded, its body never runs, and no
+    ///     real service is looked up or controlled. Each case lists the statuses the fake reports at
+    ///     successive Refresh calls (the last one sticks), before its Start or Stop is called and,
+    ///     after a '/', once it has been.
+    /// </summary>
+    [Theory]
+    [InlineData("Start", "Stopped/StartPending,StartPending,Stopped", "failed", "Start")]
+    [InlineData("Start", "Stopped/Stopped", "failed", "Start")]
+    [InlineData("Start", "Stopped/StartPending,Running", "ok", "Start")]
+    [InlineData("Start", "StopPending,StopPending,Stopped/StartPending,Running", "ok", "Start")]
+    [InlineData("Start", "StartPending,StartPending,Stopped", "failed", "")]
+    [InlineData("Stop", "StartPending,StartPending,Stopped", "ok", "")]
+    [InlineData("Stop", "StartPending,Running/StopPending,Stopped", "ok", "Stop")]
+    [InlineData("Stop", "Running/StopPending,Stopped", "ok", "Stop")]
+    public void ServiceWaitsEndAtRunningOrStopped(string action, string statuses, string expectedOutcome, string expectedCalls)
+    {
+        FakeServiceRun run = RunWaitFunctions(action, statuses, FakeServiceTimeoutSeconds);
+
+        Assert.Equal(expectedOutcome, run.Outcome);
+        Assert.Equal(expectedCalls, run.Calls);
+        Assert.True(run.Seconds < FakeServiceTimeoutSeconds, $"The wait took {run.Seconds}s; it should end at the first settled state.");
+    }
+
+    [Fact]
+    public void AServiceThatNeverSettlesTimesOut()
+    {
+        FakeServiceRun run = RunWaitFunctions("Start", "Stopped/StartPending", timeoutSeconds: 1);
+
+        Assert.Equal("timeout", run.Outcome);
+    }
+
+    private static FakeServiceRun RunWaitFunctions(string action, string statuses, int timeoutSeconds)
+    {
+        string scriptPath = ReadScriptPath();
+
+        // Loads the System.ServiceProcess types before the fake (a class) is parsed, so the inner
+        // block is built at run time. No cmdlet is used: the script's own constants switch module
+        // autoloading off in this session too.
+        string inner = $$"""
+            class FakeService {
+                [string]$ServiceName = 'FakeForTests'
+                [System.ServiceProcess.ServiceControllerStatus]$Status
+                [System.Collections.Generic.List[object]]$Phases = [System.Collections.Generic.List[object]]::new()
+                [int]$Phase = 0
+                [System.Collections.Generic.List[string]]$Calls = [System.Collections.Generic.List[string]]::new()
+                FakeService([string]$statuses) {
+                    foreach ($p in $statuses.Split('/')) {
+                        $list = [System.Collections.Generic.List[string]]::new()
+                        foreach ($s in $p.Split(',')) { $list.Add($s) }
+                        $this.Phases.Add($list)
+                    }
+                    $this.Status = $this.Phases[0][0]
+                }
+                [void] Refresh() {
+                    $sequence = $this.Phases[$this.Phase]
+                    $this.Status = $sequence[0]
+                    if ($sequence.Count -gt 1) { $sequence.RemoveAt(0) }
+                }
+                [void] Control([string]$name) {
+                    $this.Calls.Add($name)
+                    if ($this.Phase -lt $this.Phases.Count - 1) { $this.Phase++ }
+                }
+                [void] Start() { $this.Control('Start') }
+                [void] Stop() { $this.Control('Stop') }
+                [void] WaitForStatus([System.ServiceProcess.ServiceControllerStatus]$desired, [TimeSpan]$timeout) {
+                    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+                    $this.Refresh()
+                    while ($this.Status -ne $desired) {
+                        if ($watch.Elapsed -ge $timeout) { throw [System.ServiceProcess.TimeoutException]::new('fake wait timed out') }
+                        [System.Threading.Thread]::Sleep(50)
+                        $this.Refresh()
+                    }
+                }
+            }
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:{{ScriptPathVariable}}, [ref]$tokens, [ref]$errors)
+            foreach ($statement in $ast.EndBlock.Statements) {
+                $isFunction = $statement -is [System.Management.Automation.Language.FunctionDefinitionAst]
+                $isConstant = $statement -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                              $statement.Right.Expression -is [System.Management.Automation.Language.ConstantExpressionAst]
+                if ($isFunction -or $isConstant) { . ([scriptblock]::Create($statement.Extent.Text)) }
+            }
+            $service = [FakeService]::new('{{statuses}}')
+            $timeout = [TimeSpan]::FromSeconds({{timeoutSeconds}})
+            $watch = [System.Diagnostics.Stopwatch]::StartNew()
+            $outcome = 'ok'
+            try { {{action}}-TargetService -Service $service -Timeout $timeout }
+            catch { if (Test-IsTimeout -Failure $_.Exception) { $outcome = 'timeout' } else { $outcome = 'failed' } }
+            [Console]::Out.WriteLine("outcome=$outcome")
+            [Console]::Out.WriteLine("calls=$($service.Calls -join ',')")
+            [Console]::Out.WriteLine("seconds=$([int][Math]::Floor($watch.Elapsed.TotalSeconds))")
+            """;
+        string outer = "$ErrorActionPreference = 'Stop'\n" +
+                       "$null = [System.Reflection.Assembly]::Load('System.ServiceProcess, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a')\n" +
+                       $"& ([scriptblock]::Create([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{Convert.ToBase64String(Encoding.UTF8.GetBytes(inner))}'))))\n";
+
+        var environment = new Dictionary<string, string> { [ScriptPathVariable] = scriptPath };
+        ScriptRun run = RunPowerShell(environment,
+                                      ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(outer))]
+                                     );
+
+        Dictionary<string, string> values = run.StandardOutput
+                                               .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                               .Where(line => line.Contains('='))
+                                               .Select(line => line.Split('=', count: 2))
+                                               .ToDictionary(parts => parts[0], parts => parts[1]);
+        Assert.True(values.ContainsKey("outcome"), $"The wait harness reported nothing. stderr: {run.StandardError}");
+        return new FakeServiceRun(values["outcome"], values["calls"], int.Parse(values["seconds"]));
+    }
+
+    private sealed record FakeServiceRun(string Outcome, string Calls, int Seconds);
+
     private static string ReadScriptSource()
     {
         string? scriptPath = InstallerSourceTreeResolver.TryResolveInstallerFile(ScriptFileName);
@@ -516,6 +642,8 @@ public sealed class RestartComponentScriptTests
     private const string UnregisteredServiceName = "SaddleRAGNoSuchServiceForTests";
     private const string ExpandedImagePathServiceName = "seclogon";
     private const string MongodWindirOverride = @"C:\mongod.exe ";
+    private const string ScriptPathVariable = "SADDLERAG_RESTART_SCRIPT_PATH";
+    private const int FakeServiceTimeoutSeconds = 5;
     private const string WindowsPowerShellExecutable = "powershell.exe";
     private const string EventSourceName = "SaddleRAG Service Actions";
     private const string ShadowModuleName = "SaddleRAGShadow";

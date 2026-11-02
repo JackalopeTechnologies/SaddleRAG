@@ -210,7 +210,7 @@ The MongoDB service's name on your computer may differ. It is the service that r
 | 10 | A name is not allowed. Only `SaddleRAGMcp` and a service that runs `mongod.exe` are accepted |
 | 11 | A service is not installed |
 | 12 | Timed out waiting for the service to reach its target state |
-| 13 | The service control call failed |
+| 13 | The service control call failed, or the service started and then stopped |
 
 #### Where actions are recorded
 

@@ -61,10 +61,12 @@ $PSModuleAutoloadingPreference = 'None'
 # Restart on a stopped service just starts it; Stop on a stopped service and Start on a
 # running service succeed without doing anything. A service that is mid-transition is waited
 # on first (a starting service is awaited before it is stopped, a stopping one before it is
-# started), each wait bounded by TimeoutSeconds.
+# started), each wait bounded by TimeoutSeconds. A wait ends as soon as the service is Running
+# or Stopped, so a start that falls back to Stopped is reported at once rather than waited out.
 #
 # Exit codes: 0 succeeded, 10 a name is not allow-listed, 11 a service is not installed,
-# 12 timed out waiting for the target state, 13 the service control call failed.
+# 12 timed out waiting for the target state, 13 the service control call failed (including a
+# service that started and then stopped).
 #
 # Each action is recorded in the Windows Application event log under the source named below
 # (registered by the installer). The event log, unlike a file in ProgramData, cannot be edited
@@ -90,6 +92,9 @@ $MongoExecutableName  = 'mongod.exe'
 $ServicesRegistryPath = 'SYSTEM\CurrentControlSet\Services'
 $MaxLoggedNameLength  = 64
 $MaxLoggedTextLength  = 200
+
+# How often a transitioning service's state is read while waiting for it to settle.
+$ServicePollMilliseconds = 250
 
 $EventSourceName    = 'SaddleRAG Service Actions'
 $EventIdSucceeded   = 1000
@@ -382,6 +387,38 @@ function Test-IsTimeout
     return $res
 }
 
+# Waits until the service is Running or Stopped, whichever comes first, and returns that status.
+# A service that is starting can fall back to Stopped (it failed during start-up), so waiting for
+# Running alone would wait out the whole timeout for a service that has already given up. Polls
+# with a plain thread sleep: no cmdlet may be used here (see the autoloading note at the top).
+# Throws the service-wait TimeoutException when neither state is reached in time.
+function Wait-ServiceSettled
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        $Service,
+
+        [Parameter(Mandatory = $true)]
+        [TimeSpan]$Timeout
+    )
+
+    $running = [System.ServiceProcess.ServiceControllerStatus]::Running
+    $stopped = [System.ServiceProcess.ServiceControllerStatus]::Stopped
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $Service.Refresh()
+    while ($Service.Status -ne $running -and $Service.Status -ne $stopped)
+    {
+        if ($watch.Elapsed -ge $Timeout)
+        {
+            throw [System.ServiceProcess.TimeoutException]::new("$($Service.ServiceName) did not reach Running or Stopped in time.")
+        }
+        [System.Threading.Thread]::Sleep($ServicePollMilliseconds)
+        $Service.Refresh()
+    }
+    return $Service.Status
+}
+
 function Stop-TargetService
 {
     param
@@ -394,20 +431,22 @@ function Stop-TargetService
     )
 
     $Service.Refresh()
+    $status = $Service.Status
 
     # Asking a service that is still starting to stop is refused or ignored by many services;
-    # let it finish starting first.
-    if ($Service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::StartPending)
+    # let it finish starting first. If it falls back to Stopped instead, it is already stopped.
+    if ($status -eq [System.ServiceProcess.ServiceControllerStatus]::StartPending)
     {
-        $Service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, $Timeout)
-        $Service.Refresh()
+        $status = Wait-ServiceSettled -Service $Service -Timeout $Timeout
     }
-    if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped)
+    if ($status -ne [System.ServiceProcess.ServiceControllerStatus]::Stopped)
     {
-        if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::StopPending)
+        if ($status -ne [System.ServiceProcess.ServiceControllerStatus]::StopPending)
         {
             $Service.Stop()
         }
+        # Only Stopped ends a stop. A service still reporting Running right after the request
+        # may simply not have reported StopPending yet, so it is waited for, not judged.
         $Service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, $Timeout)
     }
 }
@@ -424,20 +463,27 @@ function Start-TargetService
     )
 
     $Service.Refresh()
+    $status = $Service.Status
 
     # A service that is still stopping cannot be started; let it finish stopping first.
-    if ($Service.Status -eq [System.ServiceProcess.ServiceControllerStatus]::StopPending)
+    if ($status -eq [System.ServiceProcess.ServiceControllerStatus]::StopPending)
     {
-        $Service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, $Timeout)
-        $Service.Refresh()
+        $status = Wait-ServiceSettled -Service $Service -Timeout $Timeout
     }
-    if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running)
+    if ($status -ne [System.ServiceProcess.ServiceControllerStatus]::Running)
     {
-        if ($Service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::StartPending)
+        if ($status -ne [System.ServiceProcess.ServiceControllerStatus]::StartPending)
         {
             $Service.Start()
         }
-        $Service.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running, $Timeout)
+        # The service control manager reports StartPending once it has launched the service, so
+        # Stopped here means the service started and then stopped: a failed start (exit 13), not
+        # something to wait out.
+        $settled = Wait-ServiceSettled -Service $Service -Timeout $Timeout
+        if ($settled -eq [System.ServiceProcess.ServiceControllerStatus]::Stopped)
+        {
+            throw [System.InvalidOperationException]::new('The service started, then stopped.')
+        }
     }
 }
 
