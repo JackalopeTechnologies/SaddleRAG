@@ -506,29 +506,39 @@ function Invoke-ServiceAction
     $code = $ExitSucceeded
     $result = 'Succeeded'
     $recordedName = Get-LoggableName -Name $Name
-    try
+    if ($null -eq $service)
     {
-        $recordedName = $service.ServiceName
-        if ($ActionName -in @('Stop', 'Restart'))
-        {
-            Stop-TargetService -Service $service -Timeout $Timeout
-        }
-        if ($ActionName -in @('Start', 'Restart'))
-        {
-            Start-TargetService -Service $service -Timeout $Timeout
-        }
+        # Validation found it, but it was uninstalled before its turn came: report it as not
+        # installed under the requested name rather than failing on the missing object.
+        $code = $ExitNotInstalled
+        $result = 'NotInstalled'
     }
-    catch
+    else
     {
-        if (Test-IsTimeout -Failure $_.Exception)
+        try
         {
-            $code = $ExitTimedOut
-            $result = 'TimedOut'
+            $recordedName = $service.ServiceName
+            if ($ActionName -in @('Stop', 'Restart'))
+            {
+                Stop-TargetService -Service $service -Timeout $Timeout
+            }
+            if ($ActionName -in @('Start', 'Restart'))
+            {
+                Start-TargetService -Service $service -Timeout $Timeout
+            }
         }
-        else
+        catch
         {
-            $code = $ExitControlFailed
-            $result = 'Failed: ' + (Get-LoggableText -Text $_.Exception.Message)
+            if (Test-IsTimeout -Failure $_.Exception)
+            {
+                $code = $ExitTimedOut
+                $result = 'TimedOut'
+            }
+            else
+            {
+                $code = $ExitControlFailed
+                $result = 'Failed: ' + (Get-LoggableText -Text $_.Exception.Message)
+            }
         }
     }
     Write-ActionLog -Service $recordedName -ActionName $ActionName -Result $result

@@ -400,6 +400,23 @@ public sealed class RestartComponentScriptTests
     }
 
     [Fact]
+    public void AServiceRemovedAfterValidationIsReportedNotInstalled()
+    {
+        // Invoke-ServiceAction runs only after validation found the service; if it is uninstalled in
+        // between, the action must report 11 under the requested name, not fail with 13. The lookup
+        // only enumerates services, and Write-ActionLog is stubbed, so nothing is changed or recorded.
+        string body = $$"""
+            $code = Invoke-ServiceAction -Name '{{UnregisteredServiceName}}' -ActionName 'Start' -Timeout ([TimeSpan]::FromSeconds(5))
+            [Console]::Out.WriteLine("outcome=$code")
+            """;
+
+        IReadOnlyDictionary<string, string> values = RunScriptFunctions(body);
+
+        Assert.Equal(ExitNotInstalled.ToString(), values["outcome"]);
+        Assert.Equal($"{UnregisteredServiceName} Start NotInstalled", values["logged"]);
+    }
+
+    [Fact]
     public void AServiceThatNeverSettlesTimesOut()
     {
         FakeServiceRun run = RunWaitFunctions("Start", "Stopped/StartPending", timeoutSeconds: 1);
@@ -409,56 +426,7 @@ public sealed class RestartComponentScriptTests
 
     private static FakeServiceRun RunWaitFunctions(string action, string statuses, int timeoutSeconds)
     {
-        string scriptPath = ReadScriptPath();
-
-        // Loads the System.ServiceProcess types before the fake (a class) is parsed, so the inner
-        // block is built at run time. No cmdlet is used: the script's own constants switch module
-        // autoloading off in this session too.
-        string inner = $$"""
-            class FakeService {
-                [string]$ServiceName = 'FakeForTests'
-                [System.ServiceProcess.ServiceControllerStatus]$Status
-                [System.Collections.Generic.List[object]]$Phases = [System.Collections.Generic.List[object]]::new()
-                [int]$Phase = 0
-                [System.Collections.Generic.List[string]]$Calls = [System.Collections.Generic.List[string]]::new()
-                FakeService([string]$statuses) {
-                    foreach ($p in $statuses.Split('/')) {
-                        $list = [System.Collections.Generic.List[string]]::new()
-                        foreach ($s in $p.Split(',')) { $list.Add($s) }
-                        $this.Phases.Add($list)
-                    }
-                    $this.Status = $this.Phases[0][0]
-                }
-                [void] Refresh() {
-                    $sequence = $this.Phases[$this.Phase]
-                    $this.Status = $sequence[0]
-                    if ($sequence.Count -gt 1) { $sequence.RemoveAt(0) }
-                }
-                [void] Control([string]$name) {
-                    $this.Calls.Add($name)
-                    if ($this.Phase -lt $this.Phases.Count - 1) { $this.Phase++ }
-                }
-                [void] Start() { $this.Control('Start') }
-                [void] Stop() { $this.Control('Stop') }
-                [void] WaitForStatus([System.ServiceProcess.ServiceControllerStatus]$desired, [TimeSpan]$timeout) {
-                    $watch = [System.Diagnostics.Stopwatch]::StartNew()
-                    $this.Refresh()
-                    while ($this.Status -ne $desired) {
-                        if ($watch.Elapsed -ge $timeout) { throw [System.ServiceProcess.TimeoutException]::new('fake wait timed out') }
-                        [System.Threading.Thread]::Sleep(50)
-                        $this.Refresh()
-                    }
-                }
-            }
-            $tokens = $null
-            $errors = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:{{ScriptPathVariable}}, [ref]$tokens, [ref]$errors)
-            foreach ($statement in $ast.EndBlock.Statements) {
-                $isFunction = $statement -is [System.Management.Automation.Language.FunctionDefinitionAst]
-                $isConstant = $statement -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-                              $statement.Right.Expression -is [System.Management.Automation.Language.ConstantExpressionAst]
-                if ($isFunction -or $isConstant) { . ([scriptblock]::Create($statement.Extent.Text)) }
-            }
+        string body = $$"""
             $service = [FakeService]::new('{{statuses}}')
             $timeout = [TimeSpan]::FromSeconds({{timeoutSeconds}})
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -469,6 +437,25 @@ public sealed class RestartComponentScriptTests
             [Console]::Out.WriteLine("calls=$($service.Calls -join ',')")
             [Console]::Out.WriteLine("seconds=$([int][Math]::Floor($watch.Elapsed.TotalSeconds))")
             """;
+        IReadOnlyDictionary<string, string> values = RunScriptFunctions(body);
+        return new FakeServiceRun(values["outcome"], values["calls"], int.Parse(values["seconds"]));
+    }
+
+    /// <summary>
+    ///     Runs <paramref name="body" /> in Windows PowerShell with the script's function definitions
+    ///     and constant assignments loaded from the parsed file; the script's own body never runs.
+    ///     Write-ActionLog is replaced by a stub that prints its arguments, so nothing reaches the
+    ///     event log. A <c>FakeService</c> class is available. Returns the body's <c>key=value</c>
+    ///     output lines; the body must print an <c>outcome</c> line.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> RunScriptFunctions(string body)
+    {
+        string scriptPath = ReadScriptPath();
+
+        // Loads the System.ServiceProcess types before the fake (a class) is parsed, so the inner
+        // block is built at run time. No cmdlet is used: the script's own constants switch module
+        // autoloading off in this session too.
+        string inner = FakeServicePrelude + "\n" + body;
         string outer = "$ErrorActionPreference = 'Stop'\n" +
                        "$null = [System.Reflection.Assembly]::Load('System.ServiceProcess, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a')\n" +
                        $"& ([scriptblock]::Create([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{Convert.ToBase64String(Encoding.UTF8.GetBytes(inner))}'))))\n";
@@ -482,10 +469,59 @@ public sealed class RestartComponentScriptTests
                                                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                                                .Where(line => line.Contains('='))
                                                .Select(line => line.Split('=', count: 2))
-                                               .ToDictionary(parts => parts[0], parts => parts[1]);
-        Assert.True(values.ContainsKey("outcome"), $"The wait harness reported nothing. stderr: {run.StandardError}");
-        return new FakeServiceRun(values["outcome"], values["calls"], int.Parse(values["seconds"]));
+                                               .GroupBy(parts => parts[0])
+                                               .ToDictionary(group => group.Key, group => group.Last()[1]);
+        Assert.True(values.ContainsKey("outcome"), $"The script-function harness reported nothing. stderr: {run.StandardError}");
+        return values;
     }
+
+    private const string FakeServicePrelude = $$"""
+        class FakeService {
+            [string]$ServiceName = 'FakeForTests'
+            [System.ServiceProcess.ServiceControllerStatus]$Status
+            [System.Collections.Generic.List[object]]$Phases = [System.Collections.Generic.List[object]]::new()
+            [int]$Phase = 0
+            [System.Collections.Generic.List[string]]$Calls = [System.Collections.Generic.List[string]]::new()
+            FakeService([string]$statuses) {
+                foreach ($p in $statuses.Split('/')) {
+                    $list = [System.Collections.Generic.List[string]]::new()
+                    foreach ($s in $p.Split(',')) { $list.Add($s) }
+                    $this.Phases.Add($list)
+                }
+                $this.Status = $this.Phases[0][0]
+            }
+            [void] Refresh() {
+                $sequence = $this.Phases[$this.Phase]
+                $this.Status = $sequence[0]
+                if ($sequence.Count -gt 1) { $sequence.RemoveAt(0) }
+            }
+            [void] Control([string]$name) {
+                $this.Calls.Add($name)
+                if ($this.Phase -lt $this.Phases.Count - 1) { $this.Phase++ }
+            }
+            [void] Start() { $this.Control('Start') }
+            [void] Stop() { $this.Control('Stop') }
+            [void] WaitForStatus([System.ServiceProcess.ServiceControllerStatus]$desired, [TimeSpan]$timeout) {
+                $watch = [System.Diagnostics.Stopwatch]::StartNew()
+                $this.Refresh()
+                while ($this.Status -ne $desired) {
+                    if ($watch.Elapsed -ge $timeout) { throw [System.ServiceProcess.TimeoutException]::new('fake wait timed out') }
+                    [System.Threading.Thread]::Sleep(50)
+                    $this.Refresh()
+                }
+            }
+        }
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:{{ScriptPathVariable}}, [ref]$tokens, [ref]$errors)
+        foreach ($statement in $ast.EndBlock.Statements) {
+            $isFunction = $statement -is [System.Management.Automation.Language.FunctionDefinitionAst]
+            $isConstant = $statement -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                          $statement.Right.Expression -is [System.Management.Automation.Language.ConstantExpressionAst]
+            if ($isFunction -or $isConstant) { . ([scriptblock]::Create($statement.Extent.Text)) }
+        }
+        function Write-ActionLog { param([string]$Service, [string]$ActionName, [string]$Result) [Console]::Out.WriteLine("logged=$Service $ActionName $Result") }
+        """;
 
     private sealed record FakeServiceRun(string Outcome, string Calls, int Seconds);
 
