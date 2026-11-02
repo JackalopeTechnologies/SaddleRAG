@@ -46,8 +46,14 @@ internal sealed class OllamaServeLauncher
 
     /// <summary>Makes sure Ollama is answering, starting it if it is not.</summary>
     /// <param name="component">The Ollama row, carrying the executable and model folder.</param>
+    /// <param name="skipIfUnconfigured">
+    ///     True during Restart all: an Ollama that is not running and has no executable configured is
+    ///     reported as skipped (not controllable) rather than failed, so it does not stop the sequence.
+    /// </param>
     /// <param name="ct">Cancels the checks and the wait; a started process keeps running.</param>
-    public async Task<ComponentActionResult> StartAsync(ComponentDefinition component, CancellationToken ct)
+    public async Task<ComponentActionResult> StartAsync(ComponentDefinition component,
+                                                        bool skipIfUnconfigured,
+                                                        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(component);
 
@@ -58,7 +64,7 @@ internal sealed class OllamaServeLauncher
                                                Result(component,
                                                       ComponentActionStatus.Succeeded,
                                                       string.Format(AlreadyRunningFormat, component.DisplayName)),
-                                           ComponentState.Stopped => await StartServeAsync(component, ct),
+                                           ComponentState.Stopped => await StartServeAsync(component, skipIfUnconfigured, ct),
 
                                            // Something holds the port but is not answering yet, such as a
                                            // respawned server still loading. A second server could not bind
@@ -68,12 +74,18 @@ internal sealed class OllamaServeLauncher
         return result;
     }
 
-    private async Task<ComponentActionResult> StartServeAsync(ComponentDefinition component, CancellationToken ct)
+    private async Task<ComponentActionResult> StartServeAsync(ComponentDefinition component,
+                                                              bool skipIfUnconfigured,
+                                                              CancellationToken ct)
     {
         ComponentActionResult result;
         if (string.IsNullOrWhiteSpace(component.ExecutablePath))
         {
-            result = Result(component, ComponentActionStatus.Failed, NoExecutableText);
+            result = skipIfUnconfigured
+                         ? Result(component,
+                                  ComponentActionStatus.NotControllable,
+                                  string.Format(SkippedFormat, component.DisplayName))
+                         : Result(component, ComponentActionStatus.Failed, NoExecutableText);
         }
         else
         {
@@ -159,6 +171,7 @@ internal sealed class OllamaServeLauncher
     private const string AlreadyRunningFormat = "{0} is already running.";
     private const string StartedFormat = "{0} started.";
     private const string NoExecutableText = "Set Ollama:ExecutablePath in SaddleRAG's settings.";
+    private const string SkippedFormat = "{0} is not running and no executable path is configured; skipped.";
     private const string StartFailedFormat = "Could not start {0}: {1}";
     private const string StartedNotAnsweringFormat = "{0} did not answer within {1} seconds of starting. Its output is in {2}.";
     private const string NotAnsweringFormat =

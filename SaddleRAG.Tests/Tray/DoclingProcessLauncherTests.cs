@@ -59,7 +59,11 @@ public sealed class DoclingProcessLauncherTests : IDisposable
     private sealed class FakeProcessStarter : IProcessStarter
     {
         public List<ProcessStartInfo> Started { get; } = [];
+        public List<FakeLaunchedProcess> Handles { get; } = [];
         public bool ThrowOnStart { get; set; }
+
+        /// <summary>Whether every process this starter launched has exited.</summary>
+        public bool LaunchedHaveExited { get; set; }
 
         public IDisposable? Start(ProcessStartInfo startInfo)
         {
@@ -67,8 +71,45 @@ public sealed class DoclingProcessLauncherTests : IDisposable
             if (ThrowOnStart)
                 throw new InvalidOperationException("the registered command could not be started");
 
-            return new MemoryStream();
+            var handle = new FakeLaunchedProcess(this);
+            Handles.Add(handle);
+            return handle;
         }
+    }
+
+    private sealed class FakeLaunchedProcess : ILaunchedProcess
+    {
+        public FakeLaunchedProcess(FakeProcessStarter starter)
+        {
+            mStarter = starter;
+        }
+
+        private readonly FakeProcessStarter mStarter;
+
+        public bool Disposed { get; private set; }
+
+        public bool HasExited => mStarter.LaunchedHaveExited;
+
+        public void Dispose() => Disposed = true;
+    }
+
+    private static readonly ComponentDefinition smDoclingRow =
+        new(ComponentKind.Docling, "Docling", new Uri("http://localhost:5001"), Port: 5001, HostedLocally: true,
+            WindowsServiceName: null, ExecutablePath: null, ModelsDirectory: null);
+
+    /// <summary>A controller around the real launcher; every other seam is an inert stand-in and the port is free.</summary>
+    private static ComponentController ControllerFor(DoclingProcessLauncher launcher, HttpClient client)
+    {
+        IPortOwnerLookup ports = Substitute.For<IPortOwnerLookup>();
+        ports.FindListeningProcess(Arg.Any<int>()).Returns((ListeningProcess?) null);
+        var probe = new ComponentStatusProbe(client, Substitute.For<IServiceStateReader>(), time: null, ports);
+        return new ComponentController(Substitute.For<IServiceActionRunner>(),
+                                       probe,
+                                       ports,
+                                       Substitute.For<IUserProcessStopper>(),
+                                       launcher,
+                                       Substitute.For<IProcessStarter>(),
+                                       Substitute.For<IOperatorConfirmation>());
     }
 
     private static HttpResponseMessage Healthy() =>
@@ -202,6 +243,61 @@ public sealed class DoclingProcessLauncherTests : IDisposable
             await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(expected: 2, starter.Started.Count);
+        }
+    }
+
+    [Fact]
+    public async Task TheLauncherReportsWhetherTheProcessItStartedIsStillRunning()
+    {
+        WriteRegistry(RegisteredCommand());
+        (DoclingProcessLauncher launcher, FakeProcessStarter starter, _, HttpClient client) =
+            MakeLauncher(_ => Unhealthy());
+        using(client)
+        {
+            Assert.False(launcher.LaunchedProcessIsRunning);
+
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
+            Assert.True(launcher.LaunchedProcessIsRunning);
+
+            starter.LaunchedHaveExited = true;
+            Assert.False(launcher.LaunchedProcessIsRunning);
+        }
+    }
+
+    [Fact]
+    public async Task StartingADoclingThatCrashedAfterLaunchLaunchesItAgain()
+    {
+        WriteRegistry(RegisteredCommand());
+        (DoclingProcessLauncher launcher, FakeProcessStarter starter, _, HttpClient client) =
+            MakeLauncher(_ => Unhealthy());
+        using(client)
+        {
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
+            starter.LaunchedHaveExited = true;
+
+            await ControllerFor(launcher, client).StartAsync(smDoclingRow, TestContext.Current.CancellationToken);
+
+            Assert.Equal(expected: 2, starter.Started.Count);
+            Assert.True(starter.Handles[0].Disposed);
+            Assert.False(starter.Handles[1].Disposed);
+        }
+    }
+
+    [Fact]
+    public async Task StartingADoclingStillLoadingDoesNotLaunchASecondOne()
+    {
+        WriteRegistry(RegisteredCommand());
+        (DoclingProcessLauncher launcher, FakeProcessStarter starter, _, HttpClient client) =
+            MakeLauncher(_ => Unhealthy());
+        using(client)
+        {
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
+            starter.LaunchedHaveExited = false;
+
+            await ControllerFor(launcher, client).StartAsync(smDoclingRow, TestContext.Current.CancellationToken);
+
+            Assert.Single(starter.Started);
+            Assert.False(starter.Handles[0].Disposed);
         }
     }
 

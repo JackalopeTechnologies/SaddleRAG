@@ -11,8 +11,15 @@ public interface IDoclingLauncher
     Task<DoclingLaunchOutcome> EnsureRunningAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    ///     True only when this launcher started a Docling process that has not exited. Tells a Docling
+    ///     that crashed after launch (exited) from one still loading (running).
+    /// </summary>
+    bool LaunchedProcessIsRunning { get; }
+
+    /// <summary>
     ///     Lets the next <see cref="EnsureRunningAsync" /> start Docling again in this session. Called
-    ///     only after the operator stopped Docling and its port was confirmed free.
+    ///     only on an operator start or restart, when nothing listens on Docling's port and
+    ///     <see cref="LaunchedProcessIsRunning" /> is false.
     /// </summary>
     void AllowRelaunchAfterOperatorStop();
 }

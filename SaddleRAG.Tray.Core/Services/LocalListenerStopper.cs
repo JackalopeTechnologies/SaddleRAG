@@ -73,19 +73,30 @@ internal sealed class LocalListenerStopper
     /// <param name="component">The Docling or Ollama row being stopped.</param>
     /// <param name="port">The port it listens on.</param>
     /// <param name="ct">Cancels the waits.</param>
-    public async Task<ListenerStopResult> StopAsync(ComponentDefinition component, int port, CancellationToken ct)
+    public async Task<ComponentActionResult> StopAsync(ComponentDefinition component, int port, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(component);
 
-        ListenerStopResult result;
+        ComponentActionResult result;
         (ListeningProcess? owner, string? failure) = Read(port);
         if (failure is not null)
-            result = Kept(component, ComponentActionStatus.Failed, string.Format(UnreadableFormat, port, failure));
+            result = Result(component, ComponentActionStatus.Failed, string.Format(UnreadableFormat, port, failure));
         else
             result = owner is null
-                         ? Kept(component, ComponentActionStatus.AlreadyInState, string.Format(NotRunningFormat, component.DisplayName))
+                         ? Result(component, ComponentActionStatus.AlreadyInState, string.Format(NotRunningFormat, component.DisplayName))
                          : await ConfirmAndStopAsync(component, port, owner, ct);
 
+        return result;
+    }
+
+    /// <summary>
+    ///     True when the listener table could be read and shows nothing listening on
+    ///     <paramref name="port" />. A table that cannot be read counts as not free.
+    /// </summary>
+    public bool IsPortFree(int port)
+    {
+        (ListeningProcess? owner, string? failure) = Read(port);
+        bool result = failure is null && owner is null;
         return result;
     }
 
@@ -107,22 +118,22 @@ internal sealed class LocalListenerStopper
         return result;
     }
 
-    private async Task<ListenerStopResult> ConfirmAndStopAsync(ComponentDefinition component,
+    private async Task<ComponentActionResult> ConfirmAndStopAsync(ComponentDefinition component,
                                                                int port,
                                                                ListeningProcess owner,
                                                                CancellationToken ct)
     {
         bool expected = LooksExpected(component.Kind, owner.ProcessName);
         bool confirmed = await mConfirmation.ConfirmStopAsync(component, owner, expected);
-        ListenerStopResult result = confirmed
+        ComponentActionResult result = confirmed
                                         ? await StopOwnerAsync(component, port, owner, expected, ct)
-                                        : Kept(component,
+                                        : Result(component,
                                                ComponentActionStatus.Cancelled,
                                                string.Format(CancelledFormat, component.DisplayName));
         return result;
     }
 
-    private async Task<ListenerStopResult> StopOwnerAsync(ComponentDefinition component,
+    private async Task<ComponentActionResult> StopOwnerAsync(ComponentDefinition component,
                                                           int port,
                                                           ListeningProcess owner,
                                                           bool expected,
@@ -132,22 +143,22 @@ internal sealed class LocalListenerStopper
                                                               entireProcessTree: expected,
                                                               TimeSpan.FromSeconds(ProcessExitSeconds),
                                                               ct);
-        ListenerStopResult result = outcome switch
+        ComponentActionResult result = outcome switch
                                     {
                                         ProcessStopOutcome.Stopped => await WaitForPortAsync(component, port, owner, ct),
                                         ProcessStopOutcome.NotFound => AfterVanished(component, port),
                                         ProcessStopOutcome.AccessDenied =>
-                                            Kept(component,
+                                            Result(component,
                                                  ComponentActionStatus.Denied,
                                                  string.Format(DeniedFormat, owner.ProcessName, owner.ProcessId)),
-                                        _ => Kept(component,
+                                        _ => Result(component,
                                                   ComponentActionStatus.TimedOut,
                                                   string.Format(ExitTimedOutFormat, owner.ProcessName, owner.ProcessId, ProcessExitSeconds))
                                     };
         return result;
     }
 
-    private async Task<ListenerStopResult> WaitForPortAsync(ComponentDefinition component,
+    private async Task<ComponentActionResult> WaitForPortAsync(ComponentDefinition component,
                                                             int port,
                                                             ListeningProcess stopped,
                                                             CancellationToken ct)
@@ -160,17 +171,15 @@ internal sealed class LocalListenerStopper
             (now, failure) = Read(port);
         }
 
-        ListenerStopResult result;
+        ComponentActionResult result;
         if (IsSettled(now, failure, stopped))
             result = now is null
-                         ? new ListenerStopResult(Result(component, ComponentActionStatus.Succeeded,
-                                                         string.Format(StoppedFormat, component.DisplayName)),
-                                                  PortFreed: true)
-                         : Kept(component,
+                         ? Result(component, ComponentActionStatus.Succeeded, string.Format(StoppedFormat, component.DisplayName))
+                         : Result(component,
                                 ComponentActionStatus.Succeeded,
                                 string.Format(RespawnedFormat, component.DisplayName, now.ProcessName, now.ProcessId, port));
         else
-            result = Kept(component,
+            result = Result(component,
                           ComponentActionStatus.TimedOut,
                           string.Format(PortHeldFormat, component.DisplayName, port, PortReleaseWaitSeconds));
 
@@ -182,17 +191,17 @@ internal sealed class LocalListenerStopper
     private static bool IsSettled(ListeningProcess? now, string? failure, ListeningProcess stopped) =>
         failure is null && (now is null || now.ProcessId != stopped.ProcessId);
 
-    private ListenerStopResult AfterVanished(ComponentDefinition component, int port)
+    private ComponentActionResult AfterVanished(ComponentDefinition component, int port)
     {
         // The process exited, or its id now belongs to a different process, before it could be
         // stopped. A free port means the component is already down. Anything still listening was
         // never shown to the operator, so it is left alone and the operator can look again.
         (ListeningProcess? now, string? failure) = Read(port);
-        ListenerStopResult result = failure is null && now is null
-                                        ? Kept(component,
+        ComponentActionResult result = failure is null && now is null
+                                        ? Result(component,
                                                ComponentActionStatus.AlreadyInState,
                                                string.Format(AlreadyStoppedFormat, component.DisplayName))
-                                        : Kept(component,
+                                        : Result(component,
                                                ComponentActionStatus.Failed,
                                                string.Format(ChangedFormat, port, component.DisplayName));
         return result;
@@ -212,9 +221,6 @@ internal sealed class LocalListenerStopper
 
         return result;
     }
-
-    private static ListenerStopResult Kept(ComponentDefinition component, ComponentActionStatus status, string message) =>
-        new(Result(component, status, message), PortFreed: false);
 
     private static ComponentActionResult Result(ComponentDefinition component, ComponentActionStatus status, string message) =>
         new(component.Kind, status, message);

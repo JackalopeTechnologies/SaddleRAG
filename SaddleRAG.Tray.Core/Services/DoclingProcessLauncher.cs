@@ -50,8 +50,8 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
     // Atomic single-shot guard, mirroring OllamaBootstrapper.LaunchOllamaAsync. A transient
     // health-probe failure must not spawn a second server: the failure mode we already saw
     // with Ollama was several processes fighting over one port while the legitimate listener
-    // was still loading its models. Only an operator stop confirmed by a free port clears it
-    // (AllowRelaunchAfterOperatorStop).
+    // was still loading its models. Only an operator action that found the port free and the
+    // launched process gone clears it (AllowRelaunchAfterOperatorStop).
     private static int psLaunchAttempted;
 
     private readonly HttpClient mHttpClient;
@@ -62,16 +62,38 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
     private readonly ILogger<DoclingProcessLauncher>? mLogger;
     private readonly TimeProvider mTimeProvider;
 
+    // The process this launcher last started, kept so an operator action can tell a crashed Docling
+    // (exited) from one still loading (running). Replaced, and the old handle disposed, on relaunch.
+    private readonly Lock mLaunchedSync = new();
+    private IDisposable? mLaunched;
+
+    /// <summary>
+    ///     True only when this launcher started a process that has not exited. A handle whose state
+    ///     cannot be read counts as running, so the guard is kept when in doubt.
+    /// </summary>
+    public bool LaunchedProcessIsRunning
+    {
+        get
+        {
+            bool result;
+            lock(mLaunchedSync)
+                result = mLaunched is not null && IsRunning(mLaunched);
+
+            return result;
+        }
+    }
+
     /// <summary>Resets the process-wide single-shot flag. Tests only; never called in production.</summary>
     internal static void ResetLaunchGuardForTesting() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
 
     /// <summary>
     ///     Clears the single-shot guard so the next <see cref="EnsureRunningAsync" /> may start Docling
     ///     again. The guard exists so a transient health-probe failure cannot spawn a second server
-    ///     beside one that is still loading. Once the operator has stopped Docling and its port has been
-    ///     confirmed free, no server is left to collide with, which is the one safe time to clear it.
-    ///     The component controller calls this only then: never on a plain start, and never when
-    ///     another process took the port.
+    ///     beside one that is still loading. When nothing listens on Docling's port and the process
+    ///     this launcher started has exited (the operator stopped it, or it crashed), no server is left
+    ///     to collide with, which is the one safe time to clear it. The component controller calls this
+    ///     only then, on an operator start or restart: never when a process holds the port, and never
+    ///     while the launched process is still running.
     /// </summary>
     public void AllowRelaunchAfterOperatorStop() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
 
@@ -136,7 +158,7 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
         {
             try
             {
-                mProcessStarter.Start(BuildStartInfo(registration));
+                Remember(mProcessStarter.Start(BuildStartInfo(registration)));
                 started = true;
             }
             catch(Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception
@@ -147,6 +169,50 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
         }
 
         return started;
+    }
+
+    private void Remember(IDisposable? launched)
+    {
+        IDisposable? previous;
+        lock(mLaunchedSync)
+        {
+            previous = mLaunched;
+            mLaunched = launched;
+        }
+
+        // A relaunch happens only once the previous process has exited, so this releases its handle
+        // and nothing else.
+        previous?.Dispose();
+    }
+
+    private static bool IsRunning(IDisposable launched) => launched switch
+                                                            {
+                                                                Process process => HasNotExited(process),
+                                                                ILaunchedProcess handle => !handle.HasExited,
+
+                                                                // No way to tell: treat it as running so the guard holds.
+                                                                _ => true
+                                                            };
+
+    private static bool HasNotExited(Process process)
+    {
+        bool result;
+        try
+        {
+            result = !process.HasExited;
+        }
+        catch(InvalidOperationException)
+        {
+            // The handle is not tied to a process any more, so nothing of ours is running.
+            result = false;
+        }
+        catch(System.ComponentModel.Win32Exception)
+        {
+            // Windows would not say. Count it as running so the guard holds.
+            result = true;
+        }
+
+        return result;
     }
 
     private ProcessStartInfo BuildStartInfo(DoclingRegistration registration)

@@ -39,6 +39,8 @@ public sealed class TrayDoclingMenuTests
             return Task.FromResult(DoclingLaunchOutcome.Ready);
         }
 
+        public bool LaunchedProcessIsRunning => false;
+
         public void AllowRelaunchAfterOperatorStop()
         {
         }
