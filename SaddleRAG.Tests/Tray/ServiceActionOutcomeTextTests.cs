@@ -53,6 +53,17 @@ public sealed class ServiceActionOutcomeTextTests
                      text);
     }
 
+    [Fact]
+    public void FailedNamesBothTheEventLogAndTheTrayLog()
+    {
+        // The script records its own failures in the event log; a failure to run it at all is only
+        // in the tray log, so the operator is pointed at both.
+        string text = ServiceActionOutcomeText.Describe(ServiceActionOutcome.Failed, ServiceAction.Restart, Subject);
+
+        Assert.Contains("Windows Application event log (source SaddleRAG Service Actions)", text, StringComparison.Ordinal);
+        Assert.Contains(@"%LOCALAPPDATA%\SaddleRAG\tray.log", text, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(ServiceAction.Start, "SaddleRAG MCP service started.")]
     [InlineData(ServiceAction.Stop, "SaddleRAG MCP service stopped.")]

@@ -21,8 +21,11 @@ public static class ServiceActionOutcomeText
     private const string NotInstalledFormat = "Could not {0} {1}: it is not installed on this computer.";
     private const string TimedOutFormat =
         "Timed out waiting to {0} {1}. Check its status, and try again if it did not change.";
+    // The script records a failed service call in the event log; a script that could not be run at
+    // all is recorded only in the tray's own log, so both are named.
     private const string FailedFormat =
-        "Could not {0} {1}. See the Windows Application event log (source SaddleRAG Service Actions) for details.";
+        "Could not {0} {1}. See the Windows Application event log (source SaddleRAG Service Actions) " +
+        "and the tray log (%LOCALAPPDATA%\\SaddleRAG\\tray.log) for details.";
     private const string ScriptMissingText =
         "The SaddleRAG service helper script is missing from the install folder. Reinstall SaddleRAG.";
     private const string UnsafeInstallLocationRefusal =
