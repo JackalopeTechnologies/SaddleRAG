@@ -26,7 +26,11 @@ public sealed partial class InstallFolderPermissionTests
     {
         string sddl = ReadInstallFolderSddl();
 
-        Assert.StartsWith("D:P", sddl, StringComparison.Ordinal);
+        // Single-line substrings: Administrators own the folder (an owner can always rewrite
+        // the DACL) and the DACL is protected from the parent's inherited entries.
+        Assert.StartsWith("O:BAD:PAI(", sddl, StringComparison.Ordinal);
+        Assert.Contains("O:BA", sddl, StringComparison.Ordinal);
+        Assert.Contains("D:P", sddl, StringComparison.Ordinal);
         Dictionary<string, string> rightsByTrustee = ParseAces(sddl);
         Assert.Equal(["BA", "BU", "SY"], rightsByTrustee.Keys.Order(StringComparer.Ordinal));
         Assert.Equal("GA", rightsByTrustee["SY"]);

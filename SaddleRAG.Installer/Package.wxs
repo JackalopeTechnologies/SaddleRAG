@@ -244,9 +244,11 @@
         <!-- would only add to the existing DACL), and OICI makes every file and subfolder  -->
         <!-- below inherit it. Windows Installer applies a CreateFolder permission before    -->
         <!-- InstallFiles, so installed files inherit rather than being patched afterwards.  -->
+        <!-- "O:BA" also makes Administrators the owner: if the folder already exists and a -->
+        <!-- user owns it, that user keeps the right to rewrite the DACL regardless of it.  -->
         <Component Id="InstallFolderPermissions" Directory="MCPFOLDER" Guid="A91C4E57-3B28-4D6F-8E10-5C7F2B93D4A8">
             <CreateFolder>
-                <PermissionEx Sddl="D:PAI(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;BU)" />
+                <PermissionEx Sddl="O:BAD:PAI(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGX;;;BU)" />
             </CreateFolder>
         </Component>
 

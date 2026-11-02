@@ -196,6 +196,20 @@ public sealed class RestartComponentScriptTests
     }
 
     [Fact]
+    public void ImagePathWithANoBreakSpaceAfterTheExecutableIsNotMongod()
+    {
+        // Windows command-line parsing splits only on space and tab, so a no-break space
+        // (U+00A0) does not end the token: the launched path is not mongod.exe.
+        ScriptRun run = RunScriptCapture(new Dictionary<string, string>(),
+                                         "-TestImagePath",
+                                         @"C:\MongoDB\bin\mongod.exe" + NoBreakSpace + "--service"
+                                        );
+
+        Assert.Equal(ExitSucceeded, run.ExitCode);
+        Assert.NotEqual("mongod.exe", run.StandardOutput.Trim());
+    }
+
+    [Fact]
     public void ModuleAutoloadingIsDisabledBeforeAnyCommandRuns()
     {
         string[] lines = ReadScriptSource().Split('\n');
@@ -443,6 +457,7 @@ public sealed class RestartComponentScriptTests
         "Get-ItemProperty", "Get-ChildItem", "Out-Null", "Set-StrictMode"
     ];
 
+    private const string NoBreakSpace = "\u00A0";
     private const int ExitSucceeded = 0;
     private const int ExitNotAllowListed = 10;
     private const int ExitNotInstalled = 11;

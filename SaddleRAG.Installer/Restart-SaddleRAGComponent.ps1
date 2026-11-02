@@ -105,7 +105,10 @@ $ServiceNamePattern = '^[A-Za-z0-9_.-]+\z'
 # yields its first token and is refused, which is also what the service control manager would
 # try to run (the unquoted-service-path weakness). A quoted string must be followed by
 # whitespace or the end, so "C:\x.exe"mongod.exe is rejected as ambiguous.
-$ImagePathPattern = '^\s*(?:"(?<path>[^"]+)"|(?<path>[^"\s]+))(?=\s|\z)'
+# The separators are a space or a tab only, never .NET's \s: Windows command-line parsing splits
+# on those two, while \s also matches Unicode spaces such as U+00A0, so "mongod.exe" followed by
+# a no-break space would otherwise look like a complete token ending in mongod.exe.
+$ImagePathPattern = '^[ \t]*(?:"(?<path>[^"]+)"|(?<path>[^"\s]+))(?=[ \t]|\z)'
 
 # Only a name that passed the pattern above may reach the registry or the service lookup; the
 # pattern excludes wildcards, path separators, spaces and control characters.
