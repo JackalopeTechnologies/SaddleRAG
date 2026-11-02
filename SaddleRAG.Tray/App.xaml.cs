@@ -45,6 +45,7 @@ public partial class App : Application
     private const string StoppingMessage = "Stopping MCP service";
     private const string McpServiceSubject = "SaddleRAG MCP service";
     private const string ServiceHelperScriptName = "Restart-SaddleRAGComponent.ps1";
+    private const string AppSettingsFileName = "appsettings.json";
     private const string ServiceActionBusyMessage = "A service action is already running. Wait for it to finish.";
     private const string OpeningDashboardMessage = "Opening dashboard";
     private const string InstallFailedPrefix = "Install failed: ";
@@ -94,6 +95,10 @@ public partial class App : Application
     private const string RegisteringTesseractMessage = "Registering Tesseract";
     private const string DoclingLaunchLogMessage = "Docling launch attempt finished: {Outcome}";
     private const string DoclingPollFailedLogMessage = "Docling launch poll failed";
+    private const string OpeningComponentsMessage = "Opening the Components window";
+    private const string ComponentsUnavailableMessage = "The component list could not be read. See the tray log.";
+    private const string CatalogReadFailedLogMessage = "Component settings could not be read; Docling uses its default address";
+    private const string ComponentsRefreshFailedLogMessage = "Components window refresh after a service action failed";
 
     private TaskbarIcon? mTrayIcon;
     private McpServiceMenuModel? mMenuModel;
@@ -104,7 +109,12 @@ public partial class App : Application
     private readonly HttpClient mDoclingHttpClient = new();
     private readonly ExternalToolRegistry mToolRegistry = new(ExternalToolRegistry.DefaultPath);
     private readonly ExternalToolDetector mToolDetector = new(new FileSystemProbe());
+    private ElevatedServiceActionRunner? mServiceRunner;
     private DoclingProcessLauncher? mDoclingLauncher;
+    private IReadOnlyList<ComponentDefinition>? mCatalog;
+    private Task mComponentsSetup = Task.CompletedTask;
+    private ComponentsViewModel? mComponentsViewModel;
+    private ComponentsWindow? mComponentsWindow;
     private DoclingLaunchCoordinator? mDoclingCoordinator;
     private DispatcherTimer? mDoclingTimer;
     private TrayHealthObserver? mHealthObserver;
@@ -129,13 +139,14 @@ public partial class App : Application
             // The tray runs unelevated, so service control goes through the installed script run
             // elevated. It is located beside the tray and is refused unless that folder is
             // changeable by administrators only.
-            ElevatedServiceActionRunner serviceRunner =
-                new(new RunAsProcessLauncher(),
-                    Path.Combine(AppContext.BaseDirectory, ServiceHelperScriptName),
-                    new FileSystemProbe(),
-                    new AclInstallLocationGuard(),
-                    mLoggerFactory.CreateLogger<ElevatedServiceActionRunner>());
-            mMenuModel = new McpServiceMenuModel(new McpServiceController(), serviceRunner);
+            // One runner serves the Start/Stop MCP items and the Components window.
+            mServiceRunner =
+                new ElevatedServiceActionRunner(new RunAsProcessLauncher(),
+                                                Path.Combine(AppContext.BaseDirectory, ServiceHelperScriptName),
+                                                new FileSystemProbe(),
+                                                new AclInstallLocationGuard(),
+                                                mLoggerFactory.CreateLogger<ElevatedServiceActionRunner>());
+            mMenuModel = new McpServiceMenuModel(new McpServiceController(), mServiceRunner);
             mTrayIcon = (TaskbarIcon) FindResource(TrayIconResourceKey);
 
             // Efficiency Mode (EcoQoS) is desirable here: the tray is an idle background
@@ -152,6 +163,12 @@ public partial class App : Application
             mTrayIcon.TrayBalloonTipClicked += (_, _) =>
                 OpenMonitorPath(mAttention?.TargetPath ?? HealthPage);
 
+            // The component list is read once, off the UI thread (the registry scan opens hundreds
+            // of keys), and the Docling launcher is built from it when it arrives, so the launcher
+            // and the Components window agree on Docling's address. Startup does not wait for it:
+            // the launch-request poll does nothing until the launcher exists, and the menu actions
+            // that need it await this task.
+            mComponentsSetup = LoadComponentsAsync();
             StartDoclingLaunchPolling();
             mHealthObserver = new TrayHealthObserver(mDoclingHttpClient, new Uri(DashboardUrl));
             _ = PollHealthAsync();
@@ -313,7 +330,9 @@ public partial class App : Application
         var started = false;
         try
         {
-            if (mServiceActionActive)
+            // The Components window uses the same elevated runner; refuse while it is mid-action so
+            // two administrator prompts never stack up.
+            if (mServiceActionActive || mComponentsViewModel?.IsBusy == true)
             {
                 ShowBalloon(ServiceActionBusyMessage);
             }
@@ -321,9 +340,11 @@ public partial class App : Application
             {
                 mServiceActionActive = true;
                 started = true;
+                SetComponentsOtherActionRunning(true);
                 ServiceActionOutcome outcome = await run(mShutdown.Token);
                 SyncMenu();
                 ShowBalloon(ServiceActionOutcomeText.Describe(outcome, action, McpServiceSubject));
+                _ = RefreshComponentsWindowAsync();
             }
         }
         catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
@@ -338,7 +359,10 @@ public partial class App : Application
         finally
         {
             if (started)
+            {
                 mServiceActionActive = false;
+                SetComponentsOtherActionRunning(false);
+            }
         }
     }
 
@@ -393,19 +417,58 @@ public partial class App : Application
             OpeningDashboardMessage);
     }
 
-    private void StartDoclingLaunchPolling()
+    private async Task LoadComponentsAsync()
     {
+        mCatalog = await ReadCatalogAsync();
+
+        // The one Docling launcher: the launch-request coordinator and the Components window share it.
         mDoclingLauncher = new DoclingProcessLauncher(mDoclingHttpClient,
                                                       mToolRegistry,
                                                       new ProcessStarter(),
                                                       new FileSystemProbe(),
-                                                      DoclingLaunchSettings.CreateDefault(),
+                                                      DoclingSettingsFor(mCatalog),
                                                       mLoggerFactory?.CreateLogger<DoclingProcessLauncher>());
         mDoclingCoordinator = new DoclingLaunchCoordinator(
             new MonitorDoclingLaunchRequestProbe(mDoclingHttpClient, new Uri(DashboardUrl)),
             mDoclingLauncher,
             mLoggerFactory?.CreateLogger<DoclingLaunchCoordinator>());
+    }
 
+    private async Task<IReadOnlyList<ComponentDefinition>?> ReadCatalogAsync()
+    {
+        IReadOnlyList<ComponentDefinition>? catalog = null;
+        try
+        {
+            ComponentCatalogReader reader =
+                new(Path.Combine(AppContext.BaseDirectory, AppSettingsFileName),
+                    new RegistryWindowsServiceLocator(mLoggerFactory?.CreateLogger<RegistryWindowsServiceLocator>()),
+                    mLoggerFactory?.CreateLogger<ComponentCatalogReader>());
+            catalog = await Task.Run(reader.Read);
+        }
+        catch (Exception ex)
+        {
+            // The reader absorbs an unreadable settings file itself; anything else is unexpected, but
+            // Docling must still be startable, so it falls back to its default address.
+            mLog?.LogWarning(ex, CatalogReadFailedLogMessage);
+        }
+
+        return catalog;
+    }
+
+    // Docling is started at the address the catalog reads from the installed settings, the same one
+    // the Components window probes and stops, whenever that address is on this computer.
+    private static DoclingLaunchSettings DoclingSettingsFor(IReadOnlyList<ComponentDefinition>? catalog)
+    {
+        DoclingLaunchSettings settings = DoclingLaunchSettings.CreateDefault();
+        ComponentDefinition? docling = catalog?.FirstOrDefault(component => component.Kind == ComponentKind.Docling);
+        if (docling is { HostedLocally: true, Endpoint: { } endpoint })
+            settings = settings with { Endpoint = endpoint };
+
+        return settings;
+    }
+
+    private void StartDoclingLaunchPolling()
+    {
         mDoclingTimer = new DispatcherTimer(DispatcherPriority.Background)
                             {
                                 Interval = TimeSpan.FromSeconds(DoclingPollIntervalSeconds)
@@ -454,20 +517,111 @@ public partial class App : Application
 
     private async void OnStartDocling(object sender, RoutedEventArgs e)
     {
-        DoclingProcessLauncher? launcher = mDoclingLauncher;
-        if (launcher is not null)
+        try
         {
-            try
+            await mComponentsSetup;
+            DoclingProcessLauncher? launcher = mDoclingLauncher;
+            if (launcher is not null)
             {
                 DoclingLaunchOutcome outcome = await launcher.EnsureRunningAsync(CancellationToken.None);
                 mLog?.LogInformation(DoclingLaunchLogMessage, outcome);
                 UpdateDoclingStatus(outcome.ToString());
                 ShowBalloon($"Docling — {outcome}");
             }
+        }
+        catch (Exception ex)
+        {
+            mLog?.LogWarning(ex, ActionFailedLogMessage, StartingDoclingMessage);
+            ShowBalloon($"{StartingDoclingMessage}{ActionFailedSuffix}{ex.Message}");
+        }
+    }
+
+    private async void OnOpenComponents(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await mComponentsSetup;
+            ComponentsViewModel? viewModel = GetComponentsViewModel();
+            if (viewModel is null)
+                ShowBalloon(ComponentsUnavailableMessage);
+            else
+                ShowComponentsWindow(viewModel);
+        }
+        catch (Exception ex)
+        {
+            mLog?.LogError(ex, ActionFailedLogMessage, OpeningComponentsMessage);
+            ShowBalloon($"{OpeningComponentsMessage}{ActionFailedSuffix}{ex.Message}");
+        }
+    }
+
+    // The view model is built once and kept, so the controller's one-action-at-a-time gate and the
+    // rows survive the window being closed and opened again.
+    private ComponentsViewModel? GetComponentsViewModel()
+    {
+        if (mComponentsViewModel is null && mCatalog is not null && mServiceRunner is not null && mDoclingLauncher is not null)
+        {
+            var ports = new TcpTablePortOwnerLookup();
+            ComponentStatusProbe probe = new(mDoclingHttpClient,
+                                             new WindowsServiceStateReader(),
+                                             ports: ports,
+                                             logger: mLoggerFactory?.CreateLogger<ComponentStatusProbe>());
+            ComponentController controller = new(mServiceRunner,
+                                                 probe,
+                                                 ports,
+                                                 new UserProcessStopper(),
+                                                 mDoclingLauncher,
+                                                 new ProcessStarter(ComponentController.OllamaLaunchLogPath),
+                                                 new MessageBoxOperatorConfirmation(),
+                                                 mLoggerFactory?.CreateLogger<ComponentController>());
+            ComponentsViewModel viewModel = new(mCatalog, probe.ProbeAsync, controller, shutdown: mShutdown.Token);
+            viewModel.OtherActionRunning = mServiceActionActive;
+            viewModel.ActionFinished += (_, _) => SyncMenu();
+            mComponentsViewModel = viewModel;
+        }
+
+        return mComponentsViewModel;
+    }
+
+    private void ShowComponentsWindow(ComponentsViewModel viewModel)
+    {
+        ComponentsWindow window = mComponentsWindow ?? OpenComponentsWindow(viewModel);
+        if (window.WindowState == WindowState.Minimized)
+            window.WindowState = WindowState.Normal;
+
+        window.Activate();
+    }
+
+    private ComponentsWindow OpenComponentsWindow(ComponentsViewModel viewModel)
+    {
+        ComponentsWindow window = new(viewModel, mLoggerFactory?.CreateLogger<ComponentsWindow>());
+        window.Closed += (_, _) => mComponentsWindow = null;
+        mComponentsWindow = window;
+        window.Show();
+        return window;
+    }
+
+    private void SetComponentsOtherActionRunning(bool running)
+    {
+        if (mComponentsViewModel is not null)
+            mComponentsViewModel.OtherActionRunning = running;
+    }
+
+    private async Task RefreshComponentsWindowAsync()
+    {
+        ComponentsViewModel? viewModel = mComponentsViewModel;
+        if (viewModel is not null && mComponentsWindow is not null)
+        {
+            try
+            {
+                await viewModel.RefreshAsync(mShutdown.Token);
+            }
+            catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
+            {
+                // The tray is exiting.
+            }
             catch (Exception ex)
             {
-                mLog?.LogWarning(ex, ActionFailedLogMessage, StartingDoclingMessage);
-                ShowBalloon($"{StartingDoclingMessage}{ActionFailedSuffix}{ex.Message}");
+                mLog?.LogWarning(ex, ComponentsRefreshFailedLogMessage);
             }
         }
     }
@@ -568,33 +722,10 @@ public partial class App : Application
         }
     }
 
-    private static void ShowOwnedDialog(string message, string title)
-    {
-        // A tray app has no main window, so an ownerless MessageBox opens unactivated and the
-        // closing context menu's input dismisses it before the user can read it. Give it a
-        // tiny, off-screen, topmost owner window that is activated first, so the dialog stays
-        // modal and on top until the user clicks OK. The owner is closed in finally.
-        Window owner = new()
-                           {
-                               Width = 1,
-                               Height = 1,
-                               Left = -10000,
-                               Top = -10000,
-                               ShowInTaskbar = false,
-                               WindowStyle = WindowStyle.None,
-                               Topmost = true,
-                               ShowActivated = true
-                           };
-        try
-        {
-            owner.Show();
-            MessageBox.Show(owner, message, title, MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-        finally
-        {
-            owner.Close();
-        }
-    }
+    // A tray app has no main window, so the dialog needs the activated owner window
+    // OwnedMessageBox provides, or the closing context menu's input dismisses it unread.
+    private static void ShowOwnedDialog(string message, string title) =>
+        OwnedMessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information, MessageBoxResult.OK);
 
     private static string? NormalizeKey(string key) =>
         string.Equals(key, AllKey, StringComparison.OrdinalIgnoreCase) ? null : key;

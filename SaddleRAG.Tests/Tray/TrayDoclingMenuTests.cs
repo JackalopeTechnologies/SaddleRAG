@@ -130,4 +130,42 @@ public sealed class TrayDoclingMenuTests
         Assert.Contains("DoclingLaunchCoordinator", code, StringComparison.Ordinal);
         Assert.Contains("DoclingPollIntervalSeconds", code, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void TheTrayMenuOffersTheComponentsWindowDirectlyUnderServiceHealth()
+    {
+        string xaml = TrayFile("App.xaml");
+
+        Assert.Contains("<MenuItem Header=\"Components…\" Click=\"OnOpenComponents\"/>", xaml, StringComparison.Ordinal);
+        int health = xaml.IndexOf("Header=\"Service health\"", StringComparison.Ordinal);
+        int components = xaml.IndexOf("Header=\"Components…\"", StringComparison.Ordinal);
+        int warnings = xaml.IndexOf("Header=\"Server warnings and errors\"", StringComparison.Ordinal);
+        Assert.True(health >= 0 && health < components && components < warnings);
+    }
+
+    [Fact]
+    public void TheComponentsWindowIsOpenedOnceAndReusesTheSingleServiceRunner()
+    {
+        string code = TrayFile("App.xaml.cs");
+
+        Assert.Contains("private async void OnOpenComponents(object sender, RoutedEventArgs e)", code, StringComparison.Ordinal);
+        Assert.Contains("new TcpTablePortOwnerLookup()", code, StringComparison.Ordinal);
+        Assert.Contains("new MessageBoxOperatorConfirmation()", code, StringComparison.Ordinal);
+        Assert.Contains("new ProcessStarter(ComponentController.OllamaLaunchLogPath)", code, StringComparison.Ordinal);
+        Assert.Equal(expected: 1, CountOccurrences(code, "new ElevatedServiceActionRunner("));
+        Assert.Equal(expected: 1, CountOccurrences(code, "new DoclingProcessLauncher("));
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = text.IndexOf(value, StringComparison.Ordinal);
+        while (index >= 0)
+        {
+            count++;
+            index = text.IndexOf(value, index + value.Length, StringComparison.Ordinal);
+        }
+
+        return count;
+    }
 }

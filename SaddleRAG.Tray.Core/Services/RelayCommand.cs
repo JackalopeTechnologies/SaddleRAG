@@ -13,34 +13,30 @@ namespace SaddleRAG.Tray.Services;
 
 /// <summary>
 ///     Minimal <see cref="ICommand" /> so a tray gesture that has no Click event —
-///     the taskbar icon's double-click — can run the same action a menu item does.
+///     the taskbar icon's double-click — can run the same action a menu item does. A command given a
+///     <c>canExecute</c> test reports it to WPF, which asks again whenever the owner calls
+///     <see cref="RaiseCanExecuteChanged" />.
 /// </summary>
 public sealed class RelayCommand : ICommand
 {
-    public RelayCommand(Action execute)
+    public RelayCommand(Action execute, Func<bool>? canExecute = null)
     {
         ArgumentNullException.ThrowIfNull(execute);
 
         mExecute = execute;
+        mCanExecute = canExecute;
     }
 
     private readonly Action mExecute;
+    private readonly Func<bool>? mCanExecute;
 
-    /// <summary>
-    ///     Accepts subscribers and never raises: this command is unconditionally executable,
-    ///     so there is no state change for WPF to re-query.
-    /// </summary>
-    event EventHandler? ICommand.CanExecuteChanged
-    {
-        add
-        {
-        }
-        remove
-        {
-        }
-    }
+    /// <summary>Raised by <see cref="RaiseCanExecuteChanged" />; a command with no test never raises it.</summary>
+    public event EventHandler? CanExecuteChanged;
 
-    public bool CanExecute(object? parameter) => true;
+    public bool CanExecute(object? parameter) => mCanExecute?.Invoke() ?? true;
 
     public void Execute(object? parameter) => mExecute();
+
+    /// <summary>Tells WPF to ask <see cref="CanExecute" /> again. Call it from the thread that owns the control.</summary>
+    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
