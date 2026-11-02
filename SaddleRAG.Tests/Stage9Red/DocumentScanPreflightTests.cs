@@ -1,3 +1,8 @@
+// DocumentScanPreflightTests.cs
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
+
 // Stage 9 acceptance coverage.
 // Proposed seam: IDirectoryDocumentCapabilityPreflight is injected into
 // DirectoryScanJobRunner and runs after registration/binding lookup but before

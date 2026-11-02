@@ -1,3 +1,8 @@
+// StartupHelperContractTests.cs
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
+
 // Stage 9 acceptance coverage for Doug's separately approved startup root fix.
 using System.Reflection;
 using System.Xml.Linq;

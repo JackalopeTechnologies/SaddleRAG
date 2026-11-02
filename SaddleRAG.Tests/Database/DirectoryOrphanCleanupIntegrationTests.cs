@@ -1,3 +1,8 @@
+// DirectoryOrphanCleanupIntegrationTests.cs
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
+
 // Stage 7 RED integration contract for directory-document orphan cleanup.
 
 using System.Security.Cryptography;

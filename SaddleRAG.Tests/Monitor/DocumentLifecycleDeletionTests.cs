@@ -1,3 +1,8 @@
+// DocumentLifecycleDeletionTests.cs
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
+
 // Stage 7 RED contract for directory-document lifecycle deletion.
 
 using System.Security.Cryptography;

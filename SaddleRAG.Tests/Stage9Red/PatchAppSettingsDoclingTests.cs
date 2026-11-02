@@ -1,3 +1,8 @@
+// PatchAppSettingsDoclingTests.cs
+// Copyright © 2012–Present Jackalope Technologies, Inc. and Doug Gerard.
+// SPDX-License-Identifier: MIT
+// Licensed under the MIT License. See the LICENSE file in the repo root.
+
 // Stage 9 acceptance coverage. Merge these cases into PatchAppSettingsTests.cs when the
 // complete batch is activated. PatchAppSettingsTestDriver is the proposed
 // extraction of that file's existing bounded process/temp-file helper.
