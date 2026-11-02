@@ -540,8 +540,12 @@ public partial class App : Application
         {
             await mComponentsSetup;
             ComponentController? controller = GetComponentController();
-            ComponentDefinition? docling = mCatalog?.FirstOrDefault(component => component.Kind == ComponentKind.Docling);
-            if (controller is null || docling is null)
+
+            // When the component list could not be read, Docling is still startable at its default
+            // local address, the one the launcher falls back to as well.
+            ComponentDefinition docling = mCatalog?.FirstOrDefault(component => component.Kind == ComponentKind.Docling)
+                                          ?? ComponentCatalogReader.DefaultDoclingRow();
+            if (controller is null)
             {
                 ShowBalloon(ComponentsUnavailableMessage);
             }

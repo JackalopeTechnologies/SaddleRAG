@@ -255,6 +255,26 @@ public sealed class TrayDoclingMenuTests
     }
 
     [Fact]
+    public void TheReadmeSaysStartDoclingIsRefusedWhileAnotherActionRuns()
+    {
+        // The controller's gate does not wait: a second action is refused at once with the busy text.
+        string readme = File.ReadAllText(Path.Combine(DoclingTestSupport.RepositoryRoot(), "README.md"));
+
+        Assert.Contains("it is refused with **Another component action is still running. Try again when it finishes.**", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("waits for any other component action to finish", readme, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StartDoclingFallsBackToTheDefaultLocalRowWhenTheComponentListIsUnreadable()
+    {
+        // The catalog read failing must not make Docling unstartable: the launcher already falls back
+        // to its default address, and the menu item starts that same local row.
+        string handler = MethodBody(TrayFile("App.xaml.cs"), "private async void OnStartDocling(object sender, RoutedEventArgs e)");
+
+        Assert.Contains("?? ComponentCatalogReader.DefaultDoclingRow()", handler, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ADoclingLaunchPollIsNotStartedWhileThePreviousOneIsStillRunning()
     {
         // A launch can wait minutes for Docling to report ready while the timer keeps ticking every

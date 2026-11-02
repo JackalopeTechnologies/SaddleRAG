@@ -476,4 +476,27 @@ public sealed class ComponentCatalogReaderTests : IDisposable
         Assert.Throws<ArgumentException>(() => new ComponentCatalogReader(" ", new FakeLocator()));
         Assert.Throws<ArgumentNullException>(() => new ComponentCatalogReader(mSettingsPath, null!));
     }
+
+    [Fact]
+    public void TheDefaultDoclingRowIsALocalDoclingAtTheLaunchersDefaultAddress()
+    {
+        // Used by the Start Docling menu item when the component list could not be read at all, so
+        // Docling stays startable at the same address the launcher then uses.
+        ComponentDefinition row = ComponentCatalogReader.DefaultDoclingRow();
+        Uri expected = DoclingLaunchSettings.CreateDefault().Endpoint;
+
+        Assert.Equal(ComponentKind.Docling, row.Kind);
+        Assert.Equal(expected, row.Endpoint);
+        Assert.Equal(expected.Port, row.Port);
+        Assert.True(row.HostedLocally);
+        Assert.Null(row.WindowsServiceName);
+    }
+
+    [Fact]
+    public void TheDefaultDoclingRowMatchesTheRowReadWithoutSettings()
+    {
+        ComponentDefinition read = Row(ReadSettings(json: null), ComponentKind.Docling);
+
+        Assert.Equal(read, ComponentCatalogReader.DefaultDoclingRow());
+    }
 }

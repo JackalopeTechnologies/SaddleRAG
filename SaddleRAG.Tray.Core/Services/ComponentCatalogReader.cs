@@ -75,6 +75,25 @@ public sealed class ComponentCatalogReader
         return result;
     }
 
+    /// <summary>
+    ///     A local Docling row at the Docling launcher's default address. The tray's Start Docling item
+    ///     uses it when the component list could not be read at all, so Docling stays startable at the
+    ///     address the launcher then uses. It is the row <see cref="Read" /> gives without settings.
+    /// </summary>
+    public static ComponentDefinition DefaultDoclingRow()
+    {
+        Uri endpoint = DoclingLaunchSettings.CreateDefault().Endpoint;
+        var result = new ComponentDefinition(ComponentKind.Docling,
+                                             DoclingDisplayName,
+                                             endpoint,
+                                             endpoint.Port,
+                                             HostedLocally: true,
+                                             WindowsServiceName: null,
+                                             ExecutablePath: null,
+                                             ModelsDirectory: null);
+        return result;
+    }
+
     private JsonDocument? LoadSettings()
     {
         JsonDocument? result = null;
