@@ -38,6 +38,13 @@ public static class LocalEndpoint
     private const char PortSeparator = ':';
     private const char Ipv6Open = '[';
     private const char Ipv6Close = ']';
+    private const char PathStart = '/';
+    private const char OptionsStart = '?';
+
+    // In "[host]:port" the host starts just after the opening bracket, and each of '[', ']' and ':'
+    // is one character wide.
+    private const int BracketedHostStart = 1;
+    private const int SeparatorLength = 1;
     private const int MinPort = 1;
     private const int MaxPort = 65535;
 
@@ -90,7 +97,7 @@ public static class LocalEndpoint
         if (connectionString is not null && connectionString.StartsWith(MongoScheme, StringComparison.OrdinalIgnoreCase))
         {
             string remainder = connectionString[MongoScheme.Length..];
-            int authorityEnd = remainder.IndexOfAny(['/', '?']);
+            int authorityEnd = remainder.IndexOfAny([PathStart, OptionsStart]);
             string authority = authorityEnd < 0 ? remainder : remainder[..authorityEnd];
             string hostList = authority[(authority.LastIndexOf(CredentialSeparator) + 1)..];
             result = ParseHostList(hostList);
@@ -134,12 +141,14 @@ public static class LocalEndpoint
     private static HostText? SplitBracketedHost(string entry)
     {
         int close = entry.IndexOf(Ipv6Close);
-        string tail = close > 1 ? entry[(close + 1)..] : string.Empty;
-        HostText? result = close > 1
-                               ? tail.Length switch
+        bool hasHost = close > BracketedHostStart;
+        string tail = hasHost ? entry[(close + SeparatorLength)..] : string.Empty;
+        HostText? result = hasHost
+                               ? tail switch
                                  {
-                                     0 => new HostText(entry[1..close], null),
-                                     _ when tail[0] == PortSeparator => new HostText(entry[1..close], tail[1..]),
+                                     _ when string.IsNullOrEmpty(tail) => new HostText(entry[BracketedHostStart..close], null),
+                                     _ when tail.StartsWith(PortSeparator) =>
+                                         new HostText(entry[BracketedHostStart..close], tail[SeparatorLength..]),
                                      _ => null
                                  }
                                : null;

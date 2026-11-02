@@ -5,7 +5,9 @@
 
 #region Usings
 
+using System.Text.RegularExpressions;
 using SaddleRAG.Core.Hosting;
+using SaddleRAG.Tests.Documents.Docling;
 
 #endregion
 
@@ -81,4 +83,29 @@ public sealed class LocalEndpointTests
     [InlineData(null)]
     public void MongoPortIsNullWhenNotParseable(string? connectionString) =>
         Assert.Null(LocalEndpoint.MongoPort(connectionString));
+
+    [Fact]
+    public void SeparatorsAndBracketIndexesAreNamedConstants()
+    {
+        // Jackalope no-magic-literal rule: every separator character is a named constant, and the
+        // bracketed-host split uses no bare index.
+        string source = File.ReadAllText(Path.Combine(DoclingTestSupport.RepositoryRoot(),
+                                                      "SaddleRAG.Core",
+                                                      "Hosting",
+                                                      "LocalEndpoint.cs"));
+        string[] code = source.Split('\n')
+                              .Select(line => line.Trim())
+                              .Where(line => !line.StartsWith("//", StringComparison.Ordinal) &&
+                                             !line.StartsWith("private const", StringComparison.Ordinal))
+                              .ToArray();
+
+        Assert.DoesNotContain(code, line => Regex.IsMatch(line, @"'(\\.|[^'])'"));
+
+        int start = source.IndexOf("private static HostText? SplitBracketedHost", StringComparison.Ordinal);
+        int end = source.IndexOf("private static HostText? SplitPlainHost", StringComparison.Ordinal);
+        string bracketed = string.Join('\n',
+                                       source[start..end].Split('\n')
+                                                         .Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+        Assert.DoesNotMatch(@"(?<![\w.])\d+(?![\w])", bracketed);
+    }
 }
