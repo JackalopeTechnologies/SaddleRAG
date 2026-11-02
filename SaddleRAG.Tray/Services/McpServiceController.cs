@@ -14,7 +14,6 @@ namespace SaddleRAG.Tray.Services;
 public sealed class McpServiceController : IMcpServiceController
 {
     private const string ServiceName = "SaddleRAGMcp";
-    private static readonly TimeSpan smControlTimeout = TimeSpan.FromSeconds(30);
 
     public McpServiceState GetState()
     {
@@ -34,38 +33,6 @@ public sealed class McpServiceController : IMcpServiceController
             }
         }
         return res;
-    }
-
-    public void Start()
-    {
-        ServiceController? sc = FindService();
-        if (sc is not null)
-        {
-            using (sc)
-            {
-                if (sc.Status != ServiceControllerStatus.Running)
-                {
-                    sc.Start();
-                    sc.WaitForStatus(ServiceControllerStatus.Running, smControlTimeout);
-                }
-            }
-        }
-    }
-
-    public void Stop()
-    {
-        ServiceController? sc = FindService();
-        if (sc is not null)
-        {
-            using (sc)
-            {
-                if (sc.CanStop)
-                {
-                    sc.Stop();
-                    sc.WaitForStatus(ServiceControllerStatus.Stopped, smControlTimeout);
-                }
-            }
-        }
     }
 
     private static ServiceController? FindService()

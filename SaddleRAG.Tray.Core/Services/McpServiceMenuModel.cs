@@ -13,11 +13,20 @@ public sealed class McpServiceMenuModel
     private const string TooltipTransitioning = "SaddleRAG MCP — working…";
     private const string TooltipUnknown = "SaddleRAG MCP";
 
-    private readonly IMcpServiceController mController;
+    private const string ServiceName = "SaddleRAGMcp";
 
-    public McpServiceMenuModel(IMcpServiceController controller)
+    private static readonly string[] smServiceNames = [ServiceName];
+
+    private readonly IMcpServiceController mController;
+    private readonly IServiceActionRunner mRunner;
+
+    public McpServiceMenuModel(IMcpServiceController controller, IServiceActionRunner runner)
     {
+        ArgumentNullException.ThrowIfNull(controller);
+        ArgumentNullException.ThrowIfNull(runner);
+
         mController = controller;
+        mRunner = runner;
         State = controller.GetState();
     }
 
@@ -41,15 +50,16 @@ public sealed class McpServiceMenuModel
         State = mController.GetState();
     }
 
-    public void Start()
-    {
-        mController.Start();
-        Refresh();
-    }
+    /// <summary>Starts the MCP service through the elevated script, then re-reads its state.</summary>
+    public Task<ServiceActionOutcome> StartAsync(CancellationToken ct) => RunAsync(ServiceAction.Start, ct);
 
-    public void Stop()
+    /// <summary>Stops the MCP service through the elevated script, then re-reads its state.</summary>
+    public Task<ServiceActionOutcome> StopAsync(CancellationToken ct) => RunAsync(ServiceAction.Stop, ct);
+
+    private async Task<ServiceActionOutcome> RunAsync(ServiceAction action, CancellationToken ct)
     {
-        mController.Stop();
+        ServiceActionOutcome result = await mRunner.RunAsync(smServiceNames, action, ct);
         Refresh();
+        return result;
     }
 }

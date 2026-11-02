@@ -5,11 +5,11 @@
 
 namespace SaddleRAG.Tray.Services;
 
+/// <summary>
+///     Reads the MCP service's state. Starting and stopping are not here: an unelevated process
+///     is denied them, so they go through <see cref="IServiceActionRunner" />.
+/// </summary>
 public interface IMcpServiceController
 {
     McpServiceState GetState();
-
-    void Start();
-
-    void Stop();
 }

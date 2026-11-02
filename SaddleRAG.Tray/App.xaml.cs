@@ -43,6 +43,9 @@ public partial class App : Application
 
     private const string StartingMessage = "Starting MCP service";
     private const string StoppingMessage = "Stopping MCP service";
+    private const string McpServiceSubject = "SaddleRAG MCP service";
+    private const string ServiceHelperScriptName = "Restart-SaddleRAGComponent.ps1";
+    private const string ServiceActionBusyMessage = "A service action is already running. Wait for it to finish.";
     private const string OpeningDashboardMessage = "Opening dashboard";
     private const string InstallFailedPrefix = "Install failed: ";
     private const string UninstallFailedPrefix = "Uninstall failed: ";
@@ -107,6 +110,7 @@ public partial class App : Application
     private TrayHealthObserver? mHealthObserver;
     private TrayAttention? mAttention;
     private bool mHealthPollActive;
+    private bool mServiceActionActive;
     private readonly CancellationTokenSource mShutdown = new();
 
     protected override void OnStartup(StartupEventArgs e)
@@ -122,7 +126,16 @@ public partial class App : Application
             mLoggerFactory = CreateLoggerFactory();
             mLog = mLoggerFactory.CreateLogger<App>();
 
-            mMenuModel = new McpServiceMenuModel(new McpServiceController());
+            // The tray runs unelevated, so service control goes through the installed script run
+            // elevated. It is located beside the tray and is refused unless that folder is
+            // changeable by administrators only.
+            ElevatedServiceActionRunner serviceRunner =
+                new(new RunAsProcessLauncher(),
+                    Path.Combine(AppContext.BaseDirectory, ServiceHelperScriptName),
+                    new FileSystemProbe(),
+                    new AclInstallLocationGuard(),
+                    mLoggerFactory.CreateLogger<ElevatedServiceActionRunner>());
+            mMenuModel = new McpServiceMenuModel(new McpServiceController(), serviceRunner);
             mTrayIcon = (TaskbarIcon) FindResource(TrayIconResourceKey);
 
             // Efficiency Mode (EcoQoS) is desirable here: the tray is an idle background
@@ -277,18 +290,53 @@ public partial class App : Application
         }
     }
 
-    private void OnStart(object sender, RoutedEventArgs e)
+    private async void OnStart(object sender, RoutedEventArgs e)
     {
         McpServiceMenuModel? model = mMenuModel;
         if (model is not null)
-            RunGuarded(model.Start, StartingMessage);
+            await RunServiceActionAsync(model.StartAsync, ServiceAction.Start, StartingMessage);
     }
 
-    private void OnStop(object sender, RoutedEventArgs e)
+    private async void OnStop(object sender, RoutedEventArgs e)
     {
         McpServiceMenuModel? model = mMenuModel;
         if (model is not null)
-            RunGuarded(model.Stop, StoppingMessage);
+            await RunServiceActionAsync(model.StopAsync, ServiceAction.Stop, StoppingMessage);
+    }
+
+    // One elevated action at a time: a second click while the first Windows prompt or service
+    // wait is still open would stack prompts for the same service.
+    private async Task RunServiceActionAsync(Func<CancellationToken, Task<ServiceActionOutcome>> run,
+                                             ServiceAction action,
+                                             string workingMessage)
+    {
+        if (mServiceActionActive)
+        {
+            ShowBalloon(ServiceActionBusyMessage);
+        }
+        else
+        {
+            mServiceActionActive = true;
+            try
+            {
+                ServiceActionOutcome outcome = await run(mShutdown.Token);
+                SyncMenu();
+                ShowBalloon(ServiceActionOutcomeText.Describe(outcome, action, McpServiceSubject));
+            }
+            catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
+            {
+                // The tray is exiting; the elevated script finishes the action on its own.
+            }
+            catch (Exception ex)
+            {
+                mLog?.LogError(ex, ActionFailedLogMessage, workingMessage);
+                ShowBalloon($"{workingMessage}{ActionFailedSuffix}{ex.Message}");
+            }
+            finally
+            {
+                mServiceActionActive = false;
+            }
+        }
     }
 
     private void OnOpenDashboard(object sender, RoutedEventArgs e) => OpenDashboardGuarded();
