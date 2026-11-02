@@ -219,17 +219,36 @@ public sealed class ComponentControllerTests
 
         public bool IsRegistered { get; set; } = true;
 
+        /// <summary>
+        ///     When set, the launched process exits after this many relaunch checks have seen it running,
+        ///     as a wrapper (pwsh, a venv shim) does a moment after its python child was stopped.
+        /// </summary>
+        public int? ExitsAfterChecks { get; set; }
+
+        /// <summary>
+        ///     When true, a launch that was never allowed again times out, as the real launcher does when
+        ///     its single-shot guard is still set and nothing is serving.
+        /// </summary>
+        public bool TimesOutUnlessAllowed { get; set; }
+
+        public int Checks { get; private set; }
+
         public Task<DoclingLaunchOutcome> EnsureRunningAsync(CancellationToken cancellationToken = default)
         {
             EnsureCalls++;
             mOwner.mEvents.Add("docling ensure");
-            return Task.FromResult(Outcome);
+            DoclingLaunchOutcome result = TimesOutUnlessAllowed && AllowCalls == 0 ? DoclingLaunchOutcome.Timeout : Outcome;
+            return Task.FromResult(result);
         }
 
         // Mirrors the real launcher's rule: clear only when the launched process has exited and the
         // port is free. AllowCalls counts the clears.
         public bool TryAllowRelaunch(Func<bool> portIsFree)
         {
+            Checks++;
+            if (LaunchedProcessIsRunning && ExitsAfterChecks is { } exitAfter && Checks > exitAfter)
+                LaunchedProcessIsRunning = false;
+
             bool cleared = !LaunchedProcessIsRunning && portIsFree();
             if (cleared)
             {
@@ -825,6 +844,57 @@ public sealed class ComponentControllerTests
 
         Assert.Equal(1, mDocling.AllowCalls);
         Assert.Equal(1, mDocling.EnsureCalls);
+    }
+
+    [Fact]
+    public async Task RestartingDoclingWaitsForItsLaunchWrapperToExitThenStartsItAgain()
+    {
+        // The tray launched Docling through a wrapper; the stop kills the python tree and frees the
+        // port, but the wrapper is still exiting at the first relaunch check.
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+        mDocling.LaunchedProcessIsRunning = true;
+        mDocling.ExitsAfterChecks = 3;
+        mDocling.TimesOutUnlessAllowed = true;
+
+        ComponentActionResult result = await mController.RestartAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.Succeeded, result.Status);
+        Assert.Equal(1, mDocling.AllowCalls);
+        Assert.Equal(1, mDocling.EnsureCalls);
+        Assert.Equal(4, mDocling.Checks);
+        Assert.True(mTime.GetUtcNow() - mTime.Start < TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task ALaunchWrapperThatNeverExitsIsWaitedOnForTenSecondsOnly()
+    {
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+        mDocling.LaunchedProcessIsRunning = true;
+        mDocling.TimesOutUnlessAllowed = true;
+
+        ComponentActionResult result = await mController.RestartAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.TimedOut, result.Status);
+        Assert.Equal(0, mDocling.AllowCalls);
+        Assert.Equal(1, mDocling.EnsureCalls);
+        Assert.True(mDocling.Checks > 1);
+        Assert.InRange(mTime.GetUtcNow() - mTime.Start, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task AProcessTakingTheDoclingPortEndsTheWaitForTheWrapper()
+    {
+        // Only a free port is worth waiting on; once something else listens, there is nothing to clear.
+        mDocling.LaunchedProcessIsRunning = true;
+        mPorts.Listeners[DoclingPort] = Owner(pid: 200, "python");
+
+        await mController.StartAsync(Docling(), Ct);
+
+        Assert.Equal(1, mDocling.Checks);
+        Assert.Equal(0, mDocling.AllowCalls);
+        Assert.Equal(mTime.Start, mTime.GetUtcNow());
     }
 
     [Fact]

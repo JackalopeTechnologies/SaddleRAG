@@ -30,6 +30,8 @@ namespace SaddleRAG.Tray.Services;
 ///             restart lifts that only when nothing listens on Docling's port and the process the
 ///             launcher started has exited (stopped, or crashed). A process on the port, or a launched
 ///             process still loading, keeps it in place, so a second server is never started beside one.
+///             When the port is free but the launched process has not exited yet (a launch wrapper
+///             still closing after its server was stopped), it asks again for up to 10 seconds.
 ///         </item>
 ///         <item>
 ///             An operator stop of Docling, or a restart whose start step fails after its stop worked,
@@ -85,8 +87,10 @@ public sealed class ComponentController
         mOllama = new OllamaServeLauncher(probe, ollamaStarter, clock);
         mLogger = logger;
         mDoclingIntent = doclingIntent;
+        mTime = clock;
     }
 
+    private readonly TimeProvider mTime;
     private readonly DoclingOperatorIntent? mDoclingIntent;
     private readonly IServiceActionRunner mServices;
     private readonly IDoclingLauncher mDocling;
@@ -324,7 +328,7 @@ public sealed class ComponentController
         // listens on the port and the process it started has exited (stopped, or crashed), checking
         // both under the same lock as a launch. Whether it did is not the operator's concern: the
         // launch outcome below says what happened.
-        _ = mDocling.TryAllowRelaunch(() => mListeners.IsPortFree(port));
+        await AllowDoclingRelaunchAsync(port, ct);
 
         DoclingLaunchOutcome outcome = await mDocling.EnsureRunningAsync(ct);
         string name = component.DisplayName;
@@ -348,6 +352,23 @@ public sealed class ComponentController
             mDoclingIntent?.LiftAutoStartSuppression();
 
         return result;
+    }
+
+    // When the tray launched Docling through a wrapper (a pwsh script, a venv shim), the process it
+    // remembers is the wrapper. Stopping Docling kills the python tree that holds the port, and the
+    // wrapper exits a moment later. A port that is free while the guard stays means exactly that:
+    // the launched process is still running. Ask again every 250 ms for up to 10 seconds, so a
+    // restart does not fall into the launcher's 120-second readiness wait on a guard that was about
+    // to clear. A port someone listens on is not waited for: there is nothing to clear.
+    private async Task AllowDoclingRelaunchAsync(int port, CancellationToken ct)
+    {
+        bool cleared = mDocling.TryAllowRelaunch(() => mListeners.IsPortFree(port));
+        DateTimeOffset deadline = mTime.GetUtcNow() + TimeSpan.FromSeconds(RelaunchWaitSeconds);
+        while (!cleared && mTime.GetUtcNow() < deadline && mListeners.IsPortFree(port))
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(RelaunchPollMilliseconds), mTime, ct);
+            cleared = mDocling.TryAllowRelaunch(() => mListeners.IsPortFree(port));
+        }
     }
 
     private async Task<IReadOnlyList<ComponentActionResult>> RestartSequenceAsync(IReadOnlyList<ComponentDefinition> components,
@@ -475,6 +496,9 @@ public sealed class ComponentController
                                                             ServiceAction.Stop => StopVerb,
                                                             _ => RestartVerb
                                                         };
+
+    private const int RelaunchWaitSeconds = 10;
+    private const int RelaunchPollMilliseconds = 250;
 
     private const string LogDirectoryName = "SaddleRAG";
     private const string LogsFolderName = "logs";
