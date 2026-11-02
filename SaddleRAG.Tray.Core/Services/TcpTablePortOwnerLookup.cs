@@ -102,7 +102,7 @@ public sealed class TcpTablePortOwnerLookup : IPortOwnerLookup
         try
         {
             using Process process = Process.GetProcessById(processId);
-            result = new ListeningProcess(processId, process.ProcessName, ReadExecutablePath(process));
+            result = new ListeningProcess(processId, process.ProcessName, ReadExecutablePath(process), ReadStartTimeUtc(process));
         }
         catch(Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -111,6 +111,23 @@ public sealed class TcpTablePortOwnerLookup : IPortOwnerLookup
         }
 
         return result;
+    }
+
+    private static DateTime? ReadStartTimeUtc(Process process)
+    {
+        DateTime? startUtc = null;
+        try
+        {
+            startUtc = process.StartTime.ToUniversalTime();
+        }
+        catch(Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            // Windows refuses the start time of another user's or an elevated process, and the
+            // process may have exited. Without it the stopper will not touch the process.
+            startUtc = null;
+        }
+
+        return startUtc;
     }
 
     private static string? ReadExecutablePath(Process process)
@@ -130,6 +147,7 @@ public sealed class TcpTablePortOwnerLookup : IPortOwnerLookup
         return path;
     }
 
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport(TcpLibrary, ExactSpelling = true)]
     private static extern uint GetExtendedTcpTable(IntPtr tcpTable,
                                                    ref uint size,

@@ -21,27 +21,41 @@ namespace SaddleRAG.Tray.Services;
 [SupportedOSPlatform("windows")]
 public sealed class UserProcessStopper : IUserProcessStopper
 {
-    public async Task<ProcessStopOutcome> StopAsync(int processId, TimeSpan timeout, CancellationToken ct)
+    public async Task<ProcessStopOutcome> StopAsync(ListeningProcess process,
+                                                    bool entireProcessTree,
+                                                    TimeSpan timeout,
+                                                    CancellationToken ct)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
+        ArgumentNullException.ThrowIfNull(process);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(process.ProcessId);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(timeout, smMaxTimeout);
-        if (processId == Environment.ProcessId)
+        if (process.ProcessId == Environment.ProcessId)
         {
             // Killing the process tree of the tray itself would end the tray mid-action.
-            throw new ArgumentException(OwnProcessMessage, nameof(processId));
+            throw new ArgumentException(OwnProcessMessage, nameof(process));
         }
 
         ProcessStopOutcome result;
-        Process? process = FindProcess(processId);
-        if (process is null)
+        if (process.StartTimeUtc is not { } expectedStartUtc)
         {
-            result = ProcessStopOutcome.NotFound;
+            // Without a start time the process cannot be told from a later process that reuses its
+            // id. A process whose start time Windows hides from this user is one it would refuse to
+            // let this user kill anyway.
+            result = ProcessStopOutcome.AccessDenied;
         }
         else
         {
-            using(process)
-                result = await KillAndWaitAsync(process, timeout, ct);
+            Process? live = FindProcess(process.ProcessId);
+            if (live is null)
+            {
+                result = ProcessStopOutcome.NotFound;
+            }
+            else
+            {
+                using(live)
+                    result = await KillAndWaitAsync(live, expectedStartUtc, entireProcessTree, timeout, ct);
+            }
         }
 
         return result;
@@ -64,14 +78,25 @@ public sealed class UserProcessStopper : IUserProcessStopper
     }
 
     private static async Task<ProcessStopOutcome> KillAndWaitAsync(Process process,
+                                                                    DateTime expectedStartUtc,
+                                                                    bool entireProcessTree,
                                                                     TimeSpan timeout,
                                                                     CancellationToken ct)
     {
         ProcessStopOutcome result;
         try
         {
-            process.Kill(entireProcessTree: true);
-            result = await WaitForExitAsync(process, timeout, ct);
+            if (process.StartTime.ToUniversalTime() == expectedStartUtc)
+            {
+                process.Kill(entireProcessTree);
+                result = await WaitForExitAsync(process, timeout, ct);
+            }
+            else
+            {
+                // The process the operator was shown has exited and Windows gave its id to another
+                // process. That one is not ours to stop.
+                result = ProcessStopOutcome.NotFound;
+            }
         }
         catch(Exception ex) when (ex is Win32Exception or UnauthorizedAccessException
                                       || ex is AggregateException aggregate && AllDenied(aggregate))

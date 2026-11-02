@@ -74,7 +74,7 @@ public sealed class ComponentStatusProbeTests
             if (ThrowOnRead)
                 throw new Win32Exception(1, "the listener table could not be read");
 
-            return mListening ? new ListeningProcess(ProcessId: 1234, "listener", ExecutablePath: null) : null;
+            return mListening ? new ListeningProcess(ProcessId: 1234, "listener", ExecutablePath: null, StartTimeUtc: null) : null;
         }
     }
 

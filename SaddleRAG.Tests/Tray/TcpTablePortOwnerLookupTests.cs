@@ -40,6 +40,7 @@ public sealed class TcpTablePortOwnerLookupTests
             using Process self = Process.GetCurrentProcess();
             Assert.Equal(self.ProcessName, owner.ProcessName);
             Assert.False(string.IsNullOrEmpty(owner.ExecutablePath));
+            Assert.Equal(self.StartTime.ToUniversalTime(), owner.StartTimeUtc);
         }
         finally
         {

@@ -11,4 +11,8 @@ namespace SaddleRAG.Tray.Services;
 /// <param name="ExecutablePath">
 ///     The program file, or null when Windows will not tell this user (another user's or an elevated process).
 /// </param>
-public sealed record ListeningProcess(int ProcessId, string ProcessName, string? ExecutablePath);
+/// <param name="StartTimeUtc">
+///     When the process started, in UTC, or null when Windows will not tell this user. A process id can be reused
+///     once its process exits; the start time is what tells the original process from a new one with the same id.
+/// </param>
+public sealed record ListeningProcess(int ProcessId, string ProcessName, string? ExecutablePath, DateTime? StartTimeUtc);
