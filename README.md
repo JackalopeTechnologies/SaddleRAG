@@ -186,6 +186,8 @@ The command you register for Docling must keep running for as long as Docling ru
 
 After you **Stop** Docling, SaddleRAG does not start it for a waiting document scan until you start it again with **Start**, **Restart**, or **Start Docling**.
 
+**Start Docling** in the tray's **Document scanning** menu does the same as **Start** on the Docling row: it waits for any other component action to finish first, and it starts Docling again after you stopped it or it crashed.
+
 **Restart all** works in this order: Docling, Ollama, then MongoDB and SaddleRAG together under one prompt. It stops at the first step that fails, is denied, times out, or is cancelled, and the message line names the components it did not restart. MongoDB and SaddleRAG are restarted in a single step, so they succeed or fail together.
 
 Stopping MongoDB with Windows also stops any service that depends on it, and **Restart** does not start those dependent services again.

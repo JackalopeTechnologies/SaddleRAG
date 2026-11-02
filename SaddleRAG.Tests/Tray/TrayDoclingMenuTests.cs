@@ -234,7 +234,48 @@ public sealed class TrayDoclingMenuTests
         Assert.Equal(expected: 1, CountOccurrences(code, "DoclingOperatorIntent mDoclingIntent = new();"));
         Assert.Contains("mDoclingIntent);", code, StringComparison.Ordinal);
         Assert.Contains("doclingIntent: mDoclingIntent", code, StringComparison.Ordinal);
-        Assert.Contains("mDoclingIntent.LiftAutoStartSuppression();", code, StringComparison.Ordinal);
+        // Only the controller lifts an operator stop; the Start Docling item goes through it.
+        Assert.DoesNotContain("LiftAutoStartSuppression", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheStartDoclingMenuItemGoesThroughTheComponentController()
+    {
+        // The menu item is an operator start like the window's Start button: it must share the
+        // controller's one-action gate, its relaunch rule, and its lifting of an operator stop,
+        // rather than call the launcher directly (which waits out the guard after a stop).
+        string code = TrayFile("App.xaml.cs");
+        string handler = MethodBody(code, "private async void OnStartDocling(object sender, RoutedEventArgs e)");
+
+        Assert.Contains("GetComponentController()", handler, StringComparison.Ordinal);
+        Assert.Contains(".StartAsync(", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("EnsureRunningAsync", handler, StringComparison.Ordinal);
+        Assert.DoesNotContain("LiftAutoStartSuppression", handler, StringComparison.Ordinal);
+        Assert.Equal(expected: 1, CountOccurrences(code, "new ComponentController("));
+    }
+
+    // The text of a method from its signature to the brace that closes it.
+    private static string MethodBody(string code, string signature)
+    {
+        int start = code.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"{signature} was not found.");
+
+        int open = code.IndexOf('{', start);
+        int depth = 0;
+        int index = open;
+        do
+        {
+            depth += code[index] switch
+                     {
+                         '{' => 1,
+                         '}' => -1,
+                         _ => 0
+                     };
+            index++;
+        }
+        while (depth > 0 && index < code.Length);
+
+        return code[start..index];
     }
 
     private static int CountOccurrences(string text, string value)

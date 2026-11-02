@@ -117,6 +117,8 @@ public partial class App : Application
     private readonly DoclingOperatorIntent mDoclingIntent = new();
     private IReadOnlyList<ComponentDefinition>? mCatalog;
     private Task mComponentsSetup = Task.CompletedTask;
+    private ComponentController? mComponentController;
+    private ComponentStatusProbe? mComponentProbe;
     private ComponentsViewModel? mComponentsViewModel;
     private ComponentsWindow? mComponentsWindow;
     private DoclingLaunchCoordinator? mDoclingCoordinator;
@@ -520,24 +522,32 @@ public partial class App : Application
         return scanningMenu?.Items.OfType<MenuItem>().FirstOrDefault(m => m.Name == DoclingStatusItemName);
     }
 
+    // The menu item is an operator start, exactly like Start on the Components window's Docling row,
+    // so it goes through the same controller: one action at a time, the rule that lets Docling be
+    // launched again after an operator stop or a crash, and the lifting of an operator stop on success.
+    // The controller logs the outcome.
     private async void OnStartDocling(object sender, RoutedEventArgs e)
     {
         try
         {
             await mComponentsSetup;
-            DoclingProcessLauncher? launcher = mDoclingLauncher;
-            if (launcher is not null)
+            ComponentController? controller = GetComponentController();
+            ComponentDefinition? docling = mCatalog?.FirstOrDefault(component => component.Kind == ComponentKind.Docling);
+            if (controller is null || docling is null)
             {
-                DoclingLaunchOutcome outcome = await launcher.EnsureRunningAsync(CancellationToken.None);
-
-                // The menu item is an operator start: once Docling is up, a waiting scan may start it again later.
-                if (outcome is DoclingLaunchOutcome.Ready or DoclingLaunchOutcome.AlreadyRunning)
-                    mDoclingIntent.LiftAutoStartSuppression();
-
-                mLog?.LogInformation(DoclingLaunchLogMessage, outcome);
-                UpdateDoclingStatus(outcome.ToString());
-                ShowBalloon($"Docling — {outcome}");
+                ShowBalloon(ComponentsUnavailableMessage);
             }
+            else
+            {
+                ComponentActionResult result = await controller.StartAsync(docling, mShutdown.Token);
+                UpdateDoclingStatus(result.Status.ToString());
+                ShowBalloon(result.Message);
+                _ = RefreshComponentsWindowAsync();
+            }
+        }
+        catch (OperationCanceledException) when (mShutdown.IsCancellationRequested)
+        {
+            // The tray is exiting; the start is abandoned with it.
         }
         catch (Exception ex)
         {
@@ -568,22 +578,9 @@ public partial class App : Application
     // rows survive the window being closed and opened again.
     private ComponentsViewModel? GetComponentsViewModel()
     {
-        if (mComponentsViewModel is null && mCatalog is not null && mServiceRunner is not null && mDoclingLauncher is not null)
+        if (mComponentsViewModel is null && mCatalog is not null &&
+            GetComponentController() is { } controller && mComponentProbe is { } probe)
         {
-            var ports = new TcpTablePortOwnerLookup();
-            ComponentStatusProbe probe = new(mDoclingHttpClient,
-                                             new WindowsServiceStateReader(),
-                                             ports: ports,
-                                             logger: mLoggerFactory?.CreateLogger<ComponentStatusProbe>());
-            ComponentController controller = new(mServiceRunner,
-                                                 probe,
-                                                 ports,
-                                                 new UserProcessStopper(),
-                                                 mDoclingLauncher,
-                                                 new ProcessStarter(ComponentController.OllamaLaunchLogPath),
-                                                 new MessageBoxOperatorConfirmation(),
-                                                 mLoggerFactory?.CreateLogger<ComponentController>(),
-                                                 doclingIntent: mDoclingIntent);
             ComponentsViewModel viewModel = new(mCatalog,
                                                 probe.ProbeAsync,
                                                 controller,
@@ -595,6 +592,32 @@ public partial class App : Application
         }
 
         return mComponentsViewModel;
+    }
+
+    // The one controller, shared by the Components window and the Start Docling menu item, so both
+    // go through its single one-action-at-a-time gate.
+    private ComponentController? GetComponentController()
+    {
+        if (mComponentController is null && mServiceRunner is not null && mDoclingLauncher is not null)
+        {
+            var ports = new TcpTablePortOwnerLookup();
+            ComponentStatusProbe probe = new(mDoclingHttpClient,
+                                             new WindowsServiceStateReader(),
+                                             ports: ports,
+                                             logger: mLoggerFactory?.CreateLogger<ComponentStatusProbe>());
+            mComponentController = new ComponentController(mServiceRunner,
+                                                           probe,
+                                                           ports,
+                                                           new UserProcessStopper(),
+                                                           mDoclingLauncher,
+                                                           new ProcessStarter(ComponentController.OllamaLaunchLogPath),
+                                                           new MessageBoxOperatorConfirmation(),
+                                                           mLoggerFactory?.CreateLogger<ComponentController>(),
+                                                           doclingIntent: mDoclingIntent);
+            mComponentProbe = probe;
+        }
+
+        return mComponentController;
     }
 
     private void ShowComponentsWindow(ComponentsViewModel viewModel)
