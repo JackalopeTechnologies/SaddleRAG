@@ -7,6 +7,7 @@
 
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using SaddleRAG.Tests.Documents.Docling;
 using SaddleRAG.Tray.Services;
 
 #endregion
@@ -201,6 +202,24 @@ public sealed class UserProcessStopperTests
             KillIfRunning(grandchildProcess);
             KillIfRunning(parentProcess);
         }
+    }
+
+    [Fact]
+    public void TheIdentityCheckAndTheKillShareOneProcessHandle()
+    {
+        // Which handle a call uses is not observable from outside, so the order is pinned: the handle
+        // is opened (and cached by Process) before the start time is compared and the process killed.
+        string source = File.ReadAllText(Path.Combine(DoclingTestSupport.RepositoryRoot(),
+                                                      "SaddleRAG.Tray.Core",
+                                                      "Services",
+                                                      "UserProcessStopper.cs"));
+        int handle = source.IndexOf("_ = process.SafeHandle;", StringComparison.Ordinal);
+        int startTime = source.IndexOf("process.StartTime.ToUniversalTime()", StringComparison.Ordinal);
+        int kill = source.IndexOf("process.Kill(", StringComparison.Ordinal);
+        int tryBlock = source.IndexOf("try", source.IndexOf("KillAndWaitAsync(Process process", StringComparison.Ordinal), StringComparison.Ordinal);
+
+        Assert.True(handle >= 0, "The process handle is not opened before the identity check.");
+        Assert.True(tryBlock < handle && handle < startTime && startTime < kill);
     }
 
     [Fact]

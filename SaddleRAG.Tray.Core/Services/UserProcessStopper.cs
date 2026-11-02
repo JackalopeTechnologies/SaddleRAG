@@ -86,6 +86,12 @@ public sealed class UserProcessStopper : IUserProcessStopper
         ProcessStopOutcome result;
         try
         {
+            // Open the process handle once, before the identity check. Process caches it, so the start
+            // time read and the Kill below go through this one handle, and the handle keeps the process
+            // object alive: its id cannot pass to another process between the check and the kill.
+            // Without it, each call opens a handle of its own by process id. A handle that cannot be
+            // opened fails here exactly as the start time read would (access denied, or already exited).
+            _ = process.SafeHandle;
             if (process.StartTime.ToUniversalTime() == expectedStartUtc)
             {
                 process.Kill(entireProcessTree);
