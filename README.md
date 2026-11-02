@@ -176,7 +176,7 @@ Nothing restarts automatically. The tray acts only when you click a button, and 
 
 Only components on this computer can be controlled. A component on another computer, including a `mongodb+srv://` MongoDB, shows its status but has no working buttons.
 
-**SaddleRAG and MongoDB** run as Windows services, and ordinary users cannot start or stop a Windows service. Each action therefore shows one Windows administrator (UAC) prompt, and **Restart all** shows one prompt for both services. If you decline the prompt, the row shows **Cancelled** and nothing changes. The tray elevates only `Restart-SaddleRAGComponent.ps1` in its own install folder, and that script accepts only the `SaddleRAGMcp` service and a service that runs `mongod.exe`.
+**SaddleRAG and MongoDB** run as Windows services, and ordinary users cannot start or stop a Windows service. Each action therefore shows one Windows administrator (UAC) prompt, and **Restart all** shows one prompt for both services. If you decline the prompt, the message line at the bottom of the window shows **Cancelled — Windows did not get administrator approval.** and nothing changes. The tray elevates only `Restart-SaddleRAGComponent.ps1` in its own install folder, and that script accepts only the `SaddleRAGMcp` service and a service that runs `mongod.exe`.
 
 The tray refuses to ask for administrator rights when someone other than an administrator could change the install folder. That means a folder or parent folder that users can write to, a junction or symbolic link anywhere in the path, a network share, or a drive that is not a fixed disk. Reinstall to a protected folder such as `C:\Program Files`. The installer locks the install folder: owned by Administrators, full control for SYSTEM and Administrators, read and execute for Users.
 
@@ -186,7 +186,7 @@ The command you register for Docling must keep running for as long as Docling ru
 
 After you **Stop** Docling, SaddleRAG does not start it for a waiting document scan until you start it again with **Start**, **Restart**, or **Start Docling**.
 
-**Restart all** works in this order: Docling, Ollama, then MongoDB and SaddleRAG together under one prompt.
+**Restart all** works in this order: Docling, Ollama, then MongoDB and SaddleRAG together under one prompt. It stops at the first step that fails, is denied, times out, or is cancelled, and the message line names the components it did not restart. MongoDB and SaddleRAG are restarted in a single step, so they succeed or fail together.
 
 Stopping MongoDB with Windows also stops any service that depends on it, and **Restart** does not start those dependent services again.
 
@@ -195,8 +195,10 @@ Stopping MongoDB with Windows also stops any service that depends on it, and **R
 From an administrator PowerShell:
 
 ```powershell
-& "C:\Program Files\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1" -ServiceName MongoDB -Action Restart
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Program Files\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1" -ServiceName MongoDB -Action Restart
 ```
+
+The MongoDB service's name on your computer may differ. It is the service that runs `mongod.exe`; check with `Get-Service | Where-Object Name -match mongo` or in `services.msc`.
 
 `-Action` is `Start`, `Stop`, or `Restart`. `-ServiceName` takes `SaddleRAGMcp` or the MongoDB service, and several names can be given separated by commas; they are processed in order. Each wait is limited to 120 seconds unless you set `-TimeoutSeconds`. `-ValidateOnly` checks the names and the installation and changes nothing.
 

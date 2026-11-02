@@ -133,6 +133,16 @@ public sealed class DocumentSetupGuidanceTests
         Assert.Contains("Nothing restarts automatically", readme, StringComparison.Ordinal);
         Assert.Contains("Restart-SaddleRAGComponent.ps1", readme, StringComparison.Ordinal);
         Assert.Contains("-ServiceName MongoDB -Action Restart", readme, StringComparison.Ordinal);
+        Assert.Contains("the message line at the bottom of the window shows", readme, StringComparison.Ordinal);
+        Assert.Contains("Windows did not get administrator approval.", readme, StringComparison.Ordinal);
+        Assert.Contains("It stops at the first step that fails, is denied, times out, or is cancelled",
+                        readme,
+                        StringComparison.Ordinal);
+        Assert.Contains("the message line names the components it did not restart", readme, StringComparison.Ordinal);
+        Assert.Contains("powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\Program Files\\SaddleRAG.Mcp\\Restart-SaddleRAGComponent.ps1\"",
+                        readme,
+                        StringComparison.Ordinal);
+        Assert.Contains("The MongoDB service's name on your computer may differ.", readme, StringComparison.Ordinal);
         Assert.Contains("SaddleRAG Service Actions", readme, StringComparison.Ordinal);
         Assert.Contains("Reinstall to a protected folder such as `C:\\Program Files`",
                         readme,
