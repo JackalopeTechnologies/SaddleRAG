@@ -6,7 +6,6 @@
 #region Usings
 
 using System.Diagnostics;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 #endregion
@@ -205,7 +204,7 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
             if (response.IsSuccessStatusCode)
             {
                 string body = await response.Content.ReadAsStringAsync(cancellationToken);
-                healthy = ReportsOk(body);
+                healthy = HealthResponse.ReportsOk(body);
             }
         }
         catch(Exception ex) when (ex is HttpRequestException or TaskCanceledException
@@ -218,26 +217,7 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
         return healthy;
     }
 
-    private static bool ReportsOk(string body)
-    {
-        var reportsOk = false;
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(body);
-            reportsOk = document.RootElement.TryGetProperty(StatusProperty, out JsonElement status)
-                        && string.Equals(status.GetString(), OkStatus, StringComparison.OrdinalIgnoreCase);
-        }
-        catch(JsonException)
-        {
-            reportsOk = false;
-        }
-
-        return reportsOk;
-    }
-
     private const string HealthPath = "/health";
-    private const string StatusProperty = "status";
-    private const string OkStatus = "ok";
     private const string TessdataPrefixVariable = "TESSDATA_PREFIX";
     private const string PathVariable = "PATH";
     private const string NotRegisteredMessage =
