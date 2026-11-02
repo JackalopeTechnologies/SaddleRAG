@@ -97,6 +97,51 @@ public sealed class DocumentSetupGuidanceTests
         Assert.Contains("DocumentIngestion:Docling:ApiKey", instructionSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void OpeningPagesStateTheTrayDoclingStopRule()
+    {
+        string root = ResolveRepositoryRoot();
+        string readme = File.ReadAllText(Path.Combine(root, "README.md"));
+        string landingPage = File.ReadAllText(Path.Combine(root,
+                                                            "SaddleRAG.Monitor",
+                                                            "Pages",
+                                                            "LandingPage.razor"));
+        string clientGuide = File.ReadAllText(Path.Combine(root,
+                                                            "SaddleRAG.ClientIntegration",
+                                                            "Resources",
+                                                            "saddlerag-docling-setup.md"));
+
+        foreach(string page in new[] { readme, landingPage, clientGuide })
+        {
+            Assert.Contains(TrayDoclingStopSentence, page, StringComparison.Ordinal);
+            Assert.Contains("MCP service never starts, stops, or restarts anything", page, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ReadmeDocumentsRestartingSaddleRagAndItsServices()
+    {
+        string root = ResolveRepositoryRoot();
+        string readme = File.ReadAllText(Path.Combine(root, "README.md"));
+
+        Assert.Contains("### Restarting SaddleRAG and its services", readme, StringComparison.Ordinal);
+        Assert.Contains("Components…", readme, StringComparison.Ordinal);
+        Assert.Contains("Restart all", readme, StringComparison.Ordinal);
+        Assert.Contains("one Windows administrator (UAC) prompt", readme, StringComparison.Ordinal);
+        Assert.Contains("Only components on this computer can be controlled", readme, StringComparison.Ordinal);
+        Assert.Contains("run as you and are never started as administrator", readme, StringComparison.Ordinal);
+        Assert.Contains("Nothing restarts automatically", readme, StringComparison.Ordinal);
+        Assert.Contains("Restart-SaddleRAGComponent.ps1", readme, StringComparison.Ordinal);
+        Assert.Contains("-ServiceName MongoDB -Action Restart", readme, StringComparison.Ordinal);
+        Assert.Contains("SaddleRAG Service Actions", readme, StringComparison.Ordinal);
+        Assert.Contains("Reinstall to a protected folder such as `C:\\Program Files`",
+                        readme,
+                        StringComparison.Ordinal);
+    }
+
+    private const string TrayDoclingStopSentence =
+        "When you ask, the tray can stop the process listening on Docling's configured local port and start your registered command again.";
+
     private static string ResolveRepositoryRoot()
     {
         DirectoryInfo? current = new(AppContext.BaseDirectory);

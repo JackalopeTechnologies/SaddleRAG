@@ -8,6 +8,11 @@ namespace SaddleRAG.Tray.Services;
 /// <summary>
 ///     A Docling Serve start command the user registered. SaddleRAG never installs,
 ///     licenses, configures, or upgrades Docling — it only records what to run.
+///     <para>
+///         The MCP service never starts or stops Docling. The tray starts this registered command
+///         and, only when the operator asks, stops the process listening on Docling's configured
+///         local port.
+///     </para>
 /// </summary>
 public sealed record DoclingRegistration(string Command,
                                          string Arguments,

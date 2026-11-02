@@ -86,7 +86,7 @@ model and backend selections, including existing embedding formats.
 
 ### Step 3: Enable local PDF and DOCX libraries (optional)
 
-SaddleRAG does **not** install, license, configure, or upgrade Docling Serve or Tesseract. You install and operate them only if you want PDF/DOCX ingestion. If you register a Docling start command in the SaddleRAG tray, the tray can run it as you, at your request; the SaddleRAG MCP service never starts, stops, or restarts anything. Markdown, text, HTML, and website ingestion do not require either tool.
+SaddleRAG does **not** install, license, configure, or upgrade Docling Serve or Tesseract. You install and operate them only if you want PDF/DOCX ingestion. If you register a Docling start command in the SaddleRAG tray, the tray can run it as you, at your request; the SaddleRAG MCP service never starts, stops, or restarts anything. When you ask, the tray can stop the process listening on Docling's configured local port and start your registered command again. Markdown, text, HTML, and website ingestion do not require either tool.
 
 1. Review the current [official Docling Serve deployment guide](https://docling-project.github.io/docling/usage/api_server/deployment/) and [latest Docling Serve release](https://github.com/docling-project/docling-serve/releases/latest).
 2. Install Docling Serve in a user-owned Python environment. A simple Windows setup is:
@@ -165,6 +165,52 @@ opt-in. Startup and ordinary model requests honor the Ollama server's retention
 setting, including `OLLAMA_KEEP_ALIVE=0`; they do not pin Devstral indefinitely.
 - **Service status**: run `Get-Service SaddleRAGMcp` in PowerShell
 - **Logs**: check `%ProgramData%\SaddleRAG\logs\` or use the `get_server_logs` MCP tool
+
+### Restarting SaddleRAG and its services
+
+The tray can start, stop, and restart SaddleRAG and the services it depends on, so you do not need to open Windows Services or a command line. Open **Components…** from the tray menu, directly under **Service health**.
+
+The window lists SaddleRAG, MongoDB, Docling, and Ollama. Each row shows its state, whether it runs on **This computer** or **Another computer**, and a short detail. Each row has **Start**, **Stop**, and **Restart** buttons, and **Restart all** restarts every component in turn. While the window is open it refreshes every 5 seconds.
+
+Nothing restarts automatically. The tray acts only when you click a button, and the SaddleRAG MCP service never starts, stops, or restarts anything.
+
+Only components on this computer can be controlled. A component on another computer, including a `mongodb+srv://` MongoDB, shows its status but has no working buttons.
+
+**SaddleRAG and MongoDB** run as Windows services, and ordinary users cannot start or stop a Windows service. Each action therefore shows one Windows administrator (UAC) prompt, and **Restart all** shows one prompt for both services. If you decline the prompt, the row shows **Cancelled** and nothing changes. The tray elevates only `Restart-SaddleRAGComponent.ps1` in its own install folder, and that script accepts only the `SaddleRAGMcp` service and a service that runs `mongod.exe`.
+
+The tray refuses to ask for administrator rights when someone other than an administrator could change the install folder. That means a folder or parent folder that users can write to, a junction or symbolic link anywhere in the path, a network share, or a drive that is not a fixed disk. Reinstall to a protected folder such as `C:\Program Files`. The installer locks the install folder: owned by Administrators, full control for SYSTEM and Administrators, read and execute for Users.
+
+**Docling and Ollama** run as you and are never started as administrator. **Stop** and **Restart** first show a confirmation that names the process, its ID, and its path. If the process does not look like Docling or Ollama, only that process is stopped, not its child processes. **Restart** is refused before anything is stopped when the tray could not start the component again: Docling needs a registered start command (see Step 3), and Ollama needs `Ollama:ExecutablePath` set. **Restart all** skips such a row and continues.
+
+The command you register for Docling must keep running for as long as Docling runs. A wrapper script that launches Docling and then exits defeats the tray's check against starting a second copy. A script that runs `docling-serve` in the foreground, as the tray detects for `start-docling.ps1`, is correct.
+
+After you **Stop** Docling, SaddleRAG does not start it for a waiting document scan until you start it again with **Start**, **Restart**, or **Start Docling**.
+
+**Restart all** works in this order: Docling, Ollama, then MongoDB and SaddleRAG together under one prompt.
+
+Stopping MongoDB with Windows also stops any service that depends on it, and **Restart** does not start those dependent services again.
+
+#### Running the script by hand
+
+From an administrator PowerShell:
+
+```powershell
+& "C:\Program Files\SaddleRAG.Mcp\Restart-SaddleRAGComponent.ps1" -ServiceName MongoDB -Action Restart
+```
+
+`-Action` is `Start`, `Stop`, or `Restart`. `-ServiceName` takes `SaddleRAGMcp` or the MongoDB service, and several names can be given separated by commas; they are processed in order. Each wait is limited to 120 seconds unless you set `-TimeoutSeconds`. `-ValidateOnly` checks the names and the installation and changes nothing.
+
+| Exit code | Meaning |
+|-----------|---------|
+| 0 | Succeeded |
+| 10 | A name is not allowed. Only `SaddleRAGMcp` and a service that runs `mongod.exe` are accepted |
+| 11 | A service is not installed |
+| 12 | Timed out waiting for the service to reach its target state |
+| 13 | The service control call failed |
+
+#### Where actions are recorded
+
+Each script action is recorded in the Windows Application event log under the source `SaddleRAG Service Actions`: Information for success, Warning otherwise. Tray actions are in `%LOCALAPPDATA%\SaddleRAG\tray.log`. Ollama started by the tray writes its output to `%LOCALAPPDATA%\SaddleRAG\logs\ollama-launch.log`.
 
 ## Quick Start (Developer / Build from Source)
 

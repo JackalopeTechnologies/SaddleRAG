@@ -21,6 +21,12 @@ namespace SaddleRAG.Tray.Services;
 ///         virtualenv from LocalSystem would run it in session 0 under SYSTEM's
 ///         environment — a different context from the one the user validated.
 ///     </para>
+///     <para>
+///         SaddleRAG never installs, licenses, configures, or upgrades Docling, and the MCP service
+///         never starts or stops it. The tray starts the registered command and, only when the
+///         operator asks, stops the process listening on Docling's configured local port; stopping
+///         is done by <see cref="LocalListenerStopper" />, not by this class.
+///     </para>
 /// </summary>
 public sealed class DoclingProcessLauncher : IDoclingLauncher
 {

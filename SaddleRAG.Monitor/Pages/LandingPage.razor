@@ -39,7 +39,7 @@
         <MudText Typo="Typo.body2" Class="mb-2">
             Local PDF and DOCX libraries use a separately installed, user-managed Docling Serve endpoint.
             SaddleRAG never installs, licenses, configures, or upgrades Docling or Tesseract. It can start a command you
-            registered, at your request, from the SaddleRAG tray; the MCP service never starts, stops, or restarts anything.
+            registered, at your request, from the SaddleRAG tray; the MCP service never starts, stops, or restarts anything. When you ask, the tray can stop the process listening on Docling's configured local port and start your registered command again.
             OCR engine selection is off by default — SaddleRAG omits the engine field until you set
             <code>DocumentIngestion:Docling:OcrEngine</code>, so
             installing Tesseract alone does not change how documents are converted. See the

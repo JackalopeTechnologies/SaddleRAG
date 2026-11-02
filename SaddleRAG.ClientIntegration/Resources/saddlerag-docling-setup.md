@@ -5,7 +5,7 @@ description: Guide a user through installing, configuring, validating, and recov
 
 # SaddleRAG Docling setup protocol
 
-Treat Docling Serve, Docling MCP, and Tesseract as user-owned optional software. SaddleRAG consumes a configured Docling HTTP endpoint and never installs, licenses, configures, or upgrades Docling or Tesseract. If the user registers a Docling start command in the SaddleRAG tray, the tray can run that command as the user, at the user's request; the SaddleRAG MCP service never starts, stops, or restarts anything.
+Treat Docling Serve, Docling MCP, and Tesseract as user-owned optional software. SaddleRAG consumes a configured Docling HTTP endpoint and never installs, licenses, configures, or upgrades Docling or Tesseract. If the user registers a Docling start command in the SaddleRAG tray, the tray can run that command as the user, at the user's request; the SaddleRAG MCP service never starts, stops, or restarts anything. When you ask, the tray can stop the process listening on Docling's configured local port and start your registered command again.
 
 ## Preserve the ownership boundary
 
