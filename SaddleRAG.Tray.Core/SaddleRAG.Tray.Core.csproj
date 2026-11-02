@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SaddleRAG.ClientIntegration\SaddleRAG.ClientIntegration.csproj" />
+    <ProjectReference Include="..\SaddleRAG.Core\SaddleRAG.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
