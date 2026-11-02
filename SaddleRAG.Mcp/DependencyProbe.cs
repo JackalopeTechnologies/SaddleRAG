@@ -7,6 +7,9 @@ using SaddleRAG.Core.Models;
 
 namespace SaddleRAG.Mcp;
 
-/// <summary>A lightweight check that never loads a model or converts a document.</summary>
+/// <summary>
+///     A lightweight check that never loads a model or converts a document.
+///     <paramref name="HostedLocally" /> is copied onto every observation the probe records.
+/// </summary>
 internal sealed record DependencyProbe(string Name, bool Required, string AffectedWork, string Remediation,
-                                      Func<CancellationToken, Task<string>> Check);
+                                      Func<CancellationToken, Task<string>> Check, bool? HostedLocally = null);

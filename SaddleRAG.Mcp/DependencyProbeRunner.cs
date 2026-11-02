@@ -24,7 +24,8 @@ internal static class DependencyProbeRunner
         {
             string detail = await probe.Check(bounded.Token);
             observation = new(probe.Name, HealthyStatus, probe.Required, probe.AffectedWork,
-                              detail, probe.Remediation, DateTimeOffset.UtcNow);
+                              detail, probe.Remediation, DateTimeOffset.UtcNow,
+                              HostedLocally: probe.HostedLocally);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -32,7 +33,8 @@ internal static class DependencyProbeRunner
                 ? TimeoutDetail
                 : $"The service check failed ({exception.GetType().Name}).";
             observation = new(probe.Name, UnavailableStatus, probe.Required, probe.AffectedWork,
-                              detail, probe.Remediation, DateTimeOffset.UtcNow);
+                              detail, probe.Remediation, DateTimeOffset.UtcNow,
+                              HostedLocally: probe.HostedLocally);
         }
 
         if (state.Record(observation))

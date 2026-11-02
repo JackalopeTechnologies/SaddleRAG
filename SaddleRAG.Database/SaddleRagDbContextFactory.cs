@@ -65,7 +65,7 @@ public class SaddleRagDbContextFactory
     }
 
 
-    private SaddleRagDbContext CreateProfileContext(string name)
+    private MongoDbProfile GetConfiguredProfile(string name)
 
     {
         if (!mSettings.Profiles.TryGetValue(name, out var profile))
@@ -75,6 +75,16 @@ public class SaddleRagDbContextFactory
                                                 $"Available profiles: {string.Join(", ", mSettings.Profiles.Keys)}"
                                                );
         }
+
+
+        return profile;
+    }
+
+
+    private SaddleRagDbContext CreateProfileContext(string name)
+
+    {
+        var profile = GetConfiguredProfile(name);
 
 
         var profileSettings = new SaddleRagDbSettings
@@ -108,6 +118,32 @@ public class SaddleRagDbContextFactory
         else
 
             result = mContextCache.GetOrAdd(profileName, name => CreateProfileContext(name));
+
+
+        return result;
+    }
+
+
+    /// <summary>
+    ///     The MongoDB connection string a profile resolves to, using the same selection rules as
+    ///     <see cref="GetForProfile" />: null or empty means the default. Read-only configuration
+    ///     lookup that opens no connection. The string may contain credentials, so callers must
+    ///     only inspect it (for example to decide whether the server is on this computer) and never
+    ///     log or return it.
+    /// </summary>
+    public string GetConnectionString(string? profileName)
+
+    {
+        string result;
+
+
+        if (string.IsNullOrEmpty(profileName))
+
+            result = mSettings.Resolve().ConnectionString;
+
+        else
+
+            result = GetConfiguredProfile(profileName).ConnectionString;
 
 
         return result;

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using SaddleRAG.Core;
+using SaddleRAG.Core.Hosting;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
 using SaddleRAG.Ingestion.Classification;
@@ -86,7 +87,7 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
         }
     }
 
-    private IReadOnlyList<DependencyProbe> CreateProbes()
+    internal IReadOnlyList<DependencyProbe> CreateProbes()
     {
         var probes = new List<DependencyProbe>();
         var factory = services.GetRequiredService<SaddleRagDbContextFactory>();
@@ -103,10 +104,13 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
         probes.Add(new DependencyProbe(OllamaName, embeddings,
             embeddings ? EmbeddingWork : ClassificationWork,
             OllamaRemediation,
-            token => CheckOllamaAsync(ollama, embeddings, classification, token)));
+            token => CheckOllamaAsync(ollama, embeddings, classification, token),
+            LocalEndpoint.IsLoopbackUri(ollama.Endpoint)));
 
+        var docling = services.GetRequiredService<IOptions<DoclingSettings>>().Value;
         probes.Add(new DependencyProbe(DoclingName, false, DoclingWork,
-            DoclingRemediation, CheckDoclingAsync));
+            DoclingRemediation, CheckDoclingAsync,
+            LocalEndpoint.IsLoopbackUri(docling.Endpoint)));
         return probes;
     }
 
@@ -160,7 +164,8 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
                 SaddleRagDbContext context = factory.GetForProfile(profile);
                 await context.CheckHealthAsync(token);
                 return MongoReady;
-            });
+            },
+            LocalEndpoint.IsLoopbackMongoConnectionString(factory.GetConnectionString(profile)));
 
     public override void Dispose()
     {

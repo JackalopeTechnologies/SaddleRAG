@@ -13,6 +13,14 @@
         <MudText Typo="Typo.h6">@service.Name — @service.Status</MudText>
         <MudText>@service.Detail</MudText>
         <MudText>Affected work: @service.AffectedWork</MudText>
+        @if (service.HostedLocally is true)
+        {
+            <MudText>Hosted on this computer. To restart it, open Components in the SaddleRAG tray.</MudText>
+        }
+        @if (service.HostedLocally is false)
+        {
+            <MudText>Hosted on another computer.</MudText>
+        }
         <MudText>Last check: @service.LastCheckedAt?.ToLocalTime().ToString("G")</MudText>
         @if (service.UnavailableSince is not null)
         {
