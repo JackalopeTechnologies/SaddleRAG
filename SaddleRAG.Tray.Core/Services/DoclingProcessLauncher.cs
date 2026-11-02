@@ -47,12 +47,18 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
         mTimeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    // Atomic single-shot guard, mirroring OllamaBootstrapper.LaunchOllamaAsync. A transient
-    // health-probe failure must not spawn a second server: the failure mode we already saw
-    // with Ollama was several processes fighting over one port while the legitimate listener
-    // was still loading its models. Only an operator action that found the port free and the
-    // launched process gone clears it (AllowRelaunchAfterOperatorStop).
-    private static int psLaunchAttempted;
+    // Single-shot guard, mirroring OllamaBootstrapper.LaunchOllamaAsync. A transient health-probe
+    // failure must not spawn a second server: the failure mode we already saw with Ollama was
+    // several processes fighting over one port while the legitimate listener was still loading its
+    // models. Only TryAllowRelaunch clears it, when the port is free and the launched process gone.
+    //
+    // The guard and the process it launched are process-wide, like the server they protect, and
+    // both change only under smLaunchSync: setting the guard, starting the process and recording
+    // its handle happen as one step, and so do checking the handle and the port and clearing the
+    // guard. A clear can therefore never slip in between a launch and the record of it.
+    private static readonly Lock smLaunchSync = new();
+    private static bool psLaunchAttempted;
+    private static IDisposable? psLaunched;
 
     private readonly HttpClient mHttpClient;
     private readonly ExternalToolRegistry mRegistry;
@@ -62,40 +68,50 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
     private readonly ILogger<DoclingProcessLauncher>? mLogger;
     private readonly TimeProvider mTimeProvider;
 
-    // The process this launcher last started, kept so an operator action can tell a crashed Docling
-    // (exited) from one still loading (running). Replaced, and the old handle disposed, on relaunch.
-    private readonly Lock mLaunchedSync = new();
-    private IDisposable? mLaunched;
+    /// <summary>True when a Docling command is registered, so the tray can start Docling.</summary>
+    public bool IsRegistered => mRegistry.Read().Docling is not null;
 
     /// <summary>
-    ///     True only when this launcher started a process that has not exited. A handle whose state
-    ///     cannot be read counts as running, so the guard is kept when in doubt.
+    ///     Resets the process-wide single-shot guard and forgets the launched process. Tests only;
+    ///     never called in production.
     /// </summary>
-    public bool LaunchedProcessIsRunning
+    internal static void ResetLaunchGuardForTesting()
     {
-        get
+        IDisposable? launched;
+        lock(smLaunchSync)
         {
-            bool result;
-            lock(mLaunchedSync)
-                result = mLaunched is not null && IsRunning(mLaunched);
-
-            return result;
+            psLaunchAttempted = false;
+            launched = psLaunched;
+            psLaunched = null;
         }
+
+        launched?.Dispose();
     }
 
-    /// <summary>Resets the process-wide single-shot flag. Tests only; never called in production.</summary>
-    internal static void ResetLaunchGuardForTesting() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
-
     /// <summary>
-    ///     Clears the single-shot guard so the next <see cref="EnsureRunningAsync" /> may start Docling
-    ///     again. The guard exists so a transient health-probe failure cannot spawn a second server
-    ///     beside one that is still loading. When nothing listens on Docling's port and the process
-    ///     this launcher started has exited (the operator stopped it, or it crashed), no server is left
-    ///     to collide with, which is the one safe time to clear it. The component controller calls this
-    ///     only then, on an operator start or restart: never when a process holds the port, and never
-    ///     while the launched process is still running.
+    ///     Clears the single-shot guard, so the next <see cref="EnsureRunningAsync" /> may start Docling
+    ///     again, only when the process this launcher started has exited (the operator stopped it, or
+    ///     it crashed) and <paramref name="portIsFree" /> reports nothing listening on Docling's port.
+    ///     Then no server is left, or still loading, for a second one to collide with. The check and the
+    ///     clear happen under the same lock as a launch, so they cannot interleave with one.
     /// </summary>
-    public void AllowRelaunchAfterOperatorStop() => Interlocked.Exchange(ref psLaunchAttempted, value: 0);
+    /// <param name="portIsFree">Reads the listener table; called under the lock, only when the process has exited.</param>
+    /// <returns>True when the guard was cleared.</returns>
+    public bool TryAllowRelaunch(Func<bool> portIsFree)
+    {
+        ArgumentNullException.ThrowIfNull(portIsFree);
+
+        bool cleared;
+        lock(smLaunchSync)
+        {
+            bool launchedRunning = psLaunched is not null && IsRunning(psLaunched);
+            cleared = !launchedRunning && portIsFree();
+            if (cleared)
+                psLaunchAttempted = false;
+        }
+
+        return cleared;
+    }
 
     /// <summary>
     ///     Ensures Docling is serving, starting the registered command if it is not.
@@ -128,8 +144,17 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
     private async Task<DoclingLaunchOutcome> StartAndWaitAsync(DoclingRegistration registration,
                                                                CancellationToken cancellationToken)
     {
+        bool alreadyAttempted;
+        var started = false;
+        lock(smLaunchSync)
+        {
+            alreadyAttempted = psLaunchAttempted;
+            psLaunchAttempted = true;
+            if (!alreadyAttempted)
+                started = Start(registration);
+        }
+
         DoclingLaunchOutcome result;
-        bool alreadyAttempted = Interlocked.Exchange(ref psLaunchAttempted, value: 1) != 0;
         if (alreadyAttempted)
         {
             mLogger?.LogInformation(AlreadyAttemptedMessage);
@@ -137,7 +162,7 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
         }
         else
         {
-            result = Start(registration)
+            result = started
                          ? await WaitForReadyAsync(cancellationToken)
                          : DoclingLaunchOutcome.Failed;
         }
@@ -171,17 +196,12 @@ public sealed class DoclingProcessLauncher : IDoclingLauncher
         return started;
     }
 
-    private void Remember(IDisposable? launched)
+    // Called under smLaunchSync, from Start. A relaunch happens only once the previous process has
+    // exited, so disposing its handle releases the handle and nothing else.
+    private static void Remember(IDisposable? launched)
     {
-        IDisposable? previous;
-        lock(mLaunchedSync)
-        {
-            previous = mLaunched;
-            mLaunched = launched;
-        }
-
-        // A relaunch happens only once the previous process has exited, so this releases its handle
-        // and nothing else.
+        IDisposable? previous = psLaunched;
+        psLaunched = launched;
         previous?.Dispose();
     }
 

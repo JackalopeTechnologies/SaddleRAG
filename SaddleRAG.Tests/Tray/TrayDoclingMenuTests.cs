@@ -39,11 +39,9 @@ public sealed class TrayDoclingMenuTests
             return Task.FromResult(DoclingLaunchOutcome.Ready);
         }
 
-        public bool LaunchedProcessIsRunning => false;
+        public bool IsRegistered => true;
 
-        public void AllowRelaunchAfterOperatorStop()
-        {
-        }
+        public bool TryAllowRelaunch(Func<bool> portIsFree) => false;
     }
 
     private static string TrayFile(string fileName) =>

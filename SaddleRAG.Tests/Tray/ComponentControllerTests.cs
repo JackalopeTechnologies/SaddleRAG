@@ -126,6 +126,9 @@ public sealed class ComponentControllerTests
 
         public bool ThrowOnRead { get; set; }
 
+        /// <summary>When true, each lookup returns a new, equal copy, as a real table read would.</summary>
+        public bool FreshInstances { get; set; }
+
         public int Lookups { get; private set; }
 
         public ListeningProcess? FindListeningProcess(int port)
@@ -135,7 +138,8 @@ public sealed class ComponentControllerTests
             if (ThrowOnRead)
                 throw new Win32Exception(5, "the listener table could not be read");
 
-            return Listeners.GetValueOrDefault(port);
+            ListeningProcess? found = Listeners.GetValueOrDefault(port);
+            return FreshInstances && found is not null ? found with { } : found;
         }
     }
 
@@ -208,7 +212,10 @@ public sealed class ComponentControllerTests
 
         public int AllowCalls { get; private set; }
 
+        /// <summary>Stands in for the launcher's own record of the process it started.</summary>
         public bool LaunchedProcessIsRunning { get; set; }
+
+        public bool IsRegistered { get; set; } = true;
 
         public Task<DoclingLaunchOutcome> EnsureRunningAsync(CancellationToken cancellationToken = default)
         {
@@ -217,10 +224,18 @@ public sealed class ComponentControllerTests
             return Task.FromResult(Outcome);
         }
 
-        public void AllowRelaunchAfterOperatorStop()
+        // Mirrors the real launcher's rule: clear only when the launched process has exited and the
+        // port is free. AllowCalls counts the clears.
+        public bool TryAllowRelaunch(Func<bool> portIsFree)
         {
-            AllowCalls++;
-            mOwner.mEvents.Add("docling allow");
+            bool cleared = !LaunchedProcessIsRunning && portIsFree();
+            if (cleared)
+            {
+                AllowCalls++;
+                mOwner.mEvents.Add("docling allow");
+            }
+
+            return cleared;
         }
     }
 
@@ -479,6 +494,20 @@ public sealed class ComponentControllerTests
 
         Assert.Equal(ComponentActionStatus.Cancelled, result.Status);
         Assert.Empty(mStopper.Calls);
+    }
+
+    [Fact]
+    public async Task TheStopperIsGivenTheVeryProcessTheOperatorConfirmed()
+    {
+        // Every lookup returns a new, equal copy, so a second lookup between the confirmation and the
+        // stop would hand the stopper a different instance.
+        mPorts.FreshInstances = true;
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+
+        await mController.StopAsync(Docling(), Ct);
+
+        Assert.Same(Assert.Single(mConfirmation.Calls).Process, Assert.Single(mStopper.Calls).Process);
     }
 
     [Fact]
@@ -838,27 +867,41 @@ public sealed class ComponentControllerTests
         ComponentActionResult only = Assert.Single(results);
         Assert.Equal(ComponentKind.Docling, only.Kind);
         Assert.Equal(ComponentActionStatus.TimedOut, only.Status);
-        Assert.Contains("Ollama", only.Message, StringComparison.Ordinal);
-        Assert.Contains("MongoDB", only.Message, StringComparison.Ordinal);
-        Assert.Contains("SaddleRAG", only.Message, StringComparison.Ordinal);
+        Assert.EndsWith(" Not restarted: Ollama, MongoDB, SaddleRAG.", only.Message, StringComparison.Ordinal);
         Assert.Empty(mServices.Calls);
         Assert.Empty(mStarter.Started);
     }
 
-    [Fact]
-    public async Task RestartAllSkipsAnUnregisteredDoclingAndStillRestartsTheRest()
+    private const string DoclingNotRestartable =
+        "Docling cannot be started again (it is not registered in the tray), so it was not stopped.";
+
+    private const string OllamaNotRestartable =
+        "Ollama cannot be started again (Ollama:ExecutablePath is not set in SaddleRAG's settings), so it was not stopped.";
+
+    private static ComponentDefinition OllamaWithoutExecutable() =>
+        new(ComponentKind.Ollama, "Ollama", new Uri("http://localhost:11434"), OllamaPort, HostedLocally: true,
+            WindowsServiceName: null, ExecutablePath: null, smOllamaModels);
+
+    private void OllamaRespawnsWhenStopped()
     {
-        mDocling.Outcome = DoclingLaunchOutcome.NotRegistered;
         mHandler.Healthy = true;
         mPorts.Listeners[OllamaPort] = Owner(pid: 100, "ollama");
         mStopper.OnStop = () => mPorts.Listeners[OllamaPort] = Owner(pid: 200, "ollama");
+    }
+
+    [Fact]
+    public async Task RestartAllLeavesAnUnregisteredDoclingAloneAndRestartsTheRest()
+    {
+        mDocling.IsRegistered = false;
+        OllamaRespawnsWhenStopped();
 
         IReadOnlyList<ComponentActionResult> results = await mController.RestartAllAsync(AllLocal(), Ct);
 
         Assert.Equal([ComponentActionStatus.NotControllable, ComponentActionStatus.Succeeded,
                       ComponentActionStatus.Succeeded, ComponentActionStatus.Succeeded],
                      results.Select(result => result.Status));
-        Assert.Equal("Docling is not registered; skipped.", results[0].Message);
+        Assert.Equal(DoclingNotRestartable, results[0].Message);
+        Assert.Equal(0, mDocling.EnsureCalls);
         Assert.Contains("kill ollama 100", mEvents);
         (IReadOnlyList<string> names, ServiceAction action) = Assert.Single(mServices.Calls);
         Assert.Equal(["MongoDB", "SaddleRAGMcp"], names);
@@ -866,53 +909,83 @@ public sealed class ComponentControllerTests
     }
 
     [Fact]
-    public async Task RestartAllSkipsAStoppedOllamaWithNoExecutableAndStillRestartsTheRest()
+    public async Task RestartAllDoesNotStopARunningUnregisteredDoclingAndCarriesOn()
     {
-        var ollama = new ComponentDefinition(ComponentKind.Ollama, "Ollama", new Uri("http://localhost:11434"), OllamaPort,
-                                             HostedLocally: true, WindowsServiceName: null, ExecutablePath: null,
-                                             smOllamaModels);
-        IReadOnlyList<ComponentDefinition> rows = [SaddleRag(), Mongo(), Docling(), ollama];
+        mDocling.IsRegistered = false;
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        OllamaRespawnsWhenStopped();
+
+        IReadOnlyList<ComponentActionResult> results = await mController.RestartAllAsync(AllLocal(), Ct);
+
+        Assert.Equal(ComponentActionStatus.NotControllable, results[0].Status);
+        Assert.Equal(DoclingNotRestartable, results[0].Message);
+        Assert.DoesNotContain(mConfirmation.Calls, call => call.Component.Kind == ComponentKind.Docling);
+        Assert.DoesNotContain(mStopper.Calls, call => call.Process.ProcessId == 100 && call.Process.ProcessName == "python");
+        Assert.Equal(["MongoDB", "SaddleRAGMcp"], Assert.Single(mServices.Calls).Names);
+    }
+
+    [Fact]
+    public async Task RestartAllDoesNotStopARunningOllamaWithNoExecutableAndCarriesOn()
+    {
+        mHandler.Healthy = true;
+        mPorts.Listeners[OllamaPort] = Owner(pid: 100, "ollama");
+        IReadOnlyList<ComponentDefinition> rows = [SaddleRag(), Mongo(), Docling(), OllamaWithoutExecutable()];
 
         IReadOnlyList<ComponentActionResult> results = await mController.RestartAllAsync(rows, Ct);
 
         Assert.Equal([ComponentActionStatus.Succeeded, ComponentActionStatus.NotControllable,
                       ComponentActionStatus.Succeeded, ComponentActionStatus.Succeeded],
                      results.Select(result => result.Status));
-        Assert.Equal("Ollama is not running and no executable path is configured; skipped.", results[1].Message);
+        Assert.Equal(OllamaNotRestartable, results[1].Message);
+        Assert.Empty(mConfirmation.Calls);
+        Assert.Empty(mStopper.Calls);
         Assert.Empty(mStarter.Started);
         Assert.Equal(["MongoDB", "SaddleRAGMcp"], Assert.Single(mServices.Calls).Names);
     }
 
     [Fact]
-    public async Task RestartAllStillHaltsWhenAnUnregisteredDoclingWasRunningAndHasBeenStopped()
+    public async Task ASingleRestartOfARowThatCannotStartAgainFailsAndStopsNothing()
     {
-        // The operator agreed to stop a Docling the tray then cannot start: that is a real failure.
-        mDocling.Outcome = DoclingLaunchOutcome.NotRegistered;
+        mDocling.IsRegistered = false;
         mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
-        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+        mPorts.Listeners[OllamaPort] = Owner(pid: 200, "ollama");
 
-        IReadOnlyList<ComponentActionResult> results = await mController.RestartAllAsync(AllLocal(), Ct);
+        ComponentActionResult docling = await mController.RestartAsync(Docling(), Ct);
+        ComponentActionResult ollama = await mController.RestartAsync(OllamaWithoutExecutable(), Ct);
 
-        ComponentActionResult only = Assert.Single(results);
-        Assert.Equal(ComponentActionStatus.Failed, only.Status);
-        Assert.Empty(mServices.Calls);
+        Assert.Equal(ComponentActionStatus.Failed, docling.Status);
+        Assert.Equal(DoclingNotRestartable, docling.Message);
+        Assert.Equal(ComponentActionStatus.Failed, ollama.Status);
+        Assert.Equal(OllamaNotRestartable, ollama.Message);
+        Assert.Empty(mConfirmation.Calls);
+        Assert.Empty(mStopper.Calls);
+        Assert.Equal(0, mDocling.EnsureCalls);
     }
 
     [Fact]
-    public async Task OutsideRestartAllTheUnconfiguredRowsStillFail()
+    public async Task APlainStopOfARowThatCannotStartAgainStillStopsIt()
+    {
+        mDocling.IsRegistered = false;
+        mPorts.Listeners[DoclingPort] = Owner(pid: 100, "python");
+        mStopper.OnStop = () => mPorts.Listeners[DoclingPort] = null;
+
+        ComponentActionResult result = await mController.StopAsync(Docling(), Ct);
+
+        Assert.Equal(ComponentActionStatus.Succeeded, result.Status);
+        Assert.Single(mConfirmation.Calls);
+        Assert.Single(mStopper.Calls);
+    }
+
+    [Fact]
+    public async Task APlainStartOfAnUnregisteredDoclingStillSaysToRegisterIt()
     {
         mDocling.Outcome = DoclingLaunchOutcome.NotRegistered;
-        var ollama = new ComponentDefinition(ComponentKind.Ollama, "Ollama", new Uri("http://localhost:11434"), OllamaPort,
-                                             HostedLocally: true, WindowsServiceName: null, ExecutablePath: null,
-                                             smOllamaModels);
+        mDocling.IsRegistered = false;
 
-        ComponentActionResult docling = await mController.RestartAsync(Docling(), Ct);
-        ComponentActionResult ollamaResult = await mController.RestartAsync(ollama, Ct);
+        ComponentActionResult result = await mController.StartAsync(Docling(), Ct);
 
-        Assert.Equal(ComponentActionStatus.Failed, docling.Status);
-        Assert.Equal("Register Docling from the tray first.", docling.Message);
-        Assert.Equal(ComponentActionStatus.Failed, ollamaResult.Status);
-        Assert.Equal("Set Ollama:ExecutablePath in SaddleRAG's settings.", ollamaResult.Message);
+        Assert.Equal(ComponentActionStatus.Failed, result.Status);
+        Assert.Equal("Register Docling from the tray first.", result.Message);
     }
 
     [Fact]

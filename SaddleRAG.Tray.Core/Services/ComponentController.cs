@@ -31,15 +31,19 @@ namespace SaddleRAG.Tray.Services;
 ///             launcher started has exited (stopped, or crashed). A process on the port, or a launched
 ///             process still loading, keeps it in place, so a second server is never started beside one.
 ///         </item>
+///         <item>
+///             A restart never stops what it cannot start again. Before asking the operator or stopping
+///             anything it checks that Docling is registered and that Ollama has an executable path; if
+///             not, nothing is touched. A plain stop is not affected.
+///         </item>
 ///     </list>
 ///     <para>
 ///         Restart all goes Docling, then Ollama, then one elevated restart of MongoDB and the SaddleRAG
 ///         service together: SaddleRAG comes back last, after everything it depends on, and the
 ///         operator sees a single administrator prompt. It stops at the first action that fails, is
-///         denied, times out or is cancelled. A Docling or Ollama that was not running and cannot be
-///         started because it is not set up (Docling not registered, Ollama with no executable path) is
-///         reported as skipped rather than failed, so an unused component never blocks the restart of
-///         MongoDB and SaddleRAG. A single start or restart of that row still reports the failure.
+///         denied, times out or is cancelled. A Docling or Ollama that cannot be started again is
+///         reported as not controllable and left alone, so an unused component never blocks the restart
+///         of MongoDB and SaddleRAG. A single restart of that row reports it as failed.
 ///     </para>
 ///     <para>
 ///         Success, an operator cancellation, a component already in the requested state, and a
@@ -238,8 +242,7 @@ public sealed class ComponentController
         if (component.Endpoint is { } endpoint)
             result = action switch
                      {
-                         ServiceAction.Start =>
-                             await StartListenerAsync(component, endpoint.Port, skipIfUnconfigured: false, ct),
+                         ServiceAction.Start => await StartListenerAsync(component, endpoint.Port, ct),
                          ServiceAction.Stop => await mListeners.StopAsync(component, endpoint.Port, ct),
                          _ => await RestartListenerAsync(component, endpoint.Port, partOfRestartAll, ct)
                      };
@@ -254,36 +257,52 @@ public sealed class ComponentController
                                                                    bool partOfRestartAll,
                                                                    CancellationToken ct)
     {
-        ComponentActionResult stop = await mListeners.StopAsync(component, port, ct);
-        bool stopped = stop.Status is ComponentActionStatus.Succeeded or ComponentActionStatus.AlreadyInState;
+        // Never stop what cannot be started again: the check comes before the operator is asked
+        // and before anything is stopped. Restart all reports such a row as not controllable and
+        // moves on; a single restart reports it as failed.
+        ComponentActionResult result;
+        if (CannotStartReason(component) is { } reason)
+        {
+            ComponentActionStatus status = partOfRestartAll
+                                               ? ComponentActionStatus.NotControllable
+                                               : ComponentActionStatus.Failed;
+            result = new ComponentActionResult(component.Kind,
+                                               status,
+                                               string.Format(NotRestartableFormat, component.DisplayName, reason));
+        }
+        else
+        {
+            ComponentActionResult stop = await mListeners.StopAsync(component, port, ct);
+            bool stopped = stop.Status is ComponentActionStatus.Succeeded or ComponentActionStatus.AlreadyInState;
+            result = stopped ? await StartListenerAsync(component, port, ct) : stop;
+        }
 
-        // Only a component that was not running may be skipped for want of set-up. One the operator
-        // has just stopped and that cannot be started again is a real failure.
-        bool skipIfUnconfigured = partOfRestartAll && stop.Status == ComponentActionStatus.AlreadyInState;
-        ComponentActionResult result = stopped
-                                           ? await StartListenerAsync(component, port, skipIfUnconfigured, ct)
-                                           : stop;
         return result;
     }
 
-    private Task<ComponentActionResult> StartListenerAsync(ComponentDefinition component,
-                                                           int port,
-                                                           bool skipIfUnconfigured,
-                                                           CancellationToken ct) =>
+    private string? CannotStartReason(ComponentDefinition component) => component.Kind switch
+                                                                        {
+                                                                            ComponentKind.Docling when !mDocling.IsRegistered =>
+                                                                                DoclingNotRegisteredReason,
+                                                                            ComponentKind.Ollama when string.IsNullOrWhiteSpace(component.ExecutablePath) =>
+                                                                                OllamaNoExecutableReason,
+                                                                            _ => null
+                                                                        };
+
+    private Task<ComponentActionResult> StartListenerAsync(ComponentDefinition component, int port, CancellationToken ct) =>
         component.Kind == ComponentKind.Docling
-            ? StartDoclingAsync(component, port, skipIfUnconfigured, ct)
-            : mOllama.StartAsync(component, skipIfUnconfigured, ct);
+            ? StartDoclingAsync(component, port, ct)
+            : mOllama.StartAsync(component, ct);
 
     private async Task<ComponentActionResult> StartDoclingAsync(ComponentDefinition component,
                                                                 int port,
-                                                                bool skipIfUnregistered,
                                                                 CancellationToken ct)
     {
-        // The launcher starts Docling at most once per tray session. It is safe to lift that only when
-        // nothing listens on the port and the process the launcher started has exited (stopped, or
-        // crashed): then no server is left, or still loading, for a second one to collide with.
-        if (mListeners.IsPortFree(port) && !mDocling.LaunchedProcessIsRunning)
-            mDocling.AllowRelaunchAfterOperatorStop();
+        // The launcher starts Docling at most once per tray session. It lifts that only when nothing
+        // listens on the port and the process it started has exited (stopped, or crashed), checking
+        // both under the same lock as a launch. Whether it did is not the operator's concern: the
+        // launch outcome below says what happened.
+        _ = mDocling.TryAllowRelaunch(() => mListeners.IsPortFree(port));
 
         DoclingLaunchOutcome outcome = await mDocling.EnsureRunningAsync(ct);
         string name = component.DisplayName;
@@ -293,11 +312,8 @@ public sealed class ComponentController
                                                new(component.Kind, ComponentActionStatus.Succeeded, string.Format(StartedFormat, name)),
                                            DoclingLaunchOutcome.AlreadyRunning =>
                                                new(component.Kind, ComponentActionStatus.Succeeded, string.Format(AlreadyRunningFormat, name)),
-                                           DoclingLaunchOutcome.NotRegistered => skipIfUnregistered
-                                               ? new(component.Kind,
-                                                     ComponentActionStatus.NotControllable,
-                                                     string.Format(DoclingSkippedFormat, name))
-                                               : new(component.Kind, ComponentActionStatus.Failed, DoclingNotRegisteredText),
+                                           DoclingLaunchOutcome.NotRegistered =>
+                                               new(component.Kind, ComponentActionStatus.Failed, DoclingNotRegisteredText),
                                            DoclingLaunchOutcome.Timeout =>
                                                new(component.Kind,
                                                    ComponentActionStatus.TimedOut,
@@ -454,7 +470,9 @@ public sealed class ComponentController
     private const string StartedFormat = "{0} started.";
     private const string AlreadyRunningFormat = "{0} is already running.";
     private const string DoclingNotRegisteredText = "Register Docling from the tray first.";
-    private const string DoclingSkippedFormat = "{0} is not registered; skipped.";
+    private const string NotRestartableFormat = "{0} cannot be started again ({1}), so it was not stopped.";
+    private const string DoclingNotRegisteredReason = "it is not registered in the tray";
+    private const string OllamaNoExecutableReason = "Ollama:ExecutablePath is not set in SaddleRAG's settings";
     private const string DoclingTimeoutFormat = "{0} did not report ready in time. Its output is in {1}.";
     private const string DoclingFailedFormat = "{0} could not be started. Check the registered command; its output is in {1}.";
     private const string NotRestartedFormat = "Not restarted: {0}.";

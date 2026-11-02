@@ -230,7 +230,7 @@ public sealed class DoclingProcessLauncherTests : IDisposable
     // Lives here rather than in ComponentControllerTests because the guard is process-wide: this
     // class runs its tests one at a time and resets the guard around each, so no other test races it.
     [Fact]
-    public async Task AnOperatorStopLetsTheNextLaunchStartDoclingAgain()
+    public async Task ClearingTheGuardOnceTheLaunchedProcessExitedLetsTheNextLaunchStartDoclingAgain()
     {
         WriteRegistry(RegisteredCommand());
         (DoclingProcessLauncher launcher, FakeProcessStarter starter, _, HttpClient client) =
@@ -239,7 +239,9 @@ public sealed class DoclingProcessLauncherTests : IDisposable
         {
             DoclingProcessLauncher.ResetLaunchGuardForTesting();
             await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
-            launcher.AllowRelaunchAfterOperatorStop();
+            starter.LaunchedHaveExited = true;
+
+            Assert.True(launcher.TryAllowRelaunch(() => true));
             await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
 
             Assert.Equal(expected: 2, starter.Started.Count);
@@ -247,20 +249,60 @@ public sealed class DoclingProcessLauncherTests : IDisposable
     }
 
     [Fact]
-    public async Task TheLauncherReportsWhetherTheProcessItStartedIsStillRunning()
+    public async Task TheGuardIsNotClearedWhileTheLaunchedProcessRunsEvenWithThePortFree()
     {
         WriteRegistry(RegisteredCommand());
         (DoclingProcessLauncher launcher, FakeProcessStarter starter, _, HttpClient client) =
             MakeLauncher(_ => Unhealthy());
         using(client)
         {
-            Assert.False(launcher.LaunchedProcessIsRunning);
-
             await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
-            Assert.True(launcher.LaunchedProcessIsRunning);
+            starter.LaunchedHaveExited = false;
+            var portAsked = false;
 
+            bool cleared = launcher.TryAllowRelaunch(() =>
+                                                     {
+                                                         portAsked = true;
+                                                         return true;
+                                                     });
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
+
+            Assert.False(cleared);
+            Assert.False(portAsked);
+            Assert.Single(starter.Started);
+        }
+    }
+
+    [Fact]
+    public async Task TheGuardIsNotClearedWhileThePortIsHeldEvenWithTheLaunchedProcessGone()
+    {
+        WriteRegistry(RegisteredCommand());
+        (DoclingProcessLauncher launcher, FakeProcessStarter starter, _, HttpClient client) =
+            MakeLauncher(_ => Unhealthy());
+        using(client)
+        {
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
             starter.LaunchedHaveExited = true;
-            Assert.False(launcher.LaunchedProcessIsRunning);
+
+            bool cleared = launcher.TryAllowRelaunch(() => false);
+            await launcher.EnsureRunningAsync(TestContext.Current.CancellationToken);
+
+            Assert.False(cleared);
+            Assert.Single(starter.Started);
+        }
+    }
+
+    [Fact]
+    public void IsRegisteredFollowsTheRegistry()
+    {
+        (DoclingProcessLauncher launcher, _, _, HttpClient client) = MakeLauncher(_ => Unhealthy());
+        using(client)
+        {
+            WriteRegistry(docling: null);
+            Assert.False(launcher.IsRegistered);
+
+            WriteRegistry(RegisteredCommand());
+            Assert.True(launcher.IsRegistered);
         }
     }
 

@@ -11,15 +11,18 @@ public interface IDoclingLauncher
     Task<DoclingLaunchOutcome> EnsureRunningAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     True only when this launcher started a Docling process that has not exited. Tells a Docling
-    ///     that crashed after launch (exited) from one still loading (running).
+    ///     True when a Docling command is registered. A restart checks this before stopping anything,
+    ///     so it never stops a Docling it could not start again.
     /// </summary>
-    bool LaunchedProcessIsRunning { get; }
+    bool IsRegistered { get; }
 
     /// <summary>
-    ///     Lets the next <see cref="EnsureRunningAsync" /> start Docling again in this session. Called
-    ///     only on an operator start or restart, when nothing listens on Docling's port and
-    ///     <see cref="LaunchedProcessIsRunning" /> is false.
+    ///     Lets the next <see cref="EnsureRunningAsync" /> start Docling again in this session, but only
+    ///     when the process this launcher started has exited and <paramref name="portIsFree" /> returns
+    ///     true. The check and the clear are one atomic step with respect to a launch. Called only on an
+    ///     operator start or restart.
     /// </summary>
-    void AllowRelaunchAfterOperatorStop();
+    /// <param name="portIsFree">Reports whether nothing listens on Docling's port.</param>
+    /// <returns>True when the guard was cleared.</returns>
+    bool TryAllowRelaunch(Func<bool> portIsFree);
 }
