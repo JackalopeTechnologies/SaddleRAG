@@ -231,6 +231,7 @@
             <File Source="ConfigureCrashCapture.ps1" />
             <File Source="RemoveCrashCapture.ps1" />
             <File Source="EnsurePlaywrightChromium.ps1" />
+            <File Source="Restart-SaddleRAGComponent.ps1" />
         </Component>
 
         <Feature Id="Main" Title="SaddleRAG MCP Server" Level="1">
