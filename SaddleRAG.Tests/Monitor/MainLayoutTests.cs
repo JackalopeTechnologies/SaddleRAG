@@ -89,6 +89,29 @@ public sealed class MainLayoutTests
         Assert.Contains("@(ServerVersion)", razor, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void VersionStylesReachTheMudBlazorElementsTheyTarget()
+    {
+        string root = ResolveRepositoryRoot();
+        string razor = File.ReadAllText(Path.Combine(root,
+                                                     "SaddleRAG.Mcp",
+                                                     "Monitor",
+                                                     "MainLayout.razor"));
+        string styles = File.ReadAllText(Path.Combine(root,
+                                                      "SaddleRAG.Mcp",
+                                                      "Monitor",
+                                                      "MainLayout.razor.css"));
+
+        // Scoped CSS only marks plain elements written in MainLayout itself. A rule aimed
+        // at a class on a MudChip or MudText never matches unless it goes through ::deep
+        // from such an element, which left the version chip dark grey on the dark app bar.
+        Assert.Contains("<span class=\"monitor-server-version-host\">", razor, StringComparison.Ordinal);
+        Assert.Contains(".monitor-server-version-host ::deep .monitor-server-version", styles, StringComparison.Ordinal);
+        Assert.Contains(".monitor-drawer-footer ::deep .monitor-server-version-detail", styles, StringComparison.Ordinal);
+        Assert.Contains("color: inherit;", styles, StringComparison.Ordinal);
+        Assert.Contains("border-color: currentColor;", styles, StringComparison.Ordinal);
+    }
+
     private static string ResolveRepositoryRoot()
     {
         DirectoryInfo? current = new(AppContext.BaseDirectory);

@@ -4,8 +4,16 @@
     white-space: nowrap;
 }
 
-/* Legible rather than decorative: this is the string a support request quotes. */
-.monitor-server-version {
+/* Scoped CSS marks only plain elements written in this file, never the elements a
+   MudBlazor component renders, so rules for the chip and the footer text must go
+   through ::deep from a plain element here or they silently never apply. */
+
+/* Legible rather than decorative: this is the string a support request quotes.
+   MudBlazor's outlined chip uses the page's dark text colour even with
+   Color.Inherit, so take the app bar's contrast colour explicitly. */
+.monitor-server-version-host ::deep .monitor-server-version {
+    border-color: currentColor;
+    color: inherit;
     font-weight: 600;
     letter-spacing: 0.02em;
 }
@@ -17,7 +25,7 @@
 
 /* The +sha build metadata has no natural break; wrap it rather than clip it,
    because a support request needs the whole string. */
-.monitor-server-version-detail {
+.monitor-drawer-footer ::deep .monitor-server-version-detail {
     overflow-wrap: anywhere;
 }
 
