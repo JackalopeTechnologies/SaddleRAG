@@ -373,10 +373,20 @@ public sealed class DatabaseRecovery
         return result;
     }
 
+    /// <summary>
+    ///     Windows' own reason (for example "the service is disabled") travels as the inner
+    ///     <see cref="Win32Exception" />; the outer message only says that the service could
+    ///     not be started, so the inner reason is preferred when there is one.
+    /// </summary>
     private static string DescribeFailure(Exception ex, string reasonFormat) =>
         IsAccessDenied(ex) || IsAccessDenied(ex.InnerException)
             ? NoPermissionReason
-            : string.Format(CultureInfo.InvariantCulture, reasonFormat, ex.Message.TrimEnd(SentenceEnd));
+            : string.Format(CultureInfo.InvariantCulture, reasonFormat, WindowsReason(ex).TrimEnd(SentenceEnd));
+
+    private static string WindowsReason(Exception ex) =>
+        ex.InnerException is Win32Exception windows && !string.IsNullOrWhiteSpace(windows.Message)
+            ? windows.Message
+            : ex.Message;
 
     private static bool IsAccessDenied(Exception? ex) =>
         ex is Win32Exception { NativeErrorCode: AccessDeniedError };

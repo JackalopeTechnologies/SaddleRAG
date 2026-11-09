@@ -165,6 +165,24 @@ public sealed class DatabaseRecoveryTests
     }
 
     [Fact]
+    public async Task RefusedStartReportsWindowsReasonInsteadOfTheGenericMessage()
+    {
+        var windowsReason = new Win32Exception(ServiceDisabledError);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped)
+                          {
+                              StartFailure = new InvalidOperationException(GenericStartFailure, windowsReason)
+                          };
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
+
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
+
+        Assert.Contains(windowsReason.Message.TrimEnd('.'), report, StringComparison.Ordinal);
+        Assert.DoesNotContain(GenericStartFailure, report, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NotInstalledReportsIt()
     {
         var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
@@ -538,6 +556,8 @@ public sealed class DatabaseRecoveryTests
     private const int MinimumPingsBeforeAnswering = 2;
     private const int AccessDeniedError = 5;
     private const int ServiceAlreadyRunningError = 1056;
+    private const int ServiceDisabledError = 1058;
+    private const string GenericStartFailure = "Cannot start service 'MongoDB' on computer '.'.";
     private const int ShortSelectionTimeoutMilliseconds = 500;
     private const string ServiceName = "MongoDB";
     private const string Endpoint = "localhost:27017";
