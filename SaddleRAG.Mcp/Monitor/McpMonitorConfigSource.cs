@@ -124,7 +124,9 @@ internal sealed class McpMonitorConfigSource : IMonitorConfigSource
         var mongoCard = new MonitorConfigMongo(ActiveProfileName: ResolveActiveProfileName(mongo),
                                                Host: MaskMongoConnectionString(connectionString),
                                                DatabaseName: databaseName,
-                                               CredentialsPresent: ContainsCredentials(connectionString)
+                                               CredentialsPresent: ContainsCredentials(connectionString),
+                                               AutoRestartEnabled: mongo.AutoRestart.Enabled,
+                                               AutoRestartServiceName: mongo.AutoRestart.ServiceName
                                               );
 
         var ollamaCard = new MonitorConfigOllama(Endpoint: ollama.Endpoint,

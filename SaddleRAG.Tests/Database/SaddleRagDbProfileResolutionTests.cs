@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using Microsoft.Extensions.Configuration;
 using SaddleRAG.Database;
 
 namespace SaddleRAG.Tests.Database;
@@ -51,6 +52,36 @@ public sealed class SaddleRagDbProfileResolutionTests
 
         Assert.Equal(expectedProfile, settings.ResolveConfiguredProfileName(profileOverride));
         Assert.Equal((connection, database), settings.Resolve(profileOverride));
+    }
+
+    [Fact]
+    public void AutoRestartDefaultsToEnabledForTheMongoDbService()
+    {
+        var settings = BindMongoSection(new Dictionary<string, string?>());
+
+        Assert.True(settings.AutoRestart.Enabled);
+        Assert.Equal("MongoDB", settings.AutoRestart.ServiceName);
+    }
+
+    [Fact]
+    public void AutoRestartBindsDisabledAndServiceNameFromConfiguration()
+    {
+        var settings = BindMongoSection(new Dictionary<string, string?>
+                                            {
+                                                ["MongoDB:AutoRestart:Enabled"] = "false",
+                                                ["MongoDB:AutoRestart:ServiceName"] = "MongoDB-Custom"
+                                            });
+
+        Assert.False(settings.AutoRestart.Enabled);
+        Assert.Equal("MongoDB-Custom", settings.AutoRestart.ServiceName);
+    }
+
+    private static SaddleRagDbSettings BindMongoSection(Dictionary<string, string?> values)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var settings = new SaddleRagDbSettings();
+        configuration.GetSection(SaddleRagDbSettings.SectionName).Bind(settings);
+        return settings;
     }
 
     private const string Local = "local";

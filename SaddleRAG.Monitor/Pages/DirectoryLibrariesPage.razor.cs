@@ -8,6 +8,7 @@ using MudBlazor;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database;
 using SaddleRAG.Ingestion.Documents.Docling;
 using SaddleRAG.Ingestion.Scanning;
 using SaddleRAG.Monitor.Services;
@@ -25,6 +26,12 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase, IAsyncDisposab
 
     [Inject]
     private IDoclingCapabilityService? Capability { get; set; }
+
+    [Inject]
+    private DatabaseRecovery? Recovery { get; set; }
+
+    [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
 
     private readonly CancellationTokenSource mRefreshCancellation = new();
     private Task? mRefreshTask;
@@ -92,7 +99,10 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase, IAsyncDisposab
         ArgumentNullException.ThrowIfNull(DataService);
         ArgumentNullException.ThrowIfNull(Capability);
         await AdoptScannerStatusAsync();
-        Rows = await DataService.ListAsync(profile: null);
+        ProgressRefreshError = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                  ContextFactory,
+                                                                  async () => Rows = await DataService.ListAsync(profile: null),
+                                                                  mRefreshCancellation.Token);
         DirectoryLibraryMonitorRow? first = Rows.FirstOrDefault();
         if (first != null)
             SelectRow(first);
@@ -115,11 +125,15 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase, IAsyncDisposab
             {
                 try
                 {
-                    IReadOnlyList<DirectoryLibraryMonitorRow> rows = await DataService.ListAsync(profile: null, ct);
+                    IReadOnlyList<DirectoryLibraryMonitorRow> rows = Rows;
+                    string? outage = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                        ContextFactory,
+                                                                        async () => rows = await DataService.ListAsync(profile: null, ct),
+                                                                        ct);
                     await InvokeAsync(() =>
                         {
                             Rows = rows;
-                            ProgressRefreshError = null;
+                            ProgressRefreshError = outage;
                             StateHasChanged();
                         });
                 }

@@ -536,6 +536,45 @@ Every MCP tool accepts an optional `profile` parameter to target a specific data
 - Shared team database with pre-indexed company libraries
 - CI/CD pipeline that indexes docs on release
 
+### MongoDB automatic restart
+
+SaddleRAG restarts a local MongoDB service when a request finds it stopped.
+When an MCP tool call, a monitor request or a monitor page arrives while the
+active profile's database is local and known to be down, SaddleRAG starts the
+MongoDB Windows service and waits up to 60 seconds for it to answer. Only one
+restart attempt runs at a time. After a failed attempt, no new attempt starts
+for 2 minutes; then the next request tries again.
+
+A restart never blocks a request by itself. Whether or not it worked, the request
+carries on: tools that do not need the database (such as server logs and crash
+reports) keep working, and a request that does need it fails with a message that
+includes the latest restart report.
+
+Only the active profile's database is restarted; other configured profiles are
+not. A restart happens only when a request arrives. The tray's periodic check
+(every 10 seconds) is such a request, so while the tray is running a stopped
+MongoDB is usually restarted within about 10 to 20 seconds, or after the 2-minute
+pause if the last attempt failed.
+
+SaddleRAG never stops a running service. A service that is running or starting but
+not answering is waited on, not stopped. Only a local database is restarted: every
+host in the connection string must be `localhost`, `127.0.0.1` or `::1`, and the
+scheme must be `mongodb://` (`mongodb+srv://` is treated as remote). A remote
+database is never restarted. When a restart fails, the error says what was tried
+and why it failed; credentials are never shown.
+
+To keep MongoDB stopped on purpose (an upgrade, a backup restore, copying the data
+files), stop the SaddleRAG service first, or set `MongoDB:AutoRestart:Enabled` to
+`false` and restart SaddleRAG. The settings are read when SaddleRAG starts.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MongoDB:AutoRestart:Enabled` | `true` | Turn automatic restart on or off |
+| `MongoDB:AutoRestart:ServiceName` | `MongoDB` | Name of the Windows service to start |
+
+The monitor Configuration page shows whether automatic restart is on and the
+service name.
+
 ### Ollama Settings
 
 New installations select the Ollama classifier. Use `set_active_classifier_model`

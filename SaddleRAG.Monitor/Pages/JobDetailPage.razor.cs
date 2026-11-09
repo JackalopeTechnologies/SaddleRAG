@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
 using MudBlazor;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -31,11 +32,18 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private MonitorDataService? DataService { get; set; }
 
     [Inject]
+    private DatabaseRecovery? Recovery { get; set; }
+
+    [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
+
+    [Inject]
     private ISnackbar? Snackbar { get; set; }
 
     [Inject]
     private ILogger<JobDetailPageBase>? Logger { get; set; }
 
+    protected string? DatabaseOutageMessage { get; private set; }
     protected JobTickEvent? CurrentTick { get; private set; }
     protected bool HubConnected { get; private set; } = true;
     protected JobInfo? Info { get; private set; }
@@ -116,7 +124,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(Nav);
         ArgumentNullException.ThrowIfNull(DataService);
 
-        Info = await DataService.GetJobInfoAsync(JobId);
+        await ReadDatabaseAsync(async () => Info = await DataService.GetJobInfoAsync(JobId), CancellationToken.None);
 
         mHub = new HubConnectionBuilder()
                .WithUrl(Nav.ToAbsoluteUri(HubPath))
@@ -197,15 +205,28 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private async Task LoadTerminalFeedsAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
-        (var fetches, var rejects) = await DataService.GetTerminalFeedsAsync(JobId);
-        TerminalFetches = fetches;
-        TerminalRejects = rejects;
+        await ReadDatabaseAsync(async () =>
+                                {
+                                    (var fetches, var rejects) = await DataService.GetTerminalFeedsAsync(JobId);
+                                    TerminalFetches = fetches;
+                                    TerminalRejects = rejects;
+                                },
+                                CancellationToken.None);
+    }
+
+    /// <summary>
+    ///     Restarts a stopped local database if needed, then runs the read. An outage from
+    ///     either step shows the outage message, which the next read that succeeds clears.
+    /// </summary>
+    private async Task ReadDatabaseAsync(Func<Task> read, CancellationToken ct)
+    {
+        DatabaseOutageMessage = await MonitorDatabaseGate.RunAsync(Recovery, ContextFactory, read, ct);
     }
 
     private async Task OnLifecycleTransitionAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
-        Info = await DataService.GetJobInfoAsync(JobId);
+        await ReadDatabaseAsync(async () => Info = await DataService.GetJobInfoAsync(JobId), CancellationToken.None);
         await LoadTerminalFeedsAsync();
         if (!IsActive && mElapsedTimer is not null)
         {
@@ -256,7 +277,8 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     {
         if (Info?.Type == JobType.DirectoryScan && DataService is not null)
         {
-            JobInfo? updated = await DataService.GetJobInfoAsync(JobId, ct);
+            JobInfo? updated = Info;
+            await ReadDatabaseAsync(async () => updated = await DataService.GetJobInfoAsync(JobId, ct), ct);
             await InvokeAsync(() =>
                 {
                     Info = updated;

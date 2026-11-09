@@ -85,6 +85,36 @@ public sealed class DatabaseFailureTests
                                                  ));
     }
 
+    [Fact]
+    public void RestartReportMessageCarriesTheEndpointAndTheReport()
+    {
+        var unavailable = new DatabaseUnavailableException("localhost:27017", RestartReport, innerException: null);
+
+        Assert.Contains("localhost:27017", unavailable.Message);
+        Assert.Contains(RestartReport, unavailable.Message);
+        Assert.Equal(RestartReport, unavailable.RestartReport);
+        Assert.DoesNotContain('\n', unavailable.Message);
+    }
+
+    [Fact]
+    public void RestartReportMessageEndsWithTheRemedy()
+    {
+        var unavailable = new DatabaseUnavailableException("localhost:27017", RestartReport, innerException: null);
+
+        Assert.EndsWith(" Start the MongoDB service, then retry.", unavailable.Message);
+    }
+
+    [Fact]
+    public void ExistingConstructorHasNoRestartReport()
+    {
+        var unavailable = new DatabaseUnavailableException("localhost:27017", innerException: null);
+
+        Assert.Null(unavailable.RestartReport);
+    }
+
+    private const string RestartReport =
+        "SaddleRAG tried to restart the 'MongoDB' service at 2:37 PM and it did not answer within 60 seconds.";
+
     private static readonly ConnectionId smConnectionId =
         new ConnectionId(new ServerId(new ClusterId(value: 1), new DnsEndPoint("localhost", port: 27017)));
 

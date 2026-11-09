@@ -5,6 +5,11 @@
 
 <MudText Typo="Typo.h5" Class="mb-3">Audit — @JobId</MudText>
 
+@if (DatabaseOutageMessage is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@DatabaseOutageMessage</MudAlert>
+}
+
 <MudStack Row="true" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
     <MudSelect T="string" Label="Status" @bind-Value="FilterStatus" Clearable="true"
                Style="min-width: 140px">

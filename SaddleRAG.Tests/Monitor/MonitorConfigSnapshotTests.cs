@@ -303,4 +303,41 @@ public sealed class MonitorConfigSnapshotTests
 
         Assert.Equal("onnx", snap.Classifier.ActiveBackend);
     }
+
+    [Fact]
+    public void GetSnapshotMongoCardReportsAutoRestartDefaults()
+    {
+        var snap = NewSource().GetSnapshot();
+
+        Assert.True(snap.Mongo.AutoRestartEnabled);
+        Assert.Equal("MongoDB", snap.Mongo.AutoRestartServiceName);
+    }
+
+    [Fact]
+    public void GetSnapshotMongoCardReportsConfiguredAutoRestart()
+    {
+        var mongo = new SaddleRagDbSettings
+            {
+                AutoRestart = new MongoAutoRestartSettings { Enabled = false, ServiceName = "MongoDB-Dev" }
+            };
+
+        var snap = NewSource(mongo: mongo).GetSnapshot();
+
+        Assert.False(snap.Mongo.AutoRestartEnabled);
+        Assert.Equal("MongoDB-Dev", snap.Mongo.AutoRestartServiceName);
+    }
+
+    [Theory]
+    [InlineData(true, "MongoDB", "Restart MongoDB automatically: On (service 'MongoDB', local databases only)")]
+    [InlineData(true, "MongoDB-Dev", "Restart MongoDB automatically: On (service 'MongoDB-Dev', local databases only)")]
+    [InlineData(false, "MongoDB", "Restart MongoDB automatically: Off")]
+    public void MongoCardAutoRestartSummaryReadsOnWithServiceNameOrOff(bool enabled, string service, string expected)
+    {
+        var card = new MonitorConfigMongo("(direct)", "mongodb://localhost", "saddlerag",
+                                          CredentialsPresent: false,
+                                          AutoRestartEnabled: enabled,
+                                          AutoRestartServiceName: service);
+
+        Assert.Equal(expected, card.AutoRestartSummary);
+    }
 }

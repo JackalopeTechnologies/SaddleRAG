@@ -30,6 +30,13 @@ namespace SaddleRAG.Mcp;
 ///         the user instead of guessing the tool is broken.
 ///     </para>
 ///     <para>
+///         Before each tool runs, a stopped local MongoDB service is restarted by
+///         <see cref="DatabaseRecovery" /> when one is registered. The tool runs whether
+///         or not that worked, so tools that never touch the database keep working; a
+///         tool that then finds the database unreachable gets the outage message with
+///         the latest restart report added.
+///     </para>
+///     <para>
 ///         Each tool runs inside a <see cref="DatabaseFailFastScope" />, so its database
 ///         calls stop waiting once an outage is established.
 ///     </para>
@@ -61,19 +68,26 @@ internal static class McpToolExceptionFilter
 
         return (context, cancellationToken) => ExecuteAsync(context.Params?.Name,
                                                             context.Services,
-                                                            () => next(context, cancellationToken)
+                                                            () => next(context, cancellationToken),
+                                                            cancellationToken
                                                            );
     }
 
     internal static async ValueTask<CallToolResult> ExecuteAsync(string? toolName,
                                                                  IServiceProvider? services,
-                                                                 Func<ValueTask<CallToolResult>> next)
+                                                                 Func<ValueTask<CallToolResult>> next,
+                                                                 CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(next);
 
         CallToolResult result;
         try
         {
+            // A stopped local MongoDB service is restarted before the tool runs. This never
+            // fails the call; if the tool then finds the database unreachable, the outage
+            // result below carries the failed restart's report.
+            await EnsureDatabaseAvailableAsync(services, cancellationToken);
+
             // Only database calls made by a tool call may fail fast during an outage.
             using(DatabaseFailFastScope.Begin())
                 result = await next();
@@ -85,11 +99,19 @@ internal static class McpToolExceptionFilter
         }
         catch(Exception ex) when (DatabaseFailure.AsUnavailable(ex, GetUnreachableEndpoints(services)) is { } unavailable)
         {
-            LogDatabaseUnavailable(services, toolName, unavailable);
-            result = BuildDatabaseUnavailableResult(unavailable);
+            var reported = AddRestartReport(services, unavailable);
+            LogDatabaseUnavailable(services, toolName, reported);
+            result = BuildDatabaseUnavailableResult(reported);
         }
         return result;
     }
+
+    private static Task EnsureDatabaseAvailableAsync(IServiceProvider? services, CancellationToken cancellationToken) =>
+        services?.GetService<DatabaseRecovery>()?.EnsureAvailableAsync(cancellationToken) ?? Task.CompletedTask;
+
+    private static DatabaseUnavailableException AddRestartReport(IServiceProvider? services,
+                                                                 DatabaseUnavailableException unavailable) =>
+        services?.GetService<DatabaseRecovery>()?.WithRestartReport(unavailable) ?? unavailable;
 
     internal static CallToolResult BuildDatabaseUnavailableResult(DatabaseUnavailableException unavailable)
     {

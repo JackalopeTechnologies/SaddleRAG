@@ -10,6 +10,7 @@ using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Server;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -199,6 +200,24 @@ builder.Services.AddHostedService<McpWarmupService>();
 // MongoDB
 
 builder.Services.AddSaddleRagDatabase(builder.Configuration);
+
+// On-demand restart of a stopped local MongoDB service. Only the active profile's database
+// is considered: it is the one requests use, and the health monitor and startup open every
+// configured profile, so watching all of them would let an unused local profile that is down
+// trigger restarts of a MongoDB nobody uses. Startup opens the active profile's database
+// before any request, so this opens no connection of its own.
+builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.AddSingleton<IMongoServiceControl, WindowsMongoServiceControl>();
+builder.Services.AddSingleton(sp => new DatabaseRecovery(() => [sp.GetRequiredService<SaddleRagDbContextFactory>()
+                                                                  .GetDefault()],
+                                                         sp.GetRequiredService<IMongoServiceControl>(),
+                                                         sp.GetRequiredService<IOptions<SaddleRagDbSettings>>(),
+                                                         sp.GetRequiredService<TimeProvider>(),
+                                                         sp.GetRequiredService<ILogger<DatabaseRecovery>>(),
+                                                         DatabaseRecoveryTimings.Default,
+                                                         sp.GetRequiredService<IHostApplicationLifetime>()
+                                                           .ApplicationStopping
+                                                        ));
 
 // Packaging services — CollectionCompactor is shared between compact_collections MCP tool
 // and the import_library compact opt-in. LibraryImporterFactory creates an importer whose
@@ -717,6 +736,7 @@ else
     var firstRequestLogged = false;
 
     app.UseMiddleware<ShutdownConnectionMiddleware>();
+    app.UseMiddleware<MonitorDatabaseRecoveryMiddleware>();
     app.Use(async (context, next) =>
 
             {

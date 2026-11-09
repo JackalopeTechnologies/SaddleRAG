@@ -19,15 +19,42 @@ public sealed class DatabaseUnavailableException : Exception
     }
 
     /// <summary>
+    ///     Raised after SaddleRAG tried to restart the local MongoDB service. The
+    ///     <paramref name="restartReport" /> says what it tried and how that ended, so
+    ///     the caller sees it in the same one-line message.
+    /// </summary>
+    public DatabaseUnavailableException(string endpoint, string restartReport, Exception? innerException)
+        : base(BuildMessage(endpoint, restartReport), innerException)
+    {
+        Endpoint = endpoint;
+        RestartReport = restartReport;
+    }
+
+    /// <summary>
     ///     The unreachable server address or addresses, as <c>host:port</c>.
     /// </summary>
     public string Endpoint { get; }
+
+    /// <summary>
+    ///     What SaddleRAG tried to restart and how that ended; null when no restart
+    ///     was attempted.
+    /// </summary>
+    public string? RestartReport { get; }
 
     private static string BuildMessage(string endpoint)
     {
         ArgumentException.ThrowIfNullOrEmpty(endpoint);
         string message =
             $"SaddleRAG's database at {endpoint} is unreachable (MongoDB is not accepting connections). {Remedy}";
+        return message;
+    }
+
+    private static string BuildMessage(string endpoint, string restartReport)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(endpoint);
+        ArgumentException.ThrowIfNullOrEmpty(restartReport);
+        string message =
+            $"SaddleRAG's database at {endpoint} is unreachable (MongoDB is not accepting connections). {restartReport} {Remedy}";
         return message;
     }
 

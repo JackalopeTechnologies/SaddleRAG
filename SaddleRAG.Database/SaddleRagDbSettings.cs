@@ -23,7 +23,7 @@ public class SaddleRagDbSettings
 
     /// <summary>
     ///     Named connection profiles.
-    ///     Example: "local" â†’ localhost, "company" â†’ shared server.
+    ///     Example: "local" -> localhost, "company" -> shared server.
     /// </summary>
 
     public Dictionary<string, MongoDbProfile> Profiles { get; set; } = new Dictionary<string, MongoDbProfile>();
@@ -49,6 +49,13 @@ public class SaddleRagDbSettings
     /// </summary>
 
     public string DatabaseName { get; set; } = MongoDbProfile.DefaultDatabaseName;
+
+
+    /// <summary>
+    ///     Restart behaviour for a stopped local MongoDB Windows service.
+    /// </summary>
+
+    public MongoAutoRestartSettings AutoRestart { get; set; } = new MongoAutoRestartSettings();
 
 
     /// <summary>

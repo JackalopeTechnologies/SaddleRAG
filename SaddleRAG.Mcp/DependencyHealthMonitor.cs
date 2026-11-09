@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using SaddleRAG.Core;
+using SaddleRAG.Core.Hosting;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
 using SaddleRAG.Ingestion.Classification;
@@ -38,6 +39,7 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
     private const string MongoSuffix = ")";
     private const string MongoWork = "Stored libraries and jobs in ";
     private const string MongoRemediation = "Check the MongoDB service and connection settings. SaddleRAG reconnects automatically.";
+    private const string MongoRestartRemediation = "SaddleRAG restarts the local MongoDB service the next time work needs the database. If that fails, check the MongoDB service and connection settings.";
     private const string MongoReady = "MongoDB accepted a database command.";
     private static readonly TimeSpan smCheckTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan smCheckInterval = TimeSpan.FromSeconds(10);
@@ -90,10 +92,15 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
     {
         var probes = new List<DependencyProbe>();
         var factory = services.GetRequiredService<SaddleRagDbContextFactory>();
+        var mongoSettings = services.GetRequiredService<IOptions<SaddleRagDbSettings>>().Value;
         string? defaultProfile = factory.GetDefaultProfileName();
-        probes.Add(DatabaseProbe(factory, null, defaultProfile ?? DefaultProfile, true));
+        probes.Add(DatabaseProbe(factory, null, defaultProfile ?? DefaultProfile, true,
+                                 MongoRemediationFor(mongoSettings.AutoRestart.Enabled,
+                                                     mongoSettings.Resolve().ConnectionString)));
+        // Automatic restart covers only the active profile's database, so other profiles
+        // never get the restart remediation text.
         foreach (string profile in factory.GetProfileNames().Where(name => name != defaultProfile))
-            probes.Add(DatabaseProbe(factory, profile, profile, false));
+            probes.Add(DatabaseProbe(factory, profile, profile, false, MongoRemediation));
 
         var native = services.GetRequiredService<IOptions<OnnxSettings>>().Value;
         var ollama = services.GetRequiredService<IOptions<OllamaSettings>>().Value;
@@ -151,10 +158,19 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
                 return observation.Detail;
     }
 
+    /// <summary>
+    ///     Remediation text for one database. It promises a restart only when auto-restart is on
+    ///     and that database's own connection string is local. Never includes the connection string.
+    /// </summary>
+    internal static string MongoRemediationFor(bool autoRestartEnabled, string connectionString) =>
+        autoRestartEnabled && LocalEndpoint.IsLoopbackMongoConnectionString(connectionString)
+            ? MongoRestartRemediation
+            : MongoRemediation;
+
     private static DependencyProbe DatabaseProbe(SaddleRagDbContextFactory factory, string? profile,
-                                                   string displayName, bool required) =>
+                                                   string displayName, bool required, string remediation) =>
         new(MongoPrefix + displayName + MongoSuffix, required, MongoWork + displayName,
-            MongoRemediation,
+            remediation,
             async token =>
             {
                 SaddleRagDbContext context = factory.GetForProfile(profile);

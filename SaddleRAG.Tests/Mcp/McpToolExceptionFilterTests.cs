@@ -7,6 +7,7 @@
 
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -35,7 +36,8 @@ public sealed class McpToolExceptionFilterTests
 
         CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("scrape_docs",
                                                                           services: null,
-                                                                          () => ValueTask.FromResult(expected)
+                                                                          () => ValueTask.FromResult(expected),
+                                                                          TestContext.Current.CancellationToken
                                                                          );
 
         Assert.Same(expected, result);
@@ -51,7 +53,8 @@ public sealed class McpToolExceptionFilterTests
 
         CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("scrape_docs",
                                                                           services: null,
-                                                                          Throw
+                                                                          Throw,
+                                                                          TestContext.Current.CancellationToken
                                                                          );
 
         Assert.True(result.IsError);
@@ -71,7 +74,8 @@ public sealed class McpToolExceptionFilterTests
 
         CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("scrape_docs",
                                                                           services: null,
-                                                                          Throw
+                                                                          Throw,
+                                                                          TestContext.Current.CancellationToken
                                                                          );
 
         Assert.True(result.IsError);
@@ -90,7 +94,8 @@ public sealed class McpToolExceptionFilterTests
         await Assert.ThrowsAsync<McpException>(async () =>
                                                    await McpToolExceptionFilter.ExecuteAsync("scrape_docs",
                                                                                              services: null,
-                                                                                             Throw
+                                                                                             Throw,
+                                                                                             TestContext.Current.CancellationToken
                                                                                             )
                                               );
     }
@@ -106,7 +111,8 @@ public sealed class McpToolExceptionFilterTests
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
                                                                  await McpToolExceptionFilter.ExecuteAsync("scrape_docs",
                                                                                                            services: null,
-                                                                                                           Throw
+                                                                                                           Throw,
+                                                                                                           TestContext.Current.CancellationToken
                                                                                                           )
                                                             );
     }
@@ -122,7 +128,8 @@ public sealed class McpToolExceptionFilterTests
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
                                                                 await McpToolExceptionFilter.ExecuteAsync("scrape_docs",
                                                                                                           services: null,
-                                                                                                          Throw
+                                                                                                          Throw,
+                                                                                                          TestContext.Current.CancellationToken
                                                                                                          )
                                                            );
     }
@@ -150,7 +157,7 @@ public sealed class McpToolExceptionFilterTests
             return ValueTask.FromResult(new CallToolResult { Content = [new TextContentBlock { Text = "ok" }] });
         }
 
-        await McpToolExceptionFilter.ExecuteAsync("list_libraries", services: null, Run);
+        await McpToolExceptionFilter.ExecuteAsync("list_libraries", services: null, Run, TestContext.Current.CancellationToken);
 
         Assert.True(activeDuringCall);
         Assert.False(DatabaseFailFastScope.IsActive);
@@ -166,7 +173,7 @@ public sealed class McpToolExceptionFilterTests
             throw unavailable;
         }
 
-        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries", services: null, Throw);
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries", services: null, Throw, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsError);
         var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
@@ -183,7 +190,7 @@ public sealed class McpToolExceptionFilterTests
             throw new MongoConnectionException(connectionId, "An exception occurred while opening a connection to the server.");
         }
 
-        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("search_docs", services: null, Throw);
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("search_docs", services: null, Throw, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsError);
         var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
@@ -203,7 +210,7 @@ public sealed class McpToolExceptionFilterTests
             throw new TimeoutException("A timeout occurred after 30000ms selecting a server.");
         }
 
-        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries", services, Throw);
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries", services, Throw, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsError);
         var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
@@ -224,7 +231,8 @@ public sealed class McpToolExceptionFilterTests
         await Assert.ThrowsAsync<TimeoutException>(async () =>
                                                        await McpToolExceptionFilter.ExecuteAsync("list_libraries",
                                                                                                  services,
-                                                                                                 Throw
+                                                                                                 Throw,
+                                                                                                 TestContext.Current.CancellationToken
                                                                                                 )
                                                   );
     }
@@ -239,8 +247,100 @@ public sealed class McpToolExceptionFilterTests
             throw new ArgumentException("nope", "libraryId");
         }
 
-        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("scrape_docs", services, Throw);
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("scrape_docs", services, Throw, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsError);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncRunsTheToolAfterAFailedRestartAndAddsTheReportToItsOutage()
+    {
+        var recovery = CreateRecovery(new RecoveryFakeDatabase(isLocal: true, isKnownDown: true),
+                                      new RecoveryFakeServiceControl(MongoServiceState.NotInstalled)
+                                     );
+        var services = new ServiceCollection().AddLogging().AddSingleton(recovery).BuildServiceProvider();
+        int calls = 0;
+
+        ValueTask<CallToolResult> Next()
+        {
+            calls++;
+            throw new DatabaseUnavailableException("localhost:27017", new IOException("refused"));
+        }
+
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries",
+                                                                          services,
+                                                                          Next,
+                                                                          TestContext.Current.CancellationToken
+                                                                         );
+
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Contains("is unreachable", text.Text, StringComparison.Ordinal);
+        Assert.Contains("is not installed", text.Text, StringComparison.Ordinal);
+        Assert.Equal(expected: 1, calls);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncRunsAToolThatNeverTouchesTheDatabaseNormallyAfterAFailedRestart()
+    {
+        var recovery = CreateRecovery(new RecoveryFakeDatabase(isLocal: true, isKnownDown: true),
+                                      new RecoveryFakeServiceControl(MongoServiceState.NotInstalled)
+                                     );
+        var services = new ServiceCollection().AddLogging().AddSingleton(recovery).BuildServiceProvider();
+        var expected = new CallToolResult();
+        var ct = TestContext.Current.CancellationToken;
+
+        CallToolResult first = await McpToolExceptionFilter.ExecuteAsync("get_server_logs",
+                                                                         services,
+                                                                         () => ValueTask.FromResult(expected),
+                                                                         ct
+                                                                        );
+        CallToolResult duringPause = await McpToolExceptionFilter.ExecuteAsync("get_server_logs",
+                                                                               services,
+                                                                               () => ValueTask.FromResult(expected),
+                                                                               ct
+                                                                              );
+
+        Assert.Same(expected, first);
+        Assert.Same(expected, duringPause);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncRunsTheToolOnceWhenRecoveryRestartsTheService()
+    {
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
+        var recovery = CreateRecovery(database, service);
+        var services = new ServiceCollection().AddLogging().AddSingleton(recovery).BuildServiceProvider();
+        var expected = new CallToolResult();
+        int calls = 0;
+
+        ValueTask<CallToolResult> Next()
+        {
+            calls++;
+            return ValueTask.FromResult(expected);
+        }
+
+        CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries",
+                                                                          services,
+                                                                          Next,
+                                                                          TestContext.Current.CancellationToken
+                                                                         );
+
+        Assert.Same(expected, result);
+        Assert.Equal(expected: 1, calls);
+        Assert.Equal(expected: 1, service.StartCount);
+    }
+
+    private static DatabaseRecovery CreateRecovery(RecoveryFakeDatabase database, RecoveryFakeServiceControl service)
+    {
+        IReadOnlyList<IRecoverableDatabase> databases = [database];
+        return new DatabaseRecovery(() => databases,
+                                    service,
+                                    Options.Create(new SaddleRagDbSettings()),
+                                    TimeProvider.System,
+                                    NullLogger<DatabaseRecovery>.Instance,
+                                    RecoveryTestTimings.Short
+                                   );
     }
 }

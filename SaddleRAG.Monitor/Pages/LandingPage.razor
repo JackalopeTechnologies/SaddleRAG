@@ -8,6 +8,10 @@
 @if (LibrariesUnavailable)
 {
     <MudAlert Severity="Severity.Error" Class="mb-4">
+        @if (LibrariesOutageMessage is not null)
+        {
+            <div>@LibrariesOutageMessage</div>
+        }
         Libraries could not be refreshed. Any displayed data is from the last successful read.
         Retrying automatically. <MudLink Href="/monitor/health">Open service health</MudLink>
     </MudAlert>
