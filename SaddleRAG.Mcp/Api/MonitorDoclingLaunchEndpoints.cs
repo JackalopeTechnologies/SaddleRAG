@@ -14,7 +14,8 @@ namespace SaddleRAG.Mcp.Api;
 /// <summary>
 ///     Reports whether document work is waiting on a Docling that is not ready.
 ///     <para>
-///         Read-only by design. The MCP service runs as LocalSystem and starts nothing;
+///         Read-only by design. The MCP service runs as LocalSystem and starts nothing except a
+///         local MongoDB service, through <c>DatabaseRecovery</c>;
 ///         this endpoint states a fact and the user-session tray decides what to do about
 ///         it. Reusing the existing localhost Monitor boundary avoids introducing another
 ///         IPC transport, port, or security surface just to carry one flag.

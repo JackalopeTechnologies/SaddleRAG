@@ -11,11 +11,11 @@ using Microsoft.Extensions.Logging;
 
 namespace SaddleRAG.Tests.Database;
 
-/// <summary>Counts what a component logs at each level.</summary>
+/// <summary>Records what a component logs, so tests can count and read messages by level.</summary>
 internal sealed class RecordingLogger<T> : ILogger<T>
 {
     private readonly Lock mLock = new Lock();
-    private readonly List<LogLevel> mLevels = [];
+    private readonly List<(LogLevel Level, string Message)> mEntries = [];
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -29,8 +29,20 @@ internal sealed class RecordingLogger<T> : ILogger<T>
     {
         lock(mLock)
         {
-            mLevels.Add(logLevel);
+            mEntries.Add((logLevel, formatter(state, exception)));
         }
+    }
+
+    /// <summary>The formatted text of every message logged at <paramref name="level" />.</summary>
+    public IReadOnlyList<string> Messages(LogLevel level)
+    {
+        IReadOnlyList<string> result;
+        lock(mLock)
+        {
+            result = mEntries.Where(entry => entry.Level == level).Select(entry => entry.Message).ToList();
+        }
+
+        return result;
     }
 
     public int Count(LogLevel level)
@@ -38,7 +50,7 @@ internal sealed class RecordingLogger<T> : ILogger<T>
         int result;
         lock(mLock)
         {
-            result = mLevels.Count(l => l == level);
+            result = mEntries.Count(entry => entry.Level == level);
         }
 
         return result;

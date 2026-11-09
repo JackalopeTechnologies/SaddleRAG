@@ -730,6 +730,7 @@ else
     var firstRequestLogged = false;
 
     app.UseMiddleware<ShutdownConnectionMiddleware>();
+    app.UseMiddleware<MonitorDatabaseRecoveryMiddleware>();
     app.Use(async (context, next) =>
 
             {
