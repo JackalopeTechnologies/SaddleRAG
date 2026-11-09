@@ -32,6 +32,9 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
     private DatabaseRecovery? Recovery { get; set; }
 
     [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
+
+    [Inject]
     private NavigationManager? Nav { get; set; }
 
     /// <summary>
@@ -167,9 +170,13 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
             Enum.TryParse<ScrapeJobStatus>(StatusFilter, ignoreCase: true, out var parsed))
             statusEnum = parsed;
 
-        DatabaseOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, CancellationToken.None);
-        if (DatabaseOutageMessage is null)
-            Rows = await Jobs.ListAsync(statusEnum, TypeFilter, LibraryFilter, LimitChoice);
+        DatabaseOutageMessage = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                   ContextFactory,
+                                                                   async () => Rows = await Jobs.ListAsync(statusEnum,
+                                                                                                           TypeFilter,
+                                                                                                           LibraryFilter,
+                                                                                                           LimitChoice),
+                                                                   CancellationToken.None);
     }
 
     private const int DefaultLimit = 100;

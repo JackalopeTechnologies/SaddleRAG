@@ -27,6 +27,9 @@ public abstract class AuditInspectorPageBase : ComponentBase
     [Inject]
     private DatabaseRecovery? Recovery { get; set; }
 
+    [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
+
     protected string? DatabaseOutageMessage { get; private set; }
 
     protected AuditSummary? Summary { get; private set; }
@@ -65,9 +68,10 @@ public abstract class AuditInspectorPageBase : ComponentBase
     private async Task LoadAsync()
     {
         ArgumentNullException.ThrowIfNull(AuditRepo);
-        DatabaseOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, CancellationToken.None);
-        if (DatabaseOutageMessage is null)
-            await ReadAuditAsync(AuditRepo);
+        DatabaseOutageMessage = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                   ContextFactory,
+                                                                   () => ReadAuditAsync(AuditRepo),
+                                                                   CancellationToken.None);
     }
 
     private async Task ReadAuditAsync(IScrapeAuditRepository auditRepo)

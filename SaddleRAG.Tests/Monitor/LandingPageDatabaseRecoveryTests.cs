@@ -6,6 +6,7 @@
 #region Usings
 
 using System.Reflection;
+using NSubstitute.ExceptionExtensions;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Database;
@@ -30,6 +31,7 @@ public sealed class LandingPageDatabaseRecoveryTests
         {
             SetInjected(DataServicePropertyName, data);
             SetInjected(RecoveryPropertyName, recovery);
+            SetInjected(ContextFactoryPropertyName, MonitorTestRecovery.ContextFactory());
         }
 
         public bool UnavailableForTest => LibrariesUnavailable;
@@ -49,6 +51,7 @@ public sealed class LandingPageDatabaseRecoveryTests
 
         private const string DataServicePropertyName = "DataService";
         private const string RecoveryPropertyName = "Recovery";
+        private const string ContextFactoryPropertyName = "ContextFactory";
     }
 
     [Fact]
@@ -78,6 +81,49 @@ public sealed class LandingPageDatabaseRecoveryTests
         Assert.Null(page.OutageForTest);
         await libraries.Received(requiredNumberOfCalls: 1).GetAllLibrariesAsync(Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task ReadThatFindsTheDatabaseUnreachableShowsItsMessageAndDoesNotThrow()
+    {
+        var libraries = Substitute.For<ILibraryRepository>();
+        libraries.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
+                 .ThrowsAsync(new DatabaseUnavailableException(ReadFailureEndpoint, innerException: null));
+        var page = CreatePage(libraries, isKnownDown: false);
+
+        await page.RefreshForTestAsync();
+
+        Assert.True(page.UnavailableForTest);
+        Assert.Contains(ReadFailureEndpoint, page.OutageForTest);
+    }
+
+    [Fact]
+    public async Task FailedRecoveryFollowedBySuccessfulRecoveryClearsTheMessage()
+    {
+        var libraries = Substitute.For<ILibraryRepository>();
+        libraries.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<IReadOnlyList<LibraryRecord>>([]));
+        var recovery = MonitorTestRecovery.Recoverable(out Action recover);
+        var page = new TestableLandingPage(CreateData(libraries), recovery);
+
+        await page.RefreshForTestAsync();
+        Assert.True(page.UnavailableForTest);
+        Assert.NotNull(page.OutageForTest);
+
+        recover();
+        await page.RefreshForTestAsync();
+
+        Assert.False(page.UnavailableForTest);
+        Assert.Null(page.OutageForTest);
+    }
+
+    private static MonitorDataService CreateData(ILibraryRepository libraries) =>
+        new MonitorDataService(libraries,
+                               Substitute.For<IChunkRepository>(),
+                               Substitute.For<ILibraryProfileRepository>(),
+                               Substitute.For<IUnifiedJobView>(),
+                               Substitute.For<IScrapeAuditRepository>());
+
+    private const string ReadFailureEndpoint = "localhost:27017";
 
     private static TestableLandingPage CreatePage(ILibraryRepository libraries, bool isKnownDown)
     {

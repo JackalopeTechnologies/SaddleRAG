@@ -30,6 +30,9 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase, IAsyncDisposab
     [Inject]
     private DatabaseRecovery? Recovery { get; set; }
 
+    [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
+
     private readonly CancellationTokenSource mRefreshCancellation = new();
     private Task? mRefreshTask;
     protected string? ProgressRefreshError { get; private set; }
@@ -96,9 +99,10 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase, IAsyncDisposab
         ArgumentNullException.ThrowIfNull(DataService);
         ArgumentNullException.ThrowIfNull(Capability);
         await AdoptScannerStatusAsync();
-        ProgressRefreshError = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, mRefreshCancellation.Token);
-        if (ProgressRefreshError is null)
-            Rows = await DataService.ListAsync(profile: null);
+        ProgressRefreshError = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                  ContextFactory,
+                                                                  async () => Rows = await DataService.ListAsync(profile: null),
+                                                                  mRefreshCancellation.Token);
         DirectoryLibraryMonitorRow? first = Rows.FirstOrDefault();
         if (first != null)
             SelectRow(first);
@@ -121,10 +125,11 @@ public abstract class DirectoryLibrariesPageBase : ComponentBase, IAsyncDisposab
             {
                 try
                 {
-                    string? outage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, ct);
-                    IReadOnlyList<DirectoryLibraryMonitorRow> rows = outage is null
-                                                                         ? await DataService.ListAsync(profile: null, ct)
-                                                                         : Rows;
+                    IReadOnlyList<DirectoryLibraryMonitorRow> rows = Rows;
+                    string? outage = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                        ContextFactory,
+                                                                        async () => rows = await DataService.ListAsync(profile: null, ct),
+                                                                        ct);
                     await InvokeAsync(() =>
                         {
                             Rows = rows;

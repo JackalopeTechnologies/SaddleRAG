@@ -26,6 +26,9 @@ public abstract class LibraryDetailPageBase : ComponentBase
     private DatabaseRecovery? Recovery { get; set; }
 
     [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
+
+    [Inject]
     private MonitorDataService? DataService { get; set; }
 
     [Inject]
@@ -50,15 +53,24 @@ public abstract class LibraryDetailPageBase : ComponentBase
     protected override async Task OnParametersSetAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
-        DatabaseOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, CancellationToken.None);
-        Detail = DatabaseOutageMessage is null ? await DataService.GetLibraryDetailAsync(LibraryId) : null;
+        DatabaseOutageMessage = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                   ContextFactory,
+                                                                   () => LoadDetailAsync(DataService),
+                                                                   CancellationToken.None);
+        if (DatabaseOutageMessage is not null)
+            Detail = null;
+    }
+
+    private async Task LoadDetailAsync(MonitorDataService dataService)
+    {
+        Detail = await dataService.GetLibraryDetailAsync(LibraryId);
         if (Detail is not null)
         {
-            Profile = await DataService.GetLibraryProfileAsync(LibraryId, Detail.Version);
-            Versions = await DataService.GetVersionsAsync(LibraryId);
-            LatestJobId = await DataService.GetLatestJobIdAsync(LibraryId, Detail.Version);
+            Profile = await dataService.GetLibraryProfileAsync(LibraryId, Detail.Version);
+            Versions = await dataService.GetVersionsAsync(LibraryId);
+            LatestJobId = await dataService.GetLatestJobIdAsync(LibraryId, Detail.Version);
             if (!string.IsNullOrEmpty(LatestJobId))
-                AuditSummary = await DataService.GetAuditSummaryAsync(LatestJobId);
+                AuditSummary = await dataService.GetAuditSummaryAsync(LatestJobId);
         }
     }
 

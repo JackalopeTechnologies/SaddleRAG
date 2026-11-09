@@ -32,6 +32,9 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
     private DatabaseRecovery? Recovery { get; set; }
 
     [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
+
+    [Inject]
     protected IMonitorBroadcaster? Broadcaster { get; set; }
 
     [Inject]
@@ -111,15 +114,10 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         {
             // A restart can take up to a minute, so it is bounded by page shutdown only;
             // the 3 s bound below applies to the read itself.
-            LibrariesOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, mShutdown.Token);
-            if (LibrariesOutageMessage is null)
-            {
-                using var bounded = CancellationTokenSource.CreateLinkedTokenSource(mShutdown.Token);
-                bounded.CancelAfter(TimeSpan.FromSeconds(3));
-                var summaries = await DataService.GetLibrarySummariesAsync(bounded.Token);
-                Libraries.Clear();
-                Libraries.AddRange(summaries);
-            }
+            LibrariesOutageMessage = await MonitorDatabaseGate.RunAsync(Recovery,
+                                                                        ContextFactory,
+                                                                        ReadLibrariesAsync,
+                                                                        mShutdown.Token);
 
             LibrariesUnavailable = LibrariesOutageMessage is not null;
         }
@@ -134,6 +132,16 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         {
             mRefreshing = false;
         }
+    }
+
+    private async Task ReadLibrariesAsync()
+    {
+        ArgumentNullException.ThrowIfNull(DataService);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(mShutdown.Token);
+        bounded.CancelAfter(TimeSpan.FromSeconds(3));
+        var summaries = await DataService.GetLibrarySummariesAsync(bounded.Token);
+        Libraries.Clear();
+        Libraries.AddRange(summaries);
     }
 
     protected async Task CancelJob(string jobId)

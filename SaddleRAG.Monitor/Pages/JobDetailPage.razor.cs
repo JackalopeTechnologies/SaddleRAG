@@ -35,6 +35,9 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private DatabaseRecovery? Recovery { get; set; }
 
     [Inject]
+    private SaddleRagDbContextFactory? ContextFactory { get; set; }
+
+    [Inject]
     private ISnackbar? Snackbar { get; set; }
 
     [Inject]
@@ -121,8 +124,7 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(Nav);
         ArgumentNullException.ThrowIfNull(DataService);
 
-        if (await DatabaseReadyAsync(CancellationToken.None))
-            Info = await DataService.GetJobInfoAsync(JobId);
+        await ReadDatabaseAsync(async () => Info = await DataService.GetJobInfoAsync(JobId), CancellationToken.None);
 
         mHub = new HubConnectionBuilder()
                .WithUrl(Nav.ToAbsoluteUri(HubPath))
@@ -203,29 +205,28 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     private async Task LoadTerminalFeedsAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
-        if (await DatabaseReadyAsync(CancellationToken.None))
-        {
-            (var fetches, var rejects) = await DataService.GetTerminalFeedsAsync(JobId);
-            TerminalFetches = fetches;
-            TerminalRejects = rejects;
-        }
+        await ReadDatabaseAsync(async () =>
+                                {
+                                    (var fetches, var rejects) = await DataService.GetTerminalFeedsAsync(JobId);
+                                    TerminalFetches = fetches;
+                                    TerminalRejects = rejects;
+                                },
+                                CancellationToken.None);
     }
 
     /// <summary>
-    ///     Asks for a stopped local database to be restarted before a read. On failure the
-    ///     outage message is shown (and cleared again by the next read that succeeds).
+    ///     Restarts a stopped local database if needed, then runs the read. An outage from
+    ///     either step shows the outage message, which the next read that succeeds clears.
     /// </summary>
-    private async Task<bool> DatabaseReadyAsync(CancellationToken ct)
+    private async Task ReadDatabaseAsync(Func<Task> read, CancellationToken ct)
     {
-        DatabaseOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, ct);
-        return DatabaseOutageMessage is null;
+        DatabaseOutageMessage = await MonitorDatabaseGate.RunAsync(Recovery, ContextFactory, read, ct);
     }
 
     private async Task OnLifecycleTransitionAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
-        if (await DatabaseReadyAsync(CancellationToken.None))
-            Info = await DataService.GetJobInfoAsync(JobId);
+        await ReadDatabaseAsync(async () => Info = await DataService.GetJobInfoAsync(JobId), CancellationToken.None);
         await LoadTerminalFeedsAsync();
         if (!IsActive && mElapsedTimer is not null)
         {
@@ -276,8 +277,8 @@ public abstract class JobDetailPageBase : ComponentBase, IAsyncDisposable
     {
         if (Info?.Type == JobType.DirectoryScan && DataService is not null)
         {
-            bool ready = await DatabaseReadyAsync(ct);
-            JobInfo? updated = ready ? await DataService.GetJobInfoAsync(JobId, ct) : Info;
+            JobInfo? updated = Info;
+            await ReadDatabaseAsync(async () => updated = await DataService.GetJobInfoAsync(JobId, ct), ct);
             await InvokeAsync(() =>
                 {
                     Info = updated;

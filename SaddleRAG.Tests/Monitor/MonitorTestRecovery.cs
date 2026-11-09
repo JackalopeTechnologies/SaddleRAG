@@ -22,6 +22,26 @@ internal static class MonitorTestRecovery
     /// <summary>A local database known down whose service is not installed, so every call fails with the outage message.</summary>
     public static DatabaseRecovery Failing() => Create(MongoServiceState.NotInstalled, isKnownDown: true);
 
+    /// <summary>
+    ///     A local database known down whose service is not installed, so calls fail until
+    ///     <paramref name="recover" /> runs; after that nothing is known down and calls succeed.
+    /// </summary>
+    public static DatabaseRecovery Recoverable(out Action recover)
+    {
+        IReadOnlyList<IRecoverableDatabase> current = [new RecoveryFakeDatabase(isLocal: true, isKnownDown: true)];
+        recover = () => current = [];
+        return new DatabaseRecovery(() => current,
+                                    new RecoveryFakeServiceControl(MongoServiceState.NotInstalled),
+                                    Options.Create(new SaddleRagDbSettings()),
+                                    TimeProvider.System,
+                                    new RecordingLogger<DatabaseRecovery>(),
+                                    RecoveryTestTimings.Short);
+    }
+
+    /// <summary>The database context factory the pages use to judge whether a read failure is an outage.</summary>
+    public static SaddleRagDbContextFactory ContextFactory() =>
+        new SaddleRagDbContextFactory(Options.Create(new SaddleRagDbSettings()));
+
     private static DatabaseRecovery Create(MongoServiceState serviceState, bool isKnownDown)
     {
         IReadOnlyList<IRecoverableDatabase> databases = [new RecoveryFakeDatabase(isLocal: true, isKnownDown)];
