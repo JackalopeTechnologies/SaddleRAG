@@ -71,7 +71,7 @@ public sealed class DatabaseRecovery
     private readonly IMongoServiceControl mServiceControl;
     private readonly TimeProvider mTimeProvider;
     private readonly DatabaseRecoveryTimings mTimings;
-    private Task? mCurrentAttempt;
+    private Task<DatabaseRecoveryOutcome>? mCurrentAttempt;
     private string mLastFailureReport = string.Empty;
     private long? mLastFailureTimestamp;
 
@@ -91,20 +91,27 @@ public sealed class DatabaseRecovery
         {
             var down = mOpenedDatabases().Where(database => database.IsLocal && database.IsKnownDown).ToList();
             if (down.Count > 0)
-                result = JoinAttempt(down).WaitAsync(ct);
+                result = WaitForRecoveryAsync(down, ct);
         }
 
         return result;
     }
 
-    private Task JoinAttempt(IReadOnlyList<IRecoverableDatabase> down)
+    private async Task WaitForRecoveryAsync(IReadOnlyList<IRecoverableDatabase> down, CancellationToken ct)
     {
         string endpoint = DescribeEndpoints(down);
-        Task attempt;
+        var outcome = await JoinAttempt(down, endpoint).WaitAsync(ct);
+        if (outcome.FailureReport != null)
+            throw new DatabaseUnavailableException(endpoint, outcome.FailureReport, outcome.FailureCause);
+    }
+
+    private Task<DatabaseRecoveryOutcome> JoinAttempt(IReadOnlyList<IRecoverableDatabase> down, string endpoint)
+    {
+        Task<DatabaseRecoveryOutcome> attempt;
         lock(mLock)
         {
             if (IsInFailurePause())
-                attempt = Task.FromException(new DatabaseUnavailableException(endpoint, mLastFailureReport, null));
+                attempt = Task.FromResult(new DatabaseRecoveryOutcome(mLastFailureReport, null));
             else
                 attempt = mCurrentAttempt ??= StartAttempt(down, endpoint);
         }
@@ -116,9 +123,9 @@ public sealed class DatabaseRecovery
         mLastFailureTimestamp.HasValue &&
         mTimeProvider.GetElapsedTime(mLastFailureTimestamp.Value) < mTimings.FailurePause;
 
-    private Task StartAttempt(IReadOnlyList<IRecoverableDatabase> down, string endpoint)
+    private Task<DatabaseRecoveryOutcome> StartAttempt(IReadOnlyList<IRecoverableDatabase> down, string endpoint)
     {
-        Task attempt;
+        Task<DatabaseRecoveryOutcome> attempt;
         using (ExecutionContext.SuppressFlow())
         {
             attempt = Task.Run(() => RunAttemptAsync(down, endpoint), CancellationToken.None);
@@ -127,7 +134,12 @@ public sealed class DatabaseRecovery
         return attempt;
     }
 
-    private async Task RunAttemptAsync(IReadOnlyList<IRecoverableDatabase> down, string endpoint)
+    /// <summary>
+    ///     Runs one attempt and returns how it ended; it never throws, so a failure that
+    ///     every caller stopped waiting for is still observed (see <see cref="DatabaseRecoveryOutcome" />).
+    /// </summary>
+    private async Task<DatabaseRecoveryOutcome> RunAttemptAsync(IReadOnlyList<IRecoverableDatabase> down,
+                                                                string endpoint)
     {
         string serviceName = mAutoRestart.ServiceName;
         var startedAt = mTimeProvider.GetLocalNow();
@@ -163,8 +175,8 @@ public sealed class DatabaseRecovery
             }
         }
 
-        if (report != null)
-            throw new DatabaseUnavailableException(endpoint, report, error);
+        var outcome = report == null ? DatabaseRecoveryOutcome.Recovered : new DatabaseRecoveryOutcome(report, error);
+        return outcome;
     }
 
     private void RecordOutcome(string? failureReport)
@@ -335,7 +347,18 @@ public sealed class DatabaseRecovery
     {
         using var timeout = new CancellationTokenSource(mTimings.PingTimeout, mTimeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(deadline, timeout.Token);
-        var ping = database.CheckHealthAsync(linked.Token);
+        Task ping;
+        try
+        {
+            ping = database.CheckHealthAsync(linked.Token);
+        }
+        catch(Exception ex)
+        {
+            // A check that throws before returning its task is still just a failed ping;
+            // the attempt must never end in anything but its outcome.
+            ping = Task.FromException(ex);
+        }
+
         await ping.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         return ping.IsCompletedSuccessfully;
     }

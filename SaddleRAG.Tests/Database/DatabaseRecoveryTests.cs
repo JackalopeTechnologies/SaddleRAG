@@ -254,6 +254,39 @@ public sealed class DatabaseRecoveryTests
     }
 
     [Fact]
+    public async Task AFailureNoCallerWaitsForIsNotLeftUnobserved()
+    {
+        var service = new FakeServiceControl(MongoServiceState.Stopped);
+        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
+        var logger = new RecordingLogger();
+        var recovery = CreateRecovery(service, database, logger, serviceName: UnobservedProbeServiceName);
+        var ct = TestContext.Current.CancellationToken;
+        int unobserved = 0;
+
+        void OnUnobserved(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            if (e.Exception.Flatten().InnerExceptions.Any(IsFromThisTest))
+                Interlocked.Increment(ref unobserved);
+        }
+
+        TaskScheduler.UnobservedTaskException += OnUnobserved;
+        try
+        {
+            await CancelTheOnlyCallerAsync(recovery, ct);
+            await WaitForErrorAsync(logger, ct);
+            await Task.Delay(smSettleDelay, ct);
+            CollectGarbage();
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= OnUnobserved;
+        }
+
+        Assert.Equal(expected: 1, logger.Count(LogLevel.Error));
+        Assert.Equal(expected: 0, Volatile.Read(ref unobserved));
+    }
+
+    [Fact]
     public async Task RecoveryPingRunsOutsideTheFailFastScope()
     {
         var database = new FakeDatabase(isLocal: true, isKnownDown: true);
@@ -282,15 +315,41 @@ public sealed class DatabaseRecoveryTests
         Assert.False(string.IsNullOrEmpty(context.Endpoint));
     }
 
+    private static bool IsFromThisTest(Exception ex) =>
+        ex is DatabaseUnavailableException { RestartReport: { } report } &&
+        report.Contains(UnobservedProbeServiceName, StringComparison.Ordinal);
+
+    private static async Task CancelTheOnlyCallerAsync(DatabaseRecovery recovery, CancellationToken ct)
+    {
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var waiting = recovery.EnsureAvailableAsync(caller.Token);
+        await caller.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+    }
+
+    private static async Task WaitForErrorAsync(RecordingLogger logger, CancellationToken ct)
+    {
+        while (logger.Count(LogLevel.Error) == 0)
+            await Task.Delay(smErrorPollInterval, ct);
+    }
+
+    private static void CollectGarbage()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
     private static DatabaseRecovery CreateRecovery(FakeServiceControl service,
                                                    FakeDatabase database,
                                                    RecordingLogger logger,
                                                    bool enabled = true,
-                                                   DatabaseRecoveryTimings? timings = null)
+                                                   DatabaseRecoveryTimings? timings = null,
+                                                   string serviceName = ServiceName)
     {
         var settings = new SaddleRagDbSettings
                            {
-                               AutoRestart = new MongoAutoRestartSettings { Enabled = enabled, ServiceName = ServiceName }
+                               AutoRestart = new MongoAutoRestartSettings { Enabled = enabled, ServiceName = serviceName }
                            };
         IReadOnlyList<IRecoverableDatabase> databases = [database];
         var recovery = new DatabaseRecovery(() => databases,
@@ -307,6 +366,7 @@ public sealed class DatabaseRecoveryTests
     private const int AccessDeniedError = 5;
     private const int ShortSelectionTimeoutMilliseconds = 500;
     private const string ServiceName = "MongoDB";
+    private const string UnobservedProbeServiceName = "MongoDB_UnobservedProbe_5c1e";
     private const string DidNotAnswerProbe = "did not answer within";
     private const string PermissionProbe = "does not have permission";
     private const string NotInstalledProbe = "is not installed";
@@ -323,6 +383,8 @@ public sealed class DatabaseRecoveryTests
 
     private static readonly TimeSpan smWellPastThePause = TimeSpan.FromMilliseconds(milliseconds: 900);
     private static readonly TimeSpan smLongRestartWait = TimeSpan.FromSeconds(seconds: 30);
+    private static readonly TimeSpan smErrorPollInterval = TimeSpan.FromMilliseconds(milliseconds: 10);
+    private static readonly TimeSpan smSettleDelay = TimeSpan.FromMilliseconds(milliseconds: 100);
 
     /// <summary>A Windows service whose reported states and start outcome the test chooses.</summary>
     private sealed class FakeServiceControl : IMongoServiceControl
