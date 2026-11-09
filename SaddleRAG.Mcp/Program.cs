@@ -201,12 +201,15 @@ builder.Services.AddHostedService<McpWarmupService>();
 
 builder.Services.AddSaddleRagDatabase(builder.Configuration);
 
-// On-demand restart of a stopped local MongoDB service. Only databases already opened
-// are considered, so this never opens a connection of its own.
+// On-demand restart of a stopped local MongoDB service. Only the active profile's database
+// is considered: it is the one requests use, and the health monitor and startup open every
+// configured profile, so watching all of them would let an unused local profile that is down
+// trigger restarts of a MongoDB nobody uses. Startup opens the active profile's database
+// before any request, so this opens no connection of its own.
 builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
 builder.Services.AddSingleton<IMongoServiceControl, WindowsMongoServiceControl>();
-builder.Services.AddSingleton(sp => new DatabaseRecovery(() => sp.GetRequiredService<SaddleRagDbContextFactory>()
-                                                                 .GetOpenedDatabases(),
+builder.Services.AddSingleton(sp => new DatabaseRecovery(() => [sp.GetRequiredService<SaddleRagDbContextFactory>()
+                                                                  .GetDefault()],
                                                          sp.GetRequiredService<IMongoServiceControl>(),
                                                          sp.GetRequiredService<IOptions<SaddleRagDbSettings>>(),
                                                          sp.GetRequiredService<TimeProvider>(),

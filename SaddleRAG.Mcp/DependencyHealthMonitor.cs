@@ -93,15 +93,14 @@ public sealed class DependencyHealthMonitor(IServiceProvider services, Dependenc
         var probes = new List<DependencyProbe>();
         var factory = services.GetRequiredService<SaddleRagDbContextFactory>();
         var mongoSettings = services.GetRequiredService<IOptions<SaddleRagDbSettings>>().Value;
-        var profiles = factory.GetProfiles();
         string? defaultProfile = factory.GetDefaultProfileName();
         probes.Add(DatabaseProbe(factory, null, defaultProfile ?? DefaultProfile, true,
                                  MongoRemediationFor(mongoSettings.AutoRestart.Enabled,
                                                      mongoSettings.Resolve().ConnectionString)));
+        // Automatic restart covers only the active profile's database, so other profiles
+        // never get the restart remediation text.
         foreach (string profile in factory.GetProfileNames().Where(name => name != defaultProfile))
-            probes.Add(DatabaseProbe(factory, profile, profile, false,
-                                     MongoRemediationFor(mongoSettings.AutoRestart.Enabled,
-                                                         profiles[profile].ConnectionString)));
+            probes.Add(DatabaseProbe(factory, profile, profile, false, MongoRemediation));
 
         var native = services.GetRequiredService<IOptions<OnnxSettings>>().Value;
         var ollama = services.GetRequiredService<IOptions<OllamaSettings>>().Value;

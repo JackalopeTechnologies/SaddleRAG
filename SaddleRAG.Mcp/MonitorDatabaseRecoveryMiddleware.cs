@@ -12,11 +12,12 @@ using SaddleRAG.Database;
 namespace SaddleRAG.Mcp;
 
 /// <summary>
-///     Before a Monitor request (<c>/api/monitor/...</c>) runs, makes sure the database is
-///     answering, restarting a stopped local MongoDB service if that is what is wrong. If the
-///     database still cannot be reached, the request gets a short HTTP 503 reply with a plain
-///     JSON message instead of an error page, so callers such as the tray can handle it quietly.
-///     Any other failure is left alone.
+///     Before a Monitor request (<c>/api/monitor/...</c>) runs, restarts a stopped local
+///     MongoDB service if the database is known to be down. The request runs whether or not
+///     that worked. If the request then finds the database unreachable, it gets a short HTTP
+///     503 reply with a plain JSON message (including the latest restart report) instead of
+///     an error page, so callers such as the tray can handle it quietly. Any other failure is
+///     left alone.
 /// </summary>
 public sealed class MonitorDatabaseRecoveryMiddleware
 {
@@ -65,6 +66,7 @@ public sealed class MonitorDatabaseRecoveryMiddleware
             if (unavailable == null)
                 throw;
 
+            unavailable = recovery.WithRestartReport(unavailable);
             logger.LogWarning("Monitor request {Path} rejected: the database at {Endpoint} is unavailable.",
                               context.Request.Path.Value,
                               unavailable.Endpoint

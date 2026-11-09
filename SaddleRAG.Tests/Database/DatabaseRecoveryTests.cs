@@ -93,33 +93,38 @@ public sealed class DatabaseRecoveryTests
     }
 
     [Fact]
-    public async Task ServiceNeverAnswersFailsWithTheReport()
+    public async Task ServiceNeverAnswersReturnsNormallyAndTheNextOutageCarriesTheReport()
     {
         var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
         var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
         var logger = new RecordingLogger<DatabaseRecovery>();
         var recovery = CreateRecovery(service, database, logger);
 
-        var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
-                          () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
-        Assert.Contains(DidNotAnswerProbe, failure.RestartReport, StringComparison.Ordinal);
+        Assert.Contains(DidNotAnswerProbe, report, StringComparison.Ordinal);
         Assert.Equal(expected: 1, logger.Count(LogLevel.Error));
     }
 
     [Fact]
-    public async Task WithinThePauseFailsImmediatelyWithoutANewAttempt()
+    public async Task WithinThePauseReturnsAtOnceWithoutANewAttemptAndKeepsTheReport()
     {
         var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
         var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
+        var logger = new RecordingLogger<DatabaseRecovery>();
+        var recovery = CreateRecovery(service, database, logger);
         var ct = TestContext.Current.CancellationToken;
 
-        var first = await Assert.ThrowsAsync<DatabaseUnavailableException>(() => recovery.EnsureAvailableAsync(ct));
-        var second = await Assert.ThrowsAsync<DatabaseUnavailableException>(() => recovery.EnsureAvailableAsync(ct));
+        await recovery.EnsureAvailableAsync(ct);
+        string? first = ReportForARequestThatFindsTheDatabaseDown(recovery);
+        await recovery.EnsureAvailableAsync(ct);
+        string? second = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
-        Assert.Equal(first.RestartReport, second.RestartReport);
+        Assert.NotNull(first);
+        Assert.Equal(first, second);
         Assert.Equal(expected: 1, service.StartCount);
+        Assert.Equal(expected: 1, logger.Count(LogLevel.Error));
     }
 
     [Fact]
@@ -130,9 +135,9 @@ public sealed class DatabaseRecoveryTests
         var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
         var ct = TestContext.Current.CancellationToken;
 
-        await Assert.ThrowsAsync<DatabaseUnavailableException>(() => recovery.EnsureAvailableAsync(ct));
+        await recovery.EnsureAvailableAsync(ct);
         await Task.Delay(smWellPastThePause, ct);
-        await Assert.ThrowsAsync<DatabaseUnavailableException>(() => recovery.EnsureAvailableAsync(ct));
+        await recovery.EnsureAvailableAsync(ct);
 
         Assert.Equal(expected: 2, service.StartCount);
     }
@@ -147,10 +152,10 @@ public sealed class DatabaseRecoveryTests
         var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
         var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
-        var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
-                          () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
-        Assert.Contains(PermissionProbe, failure.RestartReport, StringComparison.Ordinal);
+        Assert.Contains(PermissionProbe, report, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -160,10 +165,10 @@ public sealed class DatabaseRecoveryTests
         var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
         var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
-        var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
-                          () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
-        Assert.Contains(NotInstalledProbe, failure.RestartReport, StringComparison.Ordinal);
+        Assert.Contains(NotInstalledProbe, report, StringComparison.Ordinal);
         Assert.Equal(expected: 0, service.StartCount);
     }
 
@@ -177,11 +182,11 @@ public sealed class DatabaseRecoveryTests
         var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
         var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
-        var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
-                          () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
-        Assert.Contains(UnreadableStateProbe, failure.RestartReport, StringComparison.Ordinal);
-        Assert.Contains(UnreadableStateMessage, failure.RestartReport, StringComparison.Ordinal);
+        Assert.Contains(UnreadableStateProbe, report, StringComparison.Ordinal);
+        Assert.Contains(UnreadableStateMessage, report, StringComparison.Ordinal);
         Assert.Equal(expected: 0, service.StartCount);
     }
 
@@ -195,10 +200,10 @@ public sealed class DatabaseRecoveryTests
         var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
         var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
-        var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
-                          () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
-        Assert.Contains(PermissionProbe, failure.RestartReport, StringComparison.Ordinal);
+        Assert.Contains(PermissionProbe, report, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -208,11 +213,11 @@ public sealed class DatabaseRecoveryTests
         var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
         var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
-        var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
-                          () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
         Assert.Equal(expected: 0, service.StartCount);
-        Assert.Contains(NeverStopsProbe, failure.RestartReport, StringComparison.Ordinal);
+        Assert.Contains(NeverStopsProbe, report, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -303,6 +308,45 @@ public sealed class DatabaseRecoveryTests
     }
 
     [Fact]
+    public async Task TheReportIsNotAddedOnceTheDatabaseAnswersAgain()
+    {
+        var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
+        var ct = TestContext.Current.CancellationToken;
+        await recovery.EnsureAvailableAsync(ct);
+        Assert.NotNull(ReportForARequestThatFindsTheDatabaseDown(recovery));
+
+        database.BeginAnswering();
+        await database.CheckHealthAsync(ct);
+
+        Assert.Null(ReportForARequestThatFindsTheDatabaseDown(recovery));
+    }
+
+    [Fact]
+    public async Task AnOutageThatAlreadyCarriesAReportIsReturnedUnchanged()
+    {
+        var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        var reported = new DatabaseUnavailableException(Endpoint, ExistingReport, innerException: null);
+
+        Assert.Same(reported, recovery.WithRestartReport(reported));
+    }
+
+    [Fact]
+    public void NoAttemptMeansNoReport()
+    {
+        var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
+        var outage = new DatabaseUnavailableException(Endpoint, innerException: null);
+
+        Assert.Same(outage, recovery.WithRestartReport(outage));
+    }
+
+    [Fact]
     public async Task ContextReportsKnownDownAfterAFailedHealthCheck()
     {
         var settings = UnreachableDatabase.CreateSettings(out string _, ShortSelectionTimeoutMilliseconds);
@@ -314,6 +358,13 @@ public sealed class DatabaseRecoveryTests
         Assert.True(context.IsLocal);
         Assert.False(string.IsNullOrEmpty(context.Endpoint));
     }
+
+    /// <summary>
+    ///     The restart report a request gets when, after the gate returned, its own database
+    ///     access finds the database unreachable; null when no report is added.
+    /// </summary>
+    private static string? ReportForARequestThatFindsTheDatabaseDown(DatabaseRecovery recovery) =>
+        recovery.WithRestartReport(new DatabaseUnavailableException(Endpoint, innerException: null)).RestartReport;
 
     private static bool IsFromThisTest(Exception ex) =>
         ex is DatabaseUnavailableException { RestartReport: { } report } &&
@@ -366,6 +417,8 @@ public sealed class DatabaseRecoveryTests
     private const int AccessDeniedError = 5;
     private const int ShortSelectionTimeoutMilliseconds = 500;
     private const string ServiceName = "MongoDB";
+    private const string Endpoint = "localhost:27017";
+    private const string ExistingReport = "An earlier report.";
     private const string UnobservedProbeServiceName = "MongoDB_UnobservedProbe_5c1e";
     private const string DidNotAnswerProbe = "did not answer within";
     private const string PermissionProbe = "does not have permission";

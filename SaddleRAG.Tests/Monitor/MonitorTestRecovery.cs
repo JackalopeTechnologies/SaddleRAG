@@ -19,12 +19,15 @@ internal static class MonitorTestRecovery
     /// <summary>Nothing is known down, so every call returns at once without touching the service.</summary>
     public static DatabaseRecovery Healthy() => Create(MongoServiceState.Running, isKnownDown: false);
 
-    /// <summary>A local database known down whose service is not installed, so every call fails with the outage message.</summary>
+    /// <summary>
+    ///     A local database known down whose service is not installed, so every attempt fails
+    ///     and a read that then finds the database unreachable shows the restart report.
+    /// </summary>
     public static DatabaseRecovery Failing() => Create(MongoServiceState.NotInstalled, isKnownDown: true);
 
     /// <summary>
-    ///     A local database known down whose service is not installed, so calls fail until
-    ///     <paramref name="recover" /> runs; after that nothing is known down and calls succeed.
+    ///     A local database known down whose service is not installed, so attempts fail until
+    ///     <paramref name="recover" /> runs; after that nothing is known down and no report is added.
     /// </summary>
     public static DatabaseRecovery Recoverable(out Action recover)
     {

@@ -19,13 +19,21 @@ namespace SaddleRAG.Database;
 ///     database, so a MongoDB that stopped (a crash, an update, a reboot that left it
 ///     stopped) comes back without anyone starting it by hand.
 ///     <para>
-///         It acts only when a database on this computer is already known to be down;
-///         otherwise it returns at once without a lock or any I/O. Every caller that
-///         arrives during an outage joins the same single attempt. The attempt waits up
-///         to <see cref="DatabaseRecoveryTimings.RestartWait" /> for the database to
-///         answer; when it fails, callers fail at once with the same report for
-///         <see cref="DatabaseRecoveryTimings.FailurePause" /> instead of each paying the
-///         full wait again.
+///         It looks only at the databases requests use (in SaddleRAG, the active
+///         profile's), and acts only when one of them is on this computer and already
+///         known to be down; otherwise it returns at once without a lock or any I/O.
+///         Every caller that arrives during an outage joins the same single attempt.
+///         The attempt waits up to <see cref="DatabaseRecoveryTimings.RestartWait" /> for
+///         the database to answer; after a failure no new attempt starts for
+///         <see cref="DatabaseRecoveryTimings.FailurePause" />.
+///     </para>
+///     <para>
+///         It never fails a request. Whether or not the attempt worked, the caller
+///         carries on; a request that then touches the database fails the way it would
+///         have without this class, and <see cref="WithRestartReport" /> adds the latest
+///         attempt's report to that outage message. Requests that never touch the
+///         database (server logs, crash reports) keep working during the outage they
+///         help diagnose.
 ///     </para>
 ///     <para>
 ///         It never stops a service. A service that is running or starting but not
@@ -43,20 +51,29 @@ namespace SaddleRAG.Database;
 /// </summary>
 public sealed class DatabaseRecovery
 {
-    public DatabaseRecovery(Func<IReadOnlyList<IRecoverableDatabase>> openedDatabases,
+    /// <param name="databases">
+    ///     The databases requests use. Called on every request, so it must open nothing
+    ///     new and perform no I/O.
+    /// </param>
+    /// <param name="serviceControl">Reads and starts the Windows service.</param>
+    /// <param name="settings">Whether restart is on, and the service name.</param>
+    /// <param name="timeProvider">The clock for the waits and the failure pause.</param>
+    /// <param name="logger">Receives one Warning per restart that worked and one Error per attempt that failed.</param>
+    /// <param name="timings">The fixed waits; only tests pass shorter ones.</param>
+    public DatabaseRecovery(Func<IReadOnlyList<IRecoverableDatabase>> databases,
                             IMongoServiceControl serviceControl,
                             IOptions<SaddleRagDbSettings> settings,
                             TimeProvider timeProvider,
                             ILogger<DatabaseRecovery> logger,
                             DatabaseRecoveryTimings? timings = null)
     {
-        ArgumentNullException.ThrowIfNull(openedDatabases);
+        ArgumentNullException.ThrowIfNull(databases);
         ArgumentNullException.ThrowIfNull(serviceControl);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
-        mOpenedDatabases = openedDatabases;
+        mDatabases = databases;
         mServiceControl = serviceControl;
         mAutoRestart = settings.Value.AutoRestart;
         mTimeProvider = timeProvider;
@@ -65,55 +82,78 @@ public sealed class DatabaseRecovery
     }
 
     private readonly MongoAutoRestartSettings mAutoRestart;
+    private readonly Func<IReadOnlyList<IRecoverableDatabase>> mDatabases;
     private readonly Lock mLock = new Lock();
     private readonly ILogger<DatabaseRecovery> mLogger;
-    private readonly Func<IReadOnlyList<IRecoverableDatabase>> mOpenedDatabases;
     private readonly IMongoServiceControl mServiceControl;
     private readonly TimeProvider mTimeProvider;
     private readonly DatabaseRecoveryTimings mTimings;
-    private Task<DatabaseRecoveryOutcome>? mCurrentAttempt;
+    private Task? mCurrentAttempt;
     private string mLastFailureReport = string.Empty;
     private long? mLastFailureTimestamp;
 
     /// <summary>
     ///     Returns at once unless a local database is known to be down; then joins (or
-    ///     starts) the single restart attempt and waits for it. Cancelling
-    ///     <paramref name="ct" /> stops this caller's wait, not the attempt.
+    ///     starts) the single restart attempt and waits for it. During the failure pause
+    ///     it returns at once without a new attempt. It completes normally whether or not
+    ///     the database came back. Cancelling <paramref name="ct" /> stops this caller's
+    ///     wait (and throws <see cref="OperationCanceledException" />), not the attempt.
     /// </summary>
-    /// <exception cref="DatabaseUnavailableException">
-    ///     The restart failed, or a recent failure's pause is still in effect;
-    ///     <see cref="DatabaseUnavailableException.RestartReport" /> says what happened.
-    /// </exception>
     public Task EnsureAvailableAsync(CancellationToken ct)
     {
         Task result = Task.CompletedTask;
         if (mAutoRestart.Enabled)
         {
-            var down = mOpenedDatabases().Where(database => database.IsLocal && database.IsKnownDown).ToList();
+            var down = FindLocalDown();
             if (down.Count > 0)
-                result = WaitForRecoveryAsync(down, ct);
+                result = JoinAttempt(down).WaitAsync(ct);
         }
 
         return result;
     }
 
-    private async Task WaitForRecoveryAsync(IReadOnlyList<IRecoverableDatabase> down, CancellationToken ct)
+    /// <summary>
+    ///     Adds the latest failed attempt's report to an outage a request ran into, so the
+    ///     caller learns what SaddleRAG tried. The report is added only while a local
+    ///     database is still known to be down after that failed attempt; otherwise, or
+    ///     when the outage already carries a report, <paramref name="unavailable" /> is
+    ///     returned unchanged.
+    /// </summary>
+    public DatabaseUnavailableException WithRestartReport(DatabaseUnavailableException unavailable)
     {
-        string endpoint = DescribeEndpoints(down);
-        var outcome = await JoinAttempt(down, endpoint).WaitAsync(ct);
-        if (outcome.FailureReport != null)
-            throw new DatabaseUnavailableException(endpoint, outcome.FailureReport, outcome.FailureCause);
+        ArgumentNullException.ThrowIfNull(unavailable);
+
+        string? report = unavailable.RestartReport == null ? GetCurrentFailureReport() : null;
+        var result = report == null
+                         ? unavailable
+                         : new DatabaseUnavailableException(unavailable.Endpoint, report, unavailable.InnerException);
+        return result;
     }
 
-    private Task<DatabaseRecoveryOutcome> JoinAttempt(IReadOnlyList<IRecoverableDatabase> down, string endpoint)
+    private string? GetCurrentFailureReport()
     {
-        Task<DatabaseRecoveryOutcome> attempt;
+        string report;
+        lock(mLock)
+        {
+            report = mLastFailureReport;
+        }
+
+        string? result = report.Length > 0 && FindLocalDown().Count > 0 ? report : null;
+        return result;
+    }
+
+    private List<IRecoverableDatabase> FindLocalDown() =>
+        mDatabases().Where(database => database.IsLocal && database.IsKnownDown).ToList();
+
+    private Task JoinAttempt(IReadOnlyList<IRecoverableDatabase> down)
+    {
+        Task attempt;
         lock(mLock)
         {
             if (IsInFailurePause())
-                attempt = Task.FromResult(new DatabaseRecoveryOutcome(mLastFailureReport, null));
+                attempt = Task.CompletedTask;
             else
-                attempt = mCurrentAttempt ??= StartAttempt(down, endpoint);
+                attempt = mCurrentAttempt ??= StartAttempt(down);
         }
 
         return attempt;
@@ -123,66 +163,65 @@ public sealed class DatabaseRecovery
         mLastFailureTimestamp.HasValue &&
         mTimeProvider.GetElapsedTime(mLastFailureTimestamp.Value) < mTimings.FailurePause;
 
-    private Task<DatabaseRecoveryOutcome> StartAttempt(IReadOnlyList<IRecoverableDatabase> down, string endpoint)
+    private Task StartAttempt(IReadOnlyList<IRecoverableDatabase> down)
     {
-        Task<DatabaseRecoveryOutcome> attempt;
+        Task attempt;
         using (ExecutionContext.SuppressFlow())
         {
-            attempt = Task.Run(() => RunAttemptAsync(down, endpoint), CancellationToken.None);
+            attempt = Task.Run(() => RunAttemptAsync(down), CancellationToken.None);
         }
 
         return attempt;
     }
 
     /// <summary>
-    ///     Runs one attempt and returns how it ended; it never throws, so a failure that
-    ///     every caller stopped waiting for is still observed (see <see cref="DatabaseRecoveryOutcome" />).
+    ///     Runs one attempt, logs how it ended, and records its report for
+    ///     <see cref="WithRestartReport" />. It never throws: callers are never failed by
+    ///     the attempt, and a failure nobody is still waiting for is not left as an
+    ///     unobserved task exception (which the server would log as a second Error).
     /// </summary>
-    private async Task<DatabaseRecoveryOutcome> RunAttemptAsync(IReadOnlyList<IRecoverableDatabase> down,
-                                                                string endpoint)
+    private async Task RunAttemptAsync(IReadOnlyList<IRecoverableDatabase> down)
     {
+        string endpoint = DescribeEndpoints(down);
         string serviceName = mAutoRestart.ServiceName;
         var startedAt = mTimeProvider.GetLocalNow();
         long startTimestamp = mTimeProvider.GetTimestamp();
-        string? report = null;
-        Exception? error = null;
-        bool finished = false;
+        (string? Reason, Exception? Error, bool StartedService) attempt;
         try
         {
-            (string? reason, error, bool startedService) = await RecoverAsync(down, serviceName);
-            if (reason == null)
-                LogRecovered(endpoint, serviceName, startedService, startTimestamp);
-            else
-            {
-                report = string.Format(CultureInfo.InvariantCulture,
-                                       ReportFormat,
-                                       serviceName,
-                                       startedAt.ToString(ReportTimeFormat, CultureInfo.InvariantCulture),
-                                       reason
-                                      );
-                mLogger.LogError(error, "MongoDB at {Endpoint} is still unreachable. {RestartReport}", endpoint, report);
-            }
-
-            finished = true;
+            attempt = await RecoverAsync(down, serviceName);
         }
-        finally
+        catch(Exception ex)
         {
-            lock(mLock)
-            {
-                mCurrentAttempt = null;
-                if (finished)
-                    RecordOutcome(report);
-            }
+            // Every expected failure already becomes a reason; anything else is still
+            // reported (and logged as this attempt's Error below) rather than thrown.
+            attempt = (DescribeFailure(ex, UnexpectedFailureReason), ex, false);
         }
 
-        var outcome = report == null ? DatabaseRecoveryOutcome.Recovered : new DatabaseRecoveryOutcome(report, error);
-        return outcome;
-    }
+        string? report = null;
+        if (attempt.Reason == null)
+            LogRecovered(endpoint, serviceName, attempt.StartedService, startTimestamp);
+        else
+        {
+            report = string.Format(CultureInfo.InvariantCulture,
+                                   ReportFormat,
+                                   serviceName,
+                                   startedAt.ToString(ReportTimeFormat, CultureInfo.InvariantCulture),
+                                   attempt.Reason
+                                  );
+            mLogger.LogError(attempt.Error,
+                             "MongoDB at {Endpoint} is still unreachable. {RestartReport}",
+                             endpoint,
+                             report
+                            );
+        }
 
-    private void RecordOutcome(string? failureReport)
-    {
-        mLastFailureTimestamp = failureReport == null ? null : mTimeProvider.GetTimestamp();
-        mLastFailureReport = failureReport ?? string.Empty;
+        lock(mLock)
+        {
+            mCurrentAttempt = null;
+            mLastFailureTimestamp = report == null ? null : mTimeProvider.GetTimestamp();
+            mLastFailureReport = report ?? string.Empty;
+        }
     }
 
     private void LogRecovered(string endpoint, string serviceName, bool startedService, long startTimestamp)
@@ -272,7 +311,7 @@ public sealed class DatabaseRecovery
 
     /// <summary>
     ///     Any failure to read the state becomes the report: the attempt must always end
-    ///     in a <see cref="DatabaseUnavailableException" />, never another exception.
+    ///     in its report, never an exception.
     ///     A failed read reports <see cref="MongoServiceState.Other" />, so nothing is started.
     /// </summary>
     private (MongoServiceState State, string? Reason, Exception? Error) ReadState(string serviceName)
@@ -389,6 +428,7 @@ public sealed class DatabaseRecovery
     private const string NoPermissionReason = "SaddleRAG does not have permission to start it";
     private const string StartRefusedReason = "Windows refused to start it: {0}";
     private const string StateUnreadableReason = "SaddleRAG could not read the service's state: {0}";
+    private const string UnexpectedFailureReason = "the attempt failed unexpectedly: {0}";
     private const string DidNotAnswerReason = "it did not answer within {0} seconds";
 
     private const string RunningNotAnsweringReason =

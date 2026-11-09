@@ -19,8 +19,9 @@ namespace SaddleRAG.Tests.Mcp;
 
 /// <summary>
 ///     Pins what a Monitor page request gets when the database is down: SaddleRAG first
-///     tries to restart a stopped local MongoDB service, and if the database still cannot
-///     be reached the request gets a short, plain 503 reply instead of an error page.
+///     tries to restart a stopped local MongoDB service, the request runs either way, and a
+///     request that then finds the database unreachable gets a short, plain 503 reply
+///     (carrying the restart report) instead of an error page.
 /// </summary>
 public sealed class MonitorDatabaseRecoveryMiddlewareTests
 {
@@ -64,25 +65,38 @@ public sealed class MonitorDatabaseRecoveryMiddlewareTests
     }
 
     [Fact]
-    public async Task AFailedRestartGivesA503WithThePlainReportAndSkipsTheRequest()
+    public async Task AfterAFailedRestartARequestThatFindsTheDatabaseDownGetsA503WithThePlainReport()
+    {
+        var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
+        var harness = CreateHarness(service, nextFailure: new DatabaseUnavailableException(Endpoint, new IOException("refused")));
+
+        var context = await InvokeAsync(harness, MonitorPath);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.StartsWith(JsonContentType, context.Response.ContentType, StringComparison.Ordinal);
+        Assert.Equal(expected: 1, harness.NextCalls);
+        string error = await ReadErrorAsync(context);
+        Assert.Contains(NotInstalledProbe, error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AfterAFailedRestartARequestThatNeedsNoDatabaseStillRuns()
     {
         var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
         var harness = CreateHarness(service);
 
         var context = await InvokeAsync(harness, MonitorPath);
 
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
-        Assert.StartsWith(JsonContentType, context.Response.ContentType, StringComparison.Ordinal);
-        Assert.Equal(expected: 0, harness.NextCalls);
-        string error = await ReadErrorAsync(context);
-        Assert.Contains(NotInstalledProbe, error, StringComparison.Ordinal);
+        Assert.Equal(expected: 1, harness.NextCalls);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal(expected: 0, harness.Logger.Count(LogLevel.Warning));
     }
 
     [Fact]
     public async Task ARejectedMonitorRequestIsLoggedOnceAsAWarningNamingThePathAndEndpoint()
     {
         var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
-        var harness = CreateHarness(service);
+        var harness = CreateHarness(service, nextFailure: new DatabaseUnavailableException(Endpoint, new IOException("refused")));
 
         await InvokeAsync(harness, MonitorPath);
 

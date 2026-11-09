@@ -133,17 +133,6 @@ public class SaddleRagDbContextFactory
 
 
     /// <summary>
-    ///     Every database context this factory has opened so far, for
-    ///     <see cref="DatabaseRecovery" />. Opens nothing new and performs no I/O.
-    /// </summary>
-    public IReadOnlyList<IRecoverableDatabase> GetOpenedDatabases()
-    {
-        IReadOnlyList<IRecoverableDatabase> result = mContextCache.Values.ToList<IRecoverableDatabase>();
-        return result;
-    }
-
-
-    /// <summary>
     ///     List all configured profile names.
     /// </summary>
     public IReadOnlyList<string> GetProfileNames()

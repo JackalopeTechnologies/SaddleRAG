@@ -253,7 +253,7 @@ public sealed class McpToolExceptionFilterTests
     }
 
     [Fact]
-    public async Task ExecuteAsyncReturnsTheRestartReportAndSkipsTheToolWhenRecoveryFails()
+    public async Task ExecuteAsyncRunsTheToolAfterAFailedRestartAndAddsTheReportToItsOutage()
     {
         var recovery = CreateRecovery(new RecoveryFakeDatabase(isLocal: true, isKnownDown: true),
                                       new RecoveryFakeServiceControl(MongoServiceState.NotInstalled)
@@ -264,7 +264,7 @@ public sealed class McpToolExceptionFilterTests
         ValueTask<CallToolResult> Next()
         {
             calls++;
-            return ValueTask.FromResult(new CallToolResult());
+            throw new DatabaseUnavailableException("localhost:27017", new IOException("refused"));
         }
 
         CallToolResult result = await McpToolExceptionFilter.ExecuteAsync("list_libraries",
@@ -275,8 +275,34 @@ public sealed class McpToolExceptionFilterTests
 
         Assert.True(result.IsError);
         var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Contains("is unreachable", text.Text, StringComparison.Ordinal);
         Assert.Contains("is not installed", text.Text, StringComparison.Ordinal);
-        Assert.Equal(expected: 0, calls);
+        Assert.Equal(expected: 1, calls);
+    }
+
+    [Fact]
+    public async Task ExecuteAsyncRunsAToolThatNeverTouchesTheDatabaseNormallyAfterAFailedRestart()
+    {
+        var recovery = CreateRecovery(new RecoveryFakeDatabase(isLocal: true, isKnownDown: true),
+                                      new RecoveryFakeServiceControl(MongoServiceState.NotInstalled)
+                                     );
+        var services = new ServiceCollection().AddLogging().AddSingleton(recovery).BuildServiceProvider();
+        var expected = new CallToolResult();
+        var ct = TestContext.Current.CancellationToken;
+
+        CallToolResult first = await McpToolExceptionFilter.ExecuteAsync("get_server_logs",
+                                                                         services,
+                                                                         () => ValueTask.FromResult(expected),
+                                                                         ct
+                                                                        );
+        CallToolResult duringPause = await McpToolExceptionFilter.ExecuteAsync("get_server_logs",
+                                                                               services,
+                                                                               () => ValueTask.FromResult(expected),
+                                                                               ct
+                                                                              );
+
+        Assert.Same(expected, first);
+        Assert.Same(expected, duringPause);
     }
 
     [Fact]

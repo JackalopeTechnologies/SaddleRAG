@@ -19,8 +19,9 @@ namespace SaddleRAG.Tests.Monitor;
 
 /// <summary>
 ///     Pins that the landing page asks for a stopped local MongoDB to be restarted before it
-///     reads the library list, on first load and on each retry, and shows the outage message
-///     (through its existing "libraries could not be refreshed" banner) instead of reading.
+///     reads the library list, on first load and on each retry, still reads whether or not
+///     that worked, and shows a read's outage message (with the restart report) through its
+///     existing "libraries could not be refreshed" banner.
 ///     Uses the established TestableXxxPage pattern (no bunit).
 /// </summary>
 public sealed class LandingPageDatabaseRecoveryTests
@@ -55,16 +56,33 @@ public sealed class LandingPageDatabaseRecoveryTests
     }
 
     [Fact]
-    public async Task FailedRecoveryShowsTheOutageMessageAndDoesNotReadLibraries()
+    public async Task FailedRecoveryThenAFailedReadShowsTheOutageMessageWithTheRestartReport()
     {
         var libraries = Substitute.For<ILibraryRepository>();
+        libraries.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
+                 .ThrowsAsync(new DatabaseUnavailableException(ReadFailureEndpoint, innerException: null));
         var page = CreatePage(libraries, isKnownDown: true);
 
         await page.RefreshForTestAsync();
 
         Assert.True(page.UnavailableForTest);
         Assert.Contains("unreachable", page.OutageForTest);
-        await libraries.DidNotReceiveWithAnyArgs().GetAllLibrariesAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("is not installed", page.OutageForTest);
+        await libraries.Received(requiredNumberOfCalls: 1).GetAllLibrariesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task FailedRecoveryStillReadsAndShowsLibrariesWhenTheReadWorks()
+    {
+        var libraries = Substitute.For<ILibraryRepository>();
+        libraries.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
+                 .Returns(Task.FromResult<IReadOnlyList<LibraryRecord>>([]));
+        var page = CreatePage(libraries, isKnownDown: true);
+
+        await page.RefreshForTestAsync();
+
+        Assert.False(page.UnavailableForTest);
+        Assert.Null(page.OutageForTest);
     }
 
     [Fact]
@@ -100,8 +118,12 @@ public sealed class LandingPageDatabaseRecoveryTests
     public async Task FailedRecoveryFollowedBySuccessfulRecoveryClearsTheMessage()
     {
         var libraries = Substitute.For<ILibraryRepository>();
+        bool down = true;
         libraries.GetAllLibrariesAsync(Arg.Any<CancellationToken>())
-                 .Returns(Task.FromResult<IReadOnlyList<LibraryRecord>>([]));
+                 .Returns(_ => down
+                                   ? Task.FromException<IReadOnlyList<LibraryRecord>>(
+                                       new DatabaseUnavailableException(ReadFailureEndpoint, innerException: null))
+                                   : Task.FromResult<IReadOnlyList<LibraryRecord>>([]));
         var recovery = MonitorTestRecovery.Recoverable(out Action recover);
         var page = new TestableLandingPage(CreateData(libraries), recovery);
 
@@ -110,6 +132,7 @@ public sealed class LandingPageDatabaseRecoveryTests
         Assert.NotNull(page.OutageForTest);
 
         recover();
+        down = false;
         await page.RefreshForTestAsync();
 
         Assert.False(page.UnavailableForTest);
