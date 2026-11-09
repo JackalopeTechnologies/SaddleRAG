@@ -52,6 +52,13 @@ public class SaddleRagDbSettings
 
 
     /// <summary>
+    ///     Restart behaviour for a stopped local MongoDB Windows service.
+    /// </summary>
+
+    public MongoAutoRestartSettings AutoRestart { get; set; } = new MongoAutoRestartSettings();
+
+
+    /// <summary>
     ///     Resolve the effective connection string and database name
     ///     from the active profile or direct settings.
     /// </summary>
