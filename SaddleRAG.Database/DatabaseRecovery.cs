@@ -9,6 +9,7 @@ using System.ComponentModel;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MongoDB.Driver;
 
 #endregion
 
@@ -388,11 +389,12 @@ public sealed class DatabaseRecovery
     ///     refuses, or the deadline passes. Returns the reason the attempt failed, or null
     ///     when every database answered.
     ///     <para>
-    ///         A ping that fails because MongoDB cannot be reached yet is expected while it
-    ///         starts, so waiting goes on. A ping that fails any other way (a rejected
-    ///         login, for example) means MongoDB answered and refused; waiting longer would
-    ///         not change that, so the attempt ends at once with that reason instead of
-    ///         waiting out the full restart wait and blaming a silent service.
+    ///         A ping that fails is expected while MongoDB starts: it cannot be reached yet,
+    ///         the driver's connection pool is still paused, or the server says it is
+    ///         recovering or shutting down. Waiting goes on for all of those. Only a rejected
+    ///         login (an authentication failure) means MongoDB answered and refused; waiting
+    ///         longer would not change that, so the attempt ends at once with that reason
+    ///         instead of waiting out the full restart wait and blaming a silent service.
     ///     </para>
     /// </summary>
     private async Task<(string? Reason, Exception? Error)> WaitForAnswersAsync(
@@ -400,7 +402,6 @@ public sealed class DatabaseRecovery
         RecoveredServiceState observed,
         CancellationToken deadline)
     {
-        IReadOnlyCollection<string> endpoints = down.Select(database => database.Endpoint).ToList();
         var waiting = down.ToList();
         Exception? refusal = null;
         bool deadlinePassed = false;
@@ -412,7 +413,7 @@ public sealed class DatabaseRecovery
                 var failure = await PingAsync(database, deadline);
                 if (failure != null)
                     silent.Add(database);
-                if (failure != null && refusal == null && IsRefusal(failure, endpoints))
+                if (failure != null && refusal == null && IsRefusal(failure))
                     refusal = failure;
             }
 
@@ -444,12 +445,20 @@ public sealed class DatabaseRecovery
     }
 
     /// <summary>
-    ///     True when a failed ping means MongoDB answered and refused, rather than that it
-    ///     cannot be reached yet. A cancelled ping (its own time limit or the deadline) is
-    ///     just a ping that got no answer.
+    ///     True only for an authentication failure: MongoDB answered and rejected the
+    ///     login, and waiting will not change that. Every other failure (an unreachable
+    ///     server, a paused connection pool, a node that is recovering, a cancelled ping)
+    ///     is just MongoDB not being ready yet. The failure may be wrapped as an inner
+    ///     exception or inside an <see cref="AggregateException" />.
     /// </summary>
-    private static bool IsRefusal(Exception failure, IReadOnlyCollection<string> endpoints) =>
-        failure is not OperationCanceledException && DatabaseFailure.AsUnavailable(failure, endpoints) == null;
+    private static bool IsRefusal(Exception? failure) =>
+        failure switch
+            {
+                null => false,
+                MongoAuthenticationException => true,
+                AggregateException aggregate => aggregate.InnerExceptions.Any(IsRefusal),
+                var _ => IsRefusal(failure.InnerException)
+            };
 
     /// <summary>
     ///     Returns null when the database answered, or why the ping failed. A failed ping is

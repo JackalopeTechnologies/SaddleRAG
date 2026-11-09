@@ -7,7 +7,13 @@
 
 using System.ComponentModel;
 using Microsoft.Extensions.Logging;
+using System.Net;
 using Microsoft.Extensions.Options;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using MongoDB.Driver.Core.Clusters;
+using MongoDB.Driver.Core.Connections;
+using MongoDB.Driver.Core.Servers;
 using SaddleRAG.Database;
 
 #endregion
@@ -284,13 +290,14 @@ public sealed class DatabaseRecoveryTests
         Assert.Null(ReportForARequestThatFindsTheDatabaseDown(recovery));
     }
 
-    [Fact]
-    public async Task APingThatIsRefusedEndsTheAttemptAtOnceWithThatReason()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnAuthenticationFailureEndsTheAttemptAtOnceWithThatReason(bool wrapped)
     {
-        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true)
-                           {
-                               PingFailure = new InvalidOperationException(RefusalMessage)
-                           };
+        var rejected = new MongoAuthenticationException(smConnectionId, RefusalMessage);
+        Exception failure = wrapped ? new InvalidOperationException("wrapped", new AggregateException(rejected)) : rejected;
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true) { PingFailure = failure };
         var service = new RecoveryFakeServiceControl(MongoServiceState.Running);
         var logger = new RecordingLogger<DatabaseRecovery>();
         var timings = RecoveryTestTimings.Short with { RestartWait = smLongRestartWait };
@@ -300,9 +307,40 @@ public sealed class DatabaseRecoveryTests
         string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
 
         Assert.Equal(expected: 1, database.PingCount);
-        Assert.Contains(RefusedProbe + RefusalMessage.TrimEnd('.'), report, StringComparison.Ordinal);
+        Assert.Contains(RefusedProbe + (wrapped ? "wrapped" : RefusalMessage.TrimEnd('.')), report, StringComparison.Ordinal);
         Assert.DoesNotContain(DidNotAnswerProbe, report, StringComparison.Ordinal);
         Assert.Equal(expected: 1, logger.Count(LogLevel.Error));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AFailureThatIsNotAnAuthenticationFailureKeepsTheAttemptWaitingUntilMongoDbAnswers(bool recovering)
+    {
+        Exception failure = recovering
+                                ? new MongoNodeIsRecoveringException(smConnectionId,
+                                                                     new BsonDocument("ping", value: 1),
+                                                                     new BsonDocument("errmsg", "node is recovering")
+                                                                    )
+                                : new InvalidOperationException("The connection pool is paused.");
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true) { PingFailure = failure };
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Running);
+        var logger = new RecordingLogger<DatabaseRecovery>();
+        var timings = RecoveryTestTimings.Short with { RestartWait = smLongRestartWait };
+        var recovery = CreateRecovery(service, database, logger, timings: timings);
+        var ct = TestContext.Current.CancellationToken;
+
+        var waiting = recovery.EnsureAvailableAsync(ct);
+        while (database.PingCount < MinimumPingsBeforeAnswering)
+            await Task.Delay(smErrorPollInterval, ct);
+
+        Assert.False(waiting.IsCompleted);
+        database.BeginAnswering();
+        await waiting;
+
+        Assert.Null(ReportForARequestThatFindsTheDatabaseDown(recovery));
+        Assert.Equal(expected: 0, logger.Count(LogLevel.Error));
+        Assert.Single(logger.Messages(LogLevel.Warning));
     }
 
     [Fact]
@@ -497,6 +535,7 @@ public sealed class DatabaseRecoveryTests
     }
 
     private const int ConcurrentCallerCount = 10;
+    private const int MinimumPingsBeforeAnswering = 2;
     private const int AccessDeniedError = 5;
     private const int ServiceAlreadyRunningError = 1056;
     private const int ShortSelectionTimeoutMilliseconds = 500;
@@ -515,6 +554,9 @@ public sealed class DatabaseRecoveryTests
     private const string StartedWording = "SaddleRAG started the 'MongoDB' service.";
     private const string WasStartingWording = "The 'MongoDB' service was already starting; SaddleRAG waited for it.";
     private const string WasRunningWording = "The 'MongoDB' service was already running; SaddleRAG waited for it to answer again.";
+
+    private static readonly ConnectionId smConnectionId =
+        new ConnectionId(new ServerId(new ClusterId(value: 1), new DnsEndPoint("localhost", port: 27017)));
 
     private static readonly TimeSpan smWellPastThePause = TimeSpan.FromMilliseconds(milliseconds: 900);
     private static readonly TimeSpan smLongRestartWait = TimeSpan.FromSeconds(seconds: 30);

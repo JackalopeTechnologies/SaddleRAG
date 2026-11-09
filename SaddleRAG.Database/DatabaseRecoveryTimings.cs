@@ -10,7 +10,7 @@ namespace SaddleRAG.Database;
 ///     settings; only tests pass shorter ones.
 /// </summary>
 /// <param name="RestartWait">How long one restart attempt waits for the database to answer.</param>
-/// <param name="FailurePause">After a failed attempt, how long callers fail at once instead of trying again.</param>
+/// <param name="FailurePause">After a failed attempt, how long new restart attempts are held back (requests carry on, and one that touches the database reports the stored restart report).</param>
 /// <param name="PingTimeout">The limit on one health ping.</param>
 /// <param name="PingInterval">The wait between rounds of pings, and between service-state polls.</param>
 public sealed record DatabaseRecoveryTimings(TimeSpan RestartWait,
