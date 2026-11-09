@@ -12,6 +12,7 @@ using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
 using SaddleRAG.Core.Enums;
+using SaddleRAG.Core.Hosting;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
 using SaddleRAG.Core.Models.Monitor;
@@ -23,7 +24,7 @@ namespace SaddleRAG.Database;
 /// <summary>
 ///     Provides typed access to MongoDB collections for the SaddleRAG system.
 /// </summary>
-public class SaddleRagDbContext
+public class SaddleRagDbContext : IRecoverableDatabase
 {
     static SaddleRagDbContext()
     {
@@ -106,6 +107,7 @@ public class SaddleRagDbContext
         (var connectionString, var databaseName) = settings.Value.Resolve();
         var cached = MongoClientCache.GetOrCreate(connectionString);
         Reachability = cached.Reachability;
+        IsLocal = LocalEndpoint.IsLoopbackMongoConnectionString(connectionString);
         mDatabase = cached.Client.GetDatabase(databaseName);
     }
 
@@ -114,6 +116,15 @@ public class SaddleRagDbContext
     ///     Shared by every context on the same connection string.
     /// </summary>
     public DatabaseReachabilityTracker Reachability { get; }
+
+    /// <inheritdoc />
+    public string Endpoint => string.IsNullOrEmpty(Reachability.Endpoint) ? UnknownEndpoint : Reachability.Endpoint;
+
+    /// <inheritdoc />
+    public bool IsLocal { get; }
+
+    /// <inheritdoc />
+    public bool IsKnownDown => Reachability.HealthCheckFailed || Reachability.IsUnreachable;
 
     public IMongoCollection<LibraryRecord> Libraries =>
         AvailableDatabase.GetCollection<LibraryRecord>(CollectionLibraries);
@@ -231,8 +242,7 @@ public class SaddleRagDbContext
         get
         {
             if (Reachability.HealthCheckFailed)
-                throw new DatabaseUnavailableException(
-                    string.IsNullOrEmpty(Reachability.Endpoint) ? UnknownEndpoint : Reachability.Endpoint, null);
+                throw new DatabaseUnavailableException(Endpoint, null);
             return mDatabase;
         }
     }

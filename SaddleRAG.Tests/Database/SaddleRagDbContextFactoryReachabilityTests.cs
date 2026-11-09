@@ -30,4 +30,15 @@ public sealed class SaddleRagDbContextFactoryReachabilityTests
 
         Assert.Equal([endpoint], factory.GetUnreachableEndpoints());
     }
+
+    [Fact]
+    public void GetOpenedDatabasesListsOnlyTheContextsAlreadyOpened()
+    {
+        var factory = new SaddleRagDbContextFactory(Options.Create(UnreachableDatabase.CreateSettings(out string _)));
+        Assert.Empty(factory.GetOpenedDatabases());
+
+        var context = factory.GetDefault();
+
+        Assert.Equal([context], factory.GetOpenedDatabases());
+    }
 }
