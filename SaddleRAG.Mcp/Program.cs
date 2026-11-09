@@ -213,7 +213,10 @@ builder.Services.AddSingleton(sp => new DatabaseRecovery(() => [sp.GetRequiredSe
                                                          sp.GetRequiredService<IMongoServiceControl>(),
                                                          sp.GetRequiredService<IOptions<SaddleRagDbSettings>>(),
                                                          sp.GetRequiredService<TimeProvider>(),
-                                                         sp.GetRequiredService<ILogger<DatabaseRecovery>>()
+                                                         sp.GetRequiredService<ILogger<DatabaseRecovery>>(),
+                                                         DatabaseRecoveryTimings.Default,
+                                                         sp.GetRequiredService<IHostApplicationLifetime>()
+                                                           .ApplicationStopping
                                                         ));
 
 // Packaging services — CollectionCompactor is shared between compact_collections MCP tool

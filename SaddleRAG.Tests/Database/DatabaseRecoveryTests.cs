@@ -230,11 +230,92 @@ public sealed class DatabaseRecoveryTests
                           {
                               OnStart = database.BeginAnswering
                           };
-        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
+        var logger = new RecordingLogger<DatabaseRecovery>();
+        var recovery = CreateRecovery(service, database, logger);
 
         await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(expected: 1, service.StartCount);
+        string warning = Assert.Single(logger.Messages(LogLevel.Warning));
+        Assert.Contains(StartedWording, warning, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(MongoServiceState.Stopped, StartedWording)]
+    [InlineData(MongoServiceState.StartPending, WasStartingWording)]
+    [InlineData(MongoServiceState.Running, WasRunningWording)]
+    [InlineData(MongoServiceState.Other, WasRunningWording)]
+    public async Task TheSuccessWarningSaysWhatTheServiceWasDoing(MongoServiceState initial, string expectedWording)
+    {
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(initial) { OnStart = database.BeginAnswering };
+        if (initial != MongoServiceState.Stopped)
+            database.BeginAnswering();
+        var logger = new RecordingLogger<DatabaseRecovery>();
+        var recovery = CreateRecovery(service, database, logger);
+
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+
+        string warning = Assert.Single(logger.Messages(LogLevel.Warning));
+        Assert.Contains(expectedWording, warning, StringComparison.Ordinal);
+        Assert.Equal(expected: 0, logger.Count(LogLevel.Error));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AStartRefusedBecauseTheServiceIsAlreadyRunningIsTreatedAsAlreadyStarting(bool wrapped)
+    {
+        var alreadyRunning = new Win32Exception(ServiceAlreadyRunningError);
+        Exception failure = wrapped ? new InvalidOperationException("x", alreadyRunning) : alreadyRunning;
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped) { StartFailure = failure };
+        var logger = new RecordingLogger<DatabaseRecovery>();
+        var recovery = CreateRecovery(service, database, logger);
+        database.BeginAnswering();
+
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: 1, service.StartCount);
+        Assert.True(database.PingCount > 0);
+        Assert.Equal(expected: 0, logger.Count(LogLevel.Error));
+        string warning = Assert.Single(logger.Messages(LogLevel.Warning));
+        Assert.Contains(WasStartingWording, warning, StringComparison.Ordinal);
+        Assert.Null(ReportForARequestThatFindsTheDatabaseDown(recovery));
+    }
+
+    [Fact]
+    public async Task APingThatIsRefusedEndsTheAttemptAtOnceWithThatReason()
+    {
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true)
+                           {
+                               PingFailure = new InvalidOperationException(RefusalMessage)
+                           };
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Running);
+        var logger = new RecordingLogger<DatabaseRecovery>();
+        var timings = RecoveryTestTimings.Short with { RestartWait = smLongRestartWait };
+        var recovery = CreateRecovery(service, database, logger, timings: timings);
+
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+        string? report = ReportForARequestThatFindsTheDatabaseDown(recovery);
+
+        Assert.Equal(expected: 1, database.PingCount);
+        Assert.Contains(RefusedProbe + RefusalMessage.TrimEnd('.'), report, StringComparison.Ordinal);
+        Assert.DoesNotContain(DidNotAnswerProbe, report, StringComparison.Ordinal);
+        Assert.Equal(expected: 1, logger.Count(LogLevel.Error));
+    }
+
+    [Fact]
+    public async Task NoNewAttemptStartsOnceTheHostIsStopping()
+    {
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>(), hostStopping: true);
+
+        await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected: 0, service.GetStateCount);
+        Assert.Equal(expected: 0, service.StartCount);
     }
 
     [Fact]
@@ -396,7 +477,8 @@ public sealed class DatabaseRecoveryTests
                                                    RecordingLogger<DatabaseRecovery> logger,
                                                    bool enabled = true,
                                                    DatabaseRecoveryTimings? timings = null,
-                                                   string serviceName = ServiceName)
+                                                   string serviceName = ServiceName,
+                                                   bool hostStopping = false)
     {
         var settings = new SaddleRagDbSettings
                            {
@@ -408,13 +490,15 @@ public sealed class DatabaseRecoveryTests
                                             Options.Create(settings),
                                             TimeProvider.System,
                                             logger,
-                                            timings ?? RecoveryTestTimings.Short
+                                            timings ?? RecoveryTestTimings.Short,
+                                            new CancellationToken(hostStopping)
                                            );
         return recovery;
     }
 
     private const int ConcurrentCallerCount = 10;
     private const int AccessDeniedError = 5;
+    private const int ServiceAlreadyRunningError = 1056;
     private const int ShortSelectionTimeoutMilliseconds = 500;
     private const string ServiceName = "MongoDB";
     private const string Endpoint = "localhost:27017";
@@ -426,6 +510,11 @@ public sealed class DatabaseRecoveryTests
     private const string NeverStopsProbe = "does not stop a running service";
     private const string UnreadableStateProbe = "could not read the service's state";
     private const string UnreadableStateMessage = "the service manager is busy";
+    private const string RefusedProbe = "MongoDB answered but refused the request: ";
+    private const string RefusalMessage = "Authentication failed.";
+    private const string StartedWording = "SaddleRAG started the 'MongoDB' service.";
+    private const string WasStartingWording = "The 'MongoDB' service was already starting; SaddleRAG waited for it.";
+    private const string WasRunningWording = "The 'MongoDB' service was already running; SaddleRAG waited for it to answer again.";
 
     private static readonly TimeSpan smWellPastThePause = TimeSpan.FromMilliseconds(milliseconds: 900);
     private static readonly TimeSpan smLongRestartWait = TimeSpan.FromSeconds(seconds: 30);

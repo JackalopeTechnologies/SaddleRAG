@@ -60,12 +60,17 @@ public sealed class DatabaseRecovery
     /// <param name="timeProvider">The clock for the waits and the failure pause.</param>
     /// <param name="logger">Receives one Warning per restart that worked and one Error per attempt that failed.</param>
     /// <param name="timings">The fixed waits; only tests pass shorter ones.</param>
+    /// <param name="stopping">
+    ///     Cancelled when the host begins shutting down; from then on no new attempt
+    ///     starts, so SaddleRAG does not start MongoDB on its way out.
+    /// </param>
     public DatabaseRecovery(Func<IReadOnlyList<IRecoverableDatabase>> databases,
                             IMongoServiceControl serviceControl,
                             IOptions<SaddleRagDbSettings> settings,
                             TimeProvider timeProvider,
                             ILogger<DatabaseRecovery> logger,
-                            DatabaseRecoveryTimings? timings = null)
+                            DatabaseRecoveryTimings? timings = null,
+                            CancellationToken stopping = default)
     {
         ArgumentNullException.ThrowIfNull(databases);
         ArgumentNullException.ThrowIfNull(serviceControl);
@@ -79,6 +84,7 @@ public sealed class DatabaseRecovery
         mTimeProvider = timeProvider;
         mLogger = logger;
         mTimings = timings ?? DatabaseRecoveryTimings.Default;
+        mStopping = stopping;
     }
 
     private readonly MongoAutoRestartSettings mAutoRestart;
@@ -86,6 +92,7 @@ public sealed class DatabaseRecovery
     private readonly Lock mLock = new Lock();
     private readonly ILogger<DatabaseRecovery> mLogger;
     private readonly IMongoServiceControl mServiceControl;
+    private readonly CancellationToken mStopping;
     private readonly TimeProvider mTimeProvider;
     private readonly DatabaseRecoveryTimings mTimings;
     private Task? mCurrentAttempt;
@@ -96,13 +103,14 @@ public sealed class DatabaseRecovery
     ///     Returns at once unless a local database is known to be down; then joins (or
     ///     starts) the single restart attempt and waits for it. During the failure pause
     ///     it returns at once without a new attempt. It completes normally whether or not
-    ///     the database came back. Cancelling <paramref name="ct" /> stops this caller's
-    ///     wait (and throws <see cref="OperationCanceledException" />), not the attempt.
+    ///     the database came back. Once the host is shutting down it returns at once.
+    ///     Cancelling <paramref name="ct" /> stops this caller's wait (and throws
+    ///     <see cref="OperationCanceledException" />), not the attempt.
     /// </summary>
     public Task EnsureAvailableAsync(CancellationToken ct)
     {
         Task result = Task.CompletedTask;
-        if (mAutoRestart.Enabled)
+        if (mAutoRestart.Enabled && !mStopping.IsCancellationRequested)
         {
             var down = FindLocalDown();
             if (down.Count > 0)
@@ -186,7 +194,7 @@ public sealed class DatabaseRecovery
         string serviceName = mAutoRestart.ServiceName;
         var startedAt = mTimeProvider.GetLocalNow();
         long startTimestamp = mTimeProvider.GetTimestamp();
-        (string? Reason, Exception? Error, bool StartedService) attempt;
+        (string? Reason, Exception? Error, RecoveredServiceState Observed) attempt;
         try
         {
             attempt = await RecoverAsync(down, serviceName);
@@ -195,63 +203,69 @@ public sealed class DatabaseRecovery
         {
             // Every expected failure already becomes a reason; anything else is still
             // reported (and logged as this attempt's Error below) rather than thrown.
-            attempt = (DescribeFailure(ex, UnexpectedFailureReason), ex, false);
+            attempt = (DescribeFailure(ex, UnexpectedFailureReason), ex, RecoveredServiceState.WasRunning);
         }
 
-        string? report = null;
-        if (attempt.Reason == null)
-            LogRecovered(endpoint, serviceName, attempt.StartedService, startTimestamp);
-        else
-        {
-            report = string.Format(CultureInfo.InvariantCulture,
-                                   ReportFormat,
-                                   serviceName,
-                                   startedAt.ToString(ReportTimeFormat, CultureInfo.InvariantCulture),
-                                   attempt.Reason
-                                  );
-            mLogger.LogError(attempt.Error,
-                             "MongoDB at {Endpoint} is still unreachable. {RestartReport}",
-                             endpoint,
-                             report
-                            );
-        }
+        string? report = attempt.Reason == null
+                             ? null
+                             : string.Format(CultureInfo.InvariantCulture,
+                                             ReportFormat,
+                                             serviceName,
+                                             startedAt.ToString(ReportTimeFormat, CultureInfo.InvariantCulture),
+                                             attempt.Reason
+                                            );
 
+        // Recorded before logging, so nothing that happens while logging can leave a
+        // finished attempt looking unfinished.
         lock(mLock)
         {
             mCurrentAttempt = null;
             mLastFailureTimestamp = report == null ? null : mTimeProvider.GetTimestamp();
             mLastFailureReport = report ?? string.Empty;
         }
+
+        if (report == null)
+            LogRecovered(endpoint, serviceName, attempt.Observed, startTimestamp);
+        else
+        {
+            mLogger.LogError(attempt.Error,
+                             "MongoDB at {Endpoint} is still unreachable. {RestartReport}",
+                             endpoint,
+                             report
+                            );
+        }
     }
 
-    private void LogRecovered(string endpoint, string serviceName, bool startedService, long startTimestamp)
+    private void LogRecovered(string endpoint,
+                              string serviceName,
+                              RecoveredServiceState observed,
+                              long startTimestamp)
     {
         double seconds = Math.Round(mTimeProvider.GetElapsedTime(startTimestamp).TotalSeconds, SecondsDecimals);
-        string action = startedService ? StartedAction : WaitedAction;
-        mLogger.LogWarning("MongoDB at {Endpoint} is answering again after {Seconds} s. SaddleRAG {Action} the '{ServiceName}' service.",
+        string actionFormat = observed switch
+            {
+                RecoveredServiceState.StartedBySaddleRag => StartedAction,
+                RecoveredServiceState.WasStarting => WasStartingAction,
+                var _ => WasRunningAction
+            };
+        string action = string.Format(CultureInfo.InvariantCulture, actionFormat, serviceName);
+        mLogger.LogWarning("MongoDB at {Endpoint} is answering again after {Seconds} s. {Action}",
                            endpoint,
                            seconds,
-                           action,
-                           serviceName
+                           action
                           );
     }
 
-    private async Task<(string? Reason, Exception? Error, bool StartedService)> RecoverAsync(
+    private async Task<(string? Reason, Exception? Error, RecoveredServiceState Observed)> RecoverAsync(
         IReadOnlyList<IRecoverableDatabase> down,
         string serviceName)
     {
         using var deadline = new CancellationTokenSource(mTimings.RestartWait, mTimeProvider);
-        (string? reason, Exception? error, bool startedService) = await BringServiceUpAsync(serviceName, deadline.Token);
-        if (reason == null && !await WaitForAnswersAsync(down, deadline.Token))
-        {
-            string seconds = mTimings.RestartWait.TotalSeconds.ToString(SecondsFormat, CultureInfo.InvariantCulture);
-            reason = string.Format(CultureInfo.InvariantCulture,
-                                   startedService ? DidNotAnswerReason : RunningNotAnsweringReason,
-                                   seconds
-                                  );
-        }
+        (string? reason, Exception? error, var observed) = await BringServiceUpAsync(serviceName, deadline.Token);
+        if (reason == null)
+            (reason, error) = await WaitForAnswersAsync(down, observed, deadline.Token);
 
-        return (reason, error, startedService);
+        return (reason, error, observed);
     }
 
     /// <summary>
@@ -259,12 +273,12 @@ public sealed class DatabaseRecovery
     ///     service is polled until it has stopped (or the deadline passes, after which it
     ///     is treated as stopped). Running, starting and other states are left alone.
     /// </summary>
-    private async Task<(string? Reason, Exception? Error, bool StartedService)> BringServiceUpAsync(
+    private async Task<(string? Reason, Exception? Error, RecoveredServiceState Observed)> BringServiceUpAsync(
         string serviceName,
         CancellationToken deadline)
     {
         (var state, string? reason, var error) = ReadState(serviceName);
-        bool startedService = false;
+        var observed = RecoveredServiceState.WasRunning;
         if (state == MongoServiceState.StopPending)
             (state, reason, error) = await WaitWhileStoppingAsync(serviceName, deadline);
 
@@ -277,16 +291,18 @@ public sealed class DatabaseRecovery
                 reason = UnsupportedReason;
                 break;
             case MongoServiceState.Stopped:
-                startedService = true;
-                (reason, error) = TryStart(serviceName);
+                (reason, error, observed) = TryStart(serviceName);
+                break;
+            case MongoServiceState.StartPending:
+                observed = RecoveredServiceState.WasStarting;
                 break;
             default:
-                // Running, starting, other states, or a failed read (whose reason is
-                // already set): never start a second time and never stop.
+                // Running, other states, or a failed read (whose reason is already set):
+                // never start a second time and never stop.
                 break;
         }
 
-        return (reason, error, startedService);
+        return (reason, error, observed);
     }
 
     private async Task<(MongoServiceState State, string? Reason, Exception? Error)> WaitWhileStoppingAsync(
@@ -329,17 +345,28 @@ public sealed class DatabaseRecovery
         return result;
     }
 
-    /// <summary>Any failure to start becomes the report, for the same reason as <see cref="ReadState" />.</summary>
-    private (string? Reason, Exception? Error) TryStart(string serviceName)
+    /// <summary>
+    ///     Any failure to start becomes the report, for the same reason as
+    ///     <see cref="ReadState" />. Windows refusing because the service is already
+    ///     running means something else started it between the state read and the start
+    ///     (another program, or Windows itself); that is not a failure, so the attempt
+    ///     carries on as for a service that was already starting.
+    /// </summary>
+    private (string? Reason, Exception? Error, RecoveredServiceState Observed) TryStart(string serviceName)
     {
-        (string? Reason, Exception? Error) result = (null, null);
+        (string? Reason, Exception? Error, RecoveredServiceState Observed) result =
+            (null, null, RecoveredServiceState.StartedBySaddleRag);
         try
         {
             mServiceControl.Start(serviceName);
         }
+        catch(Exception ex) when(IsAlreadyRunning(ex) || IsAlreadyRunning(ex.InnerException))
+        {
+            result = (null, null, RecoveredServiceState.WasStarting);
+        }
         catch(Exception ex)
         {
-            result = (DescribeFailure(ex, StartRefusedReason), ex);
+            result = (DescribeFailure(ex, StartRefusedReason), ex, RecoveredServiceState.StartedBySaddleRag);
         }
 
         return result;
@@ -353,36 +380,83 @@ public sealed class DatabaseRecovery
     private static bool IsAccessDenied(Exception? ex) =>
         ex is Win32Exception { NativeErrorCode: AccessDeniedError };
 
+    private static bool IsAlreadyRunning(Exception? ex) =>
+        ex is Win32Exception { NativeErrorCode: ServiceAlreadyRunningError };
+
     /// <summary>
-    ///     Pings each database still silent, one round at a time, until all answer or the
-    ///     deadline passes.
+    ///     Pings each database still silent, one round at a time, until all answer, one
+    ///     refuses, or the deadline passes. Returns the reason the attempt failed, or null
+    ///     when every database answered.
+    ///     <para>
+    ///         A ping that fails because MongoDB cannot be reached yet is expected while it
+    ///         starts, so waiting goes on. A ping that fails any other way (a rejected
+    ///         login, for example) means MongoDB answered and refused; waiting longer would
+    ///         not change that, so the attempt ends at once with that reason instead of
+    ///         waiting out the full restart wait and blaming a silent service.
+    ///     </para>
     /// </summary>
-    private async Task<bool> WaitForAnswersAsync(IReadOnlyList<IRecoverableDatabase> down, CancellationToken deadline)
+    private async Task<(string? Reason, Exception? Error)> WaitForAnswersAsync(
+        IReadOnlyList<IRecoverableDatabase> down,
+        RecoveredServiceState observed,
+        CancellationToken deadline)
     {
+        IReadOnlyCollection<string> endpoints = down.Select(database => database.Endpoint).ToList();
         var waiting = down.ToList();
+        Exception? refusal = null;
         bool deadlinePassed = false;
-        while (waiting.Count > 0 && !deadlinePassed)
+        while (waiting.Count > 0 && !deadlinePassed && refusal == null)
         {
             var silent = new List<IRecoverableDatabase>();
             foreach (var database in waiting)
             {
-                if (!await PingAsync(database, deadline))
+                var failure = await PingAsync(database, deadline);
+                if (failure != null)
                     silent.Add(database);
+                if (failure != null && refusal == null && IsRefusal(failure, endpoints))
+                    refusal = failure;
             }
 
             waiting = silent;
-            if (waiting.Count > 0)
+            if (waiting.Count > 0 && refusal == null)
                 deadlinePassed = !await DelayAsync(mTimings.PingInterval, deadline);
         }
 
-        return waiting.Count == 0;
+        (string? Reason, Exception? Error) result = (null, null);
+        if (refusal != null)
+            result = (string.Format(CultureInfo.InvariantCulture, RefusedReason, refusal.Message.TrimEnd(SentenceEnd)),
+                      refusal);
+        if (refusal == null && waiting.Count > 0)
+            result = (DescribeSilence(observed), null);
+
+        return result;
+    }
+
+    private string DescribeSilence(RecoveredServiceState observed)
+    {
+        string seconds = mTimings.RestartWait.TotalSeconds.ToString(SecondsFormat, CultureInfo.InvariantCulture);
+        string reason = string.Format(CultureInfo.InvariantCulture,
+                                      observed == RecoveredServiceState.StartedBySaddleRag
+                                          ? DidNotAnswerReason
+                                          : RunningNotAnsweringReason,
+                                      seconds
+                                     );
+        return reason;
     }
 
     /// <summary>
-    ///     A failed ping is the expected answer while MongoDB starts, so it is neither
-    ///     thrown nor logged; the attempt's own outcome is logged once.
+    ///     True when a failed ping means MongoDB answered and refused, rather than that it
+    ///     cannot be reached yet. A cancelled ping (its own time limit or the deadline) is
+    ///     just a ping that got no answer.
     /// </summary>
-    private async Task<bool> PingAsync(IRecoverableDatabase database, CancellationToken deadline)
+    private static bool IsRefusal(Exception failure, IReadOnlyCollection<string> endpoints) =>
+        failure is not OperationCanceledException && DatabaseFailure.AsUnavailable(failure, endpoints) == null;
+
+    /// <summary>
+    ///     Returns null when the database answered, or why the ping failed. A failed ping is
+    ///     the expected answer while MongoDB starts, so it is neither thrown nor logged; the
+    ///     attempt's own outcome is logged once.
+    /// </summary>
+    private async Task<Exception?> PingAsync(IRecoverableDatabase database, CancellationToken deadline)
     {
         using var timeout = new CancellationTokenSource(mTimings.PingTimeout, mTimeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(deadline, timeout.Token);
@@ -399,7 +473,13 @@ public sealed class DatabaseRecovery
         }
 
         await ping.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        return ping.IsCompletedSuccessfully;
+        Exception? failure = null;
+        if (ping.IsFaulted)
+            failure = ping.Exception?.InnerException ?? ping.Exception;
+        if (ping.IsCanceled)
+            failure = new TaskCanceledException(ping);
+
+        return failure;
     }
 
     /// <summary>True when the full delay passed; false when the deadline cut it short.</summary>
@@ -417,6 +497,7 @@ public sealed class DatabaseRecovery
                    );
 
     private const int AccessDeniedError = 5;
+    private const int ServiceAlreadyRunningError = 1056;
     private const int SecondsDecimals = 1;
     private const char SentenceEnd = '.';
     private const string EndpointSeparator = ", ";
@@ -429,11 +510,15 @@ public sealed class DatabaseRecovery
     private const string StartRefusedReason = "Windows refused to start it: {0}";
     private const string StateUnreadableReason = "SaddleRAG could not read the service's state: {0}";
     private const string UnexpectedFailureReason = "the attempt failed unexpectedly: {0}";
+    private const string RefusedReason = "MongoDB answered but refused the request: {0}";
     private const string DidNotAnswerReason = "it did not answer within {0} seconds";
 
     private const string RunningNotAnsweringReason =
         "the service is running but did not answer within {0} seconds; SaddleRAG does not stop a running service";
 
-    private const string StartedAction = "started";
-    private const string WaitedAction = "waited for the already starting";
+    private const string StartedAction = "SaddleRAG started the '{0}' service.";
+    private const string WasStartingAction = "The '{0}' service was already starting; SaddleRAG waited for it.";
+
+    private const string WasRunningAction =
+        "The '{0}' service was already running; SaddleRAG waited for it to answer again.";
 }

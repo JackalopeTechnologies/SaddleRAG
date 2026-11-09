@@ -28,6 +28,9 @@ internal sealed class RecoveryFakeDatabase : IRecoverableDatabase
     private int mPingCount;
     private volatile bool mSawFailFastScope;
 
+    /// <summary>What a refused ping throws; null for the usual "no answer yet" timeout.</summary>
+    public Exception? PingFailure { get; init; }
+
     public int PingCount => Volatile.Read(ref mPingCount);
 
     public bool SawFailFastScope => mSawFailFastScope;
@@ -51,7 +54,7 @@ internal sealed class RecoveryFakeDatabase : IRecoverableDatabase
             result = Task.CompletedTask;
         }
         else
-            result = Task.FromException(new TimeoutException("No answer."));
+            result = Task.FromException(PingFailure ?? new TimeoutException("No answer."));
 
         return result;
     }
