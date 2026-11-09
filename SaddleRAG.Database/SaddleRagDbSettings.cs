@@ -23,7 +23,7 @@ public class SaddleRagDbSettings
 
     /// <summary>
     ///     Named connection profiles.
-    ///     Example: "local" â†’ localhost, "company" â†’ shared server.
+    ///     Example: "local" -> localhost, "company" -> shared server.
     /// </summary>
 
     public Dictionary<string, MongoDbProfile> Profiles { get; set; } = new Dictionary<string, MongoDbProfile>();
