@@ -116,7 +116,12 @@ public sealed class CrawlQueueTests
             beforeResponse: context =>
             {
                 if (context.Request.Path == "/docs/retry.html" && Interlocked.Increment(ref attempts) == 1)
+                {
+                    // Without Retry-After the crawler pauses the whole host for its 30 s default, which
+                    // would consume most of this test's 40 s limit and make it time out under load.
                     context.Response.StatusCode = 403;
+                    context.Response.Headers.RetryAfter = "1";
+                }
                 return Task.CompletedTask;
             });
         IReadOnlyList<PageRecord> pages = await CrawlAsync(site, Substitute.For<IScrapeAuditWriter>(), []);
