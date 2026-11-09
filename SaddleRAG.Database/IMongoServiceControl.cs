@@ -12,7 +12,10 @@ namespace SaddleRAG.Database;
 public interface IMongoServiceControl
 {
     /// <summary>
-    ///     Reports the state of the named service.
+    ///     Reports the state of the named service. Returns
+    ///     <see cref="MongoServiceState.NotInstalled" /> only when Windows says the
+    ///     service does not exist; any other failure (including access denied)
+    ///     propagates as <see cref="InvalidOperationException" />.
     /// </summary>
     MongoServiceState GetState(string serviceName);
 

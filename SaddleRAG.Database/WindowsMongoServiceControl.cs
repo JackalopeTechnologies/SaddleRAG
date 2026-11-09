@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 // Licensed under the MIT License. See the LICENSE file in the repo root.
 
+using System.ComponentModel;
 using System.Runtime.Versioning;
 using System.ServiceProcess;
 
@@ -41,9 +42,10 @@ public sealed class WindowsMongoServiceControl : IMongoServiceControl
         {
             state = Map(controller.Status);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex) when (IsServiceMissing(ex))
         {
-            // ServiceController throws this when no service has the given name.
+            // Only "service does not exist" means not installed; any other failure,
+            // such as access denied, propagates so it is not misdiagnosed.
             state = MongoServiceState.NotInstalled;
         }
 
@@ -55,6 +57,12 @@ public sealed class WindowsMongoServiceControl : IMongoServiceControl
     {
         using var controller = new ServiceController(serviceName);
         controller.Start();
+    }
+
+    private static bool IsServiceMissing(InvalidOperationException ex)
+    {
+        bool missing = ex.InnerException is Win32Exception { NativeErrorCode: ErrorServiceDoesNotExist };
+        return missing;
     }
 
     [SupportedOSPlatform("windows")]
@@ -70,4 +78,7 @@ public sealed class WindowsMongoServiceControl : IMongoServiceControl
         };
         return state;
     }
+
+    // ERROR_SERVICE_DOES_NOT_EXIST
+    private const int ErrorServiceDoesNotExist = 1060;
 }
