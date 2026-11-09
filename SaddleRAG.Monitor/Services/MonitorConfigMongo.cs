@@ -23,10 +23,10 @@ public sealed record MonitorConfigMongo(
     bool AutoRestartEnabled,
     string AutoRestartServiceName)
 {
-    /// <summary>One-line text for the config page: On with the service name, or Off.</summary>
+    /// <summary>One-line text for the config page: On with the service name and that only local databases are restarted, or Off.</summary>
     public string AutoRestartSummary =>
         AutoRestartEnabled
-            ? $"{AutoRestartLabel}: On (service '{AutoRestartServiceName}')"
+            ? $"{AutoRestartLabel}: On (service '{AutoRestartServiceName}', local databases only)"
             : $"{AutoRestartLabel}: Off";
 
     private const string AutoRestartLabel = "Restart MongoDB automatically";

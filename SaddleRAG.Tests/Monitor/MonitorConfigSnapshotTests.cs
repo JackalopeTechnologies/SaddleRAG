@@ -328,8 +328,8 @@ public sealed class MonitorConfigSnapshotTests
     }
 
     [Theory]
-    [InlineData(true, "MongoDB", "Restart MongoDB automatically: On (service 'MongoDB')")]
-    [InlineData(true, "MongoDB-Dev", "Restart MongoDB automatically: On (service 'MongoDB-Dev')")]
+    [InlineData(true, "MongoDB", "Restart MongoDB automatically: On (service 'MongoDB', local databases only)")]
+    [InlineData(true, "MongoDB-Dev", "Restart MongoDB automatically: On (service 'MongoDB-Dev', local databases only)")]
     [InlineData(false, "MongoDB", "Restart MongoDB automatically: Off")]
     public void MongoCardAutoRestartSummaryReadsOnWithServiceNameOrOff(bool enabled, string service, string expected)
     {
