@@ -97,6 +97,19 @@ public sealed class DocumentSetupGuidanceTests
         Assert.Contains("DocumentIngestion:Docling:ApiKey", instructionSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ReadmeDocumentsMongoAutomaticRestart()
+    {
+        string readme = File.ReadAllText(Path.Combine(ResolveRepositoryRoot(), "README.md"));
+
+        Assert.Contains("SaddleRAG restarts a local MongoDB service when a request finds it stopped.",
+                        readme,
+                        StringComparison.Ordinal);
+        Assert.Contains("MongoDB:AutoRestart:Enabled", readme, StringComparison.Ordinal);
+        Assert.Contains("MongoDB:AutoRestart:ServiceName", readme, StringComparison.Ordinal);
+        Assert.Contains("never stops a running service", readme, StringComparison.Ordinal);
+    }
+
     private static string ResolveRepositoryRoot()
     {
         DirectoryInfo? current = new(AppContext.BaseDirectory);

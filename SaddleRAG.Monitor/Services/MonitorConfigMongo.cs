@@ -11,10 +11,23 @@ namespace SaddleRAG.Monitor.Services;
 ///     user:password segment masked to <c>***:***</c>;
 ///     <see cref="CredentialsPresent" /> tells the page whether any
 ///     credentials were actually configured (vs. an anonymous local
-///     connection).
+///     connection). <see cref="AutoRestartEnabled" /> and
+///     <see cref="AutoRestartServiceName" /> report whether SaddleRAG restarts a
+///     stopped local MongoDB Windows service when a request needs it.
 /// </summary>
 public sealed record MonitorConfigMongo(
     string ActiveProfileName,
     string Host,
     string DatabaseName,
-    bool CredentialsPresent);
+    bool CredentialsPresent,
+    bool AutoRestartEnabled,
+    string AutoRestartServiceName)
+{
+    /// <summary>One-line text for the config page: On with the service name, or Off.</summary>
+    public string AutoRestartSummary =>
+        AutoRestartEnabled
+            ? $"{AutoRestartLabel}: On (service '{AutoRestartServiceName}')"
+            : $"{AutoRestartLabel}: Off";
+
+    private const string AutoRestartLabel = "Restart MongoDB automatically";
+}

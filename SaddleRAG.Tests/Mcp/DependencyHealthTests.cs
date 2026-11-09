@@ -59,4 +59,26 @@ public sealed class DependencyHealthTests
         state.Record(new DependencyHealth("MongoDB", "Healthy", true, "Libraries", "Ready", "", DateTimeOffset.UtcNow));
         Assert.Equal("Unavailable", ServiceHealthResponseFactory.OverallStatus(warmup, state));
     }
+
+    [Theory]
+    [InlineData(true, "mongodb://localhost:27017", true)]
+    [InlineData(true, "mongodb://admin:topsecret@127.0.0.1:27017/db", true)]
+    [InlineData(true, "mongodb://dbhost:27017", false)]
+    [InlineData(true, "mongodb+srv://localhost", false)]
+    [InlineData(false, "mongodb://localhost:27017", false)]
+    public void MongoRemediationMentionsRestartOnlyForLocalDatabaseWithAutoRestartOn(bool enabled,
+                                                                                    string connectionString,
+                                                                                    bool expectRestartText)
+    {
+        string text = DependencyHealthMonitor.MongoRemediationFor(enabled, connectionString);
+
+        const string restartText =
+            "SaddleRAG restarts the local MongoDB service the next time work needs the database. " +
+            "If that fails, check the MongoDB service and connection settings.";
+        if (expectRestartText)
+            Assert.Equal(restartText, text);
+        else
+            Assert.Equal("Check the MongoDB service and connection settings. SaddleRAG reconnects automatically.", text);
+        Assert.DoesNotContain("topsecret", text, StringComparison.Ordinal);
+    }
 }

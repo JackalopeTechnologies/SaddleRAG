@@ -90,6 +90,7 @@ else
                     <MudListItem Text="@($"Host: {Snapshot.Mongo.Host}")"/>
                     <MudListItem Text="@($"Database: {Snapshot.Mongo.DatabaseName}")"/>
                     <MudListItem Text="@($"Credentials present: {Snapshot.Mongo.CredentialsPresent}")"/>
+                    <MudListItem Text="@Snapshot.Mongo.AutoRestartSummary"/>
                 </MudList>
             </MudPaper>
         </MudItem>

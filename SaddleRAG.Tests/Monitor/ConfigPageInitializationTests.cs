@@ -61,7 +61,8 @@ public sealed class ConfigPageInitializationTests
                                                                   CompiledInProviders: ["Cpu"],
                                                                   LastLoadWarning: null
                                                                  ),
-            Mongo: new MonitorConfigMongo("(direct)", "mongodb://localhost", "saddlerag", CredentialsPresent: false),
+            Mongo: new MonitorConfigMongo("(direct)", "mongodb://localhost", "saddlerag", CredentialsPresent: false,
+                                       AutoRestartEnabled: true, AutoRestartServiceName: "MongoDB"),
             Ollama: new MonitorConfigOllama("http://localhost:11434", "llama3", "llama3", "nomic-embed-text"),
             Profile: new MonitorConfigProfile("(direct)")
            );
