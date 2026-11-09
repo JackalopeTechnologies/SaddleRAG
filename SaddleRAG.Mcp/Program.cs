@@ -10,6 +10,7 @@ using System.Net;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Server;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -199,6 +200,18 @@ builder.Services.AddHostedService<McpWarmupService>();
 // MongoDB
 
 builder.Services.AddSaddleRagDatabase(builder.Configuration);
+
+// On-demand restart of a stopped local MongoDB service. Only databases already opened
+// are considered, so this never opens a connection of its own.
+builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.AddSingleton<IMongoServiceControl, WindowsMongoServiceControl>();
+builder.Services.AddSingleton(sp => new DatabaseRecovery(() => sp.GetRequiredService<SaddleRagDbContextFactory>()
+                                                                 .GetOpenedDatabases(),
+                                                         sp.GetRequiredService<IMongoServiceControl>(),
+                                                         sp.GetRequiredService<IOptions<SaddleRagDbSettings>>(),
+                                                         sp.GetRequiredService<TimeProvider>(),
+                                                         sp.GetRequiredService<ILogger<DatabaseRecovery>>()
+                                                        ));
 
 // Packaging services — CollectionCompactor is shared between compact_collections MCP tool
 // and the import_library compact opt-in. LibraryImporterFactory creates an importer whose
