@@ -30,6 +30,11 @@
     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Apply</MudButton>
 </MudStack>
 
+@if (DatabaseOutageMessage is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@DatabaseOutageMessage</MudAlert>
+}
+
 <MudTable Items="@Rows" Dense="true" Hover="true" T="MonitorJobService.JobHistoryRow"
           OnRowClick="OnRowClicked">
     <HeaderContent>

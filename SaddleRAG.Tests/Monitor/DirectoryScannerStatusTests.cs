@@ -239,6 +239,7 @@ public sealed class DirectoryScannerStatusTests
             SetInjected("DataService", data);
             SetInjected("Commands", commands);
             SetInjected("Capability", capability);
+            SetInjected("Recovery", MonitorTestRecovery.Healthy());
         }
 
         public DoclingCapabilityStatus ScannerStatusForTest => ScannerStatus;

@@ -36,6 +36,10 @@ public sealed class JobHistoryPageFilterTests
                        .GetProperty(JobsPropertyName, BindingFlags.Instance | BindingFlags.NonPublic)
                        ?? throw new InvalidOperationException("Jobs property missing on JobHistoryPageBase");
             prop.SetValue(this, jobs);
+            var recovery = typeof(JobHistoryPageBase)
+                           .GetProperty(RecoveryPropertyName, BindingFlags.Instance | BindingFlags.NonPublic)
+                           ?? throw new InvalidOperationException("Recovery property missing on JobHistoryPageBase");
+            recovery.SetValue(this, MonitorTestRecovery.Healthy());
         }
 
         public string? StatusFilterForTest { set => StatusFilter = value; }
@@ -47,6 +51,7 @@ public sealed class JobHistoryPageFilterTests
         public Task LoadForTestAsync() => LoadAsync();
 
         private const string JobsPropertyName = "Jobs";
+        private const string RecoveryPropertyName = "Recovery";
     }
 
     private static IUnifiedJobView ViewReturning(IReadOnlyList<JobRow> rows)

@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Database;
+using SaddleRAG.Monitor.Services;
 
 #endregion
 
@@ -21,6 +23,11 @@ public abstract class AuditInspectorPageBase : ComponentBase
 
     [Inject]
     private IScrapeAuditRepository? AuditRepo { get; set; }
+
+    [Inject]
+    private DatabaseRecovery? Recovery { get; set; }
+
+    protected string? DatabaseOutageMessage { get; private set; }
 
     protected AuditSummary? Summary { get; private set; }
     protected IReadOnlyList<ScrapeAuditLogEntry> Entries { get; private set; } = [];
@@ -58,12 +65,19 @@ public abstract class AuditInspectorPageBase : ComponentBase
     private async Task LoadAsync()
     {
         ArgumentNullException.ThrowIfNull(AuditRepo);
-        Summary = await AuditRepo.SummarizeAsync(JobId);
+        DatabaseOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, CancellationToken.None);
+        if (DatabaseOutageMessage is null)
+            await ReadAuditAsync(AuditRepo);
+    }
+
+    private async Task ReadAuditAsync(IScrapeAuditRepository auditRepo)
+    {
+        Summary = await auditRepo.SummarizeAsync(JobId);
 
         var status = ParseEnum<AuditStatus>(FilterStatus);
         var reason = ParseEnum<AuditSkipReason>(FilterSkipReason);
 
-        Entries = await AuditRepo.QueryAsync(JobId,
+        Entries = await auditRepo.QueryAsync(JobId,
                                              status,
                                              reason,
                                              FilterHost,

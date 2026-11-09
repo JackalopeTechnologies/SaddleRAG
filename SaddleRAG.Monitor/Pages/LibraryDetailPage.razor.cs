@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using SaddleRAG.Core.Models;
 using SaddleRAG.Core.Models.Audit;
+using SaddleRAG.Database;
 using SaddleRAG.Monitor.Components;
 using SaddleRAG.Monitor.Services;
 
@@ -20,6 +21,9 @@ public abstract class LibraryDetailPageBase : ComponentBase
 {
     [Parameter]
     public string LibraryId { get; set; } = string.Empty;
+
+    [Inject]
+    private DatabaseRecovery? Recovery { get; set; }
 
     [Inject]
     private MonitorDataService? DataService { get; set; }
@@ -36,6 +40,7 @@ public abstract class LibraryDetailPageBase : ComponentBase
     [Inject]
     private ISnackbar? Snackbar { get; set; }
 
+    protected string? DatabaseOutageMessage { get; private set; }
     protected LibraryDetailData? Detail { get; private set; }
     protected LibraryProfile? Profile { get; private set; }
     protected string? LatestJobId { get; private set; }
@@ -45,7 +50,8 @@ public abstract class LibraryDetailPageBase : ComponentBase
     protected override async Task OnParametersSetAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
-        Detail = await DataService.GetLibraryDetailAsync(LibraryId);
+        DatabaseOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, CancellationToken.None);
+        Detail = DatabaseOutageMessage is null ? await DataService.GetLibraryDetailAsync(LibraryId) : null;
         if (Detail is not null)
         {
             Profile = await DataService.GetLibraryProfileAsync(LibraryId, Detail.Version);

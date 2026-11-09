@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 using MudBlazor;
 using SaddleRAG.Core.Interfaces;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -28,6 +29,9 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
     private MonitorDataService? DataService { get; set; }
 
     [Inject]
+    private DatabaseRecovery? Recovery { get; set; }
+
+    [Inject]
     protected IMonitorBroadcaster? Broadcaster { get; set; }
 
     [Inject]
@@ -41,6 +45,7 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
     private readonly CancellationTokenSource mShutdown = new();
     private bool mRefreshing;
     protected bool LibrariesUnavailable { get; private set; }
+    protected string? LibrariesOutageMessage { get; private set; }
 
     public async ValueTask DisposeAsync()
     {
@@ -98,23 +103,31 @@ public abstract class LandingPageBase : ComponentBase, IAsyncDisposable
         }
     }
 
-    private async Task RefreshLibrariesAsync()
+    protected async Task RefreshLibrariesAsync()
     {
         ArgumentNullException.ThrowIfNull(DataService);
         mRefreshing = true;
         try
         {
-            using var bounded = CancellationTokenSource.CreateLinkedTokenSource(mShutdown.Token);
-            bounded.CancelAfter(TimeSpan.FromSeconds(3));
-            var summaries = await DataService.GetLibrarySummariesAsync(bounded.Token);
-            Libraries.Clear();
-            Libraries.AddRange(summaries);
-            LibrariesUnavailable = false;
+            // A restart can take up to a minute, so it is bounded by page shutdown only;
+            // the 3 s bound below applies to the read itself.
+            LibrariesOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, mShutdown.Token);
+            if (LibrariesOutageMessage is null)
+            {
+                using var bounded = CancellationTokenSource.CreateLinkedTokenSource(mShutdown.Token);
+                bounded.CancelAfter(TimeSpan.FromSeconds(3));
+                var summaries = await DataService.GetLibrarySummariesAsync(bounded.Token);
+                Libraries.Clear();
+                Libraries.AddRange(summaries);
+            }
+
+            LibrariesUnavailable = LibrariesOutageMessage is not null;
         }
         catch (Exception) when (!mShutdown.IsCancellationRequested)
         {
             // Keep the last successful view and an explicit failure banner. The
             // health page supplies the dependency diagnosis independently.
+            LibrariesOutageMessage = null;
             LibrariesUnavailable = true;
         }
         finally

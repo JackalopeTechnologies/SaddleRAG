@@ -101,6 +101,7 @@ public sealed class DirectoryLibrariesPageTests
             SetInjected("DataService", data);
             SetInjected("Commands", commands);
             SetInjected("Capability", ReadyScanner());
+            SetInjected("Recovery", MonitorTestRecovery.Healthy());
         }
 
         public IReadOnlyList<DirectoryLibraryMonitorRow> RowsForTest => Rows;

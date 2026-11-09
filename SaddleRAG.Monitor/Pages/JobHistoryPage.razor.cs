@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using SaddleRAG.Core.Enums;
 using SaddleRAG.Core.Models.Monitor;
+using SaddleRAG.Database;
 using SaddleRAG.Monitor.Services;
 
 #endregion
@@ -28,7 +29,15 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
     private MonitorJobService? Jobs { get; set; }
 
     [Inject]
+    private DatabaseRecovery? Recovery { get; set; }
+
+    [Inject]
     private NavigationManager? Nav { get; set; }
+
+    /// <summary>
+    ///     The database outage message from the latest load; null when the last load could read the database.
+    /// </summary>
+    protected string? DatabaseOutageMessage { get; private set; }
 
     /// <summary>
     ///     Rows currently displayed by the page.
@@ -158,7 +167,9 @@ public abstract class JobHistoryPageBase : ComponentBase, IAsyncDisposable
             Enum.TryParse<ScrapeJobStatus>(StatusFilter, ignoreCase: true, out var parsed))
             statusEnum = parsed;
 
-        Rows = await Jobs.ListAsync(statusEnum, TypeFilter, LibraryFilter, LimitChoice);
+        DatabaseOutageMessage = await MonitorDatabaseGate.TryEnsureAvailableAsync(Recovery, CancellationToken.None);
+        if (DatabaseOutageMessage is null)
+            Rows = await Jobs.ListAsync(statusEnum, TypeFilter, LibraryFilter, LimitChoice);
     }
 
     private const int DefaultLimit = 100;

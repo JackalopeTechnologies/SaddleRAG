@@ -3,9 +3,17 @@
 @rendermode InteractiveServer
 @inherits JobDetailPageBase
 
+@if (DatabaseOutageMessage is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@DatabaseOutageMessage</MudAlert>
+}
+
 @if (Info is null)
 {
-    <MudProgressCircular Indeterminate="true"/>
+    @if (DatabaseOutageMessage is null)
+    {
+        <MudProgressCircular Indeterminate="true"/>
+    }
 }
 else
 {

@@ -3,7 +3,11 @@
 @rendermode InteractiveServer
 @inherits LibraryDetailPageBase
 
-@if (Detail is null)
+@if (DatabaseOutageMessage is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3">@DatabaseOutageMessage</MudAlert>
+}
+else if (Detail is null)
 {
     <MudProgressCircular Indeterminate="true"/>
 }
