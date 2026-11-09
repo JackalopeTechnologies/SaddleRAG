@@ -255,7 +255,9 @@ public sealed class McpToolExceptionFilterTests
     [Fact]
     public async Task ExecuteAsyncReturnsTheRestartReportAndSkipsTheToolWhenRecoveryFails()
     {
-        var recovery = CreateRecovery(new FakeDatabase(), new FakeServiceControl(MongoServiceState.NotInstalled));
+        var recovery = CreateRecovery(new RecoveryFakeDatabase(isLocal: true, isKnownDown: true),
+                                      new RecoveryFakeServiceControl(MongoServiceState.NotInstalled)
+                                     );
         var services = new ServiceCollection().AddLogging().AddSingleton(recovery).BuildServiceProvider();
         int calls = 0;
 
@@ -280,8 +282,8 @@ public sealed class McpToolExceptionFilterTests
     [Fact]
     public async Task ExecuteAsyncRunsTheToolOnceWhenRecoveryRestartsTheService()
     {
-        var database = new FakeDatabase();
-        var service = new FakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
         var recovery = CreateRecovery(database, service);
         var services = new ServiceCollection().AddLogging().AddSingleton(recovery).BuildServiceProvider();
         var expected = new CallToolResult();
@@ -304,69 +306,15 @@ public sealed class McpToolExceptionFilterTests
         Assert.Equal(expected: 1, service.StartCount);
     }
 
-    private static DatabaseRecovery CreateRecovery(FakeDatabase database, FakeServiceControl service)
+    private static DatabaseRecovery CreateRecovery(RecoveryFakeDatabase database, RecoveryFakeServiceControl service)
     {
         IReadOnlyList<IRecoverableDatabase> databases = [database];
-        var timings = new DatabaseRecoveryTimings(RestartWait: TimeSpan.FromMilliseconds(milliseconds: 300),
-                                                  FailurePause: TimeSpan.FromMilliseconds(milliseconds: 500),
-                                                  PingTimeout: TimeSpan.FromMilliseconds(milliseconds: 50),
-                                                  PingInterval: TimeSpan.FromMilliseconds(milliseconds: 20)
-                                                 );
         return new DatabaseRecovery(() => databases,
                                     service,
                                     Options.Create(new SaddleRagDbSettings()),
                                     TimeProvider.System,
                                     NullLogger<DatabaseRecovery>.Instance,
-                                    timings
+                                    RecoveryTestTimings.Short
                                    );
-    }
-
-    /// <summary>A local database that is known down until <see cref="BeginAnswering" />.</summary>
-    private sealed class FakeDatabase : IRecoverableDatabase
-    {
-        private volatile bool mAnswering;
-        private volatile bool mIsKnownDown = true;
-
-        public string Endpoint => "localhost:27017";
-
-        public bool IsLocal => true;
-
-        public bool IsKnownDown => mIsKnownDown;
-
-        public Task CheckHealthAsync(CancellationToken ct)
-        {
-            Task result;
-            if (mAnswering)
-            {
-                mIsKnownDown = false;
-                result = Task.CompletedTask;
-            }
-            else
-                result = Task.FromException(new TimeoutException("No answer."));
-
-            return result;
-        }
-
-        public void BeginAnswering() => mAnswering = true;
-    }
-
-    /// <summary>A service that reports a fixed state and counts start requests.</summary>
-    private sealed class FakeServiceControl(MongoServiceState state) : IMongoServiceControl
-    {
-        private int mStartCount;
-        private MongoServiceState mState = state;
-
-        public Action? OnStart { get; init; }
-
-        public int StartCount => Volatile.Read(ref mStartCount);
-
-        public MongoServiceState GetState(string serviceName) => mState;
-
-        public void Start(string serviceName)
-        {
-            Interlocked.Increment(ref mStartCount);
-            mState = MongoServiceState.Running;
-            OnStart?.Invoke();
-        }
     }
 }

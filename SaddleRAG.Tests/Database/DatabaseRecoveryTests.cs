@@ -25,9 +25,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task NothingKnownDownDoesNotTouchTheService()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped);
-        var database = new FakeDatabase(isLocal: true, isKnownDown: false);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: false);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
 
@@ -37,9 +37,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task RemoteDatabaseDownDoesNotRestart()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped);
-        var database = new FakeDatabase(isLocal: false, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var database = new RecoveryFakeDatabase(isLocal: false, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
 
@@ -50,9 +50,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task DisabledDoesNotRestart()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped);
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger(), enabled: false);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>(), enabled: false);
 
         await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
 
@@ -63,9 +63,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task StoppedServiceIsStartedAndTheCallerContinues()
     {
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var service = new FakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
-        var logger = new RecordingLogger();
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
+        var logger = new RecordingLogger<DatabaseRecovery>();
         var recovery = CreateRecovery(service, database, logger);
 
         await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
@@ -78,9 +78,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task ConcurrentCallersShareOneAttempt()
     {
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var service = new FakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
         var ct = TestContext.Current.CancellationToken;
 
         var callers = Enumerable.Range(start: 0, ConcurrentCallerCount)
@@ -95,9 +95,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task ServiceNeverAnswersFailsWithTheReport()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped);
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var logger = new RecordingLogger();
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var logger = new RecordingLogger<DatabaseRecovery>();
         var recovery = CreateRecovery(service, database, logger);
 
         var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
@@ -110,9 +110,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task WithinThePauseFailsImmediatelyWithoutANewAttempt()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped);
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
         var ct = TestContext.Current.CancellationToken;
 
         var first = await Assert.ThrowsAsync<DatabaseUnavailableException>(() => recovery.EnsureAvailableAsync(ct));
@@ -125,9 +125,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task AfterThePauseTheNextCallTriesAgain()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped) { StopsAgainAfterStart = true };
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped) { StopsAgainAfterStart = true };
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
         var ct = TestContext.Current.CancellationToken;
 
         await Assert.ThrowsAsync<DatabaseUnavailableException>(() => recovery.EnsureAvailableAsync(ct));
@@ -140,12 +140,12 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task AccessDeniedReportsPermission()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped)
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped)
                           {
                               StartFailure = new InvalidOperationException("x", new Win32Exception(AccessDeniedError))
                           };
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
                           () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
@@ -156,9 +156,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task NotInstalledReportsIt()
     {
-        var service = new FakeServiceControl(MongoServiceState.NotInstalled);
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var service = new RecoveryFakeServiceControl(MongoServiceState.NotInstalled);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
                           () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
@@ -170,12 +170,12 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task UnreadableServiceStateReportsIt()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped)
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped)
                           {
                               GetStateFailure = new InvalidOperationException(UnreadableStateMessage)
                           };
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
                           () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
@@ -188,12 +188,12 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task AccessDeniedReadingTheStateReportsPermission()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped)
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped)
                           {
                               GetStateFailure = new InvalidOperationException("x", new Win32Exception(AccessDeniedError))
                           };
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
                           () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
@@ -204,9 +204,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task RunningButNotAnsweringIsNeverStopped()
     {
-        var service = new FakeServiceControl(MongoServiceState.Running);
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Running);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         var failure = await Assert.ThrowsAsync<DatabaseUnavailableException>(
                           () => recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken));
@@ -218,14 +218,14 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task StopPendingWaitsThenStarts()
     {
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var service = new FakeServiceControl(MongoServiceState.StopPending,
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.StopPending,
                                              MongoServiceState.StopPending,
                                              MongoServiceState.Stopped)
                           {
                               OnStart = database.BeginAnswering
                           };
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         await recovery.EnsureAvailableAsync(TestContext.Current.CancellationToken);
 
@@ -235,10 +235,10 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task ACancelledCallerDoesNotCancelTheSharedAttempt()
     {
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var service = new FakeServiceControl(MongoServiceState.Stopped);
-        var timings = smTestTimings with { RestartWait = smLongRestartWait };
-        var recovery = CreateRecovery(service, database, new RecordingLogger(), timings: timings);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var timings = RecoveryTestTimings.Short with { RestartWait = smLongRestartWait };
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>(), timings: timings);
         var ct = TestContext.Current.CancellationToken;
         using var callerA = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
@@ -256,9 +256,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task AFailureNoCallerWaitsForIsNotLeftUnobserved()
     {
-        var service = new FakeServiceControl(MongoServiceState.Stopped);
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var logger = new RecordingLogger();
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped);
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var logger = new RecordingLogger<DatabaseRecovery>();
         var recovery = CreateRecovery(service, database, logger, serviceName: UnobservedProbeServiceName);
         var ct = TestContext.Current.CancellationToken;
         int unobserved = 0;
@@ -289,9 +289,9 @@ public sealed class DatabaseRecoveryTests
     [Fact]
     public async Task RecoveryPingRunsOutsideTheFailFastScope()
     {
-        var database = new FakeDatabase(isLocal: true, isKnownDown: true);
-        var service = new FakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
-        var recovery = CreateRecovery(service, database, new RecordingLogger());
+        var database = new RecoveryFakeDatabase(isLocal: true, isKnownDown: true);
+        var service = new RecoveryFakeServiceControl(MongoServiceState.Stopped) { OnStart = database.BeginAnswering };
+        var recovery = CreateRecovery(service, database, new RecordingLogger<DatabaseRecovery>());
 
         using (DatabaseFailFastScope.Begin())
         {
@@ -327,7 +327,7 @@ public sealed class DatabaseRecoveryTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
     }
 
-    private static async Task WaitForErrorAsync(RecordingLogger logger, CancellationToken ct)
+    private static async Task WaitForErrorAsync(RecordingLogger<DatabaseRecovery> logger, CancellationToken ct)
     {
         while (logger.Count(LogLevel.Error) == 0)
             await Task.Delay(smErrorPollInterval, ct);
@@ -340,9 +340,9 @@ public sealed class DatabaseRecoveryTests
         GC.Collect();
     }
 
-    private static DatabaseRecovery CreateRecovery(FakeServiceControl service,
-                                                   FakeDatabase database,
-                                                   RecordingLogger logger,
+    private static DatabaseRecovery CreateRecovery(RecoveryFakeServiceControl service,
+                                                   RecoveryFakeDatabase database,
+                                                   RecordingLogger<DatabaseRecovery> logger,
                                                    bool enabled = true,
                                                    DatabaseRecoveryTimings? timings = null,
                                                    string serviceName = ServiceName)
@@ -357,7 +357,7 @@ public sealed class DatabaseRecoveryTests
                                             Options.Create(settings),
                                             TimeProvider.System,
                                             logger,
-                                            timings ?? smTestTimings
+                                            timings ?? RecoveryTestTimings.Short
                                            );
         return recovery;
     }
@@ -374,158 +374,8 @@ public sealed class DatabaseRecoveryTests
     private const string UnreadableStateProbe = "could not read the service's state";
     private const string UnreadableStateMessage = "the service manager is busy";
 
-    private static readonly DatabaseRecoveryTimings smTestTimings =
-        new DatabaseRecoveryTimings(RestartWait: TimeSpan.FromMilliseconds(milliseconds: 300),
-                                    FailurePause: TimeSpan.FromMilliseconds(milliseconds: 500),
-                                    PingTimeout: TimeSpan.FromMilliseconds(milliseconds: 50),
-                                    PingInterval: TimeSpan.FromMilliseconds(milliseconds: 20)
-                                   );
-
     private static readonly TimeSpan smWellPastThePause = TimeSpan.FromMilliseconds(milliseconds: 900);
     private static readonly TimeSpan smLongRestartWait = TimeSpan.FromSeconds(seconds: 30);
     private static readonly TimeSpan smErrorPollInterval = TimeSpan.FromMilliseconds(milliseconds: 10);
     private static readonly TimeSpan smSettleDelay = TimeSpan.FromMilliseconds(milliseconds: 100);
-
-    /// <summary>A Windows service whose reported states and start outcome the test chooses.</summary>
-    private sealed class FakeServiceControl : IMongoServiceControl
-    {
-        public FakeServiceControl(MongoServiceState initial, params MongoServiceState[] laterStates)
-        {
-            mState = initial;
-            mPending = new Queue<MongoServiceState>([initial, .. laterStates]);
-        }
-
-        private readonly Lock mLock = new Lock();
-        private readonly Queue<MongoServiceState> mPending;
-        private int mGetStateCount;
-        private int mStartCount;
-        private MongoServiceState mState;
-
-        public Action? OnStart { get; init; }
-
-        public Exception? StartFailure { get; init; }
-
-        public Exception? GetStateFailure { get; init; }
-
-        /// <summary>The service accepts a start and then stops again, as one that crashes on start does.</summary>
-        public bool StopsAgainAfterStart { get; init; }
-
-        public int GetStateCount => Volatile.Read(ref mGetStateCount);
-
-        public int StartCount => Volatile.Read(ref mStartCount);
-
-        public MongoServiceState GetState(string serviceName)
-        {
-            Interlocked.Increment(ref mGetStateCount);
-            if (GetStateFailure != null)
-                throw GetStateFailure;
-
-            MongoServiceState result;
-            lock(mLock)
-            {
-                if (mPending.Count > 0)
-                    mState = mPending.Dequeue();
-                result = mState;
-            }
-
-            return result;
-        }
-
-        public void Start(string serviceName)
-        {
-            Interlocked.Increment(ref mStartCount);
-            if (StartFailure != null)
-                throw StartFailure;
-
-            lock(mLock)
-            {
-                mPending.Clear();
-                mState = StopsAgainAfterStart ? MongoServiceState.Stopped : MongoServiceState.Running;
-            }
-
-            OnStart?.Invoke();
-        }
-    }
-
-    /// <summary>
-    ///     A database that refuses pings until <see cref="BeginAnswering" />, and, like the
-    ///     real context, stops being known down once a ping succeeds.
-    /// </summary>
-    private sealed class FakeDatabase : IRecoverableDatabase
-    {
-        public FakeDatabase(bool isLocal, bool isKnownDown)
-        {
-            IsLocal = isLocal;
-            mIsKnownDown = isKnownDown;
-        }
-
-        private volatile bool mAnswering;
-        private volatile bool mIsKnownDown;
-        private int mPingCount;
-        private volatile bool mSawFailFastScope;
-
-        public int PingCount => Volatile.Read(ref mPingCount);
-
-        public bool SawFailFastScope => mSawFailFastScope;
-
-        public string Endpoint => "localhost:27017";
-
-        public bool IsLocal { get; }
-
-        public bool IsKnownDown => mIsKnownDown;
-
-        public Task CheckHealthAsync(CancellationToken ct)
-        {
-            Interlocked.Increment(ref mPingCount);
-            if (DatabaseFailFastScope.IsActive)
-                mSawFailFastScope = true;
-
-            Task result;
-            if (mAnswering)
-            {
-                mIsKnownDown = false;
-                result = Task.CompletedTask;
-            }
-            else
-                result = Task.FromException(new TimeoutException("No answer."));
-
-            return result;
-        }
-
-        public void BeginAnswering() => mAnswering = true;
-    }
-
-    /// <summary>Counts what <see cref="DatabaseRecovery" /> logs at each level.</summary>
-    private sealed class RecordingLogger : ILogger<DatabaseRecovery>
-    {
-        private readonly Lock mLock = new Lock();
-        private readonly List<LogLevel> mLevels = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel,
-                                EventId eventId,
-                                TState state,
-                                Exception? exception,
-                                Func<TState, Exception?, string> formatter)
-        {
-            lock(mLock)
-            {
-                mLevels.Add(logLevel);
-            }
-        }
-
-        public int Count(LogLevel level)
-        {
-            int result;
-            lock(mLock)
-            {
-                result = mLevels.Count(l => l == level);
-            }
-
-            return result;
-        }
-    }
 }
